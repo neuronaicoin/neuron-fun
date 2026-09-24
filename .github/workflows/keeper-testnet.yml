@@ -1,0 +1,40 @@
+name: keeper-testnet
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only simulate (send nothing)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: keeper-testnet
+  cancel-in-progress: false
+
+jobs:
+  keeper:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: keeper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install --no-audit --no-fund
+
+      - name: One keeper pass on Robinhood Chain testnet
+        env:
+          RPC_URL: https://rpc.testnet.chain.robinhood.com/rpc
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          LAUNCHER: "0x4c283e95627FA53beD6bA03dA2d1C6866e14c9f1"
+          LOCKER: "0x44dd76F2eAfd6708c63DB93c03804F4f15017dFd"
+          REGISTRY: "0x1bB313B48a3931eB2Ed03AC2aAd48557ab9805c1"
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: node keeper.mjs
