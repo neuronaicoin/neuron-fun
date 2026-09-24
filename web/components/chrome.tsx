@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks } from "./wallet";
 import { IS_TESTNET } from "@/lib/config";
 import { shortAddr } from "@/lib/format";
@@ -76,7 +77,9 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
 
 function NoWalletSheet({ onClose }: { onClose: () => void }) {
   const links = walletAppLinks();
-  return (
+  // Rendered into <body>: the sticky header's backdrop blur would otherwise
+  // trap this "fixed" overlay inside the header.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
       <div
         role="dialog"
@@ -96,7 +99,7 @@ function NoWalletSheet({ onClose }: { onClose: () => void }) {
               Open in {l.name}
             </a>
           ))}
-          <a
+          
             href="https://metamask.io/download/"
             target="_blank"
             rel="noreferrer"
@@ -109,7 +112,8 @@ function NoWalletSheet({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
