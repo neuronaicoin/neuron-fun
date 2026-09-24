@@ -1,0 +1,25 @@
+name: contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        run: forge build
+
+      - name: Unit tests (par core + Neuron.fun)
+        run: forge test --no-match-path "test/fork/*" --fuzz-runs 5000 -vv
