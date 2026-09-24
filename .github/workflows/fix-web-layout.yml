@@ -1,0 +1,59 @@
+name: fix-web-layout
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Move the website files into web/
+        run: |
+          set -euo pipefail
+          mkdir -p web/app/create web/app/coin web/app/how-it-works web/components web/lib web/public
+          mv abis.ts config.ts data.ts format.ts web/lib/
+          mv chrome.tsx coins.tsx wallet.tsx web/components/
+          mv favicon.svg web/public/
+          mv globals.css layout.tsx web/app/
+          mv next.config.mjs package.json package-lock.json postcss.config.mjs tsconfig.json web/
+          mv README.md web/README.md
+          for f in "page.tsx" "page (1).tsx" "page (2).tsx" "page (3).tsx"; do
+            if grep -q "export default function Home" "$f"; then mv "$f" web/app/page.tsx
+            elif grep -q "export default function CreatePage" "$f"; then mv "$f" web/app/create/page.tsx
+            elif grep -q "export default function CoinPageWrapper" "$f"; then mv "$f" web/app/coin/page.tsx
+            elif grep -q "export default function HowItWorks" "$f"; then mv "$f" web/app/how-it-works/page.tsx
+            else echo "Unrecognised page file: $f"; exit 1; fi
+          done
+          printf 'node_modules/\n.next/\nout/\nnext-env.d.ts\n*.tsbuildinfo\n' > web/.gitignore
+
+          # Stray copies from the first upload; the real ones live under contracts/ and .github/.
+          test -f contracts/src/neuron/NeuronLauncher.sol
+          test -f contracts/test/neuron/Neuron.t.sol
+          rm -f Neuron.t.sol NeuronLauncher.sol NeuronParentRegistry.sol NeuronParentSplitter.sol contracts.yml download
+
+          printf '# Neuron.fun\n\n- `contracts/`: launchpad contracts (built on par, MIT; see NOTICE.md)\n- `keeper/`: buyback keeper\n- `web/`: website\n' > README.md
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the website builds before saving anything
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          NEXT_TELEMETRY_DISABLED=1 npm run build
+
+      - name: Save
+        run: |
+          rm -rf web/node_modules web/.next web/out web/next-env.d.ts
+          git rm -q .github/workflows/fix-web-layout.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Move website into web/ and remove stray upload copies"
+          git push
