@@ -185,6 +185,7 @@ export async function neuronBurned(): Promise<bigint> {
   return publicClient.readContract({ address: ADDR.neuron, abi: tokenAbi, functionName: "balanceOf", args: [ADDR.dead] });
 }
 
+/** A picture we are willing to show: an https link or a small embedded image. */
 export function isImageUrl(s: string): boolean {
-  return /^https:\/\/\S+$/i.test(s);
+  return /^https:\/\/\S+$/i.test(s) || /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
 }
