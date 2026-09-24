@@ -10,6 +10,7 @@ import { launcherAbi, factoryAbi, tokenAbi } from "@/lib/abis";
 import { ADDR, SLIPPAGE_BPS, chain, explorerTx } from "@/lib/config";
 import { fetchParentAddresses, publicClient, isImageUrl } from "@/lib/data";
 import { fmtEth, friendlyError } from "@/lib/format";
+import { fileToLogo } from "@/lib/image";
 
 type ParentOption = { token: Address; name: string; symbol: string; logo: string };
 type Step = 1 | 2 | 3;
@@ -22,6 +23,8 @@ export default function CreatePage() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [logo, setLogo] = useState("");
+  const [picBusy, setPicBusy] = useState(false);
+  const [picError, setPicError] = useState("");
   const [description, setDescription] = useState("");
   const [xLink, setXLink] = useState("");
   const [parents, setParents] = useState<ParentOption[] | null>(null);
@@ -57,7 +60,7 @@ export default function CreatePage() {
     name.trim().length === 0 && "Give your coin a name.",
     name.trim().length > 32 && "Keep the name under 32 characters.",
     cleanSymbol.length < 2 && "The ticker needs at least 2 letters or numbers.",
-    logo.trim() !== "" && !isImageUrl(logo.trim()) && "The picture link must start with https://",
+    logo !== "" && !isImageUrl(logo) && "That picture could not be used. Try another one.",
     xLink.trim() !== "" && !/^https:\/\/(x|twitter)\.com\//i.test(xLink.trim()) && "The X link must look like https://x.com/yourname",
   ].filter(Boolean) as string[];
 
@@ -80,7 +83,7 @@ export default function CreatePage() {
       const params = {
         name: name.trim(),
         symbol: cleanSymbol,
-        logo: logo.trim(),
+        logo,
         description: description.trim(),
         socials: { twitter: xLink.trim(), telegram: "", discord: "", website: "", farcaster: "" },
         creatorFeeRecipient: zeroAddress,
@@ -170,12 +173,46 @@ export default function CreatePage() {
             <Field label="Ticker" hint="The short name people trade it by, like HCAT. Letters and numbers only.">
               <input value={symbol} onChange={(e) => setSymbol(e.target.value)} maxLength={12} className={inputCls + " uppercase"} placeholder="HCAT" autoCapitalize="characters" />
             </Field>
-            <Field label="Picture link (optional)" hint="A link to a square image, starting with https://">
-              <div className="flex items-center gap-3">
-                <CoinAvatar logo={logo.trim()} symbol={cleanSymbol || name || "?"} size={52} />
-                <input value={logo} onChange={(e) => setLogo(e.target.value)} className={inputCls} placeholder="https://…" inputMode="url" />
+            <div className="grid gap-2">
+              <span className="text-[15px] font-semibold">Picture (optional)</span>
+              <div className="flex items-center gap-4">
+                <CoinAvatar logo={logo} symbol={cleanSymbol || name || "?"} size={64} />
+                <div className="flex flex-col items-start gap-1.5">
+                  <label className="h-11 px-5 rounded-xl border border-ink bg-white font-semibold text-[15px] inline-flex items-center cursor-pointer">
+                    {picBusy ? "Preparing…" : logo ? "Change picture" : "Upload picture"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={picBusy}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        setPicError("");
+                        setPicBusy(true);
+                        try {
+                          setLogo(await fileToLogo(file));
+                        } catch (err) {
+                          setPicError((err as Error).message);
+                        } finally {
+                          setPicBusy(false);
+                        }
+                      }}
+                    />
+                  </label>
+                  {logo && (
+                    <button type="button" onClick={() => setLogo("")} className="text-[14px] text-ink-3 font-medium px-1">
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
-            </Field>
+              <span className="text-[13px] text-ink-3 leading-snug">
+                A square picture works best. We shrink it so it is stored with your coin forever.
+              </span>
+              {picError && <span className="text-[14px] text-danger">{picError}</span>}
+            </div>
             <Field label="What is it about? (optional)">
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={280} className={inputCls + " h-auto py-3 resize-none"} placeholder="A cat who guards the harbor." />
             </Field>
@@ -225,7 +262,7 @@ export default function CreatePage() {
         {step === 3 && (
           <div className="grid gap-5">
             <div className="flex items-center gap-4">
-              <CoinAvatar logo={logo.trim()} symbol={cleanSymbol} size={60} />
+              <CoinAvatar logo={logo} symbol={cleanSymbol} size={60} />
               <div className="min-w-0">
                 <div className="font-display font-semibold text-[22px] truncate">{name.trim()}</div>
                 <div className="text-ink-2 text-[14px]">${cleanSymbol} · family of ${chosen?.symbol}</div>
