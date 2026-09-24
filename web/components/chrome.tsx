@@ -99,7 +99,7 @@ function NoWalletSheet({ onClose }: { onClose: () => void }) {
               Open in {l.name}
             </a>
           ))}
-          
+          <a
             href="https://metamask.io/download/"
             target="_blank"
             rel="noreferrer"
@@ -131,7 +131,7 @@ function isActive(pathname: string, href: string) {
 export function Header() {
   const pathname = usePathname() || "/";
   return (
-    <header className="sticky top-0 z-40 bg-paper/90 backdrop-blur border-b border-line">
+    <header className="relative md:sticky md:top-0 z-40 bg-paper/90 md:backdrop-blur border-b border-line">
       <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
