@@ -10,10 +10,6 @@ contracts/.env.mainnet.fee
 NOTES.pl.md
 .notes/
 
-# the interface, indexer and keeper are operated privately and stay out of this repository
-web/
-indexer/
-keeper/
 
 # dependencies and build output
 node_modules/

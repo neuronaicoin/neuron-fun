@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mist: #edf1ee;
+  --color-paper: #f6f8f7;
+  --color-line: #d3ddd8;
+  --color-ink: #0e1f1b;
+  --color-ink-2: #3f524b;
+  --color-ink-3: #5e7069;
+  --color-emerald: #0f6b52;
+  --color-emerald-dark: #0a4d3b;
+  --color-emerald-soft: #ddf1e8;
+  --color-mint: #7fd9b8;
+  --color-night: #0e1f1b;
+  --color-night-2: #1c3530;
+  --color-night-line: #2c413a;
+  --color-danger: #8a3a1c;
+  --color-warn-bg: #fff4e5;
+  --color-warn-ink: #5c3a0a;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-mist);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keep content clear of phone notches and home bars. */
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+/* 16px inputs stop iOS from zooming in on focus. */
+input,
+textarea {
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-emerald);
+  outline-offset: 2px;
+}
