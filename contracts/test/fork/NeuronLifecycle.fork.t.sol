@@ -59,6 +59,7 @@ contract NeuronLifecycleForkTest is Test {
     IPoolManager manager = IPoolManager(POOL_MANAGER);
     PairPadFeeEscrow feeEscrow;
     PairPadQuotePricer quotePricer;
+    PonsReferenceRegistry ponsRegistry;
     PairPadLaunchLocker locker;
     PairPadLaunchFactory factory;
     PairPadRouter router;
@@ -83,7 +84,8 @@ contract NeuronLifecycleForkTest is Test {
         quotePricer =
             new PairPadQuotePricer(address(this), IUniswapV3FactoryMinimal(V3_FACTORY), WETH, USDG, manager);
         quotePricer.setV4HookAllowed(PONS_HOOK, true);
-        quotePricer.addRegistry(new PonsReferenceRegistry(IPonsV2LaunchFactory(PONS_FACTORY), IHooks(PONS_HOOK)));
+        ponsRegistry = new PonsReferenceRegistry(IPonsV2LaunchFactory(PONS_FACTORY), IHooks(PONS_HOOK));
+        quotePricer.addRegistry(ponsRegistry);
         locker = new PairPadLaunchLocker(
             address(this), IPositionManager(POSITION_MANAGER), IPairPadFeeEscrow(address(feeEscrow))
         );
@@ -257,15 +259,14 @@ contract NeuronLifecycleForkTest is Test {
     }
 
     function test_fork_hookedExternalParent() public onlyFork {
-        // A PONS graduate as Parent: its market is a v4 ETH pool with the
-        // PONS hook. The route comes from the pricer, as the keeper would get it.
-        PairPadQuotePricer.PathReport memory rep = quotePricer.describe(BLOKKS);
-        if (!rep.qualifies || rep.hops.length != 1 || rep.hops[0].hop.v3) {
-            vm.skip(true); // its market moved; nothing to test against
-        }
-        PoolKey memory route = rep.hops[0].hop.key;
-        assertEq(Currency.unwrap(route.currency0), address(0));
+        // A PONS launch as Parent: its market is a v4 pool with the PONS
+        // hook. The key comes straight from the PONS factory's launch record,
+        // so this does not depend on the pool's current depth.
+        (bool found, PoolKey memory route) = ponsRegistry.referencePool(BLOKKS);
+        assertTrue(found, "BLOKKS is a PONS launch");
+        assertEq(Currency.unwrap(route.currency0), address(0), "BLOKKS trades against native ETH");
         assertEq(Currency.unwrap(route.currency1), BLOKKS);
+        assertEq(address(route.hooks), PONS_HOOK);
 
         vm.startPrank(owner);
         registry.setHookAllowed(PONS_HOOK, true);
