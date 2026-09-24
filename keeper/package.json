@@ -1,0 +1,16 @@
+{
+  "name": "neuron-fun-keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Collects Neuron.fun trading fees and buys back and burns each launch's Parent.",
+  "scripts": {
+    "start": "node keeper.mjs"
+  },
+  "dependencies": {
+    "viem": "2.56.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
