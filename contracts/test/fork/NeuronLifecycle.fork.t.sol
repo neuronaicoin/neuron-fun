@@ -130,8 +130,9 @@ contract NeuronLifecycleForkTest is Test {
         // The platform token is the first launch on the factory, straight
         // against ETH, and becomes the first Parent.
         (neuron,) = factory.launchToken(_params("NEURON", "neuron"), 0, address(0));
+        PoolKey memory neuronRoute = factory.poolKeyFor(neuron);
         vm.prank(owner);
-        registry.setParent(neuron, factory.poolKeyFor(neuron));
+        registry.setParent(neuron, neuronRoute);
     }
 
     modifier onlyFork() {
