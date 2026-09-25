@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { Coin, CurveInfo } from "@/lib/data";
-import { fetchCoins, isImageUrl, coinHref } from "@/lib/data";
+import { fetchCoins, isImageUrl, coinHref, type SortKey } from "@/lib/data";
 import type { NeuronChain } from "@/lib/config";
 import { TARGET_USD } from "@/lib/config";
 import { fmtEth } from "@/lib/format";
@@ -98,7 +98,7 @@ export function CoinCard({ coin }: { coin: Coin }) {
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} />
         <div className="min-w-0 flex-1">
           <div className="font-display font-semibold text-[17px] truncate">{coin.name}</div>
-          <div className="text-[13px] text-ink-2">${coin.symbol}</div>
+          <div className="text-[13px] text-ink-2">${coin.symbol} · {timeAgo(coin.createdAt)}</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 mt-3">
@@ -106,11 +106,27 @@ export function CoinCard({ coin }: { coin: Coin }) {
           <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
         ))}
       </div>
-      <div className="mt-4 pt-4 border-t border-mist">
+      <div className="grid grid-cols-3 gap-2 mt-3 text-[12px] text-ink-3">
+        <span><strong className="text-ink font-semibold">{coin.holders}</strong> holders</span>
+        <span><strong className="text-ink font-semibold">{coin.trades24h}</strong> trades 24h</span>
+        <span className="text-right">
+          <strong className="text-emerald font-semibold">{coin.buys24h}</strong>/<strong className="text-danger font-semibold">{coin.sells24h}</strong> b/s
+        </span>
+      </div>
+      <div className="mt-3 pt-3 border-t border-mist">
         <ProgressBar coin={coin} />
       </div>
     </Link>
   );
+}
+
+export function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 export function Stat({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
@@ -126,21 +142,21 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"animate-pulse rounded-2xl bg-line/60 " + className} />;
 }
 
-export function useCoins() {
+export function useCoins(sort: SortKey, search: string) {
   const [coins, setCoins] = useState<Coin[] | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
       setError("");
-      const { coins } = await fetchCoins();
+      const { coins } = await fetchCoins({ sort, search });
       setCoins(coins);
     } catch {
-      setError("Could not reach the networks. Check your connection and try again.");
+      setError("Could not load coins. Check your connection and try again.");
     }
-  }, []);
+  }, [sort, search]);
   useEffect(() => {
     load();
-    const t = setInterval(load, 20_000);
+    const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, [load]);
   return { coins, error, reload: load };

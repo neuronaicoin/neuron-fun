@@ -173,6 +173,7 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 const NAV = [
   { href: "/", label: "Explore" },
   { href: "/create/", label: "Create a coin" },
+  { href: "/me/", label: "Your coins" },
   { href: "/how-it-works/", label: "How it works" },
 ];
 
@@ -207,7 +208,7 @@ export function BottomNav() {
   const pathname = usePathname() || "/";
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
-      <div className="grid grid-cols-3">
+      <div className="grid grid-cols-4">
         {NAV.map((n) => {
           const active = isActive(pathname, n.href);
           return (
@@ -217,7 +218,7 @@ export function BottomNav() {
               className={"flex flex-col items-center gap-1 py-1 text-[12px] font-semibold " + (active ? "text-emerald" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
-              {n.label === "Create a coin" ? "Create" : n.label === "How it works" ? "How it works" : n.label}
+              {n.label === "Create a coin" ? "Create" : n.label === "How it works" ? "Help" : n.label === "Your coins" ? "You" : n.label}
             </Link>
           );
         })}
@@ -233,6 +234,13 @@ function NavIcon({ name }: { name: string }) {
       <svg {...common}>
         <circle cx="11" cy="11" r="7" />
         <path d="M20 20 L16 16" />
+      </svg>
+    );
+  if (name === "Your coins")
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21 c1.5 -4 4.5 -6 8 -6 s6.5 2 8 6" />
       </svg>
     );
   if (name === "Create a coin")
