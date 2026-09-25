@@ -1,8 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createWalletClient, custom, getAddress, numberToHex, type Address, type WalletClient } from "viem";
-import { chain } from "@/lib/config";
+import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type WalletClient } from "viem";
 
 export type Eip1193 = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
@@ -27,13 +26,15 @@ declare global {
 type WalletState = {
   address: Address | null;
   walletName: string | null;
-  onRightNetwork: boolean;
+  chainId: number | null;
   wallets: WalletOption[];
   connecting: boolean;
   connect: (w: WalletOption) => Promise<void>;
   disconnect: () => void;
-  switchNetwork: () => Promise<void>;
-  walletClient: () => WalletClient;
+  /** Asks the wallet to move to `chain`, adding it first if needed. */
+  switchTo: (chain: Chain) => Promise<void>;
+  /** A client for sending on `chain`; call switchTo first. */
+  walletClient: (chain: Chain) => WalletClient;
 };
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -44,10 +45,10 @@ export function useWallet(): WalletState {
   return v;
 }
 
-const chainHex = numberToHex(chain.id);
 const SAVED_KEY = "neuron.wallet";
 
-async function ensureNetwork(p: Eip1193) {
+async function ensureNetwork(p: Eip1193, chain: Chain) {
+  const chainHex = numberToHex(chain.id);
   try {
     await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
   } catch (e) {
@@ -157,12 +158,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       try {
         localStorage.setItem(SAVED_KEY, w.id);
       } catch {}
-      let current = Number((await w.provider.request({ method: "eth_chainId" })) as string);
-      if (current !== chain.id) {
-        await ensureNetwork(w.provider);
-        current = Number((await w.provider.request({ method: "eth_chainId" })) as string);
-      }
-      setChainId(current);
+      setChainId(Number((await w.provider.request({ method: "eth_chainId" })) as string));
     } finally {
       setConnecting(false);
     }
@@ -177,30 +173,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  const switchNetwork = useCallback(async () => {
-    if (!active) return;
-    await ensureNetwork(active.provider);
-    setChainId(Number((await active.provider.request({ method: "eth_chainId" })) as string));
-  }, [active]);
+  const switchTo = useCallback(
+    async (chain: Chain) => {
+      if (!active) throw new Error("Connect your wallet first.");
+      const current = Number((await active.provider.request({ method: "eth_chainId" })) as string);
+      if (current !== chain.id) await ensureNetwork(active.provider, chain);
+      const now = Number((await active.provider.request({ method: "eth_chainId" })) as string);
+      setChainId(now);
+      if (now !== chain.id) throw new Error(`Please switch your wallet to ${chain.name}.`);
+    },
+    [active]
+  );
 
-  const walletClient = useCallback(() => {
-    if (!active || !address) throw new Error("Connect your wallet first.");
-    return createWalletClient({ account: address, chain, transport: custom(active.provider) });
-  }, [active, address]);
+  const walletClient = useCallback(
+    (chain: Chain) => {
+      if (!active || !address) throw new Error("Connect your wallet first.");
+      return createWalletClient({ account: address, chain, transport: custom(active.provider) });
+    },
+    [active, address]
+  );
 
   const value = useMemo(
     () => ({
       address,
       walletName: active?.name ?? null,
-      onRightNetwork: chainId === chain.id,
+      chainId,
       wallets,
       connecting,
       connect,
       disconnect,
-      switchNetwork,
+      switchTo,
       walletClient,
     }),
-    [address, active, chainId, wallets, connecting, connect, disconnect, switchNetwork, walletClient]
+    [address, active, chainId, wallets, connecting, connect, disconnect, switchTo, walletClient]
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { Coin, Parent } from "@/lib/data";
-import { fetchCoins, fetchParents, neuronBurned, isImageUrl } from "@/lib/data";
+import type { Coin, CurveInfo } from "@/lib/data";
+import { fetchCoins, isImageUrl, coinHref } from "@/lib/data";
+import type { NeuronChain } from "@/lib/config";
+import { TARGET_USD } from "@/lib/config";
 import { fmtEth } from "@/lib/format";
 
 export function CoinAvatar({ logo, symbol, size = 48 }: { logo: string; symbol: string; size?: number }) {
@@ -21,24 +23,91 @@ export function CoinAvatar({ logo, symbol, size = 48 }: { logo: string; symbol: 
   );
 }
 
+export function ChainChip({ chain, muted = false }: { chain: NeuronChain; muted?: boolean }) {
+  return (
+    <span
+      className={"inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] font-semibold border " + (muted ? "border-line text-ink-3 bg-paper" : "border-transparent text-white")}
+      style={muted ? undefined : { background: chain.color }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" aria-hidden="true" />
+      {chain.short}
+    </span>
+  );
+}
+
+export const usd = (n: number | null, digits = 0) =>
+  n === null ? "—" : `$${n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
+
+export function ProgressBar({ coin, big = false }: { coin: Coin; big?: boolean }) {
+  const pct = Math.round(coin.progress * 100);
+  const done = !!coin.graduatedOn;
+  return (
+    <div>
+      <div className={"flex justify-between items-baseline " + (big ? "text-[15px]" : "text-[13px]")}>
+        <span className="font-semibold">{done ? "Graduated" : `${pct}% to graduation`}</span>
+        <span className="text-ink-3 font-mono">
+          {done ? `on ${coin.graduatedOn!.chain.short}` : `${usd(coin.totalUsd, 2)} / ${usd(TARGET_USD)}`}
+        </span>
+      </div>
+      <div className={"mt-2 rounded-full bg-line/70 overflow-hidden " + (big ? "h-3" : "h-2")} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full bg-emerald transition-all duration-700" style={{ width: `${Math.max(pct, 2)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Each chain's share of the race, with the leader marked. */
+export function ChainRace({ coin }: { coin: Coin }) {
+  const total = coin.curves.reduce((s, c) => s + (c.usd ?? 0), 0);
+  const leader = [...coin.curves].filter((c) => c.state === "trading").sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0];
+  return (
+    <ul className="grid gap-3">
+      {coin.curves.map((c) => (
+        <RaceRow key={c.chain.key} c={c} share={total > 0 ? (c.usd ?? 0) / total : 0} leading={!coin.graduatedOn && c === leader} />
+      ))}
+    </ul>
+  );
+}
+
+function RaceRow({ c, share, leading }: { c: CurveInfo; share: number; leading: boolean }) {
+  const label = c.state === "graduated" ? "Winner" : c.state === "closed" ? "Closed" : leading ? "Leading" : "";
+  return (
+    <li>
+      <div className="flex items-center justify-between gap-3 text-[14px]">
+        <span className="flex items-center gap-2">
+          <ChainChip chain={c.chain} muted={c.state === "closed"} />
+          {label && (
+            <span className={"text-[12px] font-semibold " + (c.state === "graduated" || leading ? "text-emerald" : "text-ink-3")}>{label}</span>
+          )}
+        </span>
+        <span className="font-mono text-ink-2">
+          {usd(c.usd, 2)} <span className="text-ink-3">· {fmtEth(c.realNative, 5)}</span>
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 rounded-full bg-line/60 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${Math.round(share * 100)}%`, background: c.chain.color, opacity: c.state === "closed" ? 0.35 : 1 }} />
+      </div>
+    </li>
+  );
+}
+
 export function CoinCard({ coin }: { coin: Coin }) {
   return (
-    <Link
-      href={`/coin/?a=${coin.token}`}
-      className="block bg-white border border-line rounded-2xl p-4 sm:p-5 hover:border-emerald transition-colors"
-    >
+    <Link href={coinHref(coin)} className="block bg-white border border-line rounded-2xl p-4 sm:p-5 hover:border-emerald transition-colors">
       <div className="flex items-center gap-3.5">
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} />
         <div className="min-w-0 flex-1">
           <div className="font-display font-semibold text-[17px] truncate">{coin.name}</div>
-          <div className="text-[13px] text-ink-2 truncate">
-            ${coin.symbol} · family of <span className="font-semibold text-emerald">${coin.parentSymbol}</span>
-          </div>
+          <div className="text-[13px] text-ink-2">${coin.symbol}</div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-mist">
-        <Stat label="Market value" value={fmtEth(coin.marketCapWei, 3)} />
-        <Stat label={`Spent burning $${coin.parentSymbol}`} value={fmtEth(coin.burnedForParentWei, 5)} />
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {coin.curves.map((c) => (
+          <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
+        ))}
+      </div>
+      <div className="mt-4 pt-4 border-t border-mist">
+        <ProgressBar coin={coin} />
       </div>
     </Link>
   );
@@ -57,29 +126,22 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"animate-pulse rounded-2xl bg-line/60 " + className} />;
 }
 
-export type SiteData = {
-  coins: Coin[];
-  parents: Parent[];
-  neuronBurned: bigint;
-};
-
-export function useSiteData() {
-  const [data, setData] = useState<SiteData | null>(null);
+export function useCoins() {
+  const [coins, setCoins] = useState<Coin[] | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
       setError("");
-      const coins = await fetchCoins();
-      const [parents, burned] = await Promise.all([fetchParents(coins), neuronBurned()]);
-      setData({ coins, parents, neuronBurned: burned });
+      const { coins } = await fetchCoins();
+      setCoins(coins);
     } catch {
-      setError("Could not reach the network. Check your connection and try again.");
+      setError("Could not reach the networks. Check your connection and try again.");
     }
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 20_000);
     return () => clearInterval(t);
   }, [load]);
-  return { data, error, reload: load };
+  return { coins, error, reload: load };
 }

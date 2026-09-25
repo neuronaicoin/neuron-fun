@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { useWallet, walletAppLinks } from "./wallet";
+import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { IS_TESTNET } from "@/lib/config";
 import { shortAddr } from "@/lib/format";
 
@@ -29,26 +29,53 @@ export function TestnetBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, onRightNetwork, hasWallet, connecting, connect, switchNetwork } = useWallet();
-  const [open, setOpen] = useState(false);
+  const { address, walletName, wallets, connecting, connect, disconnect } = useWallet();
+  const [sheet, setSheet] = useState<"none" | "pick" | "account">("none");
   const [error, setError] = useState("");
   const base =
     "h-11 px-5 rounded-xl text-[15px] font-semibold inline-flex items-center justify-center gap-2 transition-colors " +
     (full ? "w-full " : "");
 
-  if (address && !onRightNetwork) {
-    return (
-      <button type="button" className={base + "bg-warn-bg text-warn-ink"} onClick={() => switchNetwork().catch(() => {})}>
-        Switch network
-      </button>
-    );
+  async function pick(w: WalletOption) {
+    setError("");
+    try {
+      await connect(w);
+      setSheet("none");
+    } catch (e) {
+      const code = (e as { code?: number }).code;
+      setError(
+        code === 4001
+          ? "You cancelled it in your wallet."
+          : `${w.name} could not connect. Try MetaMask, Rabby or Coinbase Wallet.`
+      );
+    }
   }
+
   if (address) {
     return (
-      <span className={base + "bg-white border border-line text-ink font-mono text-[14px]"}>
-        <span className="w-2 h-2 rounded-full bg-emerald" aria-hidden="true" />
-        {shortAddr(address)}
-      </span>
+      <>
+        <button type="button" onClick={() => setSheet("account")} className={base + "bg-white border border-line text-ink font-mono text-[14px]"}>
+          <span className="w-2 h-2 rounded-full bg-emerald" aria-hidden="true" />
+          {shortAddr(address)}
+        </button>
+        {sheet === "account" && (
+          <Sheet title="Your wallet" onClose={() => setSheet("none")}>
+            <p className="text-ink-2 text-[15px]">
+              Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                disconnect();
+                setSheet("none");
+              }}
+              className="mt-5 h-12 w-full rounded-xl border border-ink font-semibold"
+            >
+              Disconnect
+            </button>
+          </Sheet>
+        )}
+      </>
     );
   }
   return (
@@ -57,60 +84,86 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
         type="button"
         className={base + "bg-ink text-white hover:bg-night-2 disabled:opacity-60"}
         disabled={connecting}
-        onClick={async () => {
+        onClick={() => {
           setError("");
-          if (!hasWallet) return setOpen(true);
-          try {
-            await connect();
-          } catch {
-            setError("Connection was not completed.");
-          }
+          if (wallets.length === 1) return void pick(wallets[0]);
+          setSheet("pick");
         }}
       >
         {connecting ? "Connecting…" : "Connect wallet"}
       </button>
-      {error && <p className="text-[13px] text-danger mt-2">{error}</p>}
-      {open && <NoWalletSheet onClose={() => setOpen(false)} />}
+      {error && sheet === "none" && <p className="text-[13px] text-danger mt-2 max-w-xs">{error}</p>}
+      {sheet === "pick" && (
+        <Sheet title={wallets.length > 0 ? "Choose your wallet" : "You need a wallet"} onClose={() => setSheet("none")}>
+          {wallets.length > 0 ? (
+            <div className="grid gap-2">
+              {wallets.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  disabled={connecting}
+                  onClick={() => pick(w)}
+                  className="h-14 px-4 rounded-xl border border-line bg-white flex items-center gap-3 text-left font-semibold hover:border-emerald disabled:opacity-60"
+                >
+                  {w.icon ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={w.icon} alt="" width={30} height={30} className="rounded-lg" />
+                  ) : (
+                    <span className="w-[30px] h-[30px] rounded-lg bg-mist" aria-hidden="true" />
+                  )}
+                  {w.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <>
+              <p className="text-ink-2 text-[15px] leading-relaxed">
+                A wallet is an app that holds your coins. On a phone, open this page inside your wallet app. On a
+                computer, install a wallet extension such as MetaMask or Rabby and refresh.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {walletAppLinks().map((l) => (
+                  <a key={l.name} href={l.href} className="h-12 px-3 rounded-xl bg-emerald text-white text-[14px] font-semibold flex items-center justify-center text-center">
+                    {l.name}
+                  </a>
+                ))}
+              </div>
+              <a
+                href="https://metamask.io/download/"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 h-12 rounded-xl border border-ink text-ink font-semibold flex items-center justify-center"
+              >
+                Get a wallet
+              </a>
+            </>
+          )}
+          {error && <p className="text-[14px] text-danger mt-4" role="alert">{error}</p>}
+        </Sheet>
+      )}
     </>
   );
 }
 
-function NoWalletSheet({ onClose }: { onClose: () => void }) {
-  const links = walletAppLinks();
-  // Rendered into <body>: the sticky header's backdrop blur would otherwise
-  // trap this "fixed" overlay inside the header.
+function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  // Rendered into <body>: a parent with backdrop blur would otherwise trap
+  // this "fixed" overlay inside itself.
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="nowallet-title"
-        className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-6 safe-bottom"
+        aria-label={title}
+        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-6 safe-bottom"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="nowallet-title" className="font-display text-[22px] font-semibold">You need a wallet</h2>
-        <p className="text-ink-2 mt-2 text-[15px] leading-relaxed">
-          A wallet is an app that holds your coins. On a phone, open this page inside your wallet app. On a computer,
-          install the MetaMask browser extension and refresh.
-        </p>
-        <div className="mt-5 grid gap-3">
-          {links.map((l) => (
-            <a key={l.name} href={l.href} className="h-12 rounded-xl bg-emerald text-white font-semibold flex items-center justify-center">
-              Open in {l.name}
-            </a>
-          ))}
-          <a
-            href="https://metamask.io/download/"
-            target="_blank"
-            rel="noreferrer"
-            className="h-12 rounded-xl border border-ink text-ink font-semibold flex items-center justify-center"
-          >
-            Get MetaMask
-          </a>
-          <button type="button" onClick={onClose} className="h-11 text-ink-3 font-medium">
-            Not now
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h2 className="font-display text-[22px] font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="w-10 h-10 -mr-2 rounded-full text-ink-3 text-[26px] leading-none">
+            ×
           </button>
         </div>
+        {children}
       </div>
     </div>,
     document.body
@@ -210,7 +263,7 @@ export function Footer() {
           <p className="text-[13px] leading-relaxed text-ink-2 mt-3">
             Meme coins are risky and can lose all their value. Only use money you can afford to lose. Nothing on this
             site is financial advice. Every transaction is signed in your own wallet; Neuron.fun never holds your
-            funds. $NEURON is the platform token. Earlier NEURONAI tokens are not related to this platform.
+            funds. Earlier NEURONAI tokens are not related to this platform.
           </p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] font-medium">
