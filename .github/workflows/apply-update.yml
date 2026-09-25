@@ -1,0 +1,54 @@
+name: apply-update
+
+# Upload a zip named update-*.zip to the top of the repository: its files
+# are copied into the repository at the paths inside the zip, the website
+# build is checked, and the zip is removed.
+on:
+  push:
+    paths:
+      - "update-*.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-update
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack every update zip
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(update-*.zip)
+          if [ ${#zips[@]} -eq 0 ]; then echo "Nothing to apply."; exit 0; fi
+          for z in "${zips[@]}"; do
+            echo "Applying $z"
+            unzip -l "$z"
+            # Refuse anything that would land outside the repository.
+            if unzip -Z1 "$z" | grep -Eq '(^/|\.\./)'; then echo "Unsafe path in $z"; exit 1; fi
+            unzip -o -q "$z" -d .
+            git rm -q "$z"
+          done
+
+      - name: Check the website still builds
+        if: ${{ hashFiles('web/package.json') != '' }}
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          NEXT_TELEMETRY_DISABLED=1 npm run build
+          rm -rf node_modules .next out next-env.d.ts
+
+      - name: Save
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply update" || echo "No changes."
+          git push
