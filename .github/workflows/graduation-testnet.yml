@@ -1,0 +1,60 @@
+name: graduation-testnet
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only decide and report (send nothing)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: graduation-testnet
+  cancel-in-progress: false
+
+jobs:
+  graduate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        working-directory: keeper
+        run: npm install --no-audit --no-fund
+
+      - name: One graduation pass
+        working-directory: keeper
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          # Testnet: a tiny dollar target so faucet-sized coins can graduate.
+          TARGET_USD: "1"
+          REPORT_DIR: reports
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+          CHAINS: >-
+            [{"name":"robinhood-testnet","chainId":46630,
+              "rpc":"https://rpc.testnet.chain.robinhood.com/rpc",
+              "factory":"0xd72eF7A8134407b4ebC8d764f431457439bC901a",
+              "startBlock":123588465,"native":"ETH"}]
+        run: node graduation.mjs
+
+      - name: Publish tallies
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        run: |
+          if [ -d keeper/reports ] && [ -n "$(git status --porcelain keeper/reports)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add keeper/reports
+            git commit -m "Graduation tally"
+            git push
+          else
+            echo "No new tallies."
+          fi
