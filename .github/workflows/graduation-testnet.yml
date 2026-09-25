@@ -37,7 +37,7 @@ jobs:
           PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
           # Testnet: small enough for faucet money, big enough that one chain
           # alone can't reach it in the two-chain test.
-          TARGET_USD: "8"
+          TARGET_USD: "5"
           REPORT_DIR: reports
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
           CHAINS: >-
