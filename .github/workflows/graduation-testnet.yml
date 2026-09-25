@@ -35,15 +35,20 @@ jobs:
         working-directory: keeper
         env:
           PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
-          # Testnet: a tiny dollar target so faucet-sized coins can graduate.
-          TARGET_USD: "1"
+          # Testnet: small enough for faucet money, big enough that one chain
+          # alone can't reach it in the two-chain test.
+          TARGET_USD: "8"
           REPORT_DIR: reports
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
           CHAINS: >-
             [{"name":"robinhood-testnet","chainId":46630,
               "rpc":"https://rpc.testnet.chain.robinhood.com/rpc",
               "factory":"0xd72eF7A8134407b4ebC8d764f431457439bC901a",
-              "startBlock":123588465,"native":"ETH"}]
+              "startBlock":123588465,"native":"ETH"},
+             {"name":"base-sepolia","chainId":84532,
+              "rpc":"https://sepolia.base.org",
+              "factory":"0x00cB1E0bC065C821481411a95c0A2e1afA432919",
+              "startBlock":47265800,"native":"ETH"}]
         run: node graduation.mjs
 
       - name: Publish tallies
@@ -54,6 +59,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add keeper/reports
             git commit -m "Graduation tally"
+            git pull --rebase --quiet
             git push
           else
             echo "No new tallies."
