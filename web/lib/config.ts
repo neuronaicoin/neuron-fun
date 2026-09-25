@@ -2,6 +2,13 @@ import { defineChain, type Address, type Chain } from "viem";
 
 export const IS_TESTNET = true;
 
+/** Public, read-only database (Supabase). The key is the public "publishable" key. */
+export const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
+
+/** WalletConnect (Reown) project id: public by design. */
+export const WALLETCONNECT_PROJECT_ID = "d5a8ab4f1bb470db701a5396d283b28a";
+
 /** Dollar total, across all chains, at which a coin graduates. Must match the keeper. */
 export const TARGET_USD = 5;
 
