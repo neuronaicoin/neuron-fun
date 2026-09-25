@@ -72,7 +72,7 @@ export default function MePage() {
           ["Coins held", data ? String(holdings.length) : "…"],
           ["Coins created", data ? String(data.created.length) : "…"],
         ].map(([l, v]) => (
-          <div key={l} className="bg-white border border-line rounded-2xl p-4">
+          <div key={l} className="bg-surface border border-line rounded-2xl p-4">
             <div className="text-[12px] text-ink-3">{l}</div>
             <div className="font-mono text-[18px] sm:text-[22px] mt-1">{v}</div>
           </div>
@@ -81,7 +81,7 @@ export default function MePage() {
 
       <section className="mt-10">
         <h2 className="font-display font-semibold text-[22px]">What you hold</h2>
-        <div className="mt-4 bg-white border border-line rounded-2xl divide-y divide-mist">
+        <div className="mt-4 bg-surface border border-line rounded-2xl divide-y divide-mist">
           {!data && <Skeleton className="h-24 m-4" />}
           {data && holdings.length === 0 && <p className="p-6 text-ink-3 text-[15px]">Nothing yet. Find a coin you like on the home page.</p>}
           {holdings.map((h) => (
@@ -114,7 +114,7 @@ export default function MePage() {
         {data && data.created.length === 0 && (
           <div className="mt-2 text-center py-10 border border-dashed border-line rounded-2xl">
             <p className="text-ink-2">You haven&apos;t created a coin yet.</p>
-            <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-white font-semibold items-center">Create a coin</Link>
+            <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
           </div>
         )}
         {data && data.created.length > 0 && (
@@ -124,7 +124,7 @@ export default function MePage() {
 
       <section className="mt-10">
         <h2 className="font-display font-semibold text-[22px]">Your trades</h2>
-        <div className="mt-4 bg-white border border-line rounded-2xl p-4 sm:p-5">
+        <div className="mt-4 bg-surface border border-line rounded-2xl p-4 sm:p-5">
           <TradesFeed trader={address} names={names} ethUsd={ethUsd} limit={30} />
         </div>
       </section>

@@ -48,7 +48,7 @@ export default function HowItWorks() {
 
       <div className="mt-10 grid gap-3">
         {FAQ.map(([q, a]) => (
-          <details key={q} className="group bg-white border border-line rounded-2xl p-5 open:border-emerald">
+          <details key={q} className="group bg-surface border border-line rounded-2xl p-5 open:border-emerald">
             <summary className="flex items-center justify-between gap-4 cursor-pointer list-none font-semibold text-[17px]">
               {q}
               <span className="text-emerald text-[22px] leading-none transition-transform group-open:rotate-45" aria-hidden="true">+</span>
@@ -58,10 +58,10 @@ export default function HowItWorks() {
         ))}
       </div>
 
-      <div className="mt-10 bg-night text-mist rounded-3xl p-7 text-center">
+      <div className="mt-10 bg-night text-ink rounded-3xl p-7 text-center">
         <h2 className="font-display font-semibold text-[24px]">Ready?</h2>
         <p className="text-[#a9bab3] mt-2">It takes about a minute.</p>
-        <Link href="/create/" className="inline-flex mt-5 h-12 px-7 rounded-xl bg-mint text-ink font-semibold items-center">
+        <Link href="/create/" className="inline-flex mt-5 h-12 px-7 rounded-xl bg-mint text-on-accent font-semibold items-center">
           Create a coin
         </Link>
       </div>

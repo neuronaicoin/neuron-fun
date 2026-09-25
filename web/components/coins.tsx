@@ -93,7 +93,7 @@ function RaceRow({ c, share, leading }: { c: CurveInfo; share: number; leading: 
 
 export function CoinCard({ coin }: { coin: Coin }) {
   return (
-    <Link href={coinHref(coin)} className="block bg-white border border-line rounded-2xl p-4 sm:p-5 hover:border-emerald transition-colors">
+    <Link href={coinHref(coin)} className="block bg-surface border border-line rounded-2xl p-4 sm:p-5 hover:border-emerald transition-colors">
       <div className="flex items-center gap-3.5">
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} />
         <div className="min-w-0 flex-1">

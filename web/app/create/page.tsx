@@ -100,7 +100,7 @@ export default function CreatePage() {
     return (
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-14 text-center">
         <div className="mx-auto w-16 h-16 rounded-full bg-emerald-soft flex items-center justify-center">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0F6B52" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2FD39B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 12.5 L10 17 L19 7.5" />
           </svg>
         </div>
@@ -113,7 +113,7 @@ export default function CreatePage() {
             <ChainChip key={c.key} chain={c} />
           ))}
         </div>
-        <Link href={coinHref({ creator: address, launchKey })} className="mt-8 h-13 rounded-xl bg-emerald text-white font-semibold flex items-center justify-center">
+        <Link href={coinHref({ creator: address, launchKey })} className="mt-8 h-13 rounded-xl bg-emerald text-on-accent font-semibold flex items-center justify-center">
           Go to your coin
         </Link>
       </div>
@@ -137,7 +137,7 @@ export default function CreatePage() {
         })}
       </ol>
 
-      <div className="mt-7 bg-white border border-line rounded-3xl p-5 sm:p-8">
+      <div className="mt-7 bg-surface border border-line rounded-3xl p-5 sm:p-8">
         {step === 1 && (
           <div className="grid gap-5">
             <Field label="Coin name" hint="For example: Harbor Cat">
@@ -151,7 +151,7 @@ export default function CreatePage() {
               <div className="flex items-center gap-4">
                 <CoinAvatar logo={logo} symbol={cleanSymbol || name || "?"} size={64} />
                 <div className="flex flex-col items-start gap-1.5">
-                  <label className="h-11 px-5 rounded-xl border border-ink bg-white font-semibold text-[15px] inline-flex items-center cursor-pointer">
+                  <label className="h-11 px-5 rounded-xl border border-ink bg-surface font-semibold text-[15px] inline-flex items-center cursor-pointer">
                     {picBusy ? "Preparing…" : logo ? "Change picture" : "Upload picture"}
                     <input
                       type="file"
@@ -202,7 +202,7 @@ export default function CreatePage() {
               {CHAINS.map((c) => {
                 const on = picked.includes(c.key);
                 return (
-                  <div key={c.key} className={"rounded-2xl border-2 p-4 " + (on ? "border-emerald bg-[#eef7f3]" : "border-line bg-white")}>
+                  <div key={c.key} className={"rounded-2xl border-2 p-4 " + (on ? "border-emerald bg-emerald-soft" : "border-line bg-surface")}>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -307,8 +307,8 @@ export default function CreatePage() {
   );
 }
 
-const inputCls = "w-full h-12 px-4 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3/70 focus:border-emerald focus:bg-white";
-const primaryCls = "w-full h-13 rounded-xl bg-emerald text-white font-semibold text-[16px] hover:bg-emerald-dark disabled:opacity-40 disabled:hover:bg-emerald";
+const inputCls = "w-full h-12 px-4 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3/70 focus:border-emerald focus:bg-surface";
+const primaryCls = "w-full h-13 rounded-xl bg-emerald text-on-accent font-semibold text-[16px] hover:bg-emerald-dark disabled:opacity-40 disabled:hover:bg-emerald";
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (

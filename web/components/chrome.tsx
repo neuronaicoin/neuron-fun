@@ -22,7 +22,7 @@ export function LogoMark({ size = 32 }: { size?: number }) {
 export function TestnetBanner() {
   if (!IS_TESTNET) return null;
   return (
-    <div className="bg-ink text-mist text-center text-[13px] leading-snug px-4 py-2">
+    <div className="bg-emerald-soft text-mint text-center text-[13px] leading-snug px-4 py-2">
       Test version. It uses free test ETH, so nothing here has real value.
     </div>
   );
@@ -54,7 +54,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
   if (address) {
     return (
       <>
-        <button type="button" onClick={() => setSheet("account")} className={base + "bg-white border border-line text-ink font-mono text-[14px]"}>
+        <button type="button" onClick={() => setSheet("account")} className={base + "bg-surface border border-line text-ink font-mono text-[14px]"}>
           <span className="w-2 h-2 rounded-full bg-emerald" aria-hidden="true" />
           {shortAddr(address)}
         </button>
@@ -82,7 +82,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
     <>
       <button
         type="button"
-        className={base + "bg-ink text-white hover:bg-night-2 disabled:opacity-60"}
+        className={base + "bg-emerald text-on-accent hover:bg-emerald-dark disabled:opacity-60"}
         disabled={connecting}
         onClick={() => {
           setError("");
@@ -103,7 +103,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
                   type="button"
                   disabled={connecting}
                   onClick={() => pick(w)}
-                  className="h-14 px-4 rounded-xl border border-line bg-white flex items-center gap-3 text-left font-semibold hover:border-emerald disabled:opacity-60"
+                  className="h-14 px-4 rounded-xl border border-line bg-surface flex items-center gap-3 text-left font-semibold hover:border-emerald disabled:opacity-60"
                 >
                   {w.icon ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -123,7 +123,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
               </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {walletAppLinks().map((l) => (
-                  <a key={l.name} href={l.href} className="h-12 px-3 rounded-xl bg-emerald text-white text-[14px] font-semibold flex items-center justify-center text-center">
+                  <a key={l.name} href={l.href} className="h-12 px-3 rounded-xl bg-emerald text-on-accent text-[14px] font-semibold flex items-center justify-center text-center">
                     {l.name}
                   </a>
                 ))}
@@ -149,12 +149,12 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   // Rendered into <body>: a parent with backdrop blur would otherwise trap
   // this "fixed" overlay inside itself.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-6 safe-bottom"
+        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-surface rounded-t-3xl sm:rounded-3xl p-6 safe-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4 mb-4">

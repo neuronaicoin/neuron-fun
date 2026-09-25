@@ -31,7 +31,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
     const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
     const chart = createChart(box.current, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: dark ? "#a9bab3" : "#5e7069", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+      layout: { background: { color: "transparent" }, textColor: "#7b8c85", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
       grid: { vertLines: { color: "rgba(127,150,140,0.12)" }, horzLines: { color: "rgba(127,150,140,0.12)" } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
@@ -86,7 +86,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
               key={r.s}
               type="button"
               onClick={() => setRange(r.s)}
-              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[12px] " + (range === r.s ? "bg-ink text-white" : "bg-mist text-ink-2")}
+              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[12px] " + (range === r.s ? "bg-emerald text-on-accent" : "bg-mist text-ink-2")}
             >
               {r.label}
             </button>
@@ -216,7 +216,7 @@ export function CoinStats({ coin, ethUsd }: { coin: Coin; ethUsd: number | null 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {items.map(([l, v]) => (
-        <div key={l} className="bg-white border border-line rounded-2xl p-3.5">
+        <div key={l} className="bg-surface border border-line rounded-2xl p-3.5">
           <div className="text-[12px] text-ink-3">{l}</div>
           <div className="font-mono text-[17px] mt-0.5">{v}</div>
         </div>
