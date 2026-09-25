@@ -1,75 +1,83 @@
-import {
-  createPublicClient,
-  http,
-  encodeAbiParameters,
-  keccak256,
-  type Address,
-  type Hex,
-} from "viem";
-import { chain, ADDR, START_BLOCK } from "./config";
-import {
-  launchEvent,
-  factoryAbi,
-  tokenAbi,
-  splitterAbi,
-  poolManagerAbi,
-  poolKeyComponents,
-  registryEvent,
-  registryAbi,
-} from "./abis";
+import { createPublicClient, formatEther, http, type Address, type Hex, type PublicClient } from "viem";
+import { CHAINS, TARGET_USD, type NeuronChain } from "./config";
+import { launchedEvent, curveAbi, tokenAbi } from "./abis";
+import { fetchPrices } from "./price";
 
-export const publicClient = createPublicClient({ chain, transport: http() });
+const clients = new Map<number, PublicClient>();
+export function clientFor(c: NeuronChain): PublicClient {
+  let p = clients.get(c.chain.id);
+  if (!p) {
+    p = createPublicClient({ chain: c.chain, transport: http() }) as PublicClient;
+    clients.set(c.chain.id, p);
+  }
+  return p;
+}
 
-export type PoolKey = {
-  currency0: Address;
-  currency1: Address;
-  fee: number;
-  tickSpacing: number;
-  hooks: Address;
-};
+export type CurveState = "trading" | "closed" | "graduated";
+const STATES: CurveState[] = ["trading", "closed", "graduated"];
 
-export type Launch = {
+export type CurveInfo = {
+  chain: NeuronChain;
+  curve: Address;
   token: Address;
-  parent: Address;
-  creator: Address;
-  splitter: Address;
+  state: CurveState;
+  realNative: bigint;
+  virtualNative: bigint;
+  virtualToken: bigint;
+  minGraduationNative: bigint;
+  usd: number | null;
   blockNumber: bigint;
 };
 
-export type Coin = Launch & {
+export type Coin = {
+  id: string; // creator:launchKey
+  creator: Address;
+  launchKey: Hex;
   name: string;
   symbol: string;
   logo: string;
   description: string;
-  marketCapWei: bigint | null;
-  burnedForParentWei: bigint;
-  parentSymbol: string;
+  curves: CurveInfo[];
+  totalUsd: number | null;
+  progress: number; // 0..1
+  graduatedOn: CurveInfo | null;
+  newest: bigint;
 };
 
-export type Parent = {
+type RawLaunch = {
+  chain: NeuronChain;
+  curve: Address;
   token: Address;
+  creator: Address;
+  launchKey: Hex;
   name: string;
   symbol: string;
-  logo: string;
-  children: number;
-  burnedForItWei: bigint;
+  blockNumber: bigint;
 };
 
-/** Every Neuron.fun launch, newest first. Ranges shrink if the RPC objects. */
-export async function fetchLaunches(): Promise<Launch[]> {
-  const latest = await publicClient.getBlockNumber();
-  const out: Launch[] = [];
-  let step = 500_000n;
-  let start = START_BLOCK;
+async function launchesOn(c: NeuronChain): Promise<RawLaunch[]> {
+  const pub = clientFor(c);
+  const latest = await pub.getBlockNumber();
+  const out: RawLaunch[] = [];
+  let step = 100_000n;
+  let start = c.startBlock;
   while (start <= latest) {
     const end = start + step - 1n > latest ? latest : start + step - 1n;
     try {
-      const logs = await publicClient.getLogs({ address: ADDR.launcher, event: launchEvent, fromBlock: start, toBlock: end });
+      const logs = await pub.getLogs({ address: c.factory, event: launchedEvent, fromBlock: start, toBlock: end });
       for (const l of logs) {
         const a = l.args;
-        if (a.token && a.parent && a.creator && a.splitter) {
-          out.push({ token: a.token, parent: a.parent, creator: a.creator, splitter: a.splitter, blockNumber: l.blockNumber ?? 0n });
-        }
+        if (!a.curve || !a.token || !a.creator || !a.launchKey) continue;
+        out.push({
+          chain: c,
+          curve: a.curve,
+          token: a.token,
+          creator: a.creator,
+          launchKey: a.launchKey,
+          name: a.name ?? "",
+          symbol: a.symbol ?? "",
+          blockNumber: l.blockNumber ?? 0n,
+        });
       }
       start = end + 1n;
     } catch (e) {
@@ -77,115 +85,105 @@ export async function fetchLaunches(): Promise<Launch[]> {
       step /= 4n;
     }
   }
-  return out.sort((x, y) => (y.blockNumber > x.blockNumber ? 1 : y.blockNumber < x.blockNumber ? -1 : 0));
+  return out;
 }
 
-/** Tokens currently allowed as parents. */
-export async function fetchParentAddresses(): Promise<Address[]> {
-  const logs = await publicClient.getLogs({ address: ADDR.registry, event: registryEvent, fromBlock: START_BLOCK - 10_000n });
-  const unique = [...new Set(logs.map((l) => l.args.parent).filter((a): a is Address => !!a))];
-  const listed = await Promise.all(
-    unique.map((p) => publicClient.readContract({ address: ADDR.registry, abi: registryAbi, functionName: "isListed", args: [p] }))
-  );
-  return unique.filter((_, i) => listed[i]);
-}
-
-export async function poolKeyFor(token: Address): Promise<PoolKey> {
-  const k = await publicClient.readContract({ address: ADDR.factory, abi: factoryAbi, functionName: "poolKeyFor", args: [token] });
-  return { currency0: k.currency0, currency1: k.currency1, fee: k.fee, tickSpacing: k.tickSpacing, hooks: k.hooks };
-}
-
-const POOLS_SLOT = 6n;
-const Q160 = (1n << 160n) - 1n;
-
-/** The pool's sqrtPriceX96, read straight from the PoolManager's storage. */
-export async function sqrtPriceOf(key: PoolKey): Promise<bigint> {
-  const poolId = keccak256(encodeAbiParameters([{ type: "tuple", components: poolKeyComponents }], [key]));
-  const slot = keccak256(encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }], [poolId, POOLS_SLOT]));
-  const word = (await publicClient.readContract({
-    address: ADDR.poolManager,
-    abi: poolManagerAbi,
-    functionName: "extsload",
-    args: [slot],
-  })) as Hex;
-  return BigInt(word) & Q160;
-}
-
-/** Market cap in wei, for a token quoted against ETH (currency0). */
-export function marketCapWei(totalSupply: bigint, sqrtPriceX96: bigint): bigint | null {
-  if (sqrtPriceX96 === 0n) return null;
-  return (totalSupply << 192n) / (sqrtPriceX96 * sqrtPriceX96);
-}
-
-async function tokenMeta(token: Address) {
-  const [name, symbol, totalSupply, logo, description] = await Promise.all([
-    publicClient.readContract({ address: token, abi: tokenAbi, functionName: "name" }),
-    publicClient.readContract({ address: token, abi: tokenAbi, functionName: "symbol" }),
-    publicClient.readContract({ address: token, abi: tokenAbi, functionName: "totalSupply" }),
-    publicClient.readContract({ address: token, abi: tokenAbi, functionName: "logo" }).catch(() => ""),
-    publicClient.readContract({ address: token, abi: tokenAbi, functionName: "description" }).catch(() => ""),
+async function readCurve(l: RawLaunch, prices: Record<string, number> | null): Promise<CurveInfo> {
+  const pub = clientFor(l.chain);
+  const r = (fn: "state" | "realNative" | "virtualNative" | "virtualToken" | "minGraduationNative") =>
+    pub.readContract({ address: l.curve, abi: curveAbi, functionName: fn });
+  const [state, realNative, virtualNative, virtualToken, minGraduationNative] = await Promise.all([
+    r("state"),
+    r("realNative"),
+    r("virtualNative"),
+    r("virtualToken"),
+    r("minGraduationNative"),
   ]);
-  return { name, symbol, totalSupply, logo, description };
-}
-
-const symbolCache = new Map<string, string>();
-async function symbolOf(token: Address): Promise<string> {
-  const hit = symbolCache.get(token);
-  if (hit) return hit;
-  const s = await publicClient.readContract({ address: token, abi: tokenAbi, functionName: "symbol" }).catch(() => "?");
-  symbolCache.set(token, s);
-  return s;
-}
-
-export async function fetchCoin(l: Launch): Promise<Coin> {
-  const [meta, key, burned, parentSymbol] = await Promise.all([
-    tokenMeta(l.token),
-    poolKeyFor(l.token),
-    publicClient.readContract({ address: l.splitter, abi: splitterAbi, functionName: "totalParentEthSpent" }),
-    symbolOf(l.parent),
-  ]);
-  const sqrtP = await sqrtPriceOf(key).catch(() => 0n);
+  const price = prices?.[l.chain.priceSymbol];
   return {
-    ...l,
-    name: meta.name,
-    symbol: meta.symbol,
-    logo: meta.logo,
-    description: meta.description,
-    marketCapWei: marketCapWei(meta.totalSupply, sqrtP),
-    burnedForParentWei: burned,
-    parentSymbol,
+    chain: l.chain,
+    curve: l.curve,
+    token: l.token,
+    state: STATES[Number(state)] ?? "trading",
+    realNative: realNative as bigint,
+    virtualNative: virtualNative as bigint,
+    virtualToken: virtualToken as bigint,
+    minGraduationNative: minGraduationNative as bigint,
+    usd: price ? Number(formatEther(realNative as bigint)) * price : null,
+    blockNumber: l.blockNumber,
   };
 }
 
-export async function fetchCoins(): Promise<Coin[]> {
-  const launches = await fetchLaunches();
-  return Promise.all(launches.map(fetchCoin));
-}
-
-export async function fetchParents(coins: Coin[]): Promise<Parent[]> {
-  const addrs = await fetchParentAddresses();
-  return Promise.all(
-    addrs.map(async (token) => {
-      const meta = await tokenMeta(token);
-      const kids = coins.filter((c) => c.parent.toLowerCase() === token.toLowerCase());
-      return {
-        token,
-        name: meta.name,
-        symbol: meta.symbol,
-        logo: meta.logo,
-        children: kids.length,
-        burnedForItWei: kids.reduce((s, c) => s + c.burnedForParentWei, 0n),
-      };
+/** Every coin across every chain, newest first. */
+export async function fetchCoins(): Promise<{ coins: Coin[]; prices: Record<string, number> | null }> {
+  const [prices, ...perChain] = await Promise.all([fetchPrices(), ...CHAINS.map((c) => launchesOn(c).catch(() => []))]);
+  const groups = new Map<string, RawLaunch[]>();
+  for (const l of perChain.flat()) {
+    const id = `${l.creator.toLowerCase()}:${l.launchKey}`;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id)!.push(l);
+  }
+  const coins = await Promise.all(
+    [...groups.entries()].map(async ([id, ls]) => {
+      const first = ls[0];
+      const [curves, meta] = await Promise.all([
+        Promise.all(ls.map((l) => readCurve(l, prices))),
+        tokenMeta(first.chain, first.token),
+      ]);
+      return assemble(id, first, curves, meta);
     })
   );
+  coins.sort((a, b) => (b.newest > a.newest ? 1 : b.newest < a.newest ? -1 : 0));
+  return { coins, prices };
 }
 
-/** $NEURON sitting at the dead address. */
-export async function neuronBurned(): Promise<bigint> {
-  return publicClient.readContract({ address: ADDR.neuron, abi: tokenAbi, functionName: "balanceOf", args: [ADDR.dead] });
+export async function fetchCoin(creator: Address, launchKey: Hex) {
+  const { coins, prices } = await fetchCoins();
+  const coin = coins.find((c) => c.creator.toLowerCase() === creator.toLowerCase() && c.launchKey === launchKey);
+  return { coin: coin ?? null, prices };
+}
+
+function assemble(id: string, first: RawLaunch, curves: CurveInfo[], meta: { logo: string; description: string }): Coin {
+  const graduatedOn = curves.find((c) => c.state === "graduated") ?? null;
+  const open = curves.filter((c) => c.state === "trading");
+  const priced = open.every((c) => c.usd !== null);
+  const totalUsd = priced ? open.reduce((s, c) => s + (c.usd ?? 0), 0) : null;
+  const progress = graduatedOn ? 1 : totalUsd === null ? 0 : Math.min(1, totalUsd / TARGET_USD);
+  return {
+    id,
+    creator: first.creator,
+    launchKey: first.launchKey,
+    name: first.name,
+    symbol: first.symbol,
+    logo: meta.logo,
+    description: meta.description,
+    curves: curves.sort((a, b) => a.chain.short.localeCompare(b.chain.short)),
+    totalUsd,
+    progress,
+    graduatedOn,
+    newest: curves.reduce((m, c) => (c.blockNumber > m ? c.blockNumber : m), 0n),
+  };
+}
+
+async function tokenMeta(c: NeuronChain, token: Address) {
+  const pub = clientFor(c);
+  const [logo, description] = await Promise.all([
+    pub.readContract({ address: token, abi: tokenAbi, functionName: "logo" }).catch(() => ""),
+    pub.readContract({ address: token, abi: tokenAbi, functionName: "description" }).catch(() => ""),
+  ]);
+  return { logo: logo as string, description: description as string };
+}
+
+/** Curve price in native coin per whole token, as a float (display only). */
+export function nativePerToken(c: CurveInfo): number {
+  return Number(c.virtualNative) / Number(c.virtualToken);
 }
 
 /** A picture we are willing to show: an https link or a small embedded image. */
 export function isImageUrl(s: string): boolean {
   return /^https:\/\/\S+$/i.test(s) || /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
+}
+
+export function coinHref(c: { creator: string; launchKey: string }) {
+  return `/coin/?c=${c.creator}&k=${c.launchKey}`;
 }
