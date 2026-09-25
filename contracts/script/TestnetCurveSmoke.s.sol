@@ -16,9 +16,12 @@ import {NeuronCurveFactory} from "../src/curve/NeuronCurveFactory.sol";
  *   PRIVATE_KEY=0x... FACTORY=0x... forge script script/TestnetCurveSmoke.s.sol --rpc-url <rpc> [--broadcast]
  *
  * Optional env: LAUNCH_KEY (text), NAME, FIRST_BUY (wei, default 0.002 ether),
- * SELL_QUARTER (true/false, default true).
+ * SELL_QUARTER (true/false, default true). A first buy that doesn't fit the
+ * wallet is lowered to what fits, keeping RESERVE for network fees.
  */
 contract TestnetCurveSmoke is Script {
+    uint256 internal constant RESERVE = 0.0005 ether;
+
     function run() external {
         uint256 key = vm.envUint("PRIVATE_KEY");
         address me = vm.addr(key);
@@ -27,7 +30,10 @@ contract TestnetCurveSmoke is Script {
         bool sellQuarter = vm.envOr("SELL_QUARTER", true);
         string memory tag = vm.envOr("LAUNCH_KEY", vm.toString(block.timestamp));
         string memory name = vm.envOr("NAME", string.concat("Neuron Curve Test ", tag));
-        require(me.balance > firstBuy + 0.0005 ether, "wallet balance too low");
+        require(me.balance > RESERVE + 0.0001 ether, "wallet balance too low");
+        if (firstBuy + RESERVE > me.balance) firstBuy = me.balance - RESERVE;
+        console2.log("Wallet balance:    ", me.balance);
+        console2.log("First buy (wei):   ", firstBuy);
 
         vm.startBroadcast(key);
         (address curveAddr, address token, uint256 bought) = factory.launch{value: firstBuy}(
