@@ -3,6 +3,20 @@ name: curve-smoke
 on:
   workflow_dispatch:
     inputs:
+      network:
+        description: "Chain"
+        type: choice
+        options:
+          - robinhood-testnet
+          - base-sepolia
+      launch_key:
+        description: "Coin key: use the same key on every chain for one multi-chain coin"
+        type: string
+        default: "twin-1"
+      first_buy_wei:
+        description: "First buy in wei (2000000000000000 = 0.002 ETH)"
+        type: string
+        default: "2000000000000000"
       broadcast:
         description: "Actually send transactions (leave unticked for a free dry run)"
         type: boolean
@@ -21,11 +35,14 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Create a coin on the Robinhood testnet curve factory and trade it
+      - name: Create the coin on this chain and buy some
         env:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
-          RPC: https://rpc.testnet.chain.robinhood.com/rpc
-          FACTORY: "0xd72eF7A8134407b4ebC8d764f431457439bC901a"
+          NETWORK: ${{ inputs.network }}
+          LAUNCH_KEY: ${{ inputs.launch_key }}
+          NAME: "Twin Test ${{ inputs.launch_key }}"
+          FIRST_BUY: ${{ inputs.first_buy_wei }}
+          SELL_QUARTER: "false"
           BROADCAST: ${{ inputs.broadcast }}
         run: |
           KEY="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"
@@ -33,6 +50,11 @@ jobs:
           case "$KEY" in 0x*) ;; *) KEY="0x$KEY" ;; esac
           echo "::add-mask::$KEY"
           export PRIVATE_KEY="$KEY"
+          case "$NETWORK" in
+            robinhood-testnet) RPC="https://rpc.testnet.chain.robinhood.com/rpc"; export FACTORY="0xd72eF7A8134407b4ebC8d764f431457439bC901a" ;;
+            base-sepolia)      RPC="https://sepolia.base.org";                    export FACTORY="0x00cB1E0bC065C821481411a95c0A2e1afA432919" ;;
+            *) echo "unknown network $NETWORK"; exit 1 ;;
+          esac
           if [ "$BROADCAST" = "true" ]; then
             forge script script/TestnetCurveSmoke.s.sol --rpc-url "$RPC" --broadcast --slow -vvv
           else
