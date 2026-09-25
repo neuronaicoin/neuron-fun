@@ -4,12 +4,12 @@ import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner } from "@/components/chrome";
 
 export const metadata: Metadata = {
-  title: "Neuron.fun — Every meme is born into a family",
+  title: "Neuron.fun — Launch once. Live on every chain.",
   description:
-    "Create a meme coin under a family coin. Every trade buys back and burns the family coin, on-chain and verifiable.",
+    "Launch a meme coin on every chain at once. Buyers everywhere push it to graduation together.",
   openGraph: {
     title: "Neuron.fun",
-    description: "Every meme is born into a family.",
+    description: "Launch once. Live on every chain.",
     type: "website",
   },
 };
