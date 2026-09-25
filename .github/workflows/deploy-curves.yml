@@ -1,0 +1,53 @@
+name: deploy-curves
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Where to deploy"
+        type: choice
+        options:
+          - robinhood-testnet
+          - base-sepolia
+      broadcast:
+        description: "Actually send transactions (leave unticked for a free dry run)"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Deploy the curve system
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          NETWORK: ${{ inputs.network }}
+          BROADCAST: ${{ inputs.broadcast }}
+          # Testnet terms: small enough to graduate with faucet money.
+          VIRTUAL_NATIVE: "10000000000000000"
+          MIN_GRADUATION: "1000000000000000"
+        run: |
+          KEY="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"
+          if [ -z "$KEY" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
+          case "$KEY" in 0x*) ;; *) KEY="0x$KEY" ;; esac
+          echo "::add-mask::$KEY"
+          export PRIVATE_KEY="$KEY"
+          case "$NETWORK" in
+            robinhood-testnet) RPC="https://rpc.testnet.chain.robinhood.com/rpc" ;;
+            base-sepolia)      RPC="https://sepolia.base.org" ;;
+            *) echo "unknown network $NETWORK"; exit 1 ;;
+          esac
+          if [ "$BROADCAST" = "true" ]; then
+            forge script script/DeployCurves.s.sol --rpc-url "$RPC" --broadcast --slow -vvv
+          else
+            forge script script/DeployCurves.s.sol --rpc-url "$RPC" -vvv
+          fi
