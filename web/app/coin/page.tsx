@@ -53,7 +53,7 @@ function CoinPage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-semibold text-[28px]">Coin not found</h1>
-        <p className="text-ink-2 mt-3">This link doesn&apos;t point to a Neuron.fun coin, or it was created moments ago. Try again in a few seconds.</p>
+        <p className="text-ink-2 mt-3">This link doesn&apos;t point to a sasa coin, or it was created moments ago. Try again in a few seconds.</p>
         <Link href="/" className="inline-flex mt-6 h-12 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Explore coins</Link>
       </div>
     );

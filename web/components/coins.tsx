@@ -144,20 +144,51 @@ export function Skeleton({ className = "" }: { className?: string }) {
 
 export function useCoins(sort: SortKey, search: string) {
   const [coins, setCoins] = useState<Coin[] | null>(null);
+  const [pages, setPages] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
-  const load = useCallback(async () => {
-    try {
-      setError("");
-      const { coins } = await fetchCoins({ sort, search });
-      setCoins(coins);
-    } catch {
-      setError("Could not load coins. Check your connection and try again.");
-    }
-  }, [sort, search]);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Reload every page shown so far (keeps the list fresh while scrolling).
+  const load = useCallback(
+    async (n: number) => {
+      try {
+        setError("");
+        const all: Coin[] = [];
+        let more = false;
+        for (let p = 0; p < n; p++) {
+          const r = await fetchCoins({ sort, search, page: p });
+          all.push(...r.coins);
+          more = r.hasMore;
+          if (!r.hasMore) break;
+        }
+        setCoins(all);
+        setHasMore(more);
+      } catch {
+        setError("Could not load coins. Check your connection and try again.");
+      }
+    },
+    [sort, search]
+  );
+
   useEffect(() => {
-    load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
+    setCoins(null);
+    setPages(1);
+    load(1);
   }, [load]);
-  return { coins, error, reload: load };
+
+  useEffect(() => {
+    const t = setInterval(() => load(pages), 12_000);
+    return () => clearInterval(t);
+  }, [load, pages]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const next = pages + 1;
+    setPages(next);
+    await load(next);
+    setLoadingMore(false);
+  }, [load, pages]);
+
+  return { coins, error, reload: () => load(pages), hasMore, loadMore, loadingMore };
 }

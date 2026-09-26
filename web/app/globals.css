@@ -3,22 +3,23 @@
 @theme {
   /* Dark theme. Names kept from the light version: mist = page, paper = bars
      and inputs, surface = cards, ink = text. */
-  --color-mist: #0a0d0c;
-  --color-paper: #0f1312;
-  --color-surface: #131816;
-  --color-line: #232b28;
-  --color-ink: #edf1ee;
-  --color-ink-2: #b3c1bb;
-  --color-ink-3: #7b8c85;
-  --color-emerald: #2fd39b;
-  --color-emerald-dark: #22b784;
-  --color-emerald-soft: #12352a;
-  --color-on-accent: #04130d;
-  --color-mint: #7fffd0;
-  --color-night: #101514;
-  --color-night-2: #17201d;
-  --color-night-line: #26302c;
+  --color-mist: #0b0806;
+  --color-paper: #110c09;
+  --color-surface: #17110c;
+  --color-line: #2a2019;
+  --color-ink: #fff4ec;
+  --color-ink-2: #cdbbae;
+  --color-ink-3: #8f7f73;
+  --color-emerald: #ff6b1a;
+  --color-emerald-dark: #e85a0c;
+  --color-emerald-soft: #2a170b;
+  --color-on-accent: #1a0e05;
+  --color-mint: #ffb020;
+  --color-night: #120d09;
+  --color-night-2: #1c150f;
+  --color-night-line: #2e231a;
   --color-danger: #ef5b52;
+  --color-up: #2fd39b;
   --color-warn-bg: #33260f;
   --color-warn-ink: #f6c56d;
   --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
@@ -71,8 +72,8 @@ textarea {
   animation-play-state: paused;
 }
 @keyframes flash-ring {
-  0% { box-shadow: 0 0 0 0 rgba(47, 211, 155, 0.65); }
-  100% { box-shadow: 0 0 0 14px rgba(47, 211, 155, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(255, 107, 26, 0.65); }
+  100% { box-shadow: 0 0 0 14px rgba(255, 107, 26, 0); }
 }
 .flash {
   animation: flash-ring 1.2s ease-out 2;

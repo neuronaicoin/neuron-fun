@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "How it works — Neuron.fun" };
+export const metadata = { title: "How it works — sasa" };
 
 const FAQ: [string, string][] = [
   [
@@ -42,7 +42,7 @@ export default function HowItWorks() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
       <h1 className="font-display font-semibold text-[34px] sm:text-[46px] tracking-tight leading-tight">How it works</h1>
       <p className="text-[18px] text-ink-2 mt-4 leading-relaxed">
-        Neuron.fun launches a meme coin on several chains at once. Buyers on every chain push it toward one shared
+        sasa launches a meme coin on several chains at once. Buyers on every chain push it toward one shared
         target, and the chain with the most money wins.
       </p>
 

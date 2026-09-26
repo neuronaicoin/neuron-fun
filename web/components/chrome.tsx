@@ -6,17 +6,11 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { IS_TESTNET } from "@/lib/config";
+import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true">
-      <rect width="34" height="34" rx="8" fill="#0F6B52" />
-      <path d="M11 24 L11 10 L23 24 L23 10" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="11" cy="24" r="2.6" fill="#FFFFFF" />
-      <circle cx="23" cy="10" r="2.6" fill="#FFFFFF" />
-    </svg>
-  );
+  return <SasaMark size={size} />;
 }
 
 export function TestnetBanner() {
@@ -189,7 +183,7 @@ export function Header() {
       <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
-          <span className="font-display font-semibold text-[19px] tracking-tight">Neuron.fun</span>
+          <span className="font-display font-bold text-[22px] tracking-tight">sasa</span>
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-7 text-[15px] font-medium">
           {NAV.map((n) => (
@@ -266,17 +260,17 @@ export function Footer() {
         <div className="max-w-2xl">
           <div className="flex items-center gap-2.5">
             <LogoMark size={26} />
-            <span className="font-display font-semibold">Neuron.fun</span>
+            <span className="font-display font-bold">sasa</span>
           </div>
           <p className="text-[13px] leading-relaxed text-ink-2 mt-3">
             Meme coins are risky and can lose all their value. Only use money you can afford to lose. Nothing on this
-            site is financial advice. Every transaction is signed in your own wallet; Neuron.fun never holds your
-            funds. Earlier NEURONAI tokens are not related to this platform.
+            site is financial advice. Every transaction is signed in your own wallet; sasa never holds your
+            funds.
           </p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] font-medium">
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
-          <a href="https://x.com/neuronfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
+          <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
         </nav>
       </div>
     </footer>

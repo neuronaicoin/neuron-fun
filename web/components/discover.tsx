@@ -189,7 +189,7 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
   if (items.length === 0) return null;
   const row = items.map(({ t, coin, chain }) => (
     <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-2 px-4 shrink-0 text-[13px]">
-      <span className={t.isBuy ? "text-emerald font-semibold" : "text-danger font-semibold"}>{t.isBuy ? "BUY" : "SELL"}</span>
+      <span className={t.isBuy ? "text-up font-semibold" : "text-danger font-semibold"}>{t.isBuy ? "BUY" : "SELL"}</span>
       <span className="font-semibold">${coin!.symbol}</span>
       <span className="font-mono text-ink-2">{ethUsd ? usd((t.nativeAmount / 1e18) * ethUsd, 2) : `${(t.nativeAmount / 1e18).toFixed(4)} ETH`}</span>
       <ChainChip chain={chain!} />

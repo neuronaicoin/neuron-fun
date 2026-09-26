@@ -20,7 +20,7 @@ export default function Discover() {
   const [chain, setChain] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
-  const { coins, error, reload } = useCoins(sort === "hot" ? "new" : sort, search);
+  const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
 
   useEffect(() => {
@@ -34,7 +34,6 @@ export default function Discover() {
   const list = useMemo(() => {
     let l = coins ?? [];
     if (chain !== "all") l = l.filter((c) => c.curves.some((k) => k.chain.key === chain));
-    if (sort === "hot") l = l.filter((c) => !c.graduatedOn).sort((a, b) => b.progress - a.progress);
     return l;
   }, [coins, sort, chain]);
 
@@ -166,6 +165,18 @@ export default function Discover() {
               <CoinTile key={c.id} coin={c} ethUsd={ethUsd} />
             ))}
           </div>
+          {coins && hasMore && (
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="h-11 px-6 rounded-xl border border-line text-ink font-semibold hover:border-emerald disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : "Show more"}
+              </button>
+            </div>
+          )}
           {coins && list.length === 0 && (
             <div className="mt-5 text-center py-12 border border-dashed border-line rounded-2xl">
               <p className="text-ink-2">{search ? "Nothing matches that search." : sort === "graduated" ? "No graduates yet." : "No coins here yet. Start one."}</p>

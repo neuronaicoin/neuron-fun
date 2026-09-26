@@ -12,6 +12,7 @@
 //   CONFIRMATIONS   blocks to stay behind the tip (default 3)
 //   MAX_RANGE       blocks per batch (default 2000)
 //   POLL_MS         pause when caught up (default 2500)
+//   REFRESH_MS      how often the precomputed coin list is rebuilt (default 10000)
 
 import pg from "pg";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
@@ -28,6 +29,7 @@ const env = (n, d) => {
 const CONFIRMATIONS = BigInt(env("CONFIRMATIONS", "3"));
 const MAX_RANGE = BigInt(env("MAX_RANGE", "2000"));
 const POLL_MS = Number(env("POLL_MS", "2500"));
+const REFRESH_MS = Number(env("REFRESH_MS", "10000"));
 const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   ...c,
   factory: getAddress(c.factory),
@@ -245,10 +247,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ main
 
+/** Rebuilds the precomputed coin list the home page reads (see speed.sql). */
+async function refreshLoop() {
+  let warned = false;
+  for (;;) {
+    try {
+      await pool.query("refresh materialized view concurrently coin_list");
+    } catch (e) {
+      // coin_list not created yet: run speed.sql. Keep indexing meanwhile.
+      if (!warned) log(`coin list refresh skipped: ${e.message}`);
+      warned = true;
+    }
+    await sleep(REFRESH_MS);
+  }
+}
+
 async function main() {
   await pool.query("select 1");
   log(`indexing ${CHAINS.map((c) => c.name).join(", ")}`);
-  await Promise.all(CHAINS.map((c) => runChain(makeChain(c))));
+  await Promise.all([...CHAINS.map((c) => runChain(makeChain(c))), refreshLoop()]);
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

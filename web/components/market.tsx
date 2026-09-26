@@ -149,7 +149,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
         const n = names?.get(t.coinId);
         return (
           <li key={t.txHash + t.curve} className="flex items-center gap-3 py-2.5 text-[13px]">
-            <span className={"w-12 shrink-0 font-semibold " + (t.isBuy ? "text-emerald" : "text-danger")}>{t.isBuy ? "Buy" : "Sell"}</span>
+            <span className={"w-12 shrink-0 font-semibold " + (t.isBuy ? "text-up" : "text-danger")}>{t.isBuy ? "Buy" : "Sell"}</span>
             {!compact && chain && <ChainChip chain={chain} />}
             <span className="min-w-0 flex-1 truncate">
               {n ? (

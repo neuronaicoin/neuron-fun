@@ -163,22 +163,28 @@ function toTrade(r: Record<string, unknown>): Trade {
 // ------------------------------------------------------------------ queries
 
 export type SortKey = "hot" | "new" | "graduated" | "active";
+export const PAGE_SIZE = 24;
 
-/** Coins for the home page. Sorting by closeness to graduation happens in the browser. */
-export async function fetchCoins(opts: { sort?: SortKey; search?: string; limit?: number } = {}) {
+/**
+ * Coins for the home page, a page at a time, from the precomputed coin_list
+ * (rebuilt by the indexer every few seconds), so it stays instant at any size.
+ */
+export async function fetchCoins(opts: { sort?: SortKey; search?: string; page?: number } = {}) {
   const prices = await fetchPrices();
-  let q = db.from("coin_summary").select(SUMMARY_COLS);
+  let q = db.from("coin_list").select(SUMMARY_COLS);
   if (opts.search) {
-    const s = opts.search.replace(/[%,()]/g, " ").trim();
+    const s = opts.search.replace(/[%,()*]/g, " ").trim();
     if (s) q = q.or(`name.ilike.%${s}%,symbol.ilike.%${s}%`);
   }
   if (opts.sort === "graduated") q = q.not("graduated_chain", "is", null).order("graduated_at", { ascending: false });
   else if (opts.sort === "active") q = q.order("last_trade_at", { ascending: false, nullsFirst: false });
+  else if (opts.sort === "hot") q = q.is("graduated_chain", null).order("open_native", { ascending: false });
   else q = q.order("created_at", { ascending: false });
-  const { data, error } = await q.limit(opts.limit ?? 60);
+  const from = (opts.page ?? 0) * PAGE_SIZE;
+  const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
   if (error) throw error;
   const coins = (data as SummaryRow[]).map((r) => toCoin(r, prices));
-  return { coins, prices };
+  return { coins, prices, hasMore: coins.length === PAGE_SIZE };
 }
 
 export async function fetchCoin(id: string) {
