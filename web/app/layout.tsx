@@ -2,12 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner } from "@/components/chrome";
-import { Landing } from "@/components/landing";
 
 const SITE = "https://sasapad.fun";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
+  alternates: { canonical: "/" },
   title: "sasa — Launch once. Live on every chain.",
   description:
     "sasa launches your coin on every chain at the same time. Testnet live, mainnet coming soon.",
@@ -35,8 +35,11 @@ export const metadata: Metadata = {
   },
 };
 
-/** Runs before first paint: sasapad.fun (or ?landing) shows the pre-launch page. */
-const HOST_CHECK = String.raw`try{var h=location.hostname;if(/(^|\.)sasapad\.(fun|com)$/.test(h)||/[?&]landing\b/.test(location.search)){document.documentElement.classList.add("is-landing")}}catch(e){}`;
+/**
+ * Runs before first paint. On sasapad.fun the home page is the pre-launch
+ * page; /learn pages always use their own simple chrome.
+ */
+const HOST_CHECK = String.raw`try{var h=location.hostname,p=location.pathname,c=document.documentElement.classList;if(p.indexOf("/learn")===0){c.add("is-learn")}else if(p==="/"&&(/(^|\.)sasapad\.(fun|com)$/.test(h)||/[?&]landing\b/.test(location.search))){c.add("is-landing")}}catch(e){}`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -58,18 +61,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
       </head>
       <body className="min-h-dvh flex flex-col">
-        <div className="landing-root">
-          <Landing />
-        </div>
-        <div className="app-root flex-1 flex flex-col">
-          <WalletProvider>
+        <WalletProvider>
+          <div className="app-chrome">
             <TestnetBanner />
             <Header />
-            <main className="flex-1 w-full">{children}</main>
+          </div>
+          <main className="flex-1 w-full">{children}</main>
+          <div className="app-chrome">
             <Footer />
             <BottomNav />
-          </WalletProvider>
-        </div>
+          </div>
+        </WalletProvider>
       </body>
     </html>
   );

@@ -1,0 +1,18 @@
+# sasa
+
+> sasa (sasapad.fun) is a multi-chain meme coin launchpad. You launch a coin once and it goes live on several chains at the same time (today Robinhood Chain and Base). Buys on every chain count toward one shared graduation target; when it is reached, the chain holding the most money wins and its liquidity is locked forever.
+
+Status: live on testnet, mainnet coming soon. X: https://x.com/sasapadfun
+
+## Key facts
+- Launch: one form (name, ticker, picture), one wallet confirmation per chain. No launch fee; only network fees.
+- Pricing: each chain has its own bonding curve until graduation. Anyone can sell back to the curve at any time before graduation.
+- Graduation: when the combined dollar total across chains reaches the target, the richest chain's curve becomes a trading pool locked forever. Buying stops on the other chains; holders there can always sell back.
+- Fees: 1% per trade; 0.3% to the coin's creator, 0.7% to the platform.
+- Safety: fixed supply of 1,000,000,000, no owner, no minting; the graduation keeper can only graduate or close a curve and cannot move funds.
+- Custody: none. Every transaction is signed in the user's own wallet.
+
+## Guides
+- [How to launch a meme coin on Robinhood Chain](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-robinhood-chain/)
+- [What is a bonding curve?](https://sasapad.fun/learn/what-is-a-bonding-curve/)
+- [How to launch a token on multiple chains at once](https://sasapad.fun/learn/multi-chain-token-launch/)

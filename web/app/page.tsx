@@ -7,6 +7,7 @@ import { CoinTile, GraduationRadar, LiveTicker } from "@/components/discover";
 import { CHAINS, TARGET_USD } from "@/lib/config";
 import { fetchCoinCount, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
+import { Landing } from "@/components/landing";
 
 const SORTS: { id: SortKey; label: string }[] = [
   { id: "hot", label: "Closest to graduating" },
@@ -44,7 +45,11 @@ export default function Discover() {
   const trades24h = coins?.reduce((s, c) => s + c.trades24h, 0) ?? null;
 
   return (
-    <div>
+    <>
+    <div className="landing-root">
+      <Landing />
+    </div>
+    <div className="app-root">
       {coins && <LiveTicker coins={coins} ethUsd={ethUsd} />}
 
       <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
@@ -188,5 +193,6 @@ export default function Discover() {
         </div>
       </section>
     </div>
+    </>
   );
 }

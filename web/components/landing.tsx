@@ -1,3 +1,5 @@
+import { ARTICLES } from "@/lib/articles";
+
 /**
  * Pre-launch page shown on sasapad.fun (see the host check in layout.tsx).
  * Plain markup, no data: it must load instantly and say only what is true.
@@ -30,12 +32,15 @@ export function Landing() {
           <SasaMark size={40} />
           <span>sasa</span>
         </a>
-        <a href={X_URL} className="sasa-follow" target="_blank" rel="noreferrer">
+        <nav className="sasa-nav">
+          <a href="/learn/" className="sasa-learn">Learn</a>
+          <a href={X_URL} className="sasa-follow" target="_blank" rel="noreferrer">
           Follow on
           <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
           </svg>
-        </a>
+          </a>
+        </nav>
       </header>
 
       <main className="sasa-main">
@@ -79,6 +84,19 @@ export function Landing() {
             <p>{d}</p>
           </div>
         ))}
+      </section>
+
+      <section className="sasa-guides" aria-labelledby="guides">
+        <h2 id="guides">Guides</h2>
+        <div className="sasa-guide-grid">
+          {ARTICLES.map((a) => (
+            <a key={a.slug} href={`/learn/${a.slug}/`} className="sasa-guide">
+              <strong>{a.title}</strong>
+              <span>{a.summary}</span>
+            </a>
+          ))}
+        </div>
+        <a href="/learn/" className="sasa-all">All guides →</a>
       </section>
 
       <footer className="sasa-foot">

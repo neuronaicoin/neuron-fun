@@ -277,6 +277,7 @@ export function Footer() {
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] font-medium">
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
+          <Link href="/learn/" className="text-emerald">Learn</Link>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
         </nav>
       </div>

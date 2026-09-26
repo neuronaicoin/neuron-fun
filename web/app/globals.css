@@ -87,7 +87,9 @@ textarea {
    before first paint when the host is sasapad.fun, so there is no flash.
    --------------------------------------------------------------------- */
 html:not(.is-landing) .landing-root { display: none; }
-html.is-landing .app-root { display: none; }
+html.is-landing .app-root,
+html.is-landing .app-chrome,
+html.is-learn .app-chrome { display: none; }
 html.is-landing body { background: #0b0806; }
 
 .sasa-landing {
@@ -151,3 +153,16 @@ html.is-landing body { background: #0b0806; }
   display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between;
   border-top: 1px solid var(--line); color: #6e5f53; font-size: 13px;
 }
+
+.sasa-nav { display: flex; align-items: center; gap: 6px; }
+.sasa-learn { height: 40px; padding: 0 14px; display: inline-flex; align-items: center; color: var(--mut); font-weight: 600; font-size: 14px; }
+.sasa-learn:hover { color: var(--cream); }
+.sasa-guides { position: relative; max-width: 1120px; width: 100%; margin: 0 auto; padding: 8px 20px 48px; }
+.sasa-guides h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
+.sasa-guide-grid { margin-top: 14px; display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 760px) { .sasa-guide-grid { grid-template-columns: repeat(3, 1fr); } }
+.sasa-guide { display: grid; gap: 8px; padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: #140e0a; }
+.sasa-guide:hover { border-color: rgba(255, 107, 26, 0.6); }
+.sasa-guide strong { font-family: var(--font-display); font-size: 17px; line-height: 1.3; color: var(--cream); }
+.sasa-guide span { color: var(--mut); font-size: 14px; line-height: 1.5; }
+.sasa-all { display: inline-block; margin-top: 14px; color: var(--o); font-weight: 600; font-size: 14px; }
