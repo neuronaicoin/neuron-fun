@@ -81,8 +81,9 @@ export default function Discover() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-emerald/40 bg-emerald-soft p-6 sm:p-8 flex flex-col justify-between gap-6">
-            <div>
+          <div className="relative overflow-hidden rounded-3xl border border-line bg-surface p-6 sm:p-8 flex flex-col justify-between gap-6">
+            <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald/10 blur-3xl pointer-events-none" aria-hidden="true" />
+            <div className="relative">
               <h2 className="font-display font-semibold text-[28px] sm:text-[36px] leading-tight">
                 Create on <span className="text-emerald">{CHAINS.length} chains</span> at once
               </h2>
@@ -93,7 +94,7 @@ export default function Discover() {
               </div>
               <p className="text-[14px] text-ink-2 mt-4">Graduates at {usd(TARGET_USD)} across all chains.</p>
             </div>
-            <Link href="/create/" className="h-13 px-6 rounded-2xl bg-emerald text-on-accent text-[16px] font-bold flex items-center justify-between hover:bg-emerald-dark">
+            <Link href="/create/" className="relative h-13 px-6 rounded-2xl bg-emerald text-on-accent text-[16px] font-bold flex items-center justify-between hover:bg-emerald-dark">
               Launch a coin <span aria-hidden="true">↗</span>
             </Link>
           </div>
@@ -145,7 +146,7 @@ export default function Discover() {
                 role="tab"
                 aria-selected={chain === c.key}
                 onClick={() => setChain(c.key)}
-                className={"h-9 px-4 rounded-full text-[13px] font-semibold shrink-0 border " + (chain === c.key ? "bg-emerald text-on-accent border-emerald" : "border-line text-ink-2")}
+                className={"h-9 px-4 rounded-full text-[13px] font-semibold shrink-0 border " + (chain === c.key ? "bg-ink text-on-accent border-ink" : "border-line text-ink-2")}
               >
                 {c.short}
               </button>

@@ -45,7 +45,13 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       borderVisible: false,
       priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => fmtMoney(p, unit) },
     });
-    const vol = chart.addSeries(HistogramSeries, { priceScaleId: "", priceFormat: { type: "volume" }, color: "rgba(31,157,116,0.35)" });
+    const vol = chart.addSeries(HistogramSeries, {
+      priceScaleId: "",
+      priceFormat: { type: "volume" },
+      color: "rgba(31,157,116,0.35)",
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
     vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     chartRef.current = chart;
 
@@ -86,7 +92,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
               key={r.s}
               type="button"
               onClick={() => setRange(r.s)}
-              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[12px] " + (range === r.s ? "bg-emerald text-on-accent" : "bg-mist text-ink-2")}
+              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[12px] " + (range === r.s ? "bg-ink text-on-accent" : "bg-mist text-ink-2")}
             >
               {r.label}
             </button>

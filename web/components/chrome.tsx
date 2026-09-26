@@ -22,7 +22,7 @@ export function LogoMark({ size = 32 }: { size?: number }) {
 export function TestnetBanner() {
   if (!IS_TESTNET) return null;
   return (
-    <div className="bg-emerald-soft text-mint text-center text-[13px] leading-snug px-4 py-2">
+    <div className="bg-paper border-b border-line text-ink-3 text-center text-[12px] leading-snug px-4 py-1.5"><span className="inline-block w-1.5 h-1.5 rounded-full bg-warn-ink mr-2 align-middle" aria-hidden="true" />
       Test version. It uses free test ETH, so nothing here has real value.
     </div>
   );
@@ -82,7 +82,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
     <>
       <button
         type="button"
-        className={base + "bg-emerald text-on-accent hover:bg-emerald-dark disabled:opacity-60"}
+        className={base + "bg-ink text-on-accent hover:bg-ink-2 disabled:opacity-60"}
         disabled={connecting}
         onClick={() => {
           setError("");
