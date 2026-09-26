@@ -56,6 +56,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
     chartRef.current = chart;
 
     let alive = true;
+    let first = true;
     const load = async () => {
       try {
         const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range);
@@ -68,6 +69,10 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
         vol.setData(
           rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
         );
+        if (first) {
+          chart.timeScale().fitContent();
+          first = false;
+        }
       } catch {
         /* next refresh */
       }

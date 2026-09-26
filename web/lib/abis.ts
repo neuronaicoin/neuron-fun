@@ -7,6 +7,7 @@ export const launchedEvent = parseAbiItem(
 export const factoryAbi = parseAbi([
   "function launch(string name, string symbol, string logo, string description, bytes32 launchKey, uint256 minTokensOut) payable returns (address curve, address token, uint256 tokensBought)",
   "function launchesOpen() view returns (bool)",
+  "function config() view returns (uint256 virtualNative, uint256 virtualToken, uint256 tokensForSale, uint256 graduationTokens, uint16 feeBps, uint16 creatorShareBps, uint256 minGraduationNative)",
 ]);
 
 export const curveAbi = parseAbi([

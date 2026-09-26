@@ -187,6 +187,12 @@ export async function fetchCoins(opts: { sort?: SortKey; search?: string; page?:
   return { coins, prices, hasMore: coins.length === PAGE_SIZE };
 }
 
+/** Total number of coins (all chains, all states). */
+export async function fetchCoinCount(): Promise<number | null> {
+  const { count, error } = await db.from("coin_list").select("id", { count: "exact", head: true });
+  return error ? null : count;
+}
+
 export async function fetchCoin(id: string) {
   const prices = await fetchPrices();
   const { data, error } = await db.from("coin_summary").select(SUMMARY_COLS).eq("id", id.toLowerCase()).maybeSingle();

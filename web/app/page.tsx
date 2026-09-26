@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChainChip, Skeleton, useCoins, usd } from "@/components/coins";
 import { CoinTile, GraduationRadar, LiveTicker } from "@/components/discover";
 import { CHAINS, TARGET_USD } from "@/lib/config";
-import type { SortKey } from "@/lib/data";
+import { fetchCoinCount, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 
 const SORTS: { id: SortKey; label: string }[] = [
@@ -22,9 +22,11 @@ export default function Discover() {
   const [search, setSearch] = useState("");
   const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
+    fetchCoinCount().then(setTotal);
   }, []);
   useEffect(() => {
     const t = setTimeout(() => setSearch(query.trim()), 300);
@@ -73,7 +75,7 @@ export default function Discover() {
                   <div className="text-[12px] text-ink-3">trades 24h</div>
                 </div>
                 <div>
-                  <div className="font-mono text-[20px] sm:text-[26px]">{coins ? coins.length : "…"}</div>
+                  <div className="font-mono text-[20px] sm:text-[26px]">{total ?? "…"}</div>
                   <div className="text-[12px] text-ink-3">coins</div>
                 </div>
               </div>

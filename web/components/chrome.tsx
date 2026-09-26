@@ -166,9 +166,9 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 
 const NAV = [
   { href: "/", label: "Explore" },
+  { href: "/terminal/", label: "Terminal" },
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
-  { href: "/how-it-works/", label: "How it works" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -212,7 +212,7 @@ export function BottomNav() {
               className={"flex flex-col items-center gap-1 py-1 text-[12px] font-semibold " + (active ? "text-emerald" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
-              {n.label === "Create a coin" ? "Create" : n.label === "How it works" ? "Help" : n.label === "Your coins" ? "You" : n.label}
+              {n.label === "Create a coin" ? "Create" : n.label === "Your coins" ? "You" : n.label === "Terminal" ? "Trade" : n.label}
             </Link>
           );
         })}
@@ -228,6 +228,13 @@ function NavIcon({ name }: { name: string }) {
       <svg {...common}>
         <circle cx="11" cy="11" r="7" />
         <path d="M20 20 L16 16" />
+      </svg>
+    );
+  if (name === "Terminal")
+    return (
+      <svg {...common}>
+        <path d="M4 17 L9 11 L13 14 L20 6" />
+        <path d="M15 6 H20 V11" />
       </svg>
     );
   if (name === "Your coins")
