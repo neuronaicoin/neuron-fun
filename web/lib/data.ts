@@ -1,9 +1,12 @@
-import { createClient } from "@supabase/supabase-js";
+import { PostgrestClient } from "@supabase/postgrest-js";
 import { createPublicClient, formatEther, http, type Address, type PublicClient } from "viem";
 import { CHAINS, SUPABASE_KEY, SUPABASE_URL, TARGET_USD, chainById, type NeuronChain } from "./config";
 import { fetchPrices } from "./price";
 
-export const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+/** Read-only database client (just the query part of Supabase, to keep the page light). */
+export const db = new PostgrestClient(`${SUPABASE_URL}/rest/v1`, {
+  headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+});
 
 // ------------------------------------------------------------------ chain clients (for transactions)
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CandlestickSeries, HistogramSeries, createChart, type IChartApi, type UTCTimestamp } from "lightweight-charts";
+import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { chainById, explorerAddress, explorerTx } from "@/lib/config";
 import { fetchCandles, fetchTopHolders, fetchTrades, type Coin, type CurveInfo, type Trade } from "@/lib/data";
 import { fmtTokens, shortAddr } from "@/lib/format";
@@ -28,61 +28,67 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
 
   useEffect(() => {
     if (!box.current) return;
-    const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    const chart = createChart(box.current, {
-      autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#7b8c85", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
-      grid: { vertLines: { color: "rgba(127,150,140,0.12)" }, horzLines: { color: "rgba(127,150,140,0.12)" } },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 1 },
-    });
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: "#1f9d74",
-      downColor: "#c2553a",
-      wickUpColor: "#1f9d74",
-      wickDownColor: "#c2553a",
-      borderVisible: false,
-      priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => fmtMoney(p, unit) },
-    });
-    const vol = chart.addSeries(HistogramSeries, {
-      priceScaleId: "",
-      priceFormat: { type: "volume" },
-      color: "rgba(31,157,116,0.35)",
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    chartRef.current = chart;
-
     let alive = true;
-    let first = true;
-    const load = async () => {
-      try {
-        const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range);
-        if (!alive) return;
-        const k = 1e9 * (ethUsd ?? 1);
-        setEmpty(rows.length === 0);
-        candles.setData(
-          rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }))
-        );
-        vol.setData(
-          rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
-        );
-        if (first) {
-          chart.timeScale().fitContent();
-          first = false;
+    let chart: IChartApi | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      // The chart library is only downloaded on pages that show a chart.
+      const { createChart, CandlestickSeries, HistogramSeries } = await import("lightweight-charts");
+      if (!alive || !box.current) return;
+      chart = createChart(box.current, {
+        autoSize: true,
+        layout: { background: { color: "transparent" }, textColor: "#8f7f73", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+        grid: { vertLines: { color: "rgba(143,127,115,0.12)" }, horzLines: { color: "rgba(143,127,115,0.12)" } },
+        rightPriceScale: { borderVisible: false },
+        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+        crosshair: { mode: 1 },
+      });
+      const candles = chart.addSeries(CandlestickSeries, {
+        upColor: "#1f9d74",
+        downColor: "#c2553a",
+        wickUpColor: "#1f9d74",
+        wickDownColor: "#c2553a",
+        borderVisible: false,
+        priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => fmtMoney(p, unit) },
+      });
+      const vol = chart.addSeries(HistogramSeries, {
+        priceScaleId: "",
+        priceFormat: { type: "volume" },
+        color: "rgba(31,157,116,0.35)",
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      chartRef.current = chart;
+
+      let first = true;
+      const load = async () => {
+        try {
+          const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range);
+          if (!alive) return;
+          const k = 1e9 * (ethUsd ?? 1);
+          setEmpty(rows.length === 0);
+          candles.setData(
+            rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }))
+          );
+          vol.setData(
+            rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
+          );
+          if (first && chart) {
+            chart.timeScale().fitContent();
+            first = false;
+          }
+        } catch {
+          /* next refresh */
         }
-      } catch {
-        /* next refresh */
-      }
-    };
-    load();
-    const t = setInterval(load, 8_000);
+      };
+      await load();
+      timer = setInterval(load, 8_000);
+    })();
     return () => {
       alive = false;
-      clearInterval(t);
-      chart.remove();
+      if (timer) clearInterval(timer);
+      chart?.remove();
       chartRef.current = null;
     };
   }, [curve.chain.chain.id, curve.curve, range, ethUsd, unit]);
