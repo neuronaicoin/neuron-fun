@@ -11,7 +11,13 @@ export const metadata: Metadata = {
   title: "sasa — Launch once. Live on every chain.",
   description:
     "sasa launches your coin on every chain at the same time. Testnet live, mainnet coming soon.",
-  icons: { icon: "/favicon.svg" },
+  icons: {
+    icon: [
+      { url: "/sasa-icon.svg", type: "image/svg+xml" },
+      { url: "/sasa-icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
   openGraph: {
     title: "sasa — Launch once. Live on every chain.",
     description: "The multi-chain launchpad. Testnet live, mainnet coming soon.",
@@ -49,7 +55,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
         />
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
       </head>
       <body className="min-h-dvh flex flex-col">
