@@ -80,3 +80,73 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ticker-track, .flash { animation: none; }
 }
+
+/* ---------------------------------------------------------------------
+   Pre-launch page for sasapad.fun. layout.tsx sets `is-landing` on <html>
+   before first paint when the host is sasapad.fun, so there is no flash.
+   --------------------------------------------------------------------- */
+html:not(.is-landing) .landing-root { display: none; }
+html.is-landing .app-root { display: none; }
+html.is-landing body { background: #0b0806; }
+
+.sasa-landing {
+  --o: #ff6b1a; --a: #ffb020; --cream: #fff4ec; --mut: #a8978a; --line: #2a2019;
+  position: relative; min-height: 100dvh; display: flex; flex-direction: column;
+  background: #0b0806; color: var(--cream); overflow: hidden;
+  font-family: var(--font-sans);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+.sasa-glow {
+  position: absolute; inset: -20% -10% auto auto; width: 70vmax; height: 70vmax; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255, 107, 26, 0.22), rgba(255, 107, 26, 0));
+}
+.sasa-top {
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  max-width: 1120px; width: 100%; margin: 0 auto; padding: 22px 20px;
+}
+.sasa-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -0.03em; color: var(--cream); }
+.sasa-follow {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--cream); font-weight: 600; font-size: 14px;
+}
+.sasa-follow:hover { border-color: var(--o); }
+.sasa-main { position: relative; flex: 1; max-width: 1120px; width: 100%; margin: 0 auto; padding: 48px 20px 40px; }
+.sasa-status {
+  display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px;
+  background: rgba(255, 107, 26, 0.1); border: 1px solid rgba(255, 107, 26, 0.35);
+  color: var(--a); font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.02em;
+}
+.sasa-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--o); box-shadow: 0 0 0 0 rgba(255, 107, 26, 0.7); animation: sasa-pulse 1.8s infinite; }
+@keyframes sasa-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,107,26,.7); } 100% { box-shadow: 0 0 0 10px rgba(255,107,26,0); } }
+.sasa-main h1 {
+  margin-top: 26px; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.04em;
+  font-size: clamp(44px, 9vw, 96px); line-height: 0.98;
+}
+.sasa-main h1 em { font-style: normal; color: var(--o); }
+.sasa-lead { margin-top: 24px; max-width: 560px; color: var(--mut); font-size: clamp(16px, 2.2vw, 20px); line-height: 1.55; }
+.sasa-actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
+.sasa-btn {
+  display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 999px;
+  background: var(--cream); color: #1a120c; font-weight: 700; font-size: 16px;
+}
+.sasa-btn:hover { background: #ffffff; }
+.sasa-chains { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; list-style: none; padding: 0; }
+.sasa-chains li {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--cream); font-size: 14px; font-weight: 600;
+}
+.sasa-chains li span { width: 8px; height: 8px; border-radius: 999px; }
+.sasa-steps {
+  position: relative; max-width: 1120px; width: 100%; margin: 0 auto; padding: 8px 20px 48px;
+  display: grid; gap: 14px; grid-template-columns: 1fr;
+}
+@media (min-width: 760px) { .sasa-steps { grid-template-columns: repeat(3, 1fr); } }
+.sasa-step { border-top: 1px solid var(--line); padding-top: 18px; }
+.sasa-step span { font-family: var(--font-mono); font-size: 13px; color: var(--o); }
+.sasa-step h2 { margin-top: 8px; font-family: var(--font-display); font-weight: 700; font-size: 20px; }
+.sasa-step p { margin-top: 6px; color: var(--mut); font-size: 15px; line-height: 1.5; }
+.sasa-foot {
+  position: relative; max-width: 1120px; width: 100%; margin: 0 auto; padding: 20px;
+  display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between;
+  border-top: 1px solid var(--line); color: #6e5f53; font-size: 13px;
+}
