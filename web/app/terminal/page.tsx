@@ -9,6 +9,7 @@ import { ChainChip, ChainRace, CoinAvatar, ProgressBar, Skeleton, timeAgo, useCo
 import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
+import { TrustCard } from "@/components/trust";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
@@ -115,6 +116,7 @@ function Terminal() {
           {coin ? (
             <>
               <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />
+              <div className="mt-3"><TrustCard coin={coin} /></div>
               <div className="mt-3 rounded-3xl border border-line bg-surface p-4 sm:p-5">
                 <ProgressBar coin={coin} />
                 <div className="mt-4">

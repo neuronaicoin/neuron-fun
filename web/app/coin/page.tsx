@@ -9,6 +9,7 @@ import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, timeAgo } from "@/components/coins";
 import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
+import { TrustCard } from "@/components/trust";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
@@ -165,6 +166,7 @@ function CoinPage() {
         </div>
         <div className="order-1 lg:order-2 lg:sticky lg:top-20">
           <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={load} />
+          <div className="mt-3"><TrustCard coin={coin} /></div>
         </div>
       </div>
     </div>

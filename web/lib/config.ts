@@ -25,6 +25,8 @@ export type NeuronChain = {
   startBlock: bigint;
   /** Price symbol of the gas coin (for dollar totals). */
   priceSymbol: "ETH" | "BNB" | "USD";
+  /** Uniswap v4 PoolManager: holds graduated liquidity, so it is not a "holder". */
+  poolManager: Address;
 };
 
 const robinhoodTestnet = defineChain({
@@ -55,6 +57,7 @@ export const CHAINS: NeuronChain[] = [
     factory: "0xd72eF7A8134407b4ebC8d764f431457439bC901a",
     startBlock: 123588465n,
     priceSymbol: "ETH",
+    poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
   },
   {
     key: "base",
@@ -65,6 +68,7 @@ export const CHAINS: NeuronChain[] = [
     factory: "0x00cB1E0bC065C821481411a95c0A2e1afA432919",
     startBlock: 47265800n,
     priceSymbol: "ETH",
+    poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
   },
 ];
 

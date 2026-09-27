@@ -194,7 +194,7 @@ export function TopHolders({ curve }: { curve: CurveInfo }) {
   const [rows, setRows] = useState<{ holder: string; amount: number }[] | null>(null);
   useEffect(() => {
     let alive = true;
-    const exclude = [curve.curve, "0x000000000000000000000000000000000000dead"];
+    const exclude = [curve.curve, curve.chain.poolManager, "0x000000000000000000000000000000000000dead"];
     const load = () =>
       fetchTopHolders(curve.chain.chain.id, curve.token, exclude)
         .then((r) => alive && setRows(r))
@@ -205,7 +205,7 @@ export function TopHolders({ curve }: { curve: CurveInfo }) {
       alive = false;
       clearInterval(t);
     };
-  }, [curve.chain.chain.id, curve.token, curve.curve]);
+  }, [curve.chain.chain.id, curve.token, curve.curve, curve.chain.poolManager]);
   if (!rows) return <div className="h-32 rounded-2xl bg-line/50 animate-pulse" />;
   if (rows.length === 0) return <p className="text-[14px] text-ink-3">No holders yet.</p>;
   return (
