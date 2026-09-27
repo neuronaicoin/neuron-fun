@@ -27,6 +27,8 @@ export type NeuronChain = {
   priceSymbol: "ETH" | "BNB" | "USD";
   /** Uniswap v4 PoolManager: holds graduated liquidity, so it is not a "holder". */
   poolManager: Address;
+  /** Router for trading graduated coins in their locked pools. */
+  router: Address;
 };
 
 const robinhoodTestnet = defineChain({
@@ -58,6 +60,7 @@ export const CHAINS: NeuronChain[] = [
     startBlock: 123588465n,
     priceSymbol: "ETH",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    router: "0x251f33c4E6e24922A940348E9527669A2c896cB9",
   },
   {
     key: "base",
@@ -69,6 +72,7 @@ export const CHAINS: NeuronChain[] = [
     startBlock: 47265800n,
     priceSymbol: "ETH",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
+    router: "0xfF8f34C09cd042A52275BE1B30Eb377b5370cAB6",
   },
 ];
 

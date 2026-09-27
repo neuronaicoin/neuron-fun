@@ -35,3 +35,8 @@ export const tokenAbi = parseAbi([
   "function logo() view returns (string)",
   "function description() view returns (string)",
 ]);
+
+export const routerAbi = parseAbi([
+  "function buy(address token, uint256 minTokensOut, address recipient, uint256 deadline) payable returns (uint256 tokensOut)",
+  "function sell(address token, uint256 amountIn, uint256 minNativeOut, address recipient, uint256 deadline) returns (uint256 nativeOut)",
+]);

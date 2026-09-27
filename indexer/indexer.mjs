@@ -8,7 +8,8 @@
 //
 // Env:
 //   DATABASE_URL    Postgres connection string (Supabase: Project Settings -> Database)
-//   CHAINS          JSON array: [{ "name", "chainId", "rpc", "factory", "startBlock" }]
+//   CHAINS          JSON array: [{ "name", "chainId", "rpc", "factory", "startBlock", "router"? }]
+//                   router: the pool router, so trades after graduation are indexed too
 //   CONFIRMATIONS   blocks to stay behind the tip (default 3)
 //   MAX_RANGE       blocks per batch (default 2000)
 //   POLL_MS         pause when caught up (default 2500)
@@ -34,6 +35,7 @@ const REFRESH_MS = Number(env("REFRESH_MS", "10000"));
 const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   ...c,
   factory: getAddress(c.factory),
+  router: c.router ? getAddress(c.router) : null,
   startBlock: BigInt(c.startBlock ?? 0),
 }));
 
@@ -52,6 +54,10 @@ const curveEvents = parseAbi([
   "event Graduated(bytes32 indexed report, uint256 nativeToPool, uint256 tokensToPool, uint256 tokensBurned)",
 ]);
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
+const poolTradeEvent = parseAbiItem(
+  "event PoolTrade(address indexed token, address indexed trader, bool indexed isBuy, uint256 nativeAmount, uint256 tokenAmount, uint160 sqrtPriceX96After)"
+);
+const Q96 = 2 ** 96;
 const curveReadAbi = parseAbi([
   "function initialVirtualNative() view returns (uint256)",
   "function initialVirtualToken() view returns (uint256)",
@@ -77,12 +83,14 @@ function makeChain(c) {
 async function knownCurves(db, chainId) {
   const r = await db.query("select curve, token, coin_id, initial_virtual_native from curves where chain_id = $1", [chainId]);
   const byCurve = new Map();
+  const byToken = new Map();
   const tokens = [];
   for (const row of r.rows) {
     byCurve.set(row.curve, row);
+    byToken.set(row.token, row);
     tokens.push(row.token);
   }
-  return { byCurve, tokens };
+  return { byCurve, byToken, tokens };
 }
 
 async function blockTimes(pub, numbers) {
@@ -184,6 +192,40 @@ async function indexRange(c, from, to) {
       }
     }
 
+    // 2b. Trades in the locked pools after graduation (through our router).
+    let poolTrades = 0;
+    if (c.router) {
+      const logs = (await pub.getLogs({ address: c.router, event: poolTradeEvent, fromBlock: from, toBlock: to })).filter((l) =>
+        known.byToken.has(lc(l.args.token))
+      );
+      const ptimes = await blockTimes(pub, logs.map((l) => l.blockNumber));
+      for (const l of logs) {
+        const a = l.args;
+        const k = known.byToken.get(lc(a.token));
+        // Pool price is tokens per native coin (currency1/currency0); store native per token.
+        const sp = Number(a.sqrtPriceX96After) / Q96;
+        const nativePerToken = sp > 0 ? 1 / (sp * sp) : 0;
+        // The 1% pool fee: taken from the native coin on buys, from the tokens on sells.
+        const fee = a.isBuy ? (a.nativeAmount * 1n) / 100n : a.nativeAmount / 99n;
+        const ins = await db.query(
+          `insert into trades (chain_id, tx_hash, log_index, block_number, ts, curve, coin_id, trader, is_buy,
+                               native_amount, token_amount, fee, price)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           on conflict do nothing returning 1`,
+          [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ptimes.get(String(l.blockNumber)), k.curve, k.coin_id,
+           lc(a.trader), a.isBuy, a.nativeAmount.toString(), a.tokenAmount.toString(), fee.toString(), nativePerToken.toPrecision(18)]
+        );
+        if (ins.rowCount && nativePerToken > 0) {
+          // Keep the market value current: virtual_native / virtual_token = pool price.
+          await db.query(
+            `update curves set virtual_native = $3, virtual_token = $4 where chain_id = $1 and curve = $2 and state = 2`,
+            [c.chainId, k.curve, BigInt(Math.round(nativePerToken * 1e27)).toString(), (10n ** 27n).toString()]
+          );
+        }
+        poolTrades++;
+      }
+    }
+
     // 3. Token transfers -> balances. Each transfer is applied once.
     const transfers = await getLogsChunked(pub, { event: transferEvent, fromBlock: from, toBlock: to }, known.tokens);
     for (const l of transfers) {
@@ -210,7 +252,11 @@ async function indexRange(c, from, to) {
       [c.chainId, to.toString()]
     );
     await db.query("commit");
-    return { launches: launches.length, trades: curveLogs.filter((l) => l.eventName === "Trade").length, transfers: transfers.length };
+    return {
+      launches: launches.length,
+      trades: curveLogs.filter((l) => l.eventName === "Trade").length + poolTrades,
+      transfers: transfers.length,
+    };
   } catch (e) {
     await db.query("rollback").catch(() => {});
     throw e;

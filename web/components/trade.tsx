@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatEther, type Hex } from "viem";
+import { encodeAbiParameters, formatEther, keccak256, maxUint256, numberToHex, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
-import { curveAbi, tokenAbi } from "@/lib/abis";
+import { curveAbi, routerAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerTx } from "@/lib/config";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
@@ -14,6 +14,17 @@ const PRESETS = [10, 25, 50, 100];
 const GAS_RESERVE = 300_000_000_000_000n; // 0.0003 ETH kept for fees
 
 type Bal = { eth: bigint; tok: bigint };
+
+/** Graduated coins trade in their locked pool through the router. */
+const inPool = (c: CurveInfo) => c.state === "graduated";
+const QUOTE_ACCOUNT: Address = "0x000000000000000000000000000000000000c0de";
+const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
+
+/** Storage slot of allowance(owner, spender) in the coin token (OpenZeppelin ERC20, slot 1). */
+function allowanceSlot(owner: Address, spender: Address): Hex {
+  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 1n]));
+  return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
+}
 
 function ethFromUsd(usdAmount: number, ethUsd: number): bigint {
   const eth = usdAmount / ethUsd;
@@ -26,8 +37,8 @@ function ethFromUsd(usdAmount: number, ethUsd: number): bigint {
  */
 export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: number | null; onTraded: () => void }) {
   const { address, switchTo, walletClient } = useWallet();
-  const open = coin.curves.filter((c) => c.state === "trading");
-  const sellable = coin.curves.filter((c) => c.state !== "graduated");
+  const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
+  const sellable = coin.curves;
   const [side, setSide] = useState<"buy" | "sell">(open.length ? "buy" : "sell");
   const [usdIn, setUsdIn] = useState("25");
   const [sellPct, setSellPct] = useState(100);
@@ -91,7 +102,36 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
     if (!chosen || amount === 0n) return;
     const t = setTimeout(async () => {
       try {
-        const q = await clientFor(chosen.chain).readContract({
+        const pub = clientFor(chosen.chain);
+        if (inPool(chosen)) {
+          // Quote by simulating the router trade, with enough balance or allowance pretended.
+          if (side === "buy") {
+            const sim = await pub.simulateContract({
+              account: QUOTE_ACCOUNT,
+              address: chosen.chain.router,
+              abi: routerAbi,
+              functionName: "buy",
+              args: [chosen.token, 0n, QUOTE_ACCOUNT, deadline()],
+              value: amount,
+              stateOverride: [{ address: QUOTE_ACCOUNT, balance: amount + 10n ** 18n }],
+            });
+            setQuote(sim.result as bigint);
+          } else if (address) {
+            const sim = await pub.simulateContract({
+              account: address,
+              address: chosen.chain.router,
+              abi: routerAbi,
+              functionName: "sell",
+              args: [chosen.token, amount, 0n, address, deadline()],
+              stateOverride: [
+                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, chosen.chain.router), value: numberToHex(maxUint256, { size: 32 }) }] },
+              ],
+            });
+            setQuote(sim.result as bigint);
+          }
+          return;
+        }
+        const q = await pub.readContract({
           address: chosen.curve,
           abi: curveAbi,
           functionName: side === "buy" ? "quoteBuy" : "quoteSell",
@@ -104,7 +144,7 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [side, amount, chosen?.curve]);
+  }, [side, amount, chosen?.curve, chosen?.state, address]);
 
   if (!open.length && !sellable.length) {
     return (
@@ -127,22 +167,33 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
       const pub = clientFor(chosen.chain);
       const wc = walletClient(chosen.chain.chain);
       let hash: Hex;
+      // Curve before graduation, locked pool (through the router) after.
+      const pool = inPool(chosen);
+      const spender = pool ? chosen.chain.router : chosen.curve;
       if (side === "buy") {
-        const sim = await pub.simulateContract({ account: address, address: chosen.curve, abi: curveAbi, functionName: "buy", args: [0n, address], value: amount });
+        const sim = pool
+          ? await pub.simulateContract({ account: address, address: spender, abi: routerAbi, functionName: "buy", args: [chosen.token, 0n, address, deadline()], value: amount })
+          : await pub.simulateContract({ account: address, address: spender, abi: curveAbi, functionName: "buy", args: [0n, address], value: amount });
         const minOut = ((sim.result as bigint) * (10_000n - SLIPPAGE_BPS)) / 10_000n;
         setBusy("Confirm in your wallet…");
-        hash = await wc.writeContract({ chain: chosen.chain.chain, account: address, address: chosen.curve, abi: curveAbi, functionName: "buy", args: [minOut, address], value: amount });
+        hash = pool
+          ? await wc.writeContract({ chain: chosen.chain.chain, account: address, address: spender, abi: routerAbi, functionName: "buy", args: [chosen.token, minOut, address, deadline()], value: amount })
+          : await wc.writeContract({ chain: chosen.chain.chain, account: address, address: spender, abi: curveAbi, functionName: "buy", args: [minOut, address], value: amount });
       } else {
-        const allowance = (await pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, chosen.curve] })) as bigint;
+        const allowance = (await pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] })) as bigint;
         if (allowance < amount) {
           setBusy("Step 1 of 2: allow selling…");
-          const h = await wc.writeContract({ chain: chosen.chain.chain, account: address, address: chosen.token, abi: tokenAbi, functionName: "approve", args: [chosen.curve, amount] });
+          const h = await wc.writeContract({ chain: chosen.chain.chain, account: address, address: chosen.token, abi: tokenAbi, functionName: "approve", args: [spender, amount] });
           await pub.waitForTransactionReceipt({ hash: h });
         }
-        const sim = await pub.simulateContract({ account: address, address: chosen.curve, abi: curveAbi, functionName: "sell", args: [amount, 0n, address] });
+        const sim = pool
+          ? await pub.simulateContract({ account: address, address: spender, abi: routerAbi, functionName: "sell", args: [chosen.token, amount, 0n, address, deadline()] })
+          : await pub.simulateContract({ account: address, address: spender, abi: curveAbi, functionName: "sell", args: [amount, 0n, address] });
         const minOut = ((sim.result as bigint) * (10_000n - SLIPPAGE_BPS)) / 10_000n;
         setBusy(allowance < amount ? "Step 2 of 2: confirm the sale…" : "Confirm in your wallet…");
-        hash = await wc.writeContract({ chain: chosen.chain.chain, account: address, address: chosen.curve, abi: curveAbi, functionName: "sell", args: [amount, minOut, address] });
+        hash = pool
+          ? await wc.writeContract({ chain: chosen.chain.chain, account: address, address: spender, abi: routerAbi, functionName: "sell", args: [chosen.token, amount, minOut, address, deadline()] })
+          : await wc.writeContract({ chain: chosen.chain.chain, account: address, address: spender, abi: curveAbi, functionName: "sell", args: [amount, minOut, address] });
       }
       setBusy("Almost done…");
       const r = await pub.waitForTransactionReceipt({ hash });
@@ -254,7 +305,7 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
                 style={c.chain.key === chosen.chain.key ? { background: c.chain.color } : undefined}
               >
                 {c.chain.short}
-                {c.state === "closed" ? " · closed" : ""}
+                {c.state === "closed" ? " · closed" : inPool(c) ? " · pool" : ""}
               </button>
             ))}
           </div>
