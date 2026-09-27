@@ -57,6 +57,8 @@ export type Coin = {
   graduatedOn: CurveInfo | null;
   /** Where the creator's share of fees goes (fixed at launch). */
   feeMode: FeeMode;
+  /** Price change over the last 24 hours (0.5 = +50%); null when unknown. */
+  change24h: number | null;
   holders: number;
   trades24h: number;
   buys24h: number;
@@ -109,6 +111,7 @@ type SummaryRow = {
   volume_native_24h: string;
   last_trade_at: string | null;
   fee_mode: number | null;
+  change_24h?: number | string | null;
 };
 
 const SUMMARY_COLS =
@@ -141,6 +144,7 @@ function toCoin(r: SummaryRow, prices: Record<string, number> | null): Coin {
     id: r.id,
     creator: r.creator as Address,
     feeMode: FEE_MODES[r.fee_mode ?? 0] ?? "creator",
+    change24h: r.change_24h === null || r.change_24h === undefined ? null : Number(r.change_24h),
     launchKey: r.launch_key,
     name: r.name,
     symbol: r.symbol,
@@ -177,7 +181,14 @@ function toTrade(r: Record<string, unknown>): Trade {
 
 // ------------------------------------------------------------------ queries
 
-export type SortKey = "hot" | "new" | "graduated" | "active";
+/**
+ * trending: most trades in 24 h · gainers / losers: 24 h price change ·
+ * hot: still racing, closest to graduation · new · graduated · active: latest trade.
+ */
+export type SortKey = "trending" | "gainers" | "losers" | "hot" | "new" | "graduated" | "active";
+
+/** The market list's columns: the coin summary plus its 24 h price change. */
+const LIST_COLS = SUMMARY_COLS + ",change_24h";
 export const PAGE_SIZE = 24;
 
 /**
@@ -186,7 +197,7 @@ export const PAGE_SIZE = 24;
  */
 export async function fetchCoins(opts: { sort?: SortKey; search?: string; page?: number } = {}) {
   const prices = await fetchPrices();
-  let q = db.from("coin_list").select(SUMMARY_COLS);
+  let q = db.from("coin_list").select(LIST_COLS);
   if (opts.search) {
     const s = opts.search.replace(/[%,()*]/g, " ").trim();
     if (s) q = q.or(`name.ilike.%${s}%,symbol.ilike.%${s}%`);
@@ -194,11 +205,15 @@ export async function fetchCoins(opts: { sort?: SortKey; search?: string; page?:
   if (opts.sort === "graduated") q = q.not("graduated_chain", "is", null).order("graduated_at", { ascending: false });
   else if (opts.sort === "active") q = q.order("last_trade_at", { ascending: false, nullsFirst: false });
   else if (opts.sort === "hot") q = q.is("graduated_chain", null).order("open_native", { ascending: false });
+  else if (opts.sort === "trending")
+    q = q.order("trades_24h", { ascending: false }).order("volume_native_24h", { ascending: false }).order("last_trade_at", { ascending: false, nullsFirst: false });
+  else if (opts.sort === "gainers") q = q.not("change_24h", "is", null).gt("change_24h", 0).order("change_24h", { ascending: false });
+  else if (opts.sort === "losers") q = q.not("change_24h", "is", null).lt("change_24h", 0).order("change_24h", { ascending: true });
   else q = q.order("created_at", { ascending: false });
   const from = (opts.page ?? 0) * PAGE_SIZE;
   const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
   if (error) throw error;
-  const coins = (data as SummaryRow[]).map((r) => toCoin(r, prices));
+  const coins = (data as unknown as SummaryRow[]).map((r) => toCoin(r, prices));
   return { coins, prices, hasMore: coins.length === PAGE_SIZE };
 }
 

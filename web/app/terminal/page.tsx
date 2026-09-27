@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatEther } from "viem";
 import { useWallet } from "@/components/wallet";
-import { ChainChip, ChainRace, CoinAvatar, ProgressBar, Skeleton, timeAgo, useCoins, usd } from "@/components/coins";
+import { ChainChip, ChainRace, ChangeBadge, CoinAvatar, ProgressBar, Skeleton, timeAgo, useCoins, usd } from "@/components/coins";
 import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
@@ -30,7 +30,7 @@ export default function TerminalPage() {
 function Terminal() {
   const params = useSearchParams();
   const [selected, setSelected] = useState<string>((params.get("id") ?? "").toLowerCase());
-  const [sort, setSort] = useState<SortKey>("hot");
+  const [sort, setSort] = useState<SortKey>("trending");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [marketsOpen, setMarketsOpen] = useState(false);
@@ -171,15 +171,24 @@ function Markets(props: {
           aria-label="Search coins"
           className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-[0.875rem] focus:border-emerald"
         />
-        <div className="grid grid-cols-3 gap-1 mt-2" role="tablist" aria-label="Sort">
-          {([["hot", "Closest"], ["active", "Active"], ["new", "New"]] as const).map(([k, l]) => (
+        <div className="flex gap-1 mt-2 overflow-x-auto no-scrollbar -mx-1 px-1" role="tablist" aria-label="Sort">
+          {(
+            [
+              ["trending", "🔥 Trending"],
+              ["gainers", "Gainers"],
+              ["losers", "Losers"],
+              ["new", "New"],
+              ["hot", "Racing"],
+              ["graduated", "Graduated"],
+            ] as const
+          ).map(([k, l]) => (
             <button
               key={k}
               type="button"
               role="tab"
               aria-selected={sort === k}
               onClick={() => setSort(k)}
-              className={"h-8 rounded-lg text-[0.75rem] font-semibold " + (sort === k ? "bg-ink text-on-accent" : "text-ink-2")}
+              className={"h-8 px-3 rounded-lg text-[0.75rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
             >
               {l}
             </button>
@@ -203,8 +212,10 @@ function Markets(props: {
                   <span className="font-mono text-[0.8125rem] shrink-0">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
                 </span>
                 <span className="flex items-center justify-between gap-2 mt-1">
-                  <span className="text-[0.75rem] text-ink-3">${c.symbol} · {c.curves.length} chain{c.curves.length > 1 ? "s" : ""}</span>
-                  <span className="text-[0.75rem] font-mono text-ink-2">{c.graduatedOn ? "Graduated" : `${Math.round(c.progress * 100)}%`}</span>
+                  <span className="text-[0.75rem] text-ink-3 truncate">
+                    ${c.symbol} · {c.graduatedOn ? "graduated" : `${Math.round(c.progress * 100)}% to grad.`}
+                  </span>
+                  <ChangeBadge value={c.change24h} className="text-[0.75rem] shrink-0" />
                 </span>
                 <span className="block mt-1.5"><RaceBar coin={c} /></span>
               </span>

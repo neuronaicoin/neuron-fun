@@ -192,3 +192,18 @@ export function useCoins(sort: SortKey, search: string) {
 
   return { coins, error, reload: () => load(pages), hasMore, loadMore, loadingMore };
 }
+
+/** 24 h price change: green up, red down, grey when there's no history yet. */
+export function ChangeBadge({ value, className = "" }: { value: number | null; className?: string }) {
+  if (value === null || !Number.isFinite(value)) return <span className={"font-mono text-ink-3 " + className}>—</span>;
+  const pct = value * 100;
+  const text = Math.abs(pct) >= 1000 ? `${(pct / 1000).toFixed(1)}K%` : `${Math.abs(pct) >= 100 ? pct.toFixed(0) : pct.toFixed(1)}%`;
+  const up = pct > 0.05;
+  const down = pct < -0.05;
+  return (
+    <span className={"font-mono tabular-nums " + (up ? "text-up" : down ? "text-danger" : "text-ink-3") + " " + className}>
+      {up ? "+" : ""}
+      {text}
+    </span>
+  );
+}

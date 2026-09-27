@@ -10,14 +10,16 @@ import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 
 const SORTS: { id: SortKey; label: string }[] = [
+  { id: "trending", label: "Trending" },
+  { id: "gainers", label: "Top gainers (24h)" },
+  { id: "losers", label: "Top losers (24h)" },
   { id: "hot", label: "Closest to graduating" },
-  { id: "active", label: "Most active" },
   { id: "new", label: "Newest" },
   { id: "graduated", label: "Graduated" },
 ];
 
 export default function Discover() {
-  const [sort, setSort] = useState<SortKey>("hot");
+  const [sort, setSort] = useState<SortKey>("trending");
   const [chain, setChain] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");

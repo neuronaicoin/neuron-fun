@@ -6,6 +6,7 @@ import { TARGET_USD, chainById } from "@/lib/config";
 import { coinHref, fetchTrades, isImageUrl, marketCapNative, type Coin, type Trade } from "@/lib/data";
 import { shortAddr } from "@/lib/format";
 import { ChainChip, timeAgo, usd } from "./coins";
+import { ChangeBadge } from "./coins";
 
 /** Market value in dollars: the biggest of the coin's chains (the one that matters). */
 export function coinMarketCapUsd(coin: Coin, ethUsd: number | null): number | null {
@@ -115,6 +116,7 @@ export function CoinTile({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }
         <div className="flex items-baseline gap-1.5 mt-2">
           <span className="font-display font-semibold text-[1.25rem] sm:text-[1.5rem]">{compactUsd(coinMarketCapUsd(coin, ethUsd))}</span>
           <span className="text-[0.6875rem] text-ink-3">MC</span>
+          <ChangeBadge value={coin.change24h} className="ml-auto text-[0.75rem] sm:text-[0.8125rem]" />
         </div>
         <div className="flex justify-between text-[0.6875rem] sm:text-[0.75rem] text-ink-3 mt-2 mb-1.5">
           <span>{coin.graduatedOn ? `Won on ${coin.graduatedOn.chain.short}` : "Graduation"}</span>
