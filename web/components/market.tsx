@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
+import { burst, onTrade } from "@/lib/live";
 import { chainById, explorerAddress, explorerTx } from "@/lib/config";
 import { fetchCandles, fetchTopHolders, fetchTrades, type Coin, type CurveInfo, type Trade } from "@/lib/data";
 import { fmtTokens, shortAddr } from "@/lib/format";
@@ -31,6 +32,8 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
     let alive = true;
     let chart: IChartApi | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
+    let stopSignal: (() => void) | null = null;
+    let stopBurst: (() => void) | null = null;
     (async () => {
       // The chart library is only downloaded on pages that show a chart.
       const { createChart, CandlestickSeries, HistogramSeries } = await import("lightweight-charts");
@@ -62,15 +65,16 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       chartRef.current = chart;
 
       let first = true;
+      let lastBar: { time: UTCTimestamp; open: number; high: number; low: number; close: number } | null = null;
       const load = async () => {
         try {
           const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range);
           if (!alive) return;
           const k = 1e9 * (ethUsd ?? 1);
           setEmpty(rows.length === 0);
-          candles.setData(
-            rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }))
-          );
+          const bars = rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }));
+          candles.setData(bars);
+          lastBar = bars.length ? bars[bars.length - 1] : null;
           vol.setData(
             rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
           );
@@ -83,10 +87,32 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
         }
       };
       await load();
-      timer = setInterval(load, 8_000);
+      timer = setInterval(load, 6_000);
+
+      // A trade on this curve: move the last candle now, then fetch the real data.
+      stopSignal = onTrade((sig) => {
+        if (!alive || sig.chainId !== curve.chain.chain.id || sig.curve.toLowerCase() !== curve.curve.toLowerCase()) return;
+        if (sig.nativePerToken !== null) {
+          const price = sig.nativePerToken * 1e9 * (ethUsd ?? 1);
+          const bucket = (Math.floor(Date.now() / 1000 / range) * range) as UTCTimestamp;
+          const bar =
+            lastBar && lastBar.time === bucket
+              ? { ...lastBar, high: Math.max(lastBar.high, price), low: Math.min(lastBar.low, price), close: price }
+              : { time: bucket, open: lastBar?.close ?? price, high: Math.max(lastBar?.close ?? price, price), low: Math.min(lastBar?.close ?? price, price), close: price };
+          if (!lastBar || bar.time >= lastBar.time) {
+            candles.update(bar);
+            lastBar = bar;
+            setEmpty(false);
+          }
+        }
+        stopBurst?.();
+        stopBurst = burst(() => void load());
+      });
     })();
     return () => {
       alive = false;
+      stopSignal?.();
+      stopBurst?.();
       if (timer) clearInterval(timer);
       chart?.remove();
       chartRef.current = null;
@@ -144,9 +170,18 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
         .catch(() => {});
     load();
     const t = setInterval(load, 5_000);
+    // After a trade, refresh a few times quickly while the indexer catches up.
+    let stopBurst: (() => void) | null = null;
+    const stopSignal = onTrade((sig) => {
+      if (coinId && sig.coinId !== coinId) return;
+      stopBurst?.();
+      stopBurst = burst(load);
+    });
     return () => {
       alive = false;
       clearInterval(t);
+      stopSignal();
+      stopBurst?.();
     };
   }, [coinId, trader, limit]);
 

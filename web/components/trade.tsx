@@ -7,6 +7,7 @@ import { ConnectButton } from "./chrome";
 import { curveAbi, routerAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerTx } from "@/lib/config";
 import { call, type Call } from "@/lib/tx";
+import { signalTrade } from "@/lib/live";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
@@ -213,6 +214,17 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
       }
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
+      // Tell the chart and trade list right away; read the new curve price for an instant update.
+      const signal = (nativePerToken: number | null) =>
+        signalTrade({ chainId: chosen.chain.chain.id, curve: chosen.curve, coinId: coin.id, nativePerToken });
+      if (pool) signal(null);
+      else
+        Promise.all([
+          pub.readContract({ address: chosen.curve, abi: curveAbi, functionName: "virtualNative" }) as Promise<bigint>,
+          pub.readContract({ address: chosen.curve, abi: curveAbi, functionName: "virtualToken" }) as Promise<bigint>,
+        ])
+          .then(([vn, vt]) => signal(Number(vn) / Number(vt)))
+          .catch(() => signal(null));
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
       onTraded();
