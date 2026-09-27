@@ -8,6 +8,11 @@ import { curveAbi, routerAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerTx } from "@/lib/config";
 import { call, type Call } from "@/lib/tx";
 import { signalTrade } from "@/lib/live";
+import { fetchTrades } from "@/lib/data";
+import { IS_TESTNET } from "@/lib/config";
+import type { ProfitInfo } from "@/lib/pnlcard";
+import { ProfitCard } from "./profitcard";
+import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
@@ -66,6 +71,7 @@ export function QuickTrade({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ chainKey: string; hash: string } | null>(null);
+  const [profit, setProfit] = useState<ProfitInfo | null>(null);
 
   const loadBalances = useCallback(async () => {
     if (!address) return;
@@ -87,6 +93,13 @@ export function QuickTrade({
     setBals({});
     loadBalances().catch(() => {});
   }, [loadBalances]);
+
+  const walletEmpty = !!address && Object.keys(bals).length > 0 && Object.values(bals).every((b) => b.eth === 0n && b.tok === 0n);
+  useEffect(() => {
+    if (!walletEmpty) return;
+    const t = setInterval(() => loadBalances().catch(() => {}), 8_000);
+    return () => clearInterval(t);
+  }, [walletEmpty, loadBalances]);
 
   const buyWei = ethUsd ? ethFromUsd(Number(usdIn.replace(",", ".")) || 0, ethUsd) : 0n;
 
@@ -175,6 +188,31 @@ export function QuickTrade({
   const notEnough = side === "buy" ? !!bal && bal.eth < buyWei + reserve : sellWei === 0n;
   const closedHere = chosen?.state === "closed";
 
+  /** Compares a sale with the average price this wallet paid for the coin. */
+  async function checkProfit(soldTokens: bigint, got: bigint, chainName: string) {
+    if (!address) return;
+    const buys = (await fetchTrades({ coinId: coin.id, trader: address, limit: 500 })).filter((t) => t.isBuy);
+    const spent = buys.reduce((a, t) => a + t.nativeAmount, 0);
+    const bought = buys.reduce((a, t) => a + t.tokenAmount, 0);
+    if (spent <= 0 || bought <= 0) return;
+    const cost = (spent / bought) * Number(soldTokens);
+    const gotNum = Number(got);
+    const pct = (gotNum - cost) / cost;
+    if (!Number.isFinite(pct) || pct < 0.05) return;
+    const fmt = (wei: number) => (ethUsd ? usd((wei / 1e18) * ethUsd, 2) : `${(wei / 1e18).toFixed(5)} ETH`);
+    setProfit({
+      name: coin.name,
+      symbol: coin.symbol,
+      logo: coin.logo,
+      pct,
+      profit: `+${fmt(gotNum - cost)}`,
+      cost: fmt(cost),
+      proceeds: fmt(gotNum),
+      chain: chainName,
+      testnet: IS_TESTNET,
+    });
+  }
+
   async function submit() {
     if (!address || !chosen || amount === 0n) return;
     setError("");
@@ -186,6 +224,7 @@ export function QuickTrade({
       const pub = clientFor(chosen.chain);
       setBusy("Preparing…");
       const calls: Call[] = [];
+      let proceeds: bigint | null = null;
       if (side === "buy") {
         // The quote on screen is fresh (it follows every change); only fetch if it isn't there yet.
         const out =
@@ -218,6 +257,7 @@ export function QuickTrade({
           pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
         ]);
         const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
+        proceeds = out;
         // Email users get approve + sell as one gasless bundle; wallets confirm each.
         if (allowance < amount) calls.push(call(chosen.token, tokenAbi, "approve", [spender, amount]));
         calls.push(
@@ -242,6 +282,12 @@ export function QuickTrade({
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
       onTraded();
+      // A sell that made 5% or more gets a card to share.
+      if (side === "sell" && proceeds !== null) {
+        const soldTokens = amount;
+        const got = proceeds;
+        checkProfit(soldTokens, got, chosen.chain.short).catch(() => {});
+      }
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -364,6 +410,8 @@ export function QuickTrade({
         <span className="font-mono">{amount === 0n ? "—" : receive}</span>
       </div>
 
+      {walletEmpty && IS_TESTNET && <FundingGuide address={address!} chains={sellable.map((c) => c.chain)} gasless={embedded} />}
+
       <div className="mt-4">
         {!address ? (
           <ConnectButton full />
@@ -397,6 +445,63 @@ export function QuickTrade({
       )}
       <p className="mt-4 text-[0.6875rem] leading-relaxed text-ink-3">
         1% fee. If the price moves more than 5% before it lands, the trade is cancelled and nothing is spent.
+      </p>
+    {profit && <ProfitCard info={profit} link={coinShareUrl(coin.id)} onClose={() => setProfit(null)} />}
+    </div>
+  );
+}
+
+/** First visit with an empty wallet: how to get free test ETH. Disappears once ETH arrives. */
+export function FundingGuide({ address, chains, gasless }: { address: string; chains: CurveInfo["chain"][]; gasless: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const withFaucet = chains.filter((c, i, a) => c.faucet && a.findIndex((x) => x.key === c.key) === i);
+  return (
+    <div className="mt-4 rounded-2xl border border-emerald/40 bg-emerald-soft p-4">
+      <p className="font-semibold text-[0.9375rem]">Your wallet is ready. Add free test ETH to start.</p>
+      <ol className="mt-3 grid gap-3 text-[0.8125rem]">
+        <li className="flex gap-2">
+          <span className="w-5 h-5 rounded-full bg-emerald text-on-accent text-[0.6875rem] font-bold flex items-center justify-center shrink-0">1</span>
+          <span className="min-w-0 flex-1">
+            Copy your address.{gasless ? " It\u2019s the same on every chain." : ""}
+            <button
+              type="button"
+              onClick={() =>
+                navigator.clipboard.writeText(address).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                })
+              }
+              className="mt-1.5 w-full text-left font-mono text-[0.75rem] break-all rounded-xl bg-surface border border-line px-3 py-2"
+            >
+              {address}
+              <span className="block font-sans text-emerald mt-0.5">{copied ? "Copied ✓" : "Tap to copy"}</span>
+            </button>
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="w-5 h-5 rounded-full bg-emerald text-on-accent text-[0.6875rem] font-bold flex items-center justify-center shrink-0">2</span>
+          <span className="min-w-0 flex-1">
+            Paste it into a free faucet:
+            <span className="flex flex-wrap gap-1.5 mt-1.5">
+              {withFaucet.map((c) => (
+                <a key={c.key} href={c.faucet} target="_blank" rel="noreferrer" className="h-8 px-3 rounded-full text-[0.75rem] font-semibold text-white flex items-center" style={{ background: c.color }}>
+                  {c.short} faucet ↗
+                </a>
+              ))}
+            </span>
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="w-5 h-5 rounded-full bg-emerald text-on-accent text-[0.6875rem] font-bold flex items-center justify-center shrink-0">3</span>
+          <span className="min-w-0 flex-1 flex items-center gap-2">
+            Come back here. We&apos;ll spot it automatically.
+            <span className="w-2 h-2 rounded-full bg-emerald animate-pulse shrink-0" aria-hidden="true" />
+          </span>
+        </li>
+      </ol>
+      <p className="text-[0.6875rem] text-ink-3 mt-3">
+        Test ETH is free and has no value.{" "}
+        {gasless ? "Signed in with email, you never pay network fees." : "Keep a little extra for network fees, or log in with email to trade without them."}
       </p>
     </div>
   );

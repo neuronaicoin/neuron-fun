@@ -10,6 +10,7 @@ import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, StarButton, ti
 import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
+import { ShareButton } from "@/components/share";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { curveAbi, tokenAbi } from "@/lib/abis";
@@ -94,7 +95,10 @@ function CoinPage() {
             ))}
           </div>
         </div>
-        <StarButton coinId={coin.id} />
+        <div className="flex gap-1.5 shrink-0">
+          <ShareButton coin={coin} />
+          <StarButton coinId={coin.id} />
+        </div>
       </div>
       {coin.description && <p className="text-[1rem] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
 

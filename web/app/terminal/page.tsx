@@ -10,6 +10,7 @@ import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
+import { ShareButton } from "@/components/share";
 import { Sheet } from "@/components/chrome";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
@@ -316,7 +317,10 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
             </div>
           </div>
-          <StarButton coinId={coin.id} />
+          <div className="flex gap-1.5 shrink-0">
+            <ShareButton coin={coin} />
+            <StarButton coinId={coin.id} />
+          </div>
         </div>
         <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-4">
           {[

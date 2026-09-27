@@ -35,6 +35,8 @@ export type NeuronChain = {
   gasPolicy: string;
   /** Alchemy network slug for fast reads (e.g. "robinhood-testnet"). */
   alchemyNetwork: string;
+  /** Where to get free test coins (testnets only). */
+  faucet?: string;
 };
 
 const robinhoodTestnet = defineChain({
@@ -70,6 +72,7 @@ export const CHAINS: NeuronChain[] = [
     migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
     gasPolicy: "6d52f227-a36c-4671-bca1-3b088153a180",
     alchemyNetwork: "robinhood-testnet",
+    faucet: "https://faucet.testnet.chain.robinhood.com",
   },
   {
     key: "base",
@@ -85,6 +88,7 @@ export const CHAINS: NeuronChain[] = [
     migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
     gasPolicy: "4832ceec-26ce-4fc0-bd12-76f8b9bb99fe",
     alchemyNetwork: "base-sepolia",
+    faucet: "https://www.alchemy.com/faucets/base-sepolia",
   },
 ];
 

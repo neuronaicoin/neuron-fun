@@ -219,6 +219,9 @@ function fmtMoney(v: number, unit: string) {
 }
 
 /** Live list of buys and sells. Pass a coinId for one coin, or nothing for the whole site. */
+/** Buybacks send coins to the burn address; show them as what they are. */
+const isBurn = (a: string) => a.toLowerCase() === "0x000000000000000000000000000000000000dead";
+
 export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact = false }: {
   coinId?: string;
   trader?: string;
@@ -261,7 +264,9 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
         const n = names?.get(t.coinId);
         return (
           <li key={t.txHash + t.curve} className="flex items-center gap-3 py-2.5 text-[0.8125rem]">
-            <span className={"w-12 shrink-0 font-semibold " + (t.isBuy ? "text-up" : "text-danger")}>{t.isBuy ? "Buy" : "Sell"}</span>
+            <span className={"w-12 shrink-0 font-semibold " + (isBurn(t.trader) ? "text-mint" : t.isBuy ? "text-up" : "text-danger")}>
+              {isBurn(t.trader) ? "Burn" : t.isBuy ? "Buy" : "Sell"}
+            </span>
             {!compact && chain && <ChainChip chain={chain} />}
             <span className="min-w-0 flex-1 truncate">
               {n ? (
@@ -271,7 +276,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
               )}
               {chain && (
                 <a className="font-mono text-ink-3 ml-2" href={explorerAddress(chain, t.trader)} target="_blank" rel="noreferrer">
-                  {shortAddr(t.trader)}
+                  {isBurn(t.trader) ? <span className="font-sans font-semibold text-mint">🔥 Buyback</span> : shortAddr(t.trader)}
                 </a>
               )}
             </span>
