@@ -341,53 +341,87 @@ export const CHAIN_LIST = CHAINS;
 
 // ------------------------------------------------------------------ stats
 
-export type DailyStat = { day: string; volume: number; trades: number; traders: number; fees: number; launches: number };
-export type Totals = { volume: number; trades: number; traders: number; fees: number; launches: number; graduated: number; holders: number };
-export type TopCoin = { coinId: string; name: string; symbol: string; logo: string; volume: number; trades: number };
-export type TopCreator = { creator: string; coins: number; earned: number };
+export type DailyStat = { day: string; volume: number; trades: number; traders: number; fees: number; launches: number; graduations: number; revenue: number };
+export type Totals = {
+  volume: number;
+  trades: number;
+  traders: number;
+  fees: number;
+  launches: number;
+  graduated: number;
+  holders: number;
+  creators: number;
+  creatorPayouts: number;
+  holderPayouts: number;
+  buyback: number;
+  burnedTokens: number;
+};
+export type ModeStat = { mode: FeeMode; launches: number; share: number };
+export type ChainStat = { chainId: number; volume: number; trades: number; holders: number; spark: number[] };
+export type Leader = { coinId: string; name: string; symbol: string; logo: string; feeMode: FeeMode; chainId: number | null; value: number; trades: number };
+export type LeaderKind = "volume" | "fees" | "holders" | "burn";
 
-/** Everything the stats page shows. Amounts are in ETH (whole units). */
+/** Everything the stats page shows. Native amounts are in whole coins (ETH). */
 export async function fetchStats(days: number, chainId: number | null) {
   const args = { p_days: days, p_chain: chainId };
-  const [daily, totals, coins, creators] = await Promise.all([
+  const kinds: LeaderKind[] = ["volume", "fees", "holders", "burn"];
+  const [daily, totals, extra, modes, chains, ...leaders] = await Promise.all([
     db.rpc("stats_daily", args),
     db.rpc("stats_totals", args),
-    db.rpc("stats_top_coins", { ...args, p_limit: 10 }),
-    db.rpc("stats_top_creators", { ...args, p_limit: 10 }),
+    db.rpc("stats_extra", args),
+    db.rpc("stats_by_mode", args),
+    db.rpc("stats_by_chain", { p_days: days }),
+    ...kinds.map((k) => db.rpc("stats_leaders", { ...args, p_kind: k, p_limit: 10 })),
   ]);
-  for (const r of [daily, totals, coins, creators]) if (r.error) throw r.error;
-  const eth = (v: unknown) => Number(v) / 1e18;
-  const t = ((totals.data as Record<string, unknown>[]) ?? [])[0] ?? {};
+  for (const r of [daily, totals, extra, modes, chains, ...leaders]) if (r.error) throw r.error;
+  const eth = (v: unknown) => Number(v ?? 0) / 1e18;
+  const rows = (r: { data: unknown }) => ((r.data as Record<string, unknown>[]) ?? []);
+  const t = rows(totals)[0] ?? {};
+  const x = rows(extra)[0] ?? {};
+  const leaderRows = (r: { data: unknown }): Leader[] =>
+    rows(r).map((l) => ({
+      coinId: l.coin_id as string,
+      name: l.name as string,
+      symbol: l.symbol as string,
+      logo: (l.logo as string) ?? "",
+      feeMode: FEE_MODES[Number(l.fee_mode ?? 0)] ?? "creator",
+      chainId: l.chain_id === null || l.chain_id === undefined ? null : Number(l.chain_id),
+      value: eth(l.value),
+      trades: Number(l.trades ?? 0),
+    }));
   return {
-    daily: ((daily.data as Record<string, unknown>[]) ?? []).map((r) => ({
+    daily: rows(daily).map((r) => ({
       day: r.day as string,
       volume: eth(r.volume_native),
       trades: Number(r.trades),
       traders: Number(r.traders),
       fees: eth(r.fees_native),
       launches: Number(r.launches),
+      graduations: Number(r.graduations ?? 0),
+      revenue: eth(r.revenue_native),
     })) as DailyStat[],
     totals: {
-      volume: eth(t.volume_native ?? 0),
+      volume: eth(t.volume_native),
       trades: Number(t.trades ?? 0),
       traders: Number(t.traders ?? 0),
-      fees: eth(t.fees_native ?? 0),
+      fees: eth(t.fees_native),
       launches: Number(t.launches ?? 0),
       graduated: Number(t.graduated ?? 0),
       holders: Number(t.holders ?? 0),
+      creators: Number(x.creators ?? 0),
+      creatorPayouts: eth(x.creator_payouts_native),
+      holderPayouts: eth(x.holder_payouts_native),
+      buyback: eth(x.buyback_native),
+      burnedTokens: eth(x.burned_tokens),
     } as Totals,
-    topCoins: ((coins.data as Record<string, unknown>[]) ?? []).map((r) => ({
-      coinId: r.coin_id as string,
-      name: r.name as string,
-      symbol: r.symbol as string,
-      logo: r.logo as string,
-      volume: eth(r.volume_native),
-      trades: Number(r.trades),
-    })) as TopCoin[],
-    topCreators: ((creators.data as Record<string, unknown>[]) ?? []).map((r) => ({
-      creator: r.creator as string,
-      coins: Number(r.coins),
-      earned: eth(r.earned_native),
-    })) as TopCreator[],
+    modes: rows(modes).map((m) => ({ mode: FEE_MODES[Number(m.fee_mode)] ?? "creator", launches: Number(m.launches), share: eth(m.share_native) })) as ModeStat[],
+    chains: rows(chains).map((c) => ({
+      chainId: Number(c.chain_id),
+      volume: eth(c.volume_native),
+      trades: Number(c.trades),
+      holders: Number(c.holders),
+      spark: ((c.spark as (number | string | null)[]) ?? []).map((v) => eth(v)),
+    })) as ChainStat[],
+    leaders: Object.fromEntries(kinds.map((k, i) => [k, leaderRows(leaders[i])])) as Record<LeaderKind, Leader[]>,
   };
 }
