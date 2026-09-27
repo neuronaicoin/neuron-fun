@@ -145,7 +145,9 @@ contract NeuronCurveGraduationForkTest is Test {
 
     function _launchAndFill() internal returns (NeuronCurve c, IERC20 t) {
         vm.prank(creator);
-        (address curve,,) = factory.launch{value: 0.2 ether}("Harbor Cat", "HCAT", "", "", keccak256("k"), 0);
+        (address curve,,) = factory.launch{value: 0.2 ether}(
+            "Harbor Cat", "HCAT", "", "", keccak256("k"), 0, NeuronCurve.FeeMode.Creator
+        );
         c = NeuronCurve(payable(curve));
         t = IERC20(address(c.token()));
         vm.prank(alice);

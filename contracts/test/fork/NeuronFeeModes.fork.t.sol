@@ -56,7 +56,9 @@ contract NeuronFeeModesForkTest is Test {
                 break;
             }
         }
-        migrator = new NeuronV4Migrator(pm, IPositionManager(POSITION_MANAGER), IAllowanceTransfer(PERMIT2), protocol, 3_000, salt);
+        migrator = new NeuronV4Migrator(
+            pm, IPositionManager(POSITION_MANAGER), IAllowanceTransfer(PERMIT2), protocol, 3_000, salt
+        );
         factory = new NeuronCurveFactory(
             owner,
             migrator,
@@ -84,7 +86,8 @@ contract NeuronFeeModesForkTest is Test {
 
     function _graduated(NeuronCurve.FeeMode mode) internal returns (NeuronCurve c, CurveToken t) {
         vm.prank(creator);
-        (address a,,) = factory.launch{value: 0.2 ether}("Harbor Cat", "HCAT", "", "", keccak256(abi.encode(mode)), 0, mode);
+        (address a,,) =
+            factory.launch{value: 0.2 ether}("Harbor Cat", "HCAT", "", "", keccak256(abi.encode(mode)), 0, mode);
         c = NeuronCurve(payable(a));
         t = c.token();
         vm.prank(alice);

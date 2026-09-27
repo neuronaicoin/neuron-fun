@@ -65,7 +65,9 @@ contract NeuronPoolRouterForkTest is Test {
                 break;
             }
         }
-        migrator = new NeuronV4Migrator(pm, IPositionManager(POSITION_MANAGER), IAllowanceTransfer(PERMIT2), protocol, 3_000, salt);
+        migrator = new NeuronV4Migrator(
+            pm, IPositionManager(POSITION_MANAGER), IAllowanceTransfer(PERMIT2), protocol, 3_000, salt
+        );
         factory = new NeuronCurveFactory(
             owner,
             migrator,
@@ -92,7 +94,9 @@ contract NeuronPoolRouterForkTest is Test {
 
         // A coin that has graduated into its locked pool.
         vm.prank(creator);
-        (address c,,) = factory.launch{value: 0.2 ether}("Harbor Cat", "HCAT", "", "", keccak256("k"), 0);
+        (address c,,) = factory.launch{value: 0.2 ether}(
+            "Harbor Cat", "HCAT", "", "", keccak256("k"), 0, NeuronCurve.FeeMode.Creator
+        );
         curve = NeuronCurve(payable(c));
         token = IERC20(address(curve.token()));
         vm.prank(alice);
@@ -185,7 +189,7 @@ contract NeuronPoolRouterForkTest is Test {
 
     function test_fork_onlyGraduatedCoins() public onlyFork {
         vm.prank(creator);
-        (address c2,,) = factory.launch("Fresh", "FRSH", "", "", keccak256("k2"), 0);
+        (address c2,,) = factory.launch("Fresh", "FRSH", "", "", keccak256("k2"), 0, NeuronCurve.FeeMode.Creator);
         address t2 = address(NeuronCurve(payable(c2)).token());
         vm.prank(bob);
         vm.expectRevert(NeuronPoolRouter.NotGraduated.selector);
