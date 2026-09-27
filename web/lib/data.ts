@@ -50,6 +50,8 @@ export type Coin = {
   totalUsd: number | null;
   progress: number;
   graduatedOn: CurveInfo | null;
+  /** Where the creator's share of fees goes (fixed at launch). */
+  feeMode: FeeMode;
   holders: number;
   trades24h: number;
   buys24h: number;
@@ -82,6 +84,9 @@ type CurveJson = {
   holders: number;
 };
 
+export type FeeMode = "creator" | "buyback" | "holders";
+const FEE_MODES: FeeMode[] = ["creator", "buyback", "holders"];
+
 type SummaryRow = {
   id: string;
   creator: string;
@@ -98,10 +103,11 @@ type SummaryRow = {
   sells_24h: number;
   volume_native_24h: string;
   last_trade_at: string | null;
+  fee_mode: number | null;
 };
 
 const SUMMARY_COLS =
-  "id,creator,launch_key,name,symbol,logo,description,created_at,graduated_chain,curves,trades_24h,buys_24h,sells_24h,volume_native_24h,last_trade_at";
+  "id,creator,launch_key,name,symbol,logo,description,created_at,graduated_chain,curves,trades_24h,buys_24h,sells_24h,volume_native_24h,last_trade_at,fee_mode";
 
 function toCoin(r: SummaryRow, prices: Record<string, number> | null): Coin {
   const curves: CurveInfo[] = [];
@@ -129,6 +135,7 @@ function toCoin(r: SummaryRow, prices: Record<string, number> | null): Coin {
   return {
     id: r.id,
     creator: r.creator as Address,
+    feeMode: FEE_MODES[r.fee_mode ?? 0] ?? "creator",
     launchKey: r.launch_key,
     name: r.name,
     symbol: r.symbol,

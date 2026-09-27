@@ -46,7 +46,7 @@ const pool = new pg.Pool({
 });
 
 const launchedEvent = parseAbiItem(
-  "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol)"
+  "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol, uint8 feeMode)"
 );
 const curveEvents = parseAbi([
   "event Trade(address indexed trader, bool indexed isBuy, uint256 nativeAmount, uint256 tokenAmount, uint256 fee, uint256 virtualNative, uint256 virtualToken)",
@@ -143,9 +143,9 @@ async function indexRange(c, from, to) {
       const coinId = `${lc(a.creator)}:${a.launchKey}`;
       const ts = (await blockTimes(pub, [l.blockNumber])).get(String(l.blockNumber));
       await db.query(
-        `insert into coins (id, creator, launch_key, name, symbol, logo, description, created_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (id) do nothing`,
-        [coinId, lc(a.creator), a.launchKey, a.name, a.symbol, logo, description, ts]
+        `insert into coins (id, creator, launch_key, name, symbol, logo, description, created_at, fee_mode)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (id) do nothing`,
+        [coinId, lc(a.creator), a.launchKey, a.name, a.symbol, logo, description, ts, Number(a.feeMode ?? 0)]
       );
       await db.query(
         `insert into curves (chain_id, curve, token, coin_id, initial_virtual_native, virtual_native, virtual_token, created_block, created_at)

@@ -18,6 +18,13 @@ type Run = { status: "working" | "done" | "failed"; note?: string; hash?: string
 const SUPPLY = 1_000_000_000n * 10n ** 18n;
 const DEV_OPTIONS = [0, 1, 2, 5];
 
+/** Where the creator's 0.3% of every trade goes. Fixed at launch. */
+const FEE_MODES = [
+  { id: 0, key: "creator", title: "To you", text: "Your 0.3% of every trade builds up for you to collect." },
+  { id: 1, key: "buyback", title: "Buyback & burn", text: "Your share buys the coin back and burns it, so the supply keeps shrinking." },
+  { id: 2, key: "holders", title: "To holders", text: "Your share is paid out to everyone holding the coin, in ETH." },
+] as const;
+
 /** Native coin needed to buy `tokens` from a fresh curve, fee included. */
 function costFor(terms: Terms, tokens: bigint): bigint {
   if (tokens === 0n) return 0n;
@@ -37,6 +44,7 @@ export default function CreatePage() {
   const [description, setDescription] = useState("");
   const [picked, setPicked] = useState<string[]>(CHAINS.map((c) => c.key));
   const [devPct, setDevPct] = useState(0);
+  const [feeMode, setFeeMode] = useState<0 | 1 | 2>(0);
   const [terms, setTerms] = useState<Record<string, Terms>>({});
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [launchKey, setLaunchKey] = useState<Hex | null>(null);
@@ -91,7 +99,7 @@ export default function CreatePage() {
         set({ status: "working", note: `Switching to ${c.short}…` });
         await switchTo(c.chain);
         const value = devCost(c);
-        const args = [name.trim(), cleanSymbol, logo, description.trim(), key, 0n] as const;
+        const args = [name.trim(), cleanSymbol, logo, description.trim(), key, 0n, feeMode] as const;
         const pub = clientFor(c);
         const sim = await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, value });
         const minOut = value > 0n ? (sim.result[2] * (10_000n - SLIPPAGE_BPS)) / 10_000n : 0n;
@@ -102,7 +110,7 @@ export default function CreatePage() {
           address: c.factory,
           abi: factoryAbi,
           functionName: "launch",
-          args: [args[0], args[1], args[2], args[3], args[4], minOut],
+          args: [args[0], args[1], args[2], args[3], args[4], minOut, feeMode],
           value,
         });
         set({ status: "working", note: "Almost done…", hash });
@@ -227,6 +235,28 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
+              <span className="text-[14px] font-semibold">Where your fees go</span>
+              <span className="text-[12px] text-ink-3">can&apos;t be changed later</span>
+            </div>
+            <div className="grid gap-2 mt-2 sm:grid-cols-3" role="radiogroup" aria-label="Where your fees go">
+              {FEE_MODES.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={feeMode === m.id}
+                  onClick={() => setFeeMode(m.id)}
+                  className={"text-left rounded-2xl border-2 p-3.5 " + (feeMode === m.id ? "border-emerald bg-emerald-soft" : "border-line")}
+                >
+                  <span className="block font-semibold text-[14px]">{m.title}</span>
+                  <span className="block text-[12px] text-ink-3 mt-1 leading-snug">{m.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline justify-between">
               <span className="text-[14px] font-semibold">Buy some yourself</span>
               <span className="text-[12px] text-ink-3">optional · lands first, so nobody gets in before you</span>
             </div>
@@ -325,7 +355,7 @@ export default function CreatePage() {
               ["Chains", chosen.map((c) => c.short).join(" · ") || "—"],
               ["Starting market cap", startMc ? usd(startMc, 0) : "—"],
               ["Graduates at", `${usd(TARGET_USD)} across all chains`],
-              ["Trade fee", "1% · 0.3% goes to you"],
+              ["Trade fee", `1% · 0.3% ${feeMode === 0 ? "goes to you" : feeMode === 1 ? "buys back & burns" : "goes to holders"}`],
               ["Supply", "1,000,000,000"],
               ["Liquidity", "Locked forever at graduation"],
             ].map(([k, v]) => (

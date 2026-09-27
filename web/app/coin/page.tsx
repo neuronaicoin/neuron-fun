@@ -10,6 +10,7 @@ import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, timeAgo } from
 import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
 import { TrustCard } from "@/components/trust";
+import { FeeBox } from "@/components/feebox";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
@@ -152,7 +153,7 @@ function CoinPage() {
             </div>
           )}
 
-          <CreatorBox coin={coin} onChange={load} />
+          <FeeBox coin={coin} onChange={load} />
 
           <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6 text-[14px] text-ink-2 grid gap-2">
             <h2 className="font-display font-semibold text-[18px] text-ink mb-1">Details</h2>
@@ -173,70 +174,3 @@ function CoinPage() {
   );
 }
 
-function CreatorBox({ coin, onChange }: { coin: Coin; onChange: () => void }) {
-  const { address, switchTo, walletClient } = useWallet();
-  const [fees, setFees] = useState<Record<string, bigint>>({});
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const isCreator = !!address && address.toLowerCase() === coin.creator.toLowerCase();
-
-  const load = useCallback(async () => {
-    if (!isCreator) return;
-    const entries = await Promise.all(
-      coin.curves.map(async (c: CurveInfo) => {
-        const f = (await clientFor(c.chain).readContract({ address: c.curve, abi: curveAbi, functionName: "creatorFees" })) as bigint;
-        return [c.chain.key, f] as const;
-      })
-    );
-    setFees(Object.fromEntries(entries));
-  }, [coin.curves, isCreator]);
-
-  useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
-
-  if (!isCreator) return null;
-
-  async function claim(c: CurveInfo) {
-    if (!address) return;
-    setError("");
-    try {
-      setBusy(c.chain.key);
-      await switchTo(c.chain.chain);
-      const hash = await walletClient(c.chain.chain).writeContract({ chain: c.chain.chain, account: address, address: c.curve, abi: curveAbi, functionName: "claimCreatorFees" });
-      await clientFor(c.chain).waitForTransactionReceipt({ hash });
-      await load();
-      onChange();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  return (
-    <div className="bg-surface border border-emerald rounded-2xl p-5 sm:p-6">
-      <h2 className="font-display font-semibold text-[18px]">Your earnings as the creator</h2>
-      <p className="text-[14px] text-ink-2 mt-1">0.3% of every trade on every chain.</p>
-      <ul className="mt-4 grid gap-2">
-        {coin.curves.map((c) => (
-          <li key={c.chain.key} className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2">
-              <ChainChip chain={c.chain} />
-              <span className="font-mono text-[14px]">{fmtEth(fees[c.chain.key] ?? null, 6)}</span>
-            </span>
-            <button
-              type="button"
-              disabled={!fees[c.chain.key] || !!busy}
-              onClick={() => claim(c)}
-              className="h-9 px-4 rounded-lg bg-emerald text-on-accent text-[14px] font-semibold disabled:opacity-40"
-            >
-              {busy === c.chain.key ? "…" : "Collect"}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {error && <p className="mt-3 text-[14px] text-danger">{error}</p>}
-    </div>
-  );
-}

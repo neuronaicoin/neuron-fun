@@ -67,7 +67,7 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
 if (CHAINS.length === 0) throw new Error("CHAINS is empty");
 
 const launchedEvent = parseAbiItem(
-  "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol)"
+  "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol, uint8 feeMode)"
 );
 const factoryAbi = parseAbi(["function operator() view returns (address)"]);
 const curveAbi = parseAbi([

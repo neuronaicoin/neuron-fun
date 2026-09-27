@@ -29,6 +29,8 @@ export type NeuronChain = {
   poolManager: Address;
   /** Router for trading graduated coins in their locked pools. */
   router: Address;
+  /** Holds graduated liquidity; collects pool fees and runs pool buybacks. */
+  migrator: Address;
 };
 
 const robinhoodTestnet = defineChain({
@@ -56,11 +58,12 @@ export const CHAINS: NeuronChain[] = [
     short: "Robinhood",
     color: "#12B886",
     chain: robinhoodTestnet,
-    factory: "0xd72eF7A8134407b4ebC8d764f431457439bC901a",
+    factory: "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
     startBlock: 123588465n,
     priceSymbol: "ETH",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-    router: "0x251f33c4E6e24922A940348E9527669A2c896cB9",
+    router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
+    migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
   },
   {
     key: "base",
@@ -68,11 +71,12 @@ export const CHAINS: NeuronChain[] = [
     short: "Base",
     color: "#3B6FF5",
     chain: baseSepolia,
-    factory: "0x00cB1E0bC065C821481411a95c0A2e1afA432919",
+    factory: "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
     startBlock: 47265800n,
     priceSymbol: "ETH",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
-    router: "0xfF8f34C09cd042A52275BE1B30Eb377b5370cAB6",
+    router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",
+    migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
   },
 ];
 

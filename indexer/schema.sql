@@ -20,7 +20,8 @@ create table if not exists coins (
   description      text not null default '',
   created_at       timestamptz not null,
   graduated_chain  integer,
-  graduated_at     timestamptz
+  graduated_at     timestamptz,
+  fee_mode    smallint not null default 0 -- 0 creator, 1 buyback, 2 holders
 );
 create index if not exists coins_created_idx on coins (created_at desc);
 create index if not exists coins_creator_idx on coins (creator);
