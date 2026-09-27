@@ -11,6 +11,7 @@ import { CHAINS, SLIPPAGE_BPS, TARGET_USD, explorerTx, type NeuronChain } from "
 import { clientFor, coinHref, isImageUrl } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
 import { fileToLogo } from "@/lib/image";
+import { call } from "@/lib/tx";
 import { fetchPrices } from "@/lib/price";
 
 type Terms = { v0: bigint; t0: bigint; feeBps: bigint };
@@ -35,7 +36,7 @@ function costFor(terms: Terms, tokens: bigint): bigint {
 }
 
 export default function CreatePage() {
-  const { address, switchTo, walletClient } = useWallet();
+  const { address, send } = useWallet();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [logo, setLogo] = useState("");
@@ -96,26 +97,17 @@ export default function CreatePage() {
       if (runs[c.key]?.status === "done") continue;
       const set = (r: Run) => setRuns((p) => ({ ...p, [c.key]: r }));
       try {
-        set({ status: "working", note: `Switching to ${c.short}…` });
-        await switchTo(c.chain);
         const value = devCost(c);
         const args = [name.trim(), cleanSymbol, logo, description.trim(), key, 0n, feeMode] as const;
         const pub = clientFor(c);
+        set({ status: "working", note: "Checking…" });
         const sim = await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, value });
         const minOut = value > 0n ? (sim.result[2] * (10_000n - SLIPPAGE_BPS)) / 10_000n : 0n;
-        set({ status: "working", note: "Confirm in your wallet…" });
-        const hash = await walletClient(c.chain).writeContract({
-          chain: c.chain,
-          account: address as Address,
-          address: c.factory,
-          abi: factoryAbi,
-          functionName: "launch",
-          args: [args[0], args[1], args[2], args[3], args[4], minOut, feeMode],
-          value,
-        });
-        set({ status: "working", note: "Almost done…", hash });
-        const r = await pub.waitForTransactionReceipt({ hash });
-        if (r.status !== "success") throw new Error("The network rejected the transaction.");
+        const hash = await send(
+          c.chain,
+          [call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode], value)],
+          (note) => set({ status: "working", note })
+        );
         set({ status: "done", hash });
       } catch (e) {
         set({ status: "failed", note: friendlyError(e) });

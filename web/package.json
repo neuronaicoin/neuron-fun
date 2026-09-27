@@ -8,6 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
+    "@alchemy/common": "^5.2.7",
+    "@alchemy/wallet-apis": "^5.2.7",
+    "@privy-io/react-auth": "^3.45.0",
+    "@stripe/stripe-js": "^9.17.0",
     "@supabase/postgrest-js": "^2.117.2",
     "@walletconnect/ethereum-provider": "^2.25.0",
     "lightweight-charts": "^5.2.1",

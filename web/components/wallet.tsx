@@ -2,7 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type WalletClient } from "viem";
-import { CHAINS, WALLETCONNECT_PROJECT_ID } from "@/lib/config";
+import dynamic from "next/dynamic";
+import { createPublicClient, http, type Hex } from "viem";
+import { ALCHEMY_KEY, CHAINS, WALLETCONNECT_PROJECT_ID } from "@/lib/config";
+import type { Call } from "@/lib/tx";
+import type { PrivyState } from "./privy-bridge";
+import type { SmartWalletClient } from "@alchemy/wallet-apis";
+
+// Email / Google login: its code loads after the page is up, never before.
+const PrivyBridge = dynamic(() => import("./privy-bridge"), { ssr: false });
 
 export type Eip1193 = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
@@ -69,11 +77,8 @@ const WALLETCONNECT_OPTION: WalletOption = {
   },
 };
 
-declare global {
-  interface Window {
-    ethereum?: Eip1193;
-  }
-}
+/** The legacy injected provider (typed by Privy as `any`; we narrow it here). */
+const injected = (): Eip1193 | undefined => (window as unknown as { ethereum?: Eip1193 }).ethereum;
 
 type WalletState = {
   address: Address | null;
@@ -87,6 +92,18 @@ type WalletState = {
   switchTo: (chain: Chain) => Promise<void>;
   /** A client for sending on `chain`; call switchTo first. */
   walletClient: (chain: Chain) => WalletClient;
+  /** True when signed in with email / Google: gasless, no wallet popups. */
+  embedded: boolean;
+  /** Email or Google address of the signed-in user, if any. */
+  email: string | null;
+  /** Opens the email / Google login. */
+  loginWithEmail: () => void;
+  /**
+   * Sends one or more calls on `chain` and returns the last transaction hash
+   * once mined. Browser wallets confirm each call; email users send them as
+   * one gasless bundle.
+   */
+  send: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
 };
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -126,6 +143,18 @@ async function ensureNetwork(p: Eip1193, chain: Chain) {
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const [privy, setPrivy] = useState<PrivyState | null>(null);
+  const [loadPrivy, setLoadPrivy] = useState(false);
+  const [loginRequests, setLoginRequests] = useState(0);
+  const smartClients = useRef(new Map<string, unknown>());
+
+  // Load the login code once the page is idle, so returning users stay signed in.
+  useEffect(() => {
+    const start = () => setLoadPrivy(true);
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(start);
+    else setTimeout(start, 1200);
+  }, []);
   const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [active, setActive] = useState<{ option: WalletOption; provider: Eip1193 } | null>(null);
   const [address, setAddress] = useState<Address | null>(null);
@@ -151,8 +180,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("eip6963:requestProvider"));
     // Wallets that don't announce themselves (older ones, some in-app browsers).
     const t = setTimeout(() => {
-      if (found.size === 0 && window.ethereum) {
-        found.set("injected", { id: "injected", name: "Browser wallet", icon: "", provider: window.ethereum });
+      const eth = injected();
+      if (found.size === 0 && eth) {
+        found.set("injected", { id: "injected", name: "Browser wallet", icon: "", provider: eth });
         publish();
       }
     }, 400);
@@ -274,22 +304,94 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [active, address]
   );
 
+  const embeddedAddress = !active && privy?.authenticated && privy.address ? getAddress(privy.address) : null;
+  const embedded = !!embeddedAddress;
+
+  const loginWithEmail = useCallback(() => {
+    setLoadPrivy(true);
+    setLoginRequests((n) => n + 1);
+  }, []);
+
+  const send = useCallback(
+    async (chain: Chain, calls: Call[], onStep?: (msg: string) => void): Promise<Hex> => {
+      if (calls.length === 0) throw new Error("Nothing to send.");
+      // Email users: one gasless bundle through Alchemy, signed by their embedded wallet.
+      if (!active && privy?.authenticated && privy.signer) {
+        const conf = CHAINS.find((c) => c.chain.id === chain.id);
+        if (!conf) throw new Error("This network is not supported.");
+        const key = `${chain.id}:${privy.signer.address}`;
+        let client = smartClients.current.get(key) as SmartWalletClient | undefined;
+        if (!client) {
+          const { createSmartWalletClient, alchemyWalletTransport } = await import("@alchemy/wallet-apis");
+          client = createSmartWalletClient({
+            transport: alchemyWalletTransport({ apiKey: ALCHEMY_KEY }),
+            chain,
+            signer: privy.signer,
+            paymaster: { policyId: conf.gasPolicy },
+          });
+          smartClients.current.set(key, client);
+        }
+        onStep?.("Sending…");
+        const sent = await client.sendCalls({
+          calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
+        });
+        onStep?.("Almost done…");
+        const status = await client.waitForCallsStatus({ id: sent.id, timeout: 90_000 });
+        const receipts = status.receipts ?? [];
+        if (status.status !== "success" || receipts.some((r) => r.status !== "success")) {
+          throw new Error("The network rejected the transaction.");
+        }
+        return receipts[receipts.length - 1].transactionHash;
+      }
+      // Browser wallets: one confirmation per call, each waited for in turn.
+      if (!active || !address) throw new Error("Log in or connect a wallet first.");
+      onStep?.(`Switching to ${chain.name}…`);
+      await switchTo(chain);
+      const wc = createWalletClient({ account: address, chain, transport: custom(active.provider) });
+      const pub = createPublicClient({ chain, transport: http() });
+      let last: Hex = "0x";
+      for (let i = 0; i < calls.length; i++) {
+        onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}: confirm in your wallet…` : "Confirm in your wallet…");
+        last = await wc.sendTransaction({ account: address, chain, to: calls[i].to, data: calls[i].data, value: calls[i].value ?? 0n });
+        onStep?.("Almost done…");
+        const r = await pub.waitForTransactionReceipt({ hash: last });
+        if (r.status !== "success") throw new Error("The network rejected the transaction.");
+      }
+      return last;
+    },
+    [active, address, privy, switchTo]
+  );
+
+  const disconnectAll = useCallback(() => {
+    if (active) disconnect();
+    else if (privy?.authenticated) privy.logout().catch(() => {});
+  }, [active, disconnect, privy]);
+
   const value = useMemo(
     () => ({
-      address,
-      walletName: active?.option.name ?? null,
+      address: address ?? embeddedAddress,
+      walletName: active?.option.name ?? (embedded ? "sasa account" : null),
       chainId,
       wallets: [...wallets, WALLETCONNECT_OPTION],
       connecting,
       connect,
-      disconnect,
+      disconnect: disconnectAll,
       switchTo,
       walletClient,
+      embedded,
+      email: embedded ? (privy?.email ?? null) : null,
+      loginWithEmail,
+      send,
     }),
-    [address, active, chainId, wallets, connecting, connect, disconnect, switchTo, walletClient]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send]
   );
 
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+  return (
+    <WalletContext.Provider value={value}>
+      {children}
+      {loadPrivy && <PrivyBridge onState={setPrivy} loginRequests={loginRequests} />}
+    </WalletContext.Provider>
+  );
 }
 
 /** Links that open this page inside a phone wallet's own browser. */

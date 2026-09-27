@@ -23,7 +23,8 @@ export function TestnetBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, walletName, wallets, connecting, connect, disconnect } = useWallet();
+  const { address, walletName, wallets, connecting, connect, disconnect, embedded, email, loginWithEmail } = useWallet();
+  const [copied, setCopied] = useState(false);
   const [sheet, setSheet] = useState<"none" | "pick" | "account">("none");
   const [error, setError] = useState("");
   const base =
@@ -53,10 +54,30 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
           {shortAddr(address)}
         </button>
         {sheet === "account" && (
-          <Sheet title="Your wallet" onClose={() => setSheet("none")}>
-            <p className="text-ink-2 text-[15px]">
-              Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
-            </p>
+          <Sheet title={embedded ? "Your sasa account" : "Your wallet"} onClose={() => setSheet("none")}>
+            {embedded ? (
+              <>
+                {email && <p className="text-ink-2 text-[15px]">Signed in as <span className="text-ink">{email}</span></p>}
+                <p className="text-ink-3 text-[13px] mt-3">Your wallet address, the same on every chain. Send test ETH here to start trading. You never pay network fees.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(address).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    });
+                  }}
+                  className="mt-2 w-full rounded-xl bg-paper border border-line px-3 py-3 font-mono text-[13px] break-all text-left hover:border-emerald"
+                >
+                  {address}
+                  <span className="block text-[12px] text-emerald mt-1 font-sans">{copied ? "Copied" : "Tap to copy"}</span>
+                </button>
+              </>
+            ) : (
+              <p className="text-ink-2 text-[15px]">
+                Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
+              </p>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -65,7 +86,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
               }}
               className="mt-5 h-12 w-full rounded-xl border border-ink font-semibold"
             >
-              Disconnect
+              {embedded ? "Log out" : "Disconnect"}
             </button>
           </Sheet>
         )}
@@ -80,15 +101,30 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
         disabled={connecting}
         onClick={() => {
           setError("");
-          if (wallets.length === 1) return void pick(wallets[0]);
           setSheet("pick");
         }}
       >
-        {connecting ? "Connecting…" : "Connect wallet"}
+        {connecting ? "Connecting…" : "Log in"}
       </button>
       {error && sheet === "none" && <p className="text-[13px] text-danger mt-2 max-w-xs">{error}</p>}
       {sheet === "pick" && (
-        <Sheet title={wallets.length > 0 ? "Choose your wallet" : "You need a wallet"} onClose={() => setSheet("none")}>
+        <Sheet title="Log in to sasa" onClose={() => setSheet("none")}>
+          <button
+            type="button"
+            onClick={() => {
+              setSheet("none");
+              loginWithEmail();
+            }}
+            className="h-14 w-full rounded-xl bg-emerald text-on-accent font-bold text-[16px] hover:bg-emerald-dark"
+          >
+            Continue with email or Google
+          </button>
+          <p className="text-[12px] text-ink-3 mt-2 text-center">No wallet needed. No network fees.</p>
+          <div className="flex items-center gap-3 my-5 text-[12px] text-ink-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-line" />
+            or use your own wallet
+            <span className="h-px flex-1 bg-line" />
+          </div>
           {wallets.length > 0 ? (
             <div className="grid gap-2">
               {wallets.map((w) => (

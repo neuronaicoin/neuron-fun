@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
+import { call, type Call } from "@/lib/tx";
 import { useWallet } from "./wallet";
 import { ChainChip } from "./coins";
 import { curveAbi, migratorAbi, tokenAbi } from "@/lib/abis";
@@ -30,7 +31,7 @@ const COPY = {
  * and claim their own rewards here.
  */
 export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void }) {
-  const { address, switchTo, walletClient } = useWallet();
+  const { address, send: sendCalls } = useWallet();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -74,16 +75,13 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
     return () => clearInterval(t);
   }, [load]);
 
-  async function send(key: string, c: CurveInfo, write: () => Promise<Hex>, doneText: string) {
+  async function send(key: string, c: CurveInfo, one: Call, doneText: string) {
     if (!address) return;
     setError("");
     setDone("");
     try {
       setBusy(key);
-      await switchTo(c.chain.chain);
-      const hash = await write();
-      const r = await clientFor(c.chain).waitForTransactionReceipt({ hash });
-      if (r.status !== "success") throw new Error("The network rejected the transaction.");
+      await sendCalls(c.chain.chain, [one]);
       setDone(doneText);
       await load();
       onChange();
@@ -94,7 +92,6 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
     }
   }
 
-  const wc = (c: CurveInfo) => walletClient(c.chain.chain);
   const moveLabel = (c: CurveInfo) =>
     mode === "holders"
       ? "Share with holders"
@@ -130,10 +127,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                   type="button"
                   disabled={!r.claimable || !!busy}
                   onClick={() =>
-                    send(`claim-${r.curve.chain.key}`, r.curve, () =>
-                      wc(r.curve).writeContract({ chain: r.curve.chain.chain, account: address, address: r.curve.token, abi: tokenAbi, functionName: "claim", args: [address] }),
-                      "Rewards sent to your wallet."
-                    )
+                    send(`claim-${r.curve.chain.key}`, r.curve, call(r.curve.token, tokenAbi, "claim", [address]), "Rewards sent to your wallet.")
                   }
                   className="h-9 px-4 rounded-xl bg-up text-on-accent text-[14px] font-semibold disabled:opacity-40"
                 >
@@ -162,10 +156,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       type="button"
                       disabled={!address || !!busy}
                       onClick={() =>
-                        send(`move-${c.chain.key}`, c, () =>
-                          wc(c).writeContract({ chain: c.chain.chain, account: address!, address: c.curve, abi: curveAbi, functionName: "claimCreatorFees" }),
-                          "Done."
-                        )
+                        send(`move-${c.chain.key}`, c, call(c.curve, curveAbi, "claimCreatorFees"), "Done.")
                       }
                       className="h-9 px-4 rounded-xl bg-emerald text-on-accent text-[13px] font-semibold disabled:opacity-40"
                     >
@@ -184,10 +175,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       type="button"
                       disabled={!address || !!busy}
                       onClick={() =>
-                        send(`collect-${c.chain.key}`, c, () =>
-                          wc(c).writeContract({ chain: c.chain.chain, account: address!, address: c.chain.migrator, abi: migratorAbi, functionName: "collectFees", args: [c.token] }),
-                          "Pool fees collected."
-                        )
+                        send(`collect-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "collectFees", [c.token]), "Pool fees collected.")
                       }
                       className="h-9 px-4 rounded-xl border border-line text-[13px] font-semibold disabled:opacity-40"
                     >
@@ -206,10 +194,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       type="button"
                       disabled={!address || !!busy}
                       onClick={() =>
-                        send(`buyback-${c.chain.key}`, c, () =>
-                          wc(c).writeContract({ chain: c.chain.chain, account: address!, address: c.chain.migrator, abi: migratorAbi, functionName: "buyback", args: [c.token] }),
-                          "Bought back and burned."
-                        )
+                        send(`buyback-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "buyback", [c.token]), "Bought back and burned.")
                       }
                       className="h-9 px-4 rounded-xl bg-emerald text-on-accent text-[13px] font-semibold disabled:opacity-40"
                     >

@@ -31,6 +31,8 @@ export type NeuronChain = {
   router: Address;
   /** Holds graduated liquidity; collects pool fees and runs pool buybacks. */
   migrator: Address;
+  /** Alchemy gas policy that pays network fees for email-login users. */
+  gasPolicy: string;
 };
 
 const robinhoodTestnet = defineChain({
@@ -64,6 +66,7 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
     router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
     migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
+    gasPolicy: "6d52f227-a36c-4671-bca1-3b088153a180",
   },
   {
     key: "base",
@@ -77,9 +80,15 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
     router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",
     migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
+    gasPolicy: "4832ceec-26ce-4fc0-bd12-76f8b9bb99fe",
   },
 ];
 
 export const chainById = (id: number) => CHAINS.find((c) => c.chain.id === id);
 export const explorerAddress = (c: NeuronChain, a: string) => `${c.chain.blockExplorers!.default.url}/address/${a}`;
 export const explorerTx = (c: NeuronChain, h: string) => `${c.chain.blockExplorers!.default.url}/tx/${h}`;
+
+/** Email / Google login (Privy). Public id; safe in the page. */
+export const PRIVY_APP_ID = "cmujtak3700dc0ejx5f6jbnca";
+/** Alchemy key for gasless transactions. Public by design; locked to our domains in the Alchemy dashboard. */
+export const ALCHEMY_KEY = "alch_8v9VILwONIJvenP--84Pt";
