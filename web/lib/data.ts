@@ -305,3 +305,56 @@ export function coinHref(c: { creator: string; launchKey: string } | { id: strin
 }
 
 export const CHAIN_LIST = CHAINS;
+
+// ------------------------------------------------------------------ stats
+
+export type DailyStat = { day: string; volume: number; trades: number; traders: number; fees: number; launches: number };
+export type Totals = { volume: number; trades: number; traders: number; fees: number; launches: number; graduated: number; holders: number };
+export type TopCoin = { coinId: string; name: string; symbol: string; logo: string; volume: number; trades: number };
+export type TopCreator = { creator: string; coins: number; earned: number };
+
+/** Everything the stats page shows. Amounts are in ETH (whole units). */
+export async function fetchStats(days: number, chainId: number | null) {
+  const args = { p_days: days, p_chain: chainId };
+  const [daily, totals, coins, creators] = await Promise.all([
+    db.rpc("stats_daily", args),
+    db.rpc("stats_totals", args),
+    db.rpc("stats_top_coins", { ...args, p_limit: 10 }),
+    db.rpc("stats_top_creators", { ...args, p_limit: 10 }),
+  ]);
+  for (const r of [daily, totals, coins, creators]) if (r.error) throw r.error;
+  const eth = (v: unknown) => Number(v) / 1e18;
+  const t = ((totals.data as Record<string, unknown>[]) ?? [])[0] ?? {};
+  return {
+    daily: ((daily.data as Record<string, unknown>[]) ?? []).map((r) => ({
+      day: r.day as string,
+      volume: eth(r.volume_native),
+      trades: Number(r.trades),
+      traders: Number(r.traders),
+      fees: eth(r.fees_native),
+      launches: Number(r.launches),
+    })) as DailyStat[],
+    totals: {
+      volume: eth(t.volume_native ?? 0),
+      trades: Number(t.trades ?? 0),
+      traders: Number(t.traders ?? 0),
+      fees: eth(t.fees_native ?? 0),
+      launches: Number(t.launches ?? 0),
+      graduated: Number(t.graduated ?? 0),
+      holders: Number(t.holders ?? 0),
+    } as Totals,
+    topCoins: ((coins.data as Record<string, unknown>[]) ?? []).map((r) => ({
+      coinId: r.coin_id as string,
+      name: r.name as string,
+      symbol: r.symbol as string,
+      logo: r.logo as string,
+      volume: eth(r.volume_native),
+      trades: Number(r.trades),
+    })) as TopCoin[],
+    topCreators: ((creators.data as Record<string, unknown>[]) ?? []).map((r) => ({
+      creator: r.creator as string,
+      coins: Number(r.coins),
+      earned: eth(r.earned_native),
+    })) as TopCreator[],
+  };
+}

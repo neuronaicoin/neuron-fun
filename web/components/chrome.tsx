@@ -169,6 +169,7 @@ const NAV = [
   { href: "/terminal/", label: "Terminal" },
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
+  { href: "/stats/", label: "Stats" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -203,7 +204,7 @@ export function BottomNav() {
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       <div className="grid grid-cols-4">
-        {NAV.map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
@@ -278,6 +279,7 @@ export function Footer() {
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] font-medium">
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <Link href="/learn/" className="text-emerald">Learn</Link>
+          <Link href="/stats/" className="text-emerald">Stats</Link>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
         </nav>
       </div>
