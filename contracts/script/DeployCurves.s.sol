@@ -10,7 +10,8 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 
 import {NeuronCurveFactory} from "../src/curve/NeuronCurveFactory.sol";
 import {NeuronGraduationHook} from "../src/curve/NeuronGraduationHook.sol";
-import {NeuronV4Migrator, ICurveRegistry} from "../src/curve/NeuronV4Migrator.sol";
+import {NeuronV4Migrator, ICurveRegistry, IBuybackRouter} from "../src/curve/NeuronV4Migrator.sol";
+import {NeuronPoolRouter, IGraduatedPools} from "../src/curve/NeuronPoolRouter.sol";
 
 interface IPositionManagerPoolManager {
     function poolManager() external view returns (address);
@@ -86,6 +87,10 @@ contract DeployCurves is Script {
         require(address(migrator) == migratorAddr, "migrator address moved");
         NeuronCurveFactory factory = new NeuronCurveFactory(deployer, migrator, operator, feeRecipient, cfg);
         migrator.bindCurves(ICurveRegistry(address(factory)));
+        // Trades after graduation, and buybacks in the pool, go through this router.
+        NeuronPoolRouter router =
+            new NeuronPoolRouter(IPoolManager(address(migrator.poolManager())), IGraduatedPools(address(migrator)));
+        migrator.bindRouter(IBuybackRouter(address(router)));
         factory.setLaunchesOpen(true);
         vm.stopBroadcast();
 
@@ -93,6 +98,7 @@ contract DeployCurves is Script {
         console2.log("NeuronCurveFactory: ", address(factory));
         console2.log("NeuronV4Migrator:   ", address(migrator));
         console2.log("GraduationHook:     ", address(migrator.hook()));
+        console2.log("NeuronPoolRouter:   ", address(router));
         console2.log("Operator:           ", operator);
         console2.log("Start block:        ", block.number);
     }
@@ -100,16 +106,30 @@ contract DeployCurves is Script {
     function _v4() internal view returns (V4 memory v) {
         if (block.chainid == 4663 || block.chainid == 46630) {
             // Robinhood Chain mainnet and testnet share Uniswap's v4 addresses.
-            v = V4(0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x58daec3116aae6D93017bAAea7749052E8a04fA7, PERMIT2_CANONICAL);
+            v = V4(
+                0x8366a39CC670B4001A1121B8F6A443A643e40951,
+                0x58daec3116aae6D93017bAAea7749052E8a04fA7,
+                PERMIT2_CANONICAL
+            );
         } else if (block.chainid == 8453) {
-            v = V4(0x498581fF718922c3f8e6A244956aF099B2652b2b, 0x7C5f5A4bBd8fD63184577525326123B519429bDc, PERMIT2_CANONICAL);
+            v = V4(
+                0x498581fF718922c3f8e6A244956aF099B2652b2b,
+                0x7C5f5A4bBd8fD63184577525326123B519429bDc,
+                PERMIT2_CANONICAL
+            );
         } else if (block.chainid == 84532) {
-            v = V4(0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408, 0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80, PERMIT2_CANONICAL);
+            v = V4(
+                0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408,
+                0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80,
+                PERMIT2_CANONICAL
+            );
         }
         v.poolManager = vm.envOr("POOL_MANAGER", v.poolManager);
         v.positionManager = vm.envOr("POSITION_MANAGER", v.positionManager);
         v.permit2 = vm.envOr("PERMIT2", v.permit2 == address(0) ? PERMIT2_CANONICAL : v.permit2);
-        require(v.poolManager != address(0), "no Uniswap v4 addresses for this chain; set POOL_MANAGER and POSITION_MANAGER");
+        require(
+            v.poolManager != address(0), "no Uniswap v4 addresses for this chain; set POOL_MANAGER and POSITION_MANAGER"
+        );
     }
 
     function _mineHookSalt(address poolManager, address migratorAddr) internal pure returns (bytes32) {

@@ -37,7 +37,13 @@ contract TestnetCurveSmoke is Script {
 
         vm.startBroadcast(key);
         (address curveAddr, address token, uint256 bought) = factory.launch{value: firstBuy}(
-            name, "NCT", "", "Testnet smoke run of the Neuron.fun curve.", keccak256(bytes(tag)), 0
+            name,
+            "NCT",
+            "",
+            "Testnet smoke run of the Neuron.fun curve.",
+            keccak256(bytes(tag)),
+            0,
+            NeuronCurve.FeeMode.Creator
         );
         NeuronCurve curve = NeuronCurve(payable(curveAddr));
         uint256 toSell;
