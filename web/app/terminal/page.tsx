@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatEther } from "viem";
 import { useWallet } from "@/components/wallet";
-import { ChainChip, ChainRace, ChangeBadge, CoinAvatar, ProgressBar, Skeleton, timeAgo, useCoins, usd } from "@/components/coins";
+import { ChainChip, ChainRace, ChangeBadge, CoinAvatar, ProgressBar, Skeleton, StarButton, timeAgo, useCoins, usd } from "@/components/coins";
 import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
@@ -79,16 +79,15 @@ function Terminal() {
   return (
     <div className="max-w-[1500px] mx-auto px-3 sm:px-4 py-2 sm:py-4">
       {/* Phone: switch coins from a sheet instead of a separate tab */}
-      <div className="lg:hidden flex items-center justify-between gap-2 mb-2">
-        <button
-          type="button"
-          onClick={() => setMarketsOpen(true)}
-          className="h-9 px-3 rounded-xl border border-line bg-surface text-[0.8125rem] font-semibold flex items-center gap-2"
-        >
-          <span aria-hidden="true">☰</span> All coins
-        </button>
-        {coin && <span className="text-[0.75rem] text-ink-3 truncate">{coin.curves.length} chain{coin.curves.length > 1 ? "s" : ""}</span>}
-      </div>
+      <MarketStrip
+        coins={coins}
+        ethUsd={ethUsd}
+        selected={selected}
+        onChoose={choose}
+        sort={sort}
+        setSort={setSort}
+        onOpenList={() => setMarketsOpen(true)}
+      />
       {marketsOpen && (
         <Sheet title="Coins" onClose={() => setMarketsOpen(false)}>
           <Markets
@@ -150,6 +149,88 @@ function Terminal() {
   );
 }
 
+/** Market tabs, shared by the desktop list and the phone strip. */
+const MARKET_TABS: readonly (readonly [SortKey, string])[] = [
+  ["watchlist", "★"],
+  ["trending", "🔥 Trending"],
+  ["gainers", "Gainers"],
+  ["losers", "Losers"],
+  ["new", "New"],
+  ["hot", "Racing"],
+  ["graduated", "Graduated"],
+];
+
+function MarketTabs({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) => void }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Sort">
+      {MARKET_TABS.map(([k, l]) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          aria-selected={sort === k}
+          aria-label={k === "watchlist" ? "Favourites" : undefined}
+          onClick={() => setSort(k)}
+          className={"h-8 px-3 rounded-lg text-[0.75rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Phones: the market is always on screen, as a swipeable strip above the chart. */
+function MarketStrip(props: {
+  coins: Coin[] | null;
+  ethUsd: number | null;
+  selected: string;
+  onChoose: (id: string) => void;
+  sort: SortKey;
+  setSort: (s: SortKey) => void;
+  onOpenList: () => void;
+}) {
+  const { coins, ethUsd, selected, onChoose, sort, setSort, onOpenList } = props;
+  return (
+    <div className="lg:hidden mb-2">
+      <div className="flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <MarketTabs sort={sort} setSort={setSort} />
+        </div>
+        <button type="button" onClick={onOpenList} aria-label="Search all coins" className="w-8 h-8 shrink-0 rounded-lg border border-line text-ink-2 flex items-center justify-center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </button>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mt-2 -mx-3 px-3 pb-1">
+        {!coins && [0, 1, 2, 3].map((i) => <div key={i} className="shrink-0 w-[124px] h-[62px] rounded-2xl bg-surface border border-line animate-pulse" />)}
+        {coins?.length === 0 && (
+          <p className="text-[0.8125rem] text-ink-3 py-3">{sort === "watchlist" ? "Tap ☆ on a coin to add it here." : "No coins here yet."}</p>
+        )}
+        {coins?.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onChoose(c.id)}
+            className={"shrink-0 w-[124px] rounded-2xl border bg-surface p-2 text-left " + (c.id === selected ? "border-emerald" : "border-line")}
+          >
+            <span className="flex items-center gap-2">
+              <CoinAvatar logo={c.logo} symbol={c.symbol} size={26} />
+              <span className="min-w-0">
+                <span className="block font-semibold text-[0.8125rem] truncate">${c.symbol}</span>
+                <span className="block font-mono text-[0.6875rem] text-ink-3">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
+              </span>
+            </span>
+            <ChangeBadge value={c.change24h} className="block text-[0.75rem] mt-1" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Markets(props: {
   coins: Coin[] | null;
   ethUsd: number | null;
@@ -171,28 +252,8 @@ function Markets(props: {
           aria-label="Search coins"
           className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-[0.875rem] focus:border-emerald"
         />
-        <div className="flex gap-1 mt-2 overflow-x-auto no-scrollbar -mx-1 px-1" role="tablist" aria-label="Sort">
-          {(
-            [
-              ["trending", "🔥 Trending"],
-              ["gainers", "Gainers"],
-              ["losers", "Losers"],
-              ["new", "New"],
-              ["hot", "Racing"],
-              ["graduated", "Graduated"],
-            ] as const
-          ).map(([k, l]) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={sort === k}
-              onClick={() => setSort(k)}
-              className={"h-8 px-3 rounded-lg text-[0.75rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
-            >
-              {l}
-            </button>
-          ))}
+        <div className="mt-2">
+          <MarketTabs sort={sort} setSort={setSort} />
         </div>
       </div>
       <ul className="max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto divide-y divide-line">
@@ -242,7 +303,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       <div className="rounded-3xl border border-line bg-surface p-3.5 sm:p-5">
         <div className="flex items-start gap-3">
-          <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={52} />
+          <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={46} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] leading-tight truncate">{coin.name}</h1>
@@ -255,6 +316,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
             </div>
           </div>
+          <StarButton coinId={coin.id} />
         </div>
         <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-4">
           {[

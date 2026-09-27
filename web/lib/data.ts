@@ -185,7 +185,7 @@ function toTrade(r: Record<string, unknown>): Trade {
  * trending: most trades in 24 h · gainers / losers: 24 h price change ·
  * hot: still racing, closest to graduation · new · graduated · active: latest trade.
  */
-export type SortKey = "trending" | "gainers" | "losers" | "hot" | "new" | "graduated" | "active";
+export type SortKey = "watchlist" | "trending" | "gainers" | "losers" | "hot" | "new" | "graduated" | "active";
 
 /** The market list's columns: the coin summary plus its 24 h price change. */
 const LIST_COLS = SUMMARY_COLS + ",change_24h";
@@ -198,6 +198,12 @@ export const PAGE_SIZE = 24;
 export async function fetchCoins(opts: { sort?: SortKey; search?: string; page?: number } = {}) {
   const prices = await fetchPrices();
   let q = db.from("coin_list").select(LIST_COLS);
+  if (opts.sort === "watchlist") {
+    const { getWatchlist } = await import("./watchlist");
+    const ids = getWatchlist();
+    if (ids.length === 0) return { coins: [] as Coin[], prices, hasMore: false };
+    q = q.in("id", ids).order("last_trade_at", { ascending: false, nullsFirst: false });
+  }
   if (opts.search) {
     const s = opts.search.replace(/[%,()*]/g, " ").trim();
     if (s) q = q.or(`name.ilike.%${s}%,symbol.ilike.%${s}%`);

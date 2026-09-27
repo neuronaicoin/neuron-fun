@@ -1,5 +1,7 @@
 "use client";
 
+import { toggleWatch, useWatchlist } from "@/lib/watchlist";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { Coin, CurveInfo } from "@/lib/data";
@@ -205,5 +207,29 @@ export function ChangeBadge({ value, className = "" }: { value: number | null; c
       {up ? "+" : ""}
       {text}
     </span>
+  );
+}
+
+/** ☆ / ★ favourite switch. */
+export function StarButton({ coinId, className = "" }: { coinId: string; className?: string }) {
+  const ids = useWatchlist();
+  const on = ids.has(coinId);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        toggleWatch(coinId);
+      }}
+      aria-pressed={on}
+      aria-label={on ? "Remove from favourites" : "Add to favourites"}
+      title={on ? "Remove from favourites" : "Add to favourites"}
+      className={"w-9 h-9 rounded-xl border border-line flex items-center justify-center shrink-0 " + (on ? "text-mint" : "text-ink-3 hover:text-ink") + " " + className}
+    >
+      <svg width="17" height="17" viewBox="0 0 24 24" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z" />
+      </svg>
+    </button>
   );
 }

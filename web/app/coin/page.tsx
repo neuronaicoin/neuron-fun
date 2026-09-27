@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { formatEther, formatUnits, parseEther, parseUnits, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
-import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, timeAgo } from "@/components/coins";
+import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, StarButton, timeAgo } from "@/components/coins";
 import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
@@ -81,9 +81,9 @@ function CoinPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       <Link href="/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
 
-      <div className="mt-5 flex items-start gap-4">
-        <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={68} />
-        <div className="min-w-0">
+      <div className="mt-4 sm:mt-5 flex items-start gap-3 sm:gap-4">
+        <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={56} />
+        <div className="min-w-0 flex-1">
           <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2.25rem] leading-tight tracking-tight break-words">{coin.name}</h1>
           <p className="text-ink-2 text-[0.9375rem] mt-1">
             ${coin.symbol} · created {timeAgo(coin.createdAt)} by <span className="font-mono">{shortAddr(coin.creator)}</span>
@@ -94,6 +94,7 @@ function CoinPage() {
             ))}
           </div>
         </div>
+        <StarButton coinId={coin.id} />
       </div>
       {coin.description && <p className="text-[1rem] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
 

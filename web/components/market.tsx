@@ -13,8 +13,23 @@ const RANGES = [
   { label: "5m", s: 300 },
   { label: "15m", s: 900 },
   { label: "1h", s: 3600 },
+  { label: "4h", s: 14400 },
   { label: "1d", s: 86400 },
 ];
+
+/** Chart view settings, remembered between visits. */
+type ChartPrefs = { range: number; volume: boolean; mode: "normal" | "log" | "percent"; auto: boolean };
+const PREFS_KEY = "sasa-chart";
+function loadPrefs(): ChartPrefs {
+  const d: ChartPrefs = { range: 300, volume: true, mode: "normal", auto: true };
+  try {
+    return { ...d, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<ChartPrefs>) };
+  } catch {
+    return d;
+  }
+}
+// lightweight-charts PriceScaleMode: 0 normal, 1 logarithmic, 2 percentage.
+const SCALE_MODE = { normal: 0, log: 1, percent: 2 } as const;
 
 /**
  * Market-value candles for one curve (price x 1B supply, in dollars when a
@@ -23,8 +38,19 @@ const RANGES = [
 export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number | null }) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const [range, setRange] = useState(300);
+  const [prefs, setPrefs] = useState<ChartPrefs>({ range: 300, volume: true, mode: "normal", auto: true });
+  const range = prefs.range;
+  const volRef = useRef<{ applyOptions: (o: { visible: boolean }) => void } | null>(null);
   const [empty, setEmpty] = useState(false);
+  const setPref = (p: Partial<ChartPrefs>) =>
+    setPrefs((cur) => {
+      const next = { ...cur, ...p };
+      try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  useEffect(() => setPrefs(loadPrefs()), []);
   const unit = ethUsd ? "$" : curve.chain.chain.nativeCurrency.symbol;
 
   useEffect(() => {
@@ -62,6 +88,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
         priceLineVisible: false,
       });
       vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volRef.current = vol;
       chartRef.current = chart;
 
       let first = true;
@@ -116,31 +143,70 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       if (timer) clearInterval(timer);
       chart?.remove();
       chartRef.current = null;
+      volRef.current = null;
     };
   }, [curve.chain.chain.id, curve.curve, range, ethUsd, unit]);
 
+  // Scale mode, auto-fit and the volume bars follow the toggles without rebuilding the chart.
+  useEffect(() => {
+    const apply = () => {
+      const chart = chartRef.current;
+      if (!chart) return false;
+      chart.priceScale("right").applyOptions({ mode: SCALE_MODE[prefs.mode], autoScale: prefs.auto });
+      volRef.current?.applyOptions({ visible: prefs.volume });
+      return true;
+    };
+    if (apply()) return;
+    // The chart loads asynchronously; try again once it's there.
+    const t = setInterval(() => apply() && clearInterval(t), 200);
+    return () => clearInterval(t);
+  }, [prefs.mode, prefs.auto, prefs.volume, range, curve.curve]);
+
   return (
     <div>
-      <div className="flex items-center justify-end sm:justify-between gap-3 mb-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
         <span className="hidden sm:inline text-[0.8125rem] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Candle size">
           {RANGES.map((r) => (
             <button
               key={r.s}
               type="button"
-              onClick={() => setRange(r.s)}
-              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[0.75rem] " + (range === r.s ? "bg-ink text-on-accent" : "bg-mist text-ink-2")}
+              role="tab"
+              aria-selected={range === r.s}
+              onClick={() => setPref({ range: r.s })}
+              className={"h-7 min-w-9 px-2 rounded-lg font-mono text-[0.75rem] shrink-0 " + (range === r.s ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
             >
               {r.label}
             </button>
           ))}
         </div>
       </div>
-      <div className="relative h-[300px] sm:h-[360px]">
+      <div className="relative h-[280px] sm:h-[360px]">
         <div ref={box} className="absolute inset-0" />
         {empty && (
           <div className="absolute inset-0 flex items-center justify-center text-[0.875rem] text-ink-3">No trades yet. The first buy starts the chart.</div>
         )}
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-2 text-[0.75rem] font-mono">
+        <button
+          type="button"
+          aria-pressed={prefs.volume}
+          onClick={() => setPref({ volume: !prefs.volume })}
+          className={"h-7 px-2.5 rounded-lg " + (prefs.volume ? "bg-paper text-ink" : "text-ink-3")}
+        >
+          Volume
+        </button>
+        <div className="flex gap-1">
+          <button type="button" aria-pressed={prefs.mode === "percent"} title="Percent scale" onClick={() => setPref({ mode: prefs.mode === "percent" ? "normal" : "percent" })} className={"h-7 min-w-8 px-2 rounded-lg " + (prefs.mode === "percent" ? "bg-paper text-ink" : "text-ink-3")}>
+            %
+          </button>
+          <button type="button" aria-pressed={prefs.mode === "log"} title="Logarithmic scale" onClick={() => setPref({ mode: prefs.mode === "log" ? "normal" : "log" })} className={"h-7 px-2 rounded-lg " + (prefs.mode === "log" ? "bg-paper text-ink" : "text-ink-3")}>
+            log
+          </button>
+          <button type="button" aria-pressed={prefs.auto} title="Fit prices to the view" onClick={() => setPref({ auto: !prefs.auto })} className={"h-7 px-2 rounded-lg " + (prefs.auto ? "bg-paper text-ink" : "text-ink-3")}>
+            auto
+          </button>
+        </div>
       </div>
     </div>
   );
