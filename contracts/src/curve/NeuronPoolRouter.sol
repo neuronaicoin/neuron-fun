@@ -107,14 +107,7 @@ contract NeuronPoolRouter is IUnlockCallback, ReentrancyGuard {
         }
 
         (uint160 sqrtP,,,) = poolManager.getSlot0(pools.poolKeyFor(job.token).toId());
-        emit PoolTrade(
-            job.token,
-            job.payer,
-            job.isBuy,
-            job.isBuy ? paid : out,
-            job.isBuy ? out : paid,
-            sqrtP
-        );
+        emit PoolTrade(job.token, job.payer, job.isBuy, job.isBuy ? paid : out, job.isBuy ? out : paid, sqrtP);
     }
 
     /// @dev Called by the PoolManager inside unlock(). Returns (amount paid, amount received).

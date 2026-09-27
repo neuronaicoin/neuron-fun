@@ -40,7 +40,8 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         address indexed creator,
         bytes32 launchKey,
         string name,
-        string symbol
+        string symbol,
+        NeuronCurve.FeeMode feeMode
     );
     event ConfigSet(Config config);
     event OperatorSet(address operator);
@@ -80,16 +81,17 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         string calldata logo,
         string calldata description,
         bytes32 launchKey,
-        uint256 minTokensOut
+        uint256 minTokensOut,
+        NeuronCurve.FeeMode feeMode
     ) external payable nonReentrant returns (address curve, address token, uint256 tokensBought) {
         if (!launchesOpen) revert LaunchesClosed();
         if (bytes(name).length == 0 || bytes(symbol).length == 0) revert BadConfig();
-        NeuronCurve created = new NeuronCurve(_params(name, symbol, logo, description, launchKey));
+        NeuronCurve created = new NeuronCurve(_params(name, symbol, logo, description, launchKey, feeMode));
         curve = address(created);
         token = address(created.token());
         isCurve[curve] = true;
         allCurves.push(curve);
-        emit Launched(curve, token, msg.sender, launchKey, name, symbol);
+        emit Launched(curve, token, msg.sender, launchKey, name, symbol, feeMode);
 
         if (msg.value > 0) {
             tokensBought = created.buy{value: msg.value}(minTokensOut, msg.sender);
@@ -107,7 +109,8 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         string calldata symbol,
         string calldata logo,
         string calldata description,
-        bytes32 launchKey
+        bytes32 launchKey,
+        NeuronCurve.FeeMode feeMode
     ) private view returns (NeuronCurve.Params memory p) {
         Config memory c = config;
         p.name = name;
@@ -115,6 +118,7 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         p.logo = logo;
         p.description = description;
         p.creator = msg.sender;
+        p.feeMode = feeMode;
         p.protocolFeeRecipient = protocolFeeRecipient;
         p.migrator = migrator;
         p.launchKey = launchKey;

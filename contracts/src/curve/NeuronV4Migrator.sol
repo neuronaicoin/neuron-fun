@@ -18,6 +18,18 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
 import {IGraduationMigrator, NeuronCurve} from "./NeuronCurve.sol";
+import {CurveToken} from "./CurveToken.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
+
+/// @notice The pool router (NeuronPoolRouter) buybacks go through.
+interface IBuybackRouter {
+    function buy(address token, uint256 minTokensOut, address recipient, uint256 deadline)
+        external
+        payable
+        returns (uint256 tokensOut);
+}
 import {NeuronGraduationHook} from "./NeuronGraduationHook.sol";
 
 interface ICurveRegistry {
@@ -44,6 +56,8 @@ interface ICurveRegistry {
  */
 contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     uint24 public constant POOL_FEE = 10_000; // 1%
     int24 public constant TICK_SPACING = 200;
@@ -74,9 +88,23 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
     /// @dev Native coin this contract holds as locked rounding dust.
     uint256 public lockedNativeDust;
 
-    event Migrated(address indexed token, uint256 indexed tokenId, uint256 nativeIn, uint256 tokensIn, uint160 sqrtPriceX96);
+    /// @notice Each graduated coin's fee mode, copied from its curve.
+    mapping(address token => NeuronCurve.FeeMode) public feeModes;
+    /// @notice Money waiting to buy back and burn each coin (buyback mode).
+    mapping(address token => uint256) public buybackFunds;
+    /// @notice Router buybacks trade through. Bound once.
+    IBuybackRouter public router;
+    /// @notice Largest single pool buyback, as a share of the pool's native side (0.5%).
+    uint256 public constant BUYBACK_CHUNK_BPS = 50;
+
+    event Migrated(
+        address indexed token, uint256 indexed tokenId, uint256 nativeIn, uint256 tokensIn, uint160 sqrtPriceX96
+    );
     event FeesCollected(address indexed token, uint256 nativeFees, uint256 tokenFees);
     event NativeOwed(address indexed recipient, uint256 amount);
+    event BuybackFunded(address indexed token, uint256 amount);
+    event BuybackDone(address indexed token, uint256 nativeSpent, uint256 tokensBurned);
+    event HolderRewardsSent(address indexed token, uint256 amount);
 
     error ZeroAddress();
     error NotACurve();
@@ -90,6 +118,8 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
     error TransferFailed();
     error NotDeployer();
     error AlreadyBound();
+    error NoRouter();
+    error NothingToBuyBack();
 
     /**
      * @param hookSalt CREATE2 salt that gives the hook an address carrying
@@ -121,6 +151,14 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
     }
 
     /// @notice One-time link to the curve factory. Until then nothing can graduate.
+    /// @notice One-time link to the pool router buybacks use. Deployer only.
+    function bindRouter(IBuybackRouter router_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (address(router) != address(0)) revert AlreadyBound();
+        if (address(router_) == address(0)) revert ZeroAddress();
+        router = router_;
+    }
+
     function bindCurves(ICurveRegistry curves_) external {
         if (msg.sender != deployer) revert NotDeployer();
         if (address(curves) != address(0)) revert AlreadyBound();
@@ -168,17 +206,27 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
         if (liquidity == 0) revert NothingToMigrate();
 
         IERC20(token).forceApprove(address(permit2), tokenAmount);
-        permit2.approve(token, address(positionManager), uint160(tokenAmount), uint48(block.timestamp + DEADLINE_WINDOW));
+        permit2.approve(
+            token, address(positionManager), uint160(tokenAmount), uint48(block.timestamp + DEADLINE_WINDOW)
+        );
 
         uint256 tokenId = positionManager.nextTokenId();
         positions[token] = Position({tokenId: tokenId, creator: NeuronCurve(payable(msg.sender)).creator()});
+        feeModes[token] = NeuronCurve(payable(msg.sender)).feeMode();
 
         uint256 nativeBefore = address(this).balance - nativeAmount;
         bytes memory actions =
             abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR), uint8(Actions.SWEEP));
         bytes[] memory params = new bytes[](3);
         params[0] = abi.encode(
-            key, tickLower, tickUpper, uint256(liquidity), uint128(nativeAmount), uint128(tokenAmount), address(this), bytes("")
+            key,
+            tickLower,
+            tickUpper,
+            uint256(liquidity),
+            uint128(nativeAmount),
+            uint128(tokenAmount),
+            address(this),
+            bytes("")
         );
         params[1] = abi.encode(key.currency0, key.currency1);
         params[2] = abi.encode(key.currency0, address(this));
@@ -202,6 +250,48 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
      * splits them between the coin's creator and the protocol. Anyone may
      * call it; the money only goes to those two.
      */
+    /// @notice Adds to a graduated coin's buyback money (a curve forwards its fund here).
+    function depositBuyback(address token) external payable {
+        if (msg.value == 0) return;
+        buybackFunds[token] += msg.value;
+        emit BuybackFunded(token, msg.value);
+    }
+
+    /// @notice Spends one chunk of a coin's buyback money in its pool and burns the coins.
+    /// Anyone can call it. Each chunk is capped at 0.5% of the pool's native side,
+    /// so its price move stays below the 2% round-trip fee and front-running it
+    /// can't pay; the minimum output is set from the pool price, not by the caller.
+    function buyback(address token) external nonReentrant returns (uint256 spent, uint256 burned) {
+        if (address(router) == address(0)) revert NoRouter();
+        uint256 fund = buybackFunds[token];
+        if (fund == 0 || positions[token].tokenId == 0) revert NothingToBuyBack();
+
+        PoolId id = poolKeyFor(token).toId();
+        (uint160 sqrtP,,,) = poolManager.getSlot0(id);
+        uint128 liquidity = poolManager.getLiquidity(id);
+        // Native side of a full-range position at this price: L / sqrtP.
+        uint256 nativeSide = FullMath.mulDiv(liquidity, FixedPoint96.Q96, sqrtP);
+        spent = fund;
+        uint256 cap = (nativeSide * BUYBACK_CHUNK_BPS) / BPS;
+        if (spent > cap) spent = cap;
+        if (spent == 0) revert NothingToBuyBack();
+
+        // Tokens at the current price, less the 1% fee and 2% room for movement.
+        uint256 atPrice = FullMath.mulDiv(FullMath.mulDiv(spent, sqrtP, FixedPoint96.Q96), sqrtP, FixedPoint96.Q96);
+        uint256 minOut = (atPrice * 97) / 100;
+
+        buybackFunds[token] = fund - spent;
+        uint256 before = address(this).balance;
+        burned = router.buy{value: spent}(token, minOut, DEAD, block.timestamp);
+        // A partial fill is refunded here; keep it in the fund.
+        uint256 refunded = address(this).balance + spent - before;
+        if (refunded > 0) {
+            buybackFunds[token] += refunded;
+            spent -= refunded;
+        }
+        emit BuybackDone(token, spent, burned);
+    }
+
     function collectFees(address token) external nonReentrant returns (uint256 nativeFees, uint256 tokenFees) {
         Position memory p = positions[token];
         if (p.tokenId == 0) revert NotMigrated();
@@ -220,14 +310,27 @@ contract NeuronV4Migrator is IGraduationMigrator, ReentrancyGuard {
 
         emit FeesCollected(token, nativeFees, tokenFees);
 
+        NeuronCurve.FeeMode mode = feeModes[token];
         if (nativeFees > 0) {
             uint256 toCreator = (nativeFees * creatorShareBps) / BPS;
-            _payNative(p.creator, toCreator);
             _payNative(protocolFeeRecipient, nativeFees - toCreator);
+            if (toCreator > 0) {
+                if (mode == NeuronCurve.FeeMode.Holders) {
+                    emit HolderRewardsSent(token, toCreator);
+                    CurveToken(token).distribute{value: toCreator}();
+                } else if (mode == NeuronCurve.FeeMode.Buyback) {
+                    buybackFunds[token] += toCreator;
+                    emit BuybackFunded(token, toCreator);
+                } else {
+                    _payNative(p.creator, toCreator);
+                }
+            }
         }
         if (tokenFees > 0) {
             uint256 toCreator = (tokenFees * creatorShareBps) / BPS;
-            if (toCreator > 0) IERC20(token).safeTransfer(p.creator, toCreator);
+            // Only creator mode pays tokens out; the other modes burn them.
+            address creatorSide = mode == NeuronCurve.FeeMode.Creator ? p.creator : DEAD;
+            if (toCreator > 0) IERC20(token).safeTransfer(creatorSide, toCreator);
             if (tokenFees - toCreator > 0) IERC20(token).safeTransfer(protocolFeeRecipient, tokenFees - toCreator);
         }
     }

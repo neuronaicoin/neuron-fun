@@ -8,6 +8,13 @@ import {CurveToken} from "./CurveToken.sol";
 /// into permanently locked DEX liquidity.
 interface IGraduationMigrator {
     function migrate(address token, uint256 tokenAmount) external payable;
+    /// @notice Takes a graduated coin's buyback money and spends it in the pool.
+    function depositBuyback(address token) external payable;
+}
+
+/// @notice Where graduated liquidity lives; its balance never earns holder rewards.
+interface IPoolManagerSource {
+    function poolManager() external view returns (address);
 }
 
 interface ICurveFactoryOperator {
@@ -103,6 +110,21 @@ contract NeuronCurve is ReentrancyGuard {
     error BelowGraduationMinimum(uint256 have, uint256 min);
     error NoReport();
 
+    /// @notice Where the creator's share of fees goes. Chosen at launch, never changes.
+    ///  Creator: paid to the creator.
+    ///  Buyback: spent buying the coin back and burning it.
+    ///  Holders: shared among holders in proportion to their balance.
+    enum FeeMode {
+        Creator,
+        Buyback,
+        Holders
+    }
+
+    /// @notice Largest single buyback on the curve, as a share of the native reserve (0.5%).
+    /// Keeps each buyback's price move well under the 2% round-trip fee, so
+    /// front-running a buyback can't pay.
+    uint256 public constant BUYBACK_CHUNK_BPS = 50;
+
     struct Params {
         string name;
         string symbol;
@@ -119,13 +141,20 @@ contract NeuronCurve is ReentrancyGuard {
         uint16 feeBps;
         uint16 creatorShareBps;
         uint256 minGraduationNative;
+        FeeMode feeMode;
     }
+
+    FeeMode public immutable feeMode;
+
+    event Buyback(uint256 nativeSpent, uint256 tokensBurned);
+    event HolderRewardsSent(uint256 amount);
+    event BuybackForwarded(uint256 amount);
 
     constructor(Params memory p) {
         if (
             p.creator == address(0) || p.protocolFeeRecipient == address(0) || address(p.migrator) == address(0)
-                || p.virtualNative == 0 || p.tokensForSale == 0 || p.virtualToken <= p.tokensForSale
-                || p.feeBps > 1_000 || p.creatorShareBps > BPS
+                || p.virtualNative == 0 || p.tokensForSale == 0 || p.virtualToken <= p.tokensForSale || p.feeBps > 1_000
+                || p.creatorShareBps > BPS
         ) revert BadConfig();
         factory = ICurveFactoryOperator(msg.sender);
         migrator = p.migrator;
@@ -141,8 +170,14 @@ contract NeuronCurve is ReentrancyGuard {
         virtualToken = p.virtualToken;
         tokensForSale = p.tokensForSale;
         graduationTokens = p.graduationTokens;
+        feeMode = p.feeMode;
+        // Balances held for everyone never earn holder rewards.
+        address[] memory shared = new address[](3);
+        shared[0] = DEAD;
+        shared[1] = address(p.migrator);
+        shared[2] = IPoolManagerSource(address(p.migrator)).poolManager();
         token = new CurveToken(
-            p.name, p.symbol, p.logo, p.description, p.tokensForSale + p.graduationTokens, address(this)
+            p.name, p.symbol, p.logo, p.description, p.tokensForSale + p.graduationTokens, address(this), shared
         );
     }
 
@@ -288,13 +323,56 @@ contract NeuronCurve is ReentrancyGuard {
 
     // ------------------------------------------------------------ fees
 
+    /// @notice Moves the creator's share of fees where the coin's fee mode says.
+    /// Anyone can call it. Buyback mode spends at most one chunk per call on
+    /// the curve (see BUYBACK_CHUNK_BPS); after graduation the money goes to
+    /// the migrator, which buys back in the pool. If this chain lost the race,
+    /// a buyback fund can't be spent here and is paid to the creator instead.
+    /// Returns the amount moved.
     function claimCreatorFees() external nonReentrant returns (uint256 amount) {
-        amount = creatorFees;
-        creatorFees = 0;
-        if (amount > 0) {
-            emit FeesClaimed(creator, amount, true);
-            _sendNative(creator, amount);
+        uint256 have = creatorFees;
+        if (have == 0) return 0;
+
+        if (feeMode == FeeMode.Holders) {
+            creatorFees = 0;
+            emit HolderRewardsSent(have);
+            token.distribute{value: have}();
+            return have;
         }
+        if (feeMode == FeeMode.Buyback && state == State.Trading) {
+            return _buybackOnCurve(have);
+        }
+        if (feeMode == FeeMode.Buyback && state == State.Graduated) {
+            creatorFees = 0;
+            emit BuybackForwarded(have);
+            migrator.depositBuyback{value: have}(address(token));
+            return have;
+        }
+        creatorFees = 0;
+        emit FeesClaimed(creator, have, true);
+        _sendNative(creator, have);
+        return have;
+    }
+
+    /// @dev Buys from this curve with fee money (no fee on it) and burns what it gets.
+    function _buybackOnCurve(uint256 have) private returns (uint256 spent) {
+        uint256 v = virtualNative;
+        uint256 t = virtualToken;
+        spent = have;
+        uint256 cap = (v * BUYBACK_CHUNK_BPS) / BPS;
+        if (spent > cap) spent = cap;
+        uint256 out = t - _ceilDiv(v * t, v + spent);
+        // Never let a buyback sell the curve out; the money waits for graduation instead.
+        if (out == 0 || out >= tokensForSale) return 0;
+
+        creatorFees = have - spent;
+        virtualNative = v + spent;
+        virtualToken = t - out;
+        realNative += spent;
+        tokensForSale -= out;
+        emit Trade(DEAD, true, spent, out, 0, v + spent, t - out);
+        emit Buyback(spent, out);
+        _sendToken(DEAD, out);
     }
 
     function claimProtocolFees() external nonReentrant returns (uint256 amount) {
