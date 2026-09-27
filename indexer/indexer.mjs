@@ -81,7 +81,10 @@ function makeChain(c) {
 }
 
 async function knownCurves(db, chainId) {
-  const r = await db.query("select curve, token, coin_id, initial_virtual_native from curves where chain_id = $1", [chainId]);
+  const r = await db.query(
+    "select k.curve, k.token, k.coin_id, k.initial_virtual_native, c.creator from curves k join coins c on c.id = k.coin_id where k.chain_id = $1",
+    [chainId]
+  );
   const byCurve = new Map();
   const byToken = new Map();
   const tokens = [];
@@ -171,7 +174,9 @@ async function indexRange(c, from, to) {
                                native_amount, token_amount, fee, price)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            on conflict do nothing returning 1`,
-          [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ts, k.curve, k.coin_id, lc(a.trader), a.isBuy,
+          [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ts, k.curve, k.coin_id,
+           // The opening buy is made by the factory on the creator's behalf: credit the creator.
+           lc(a.trader) === lc(c.factory) ? k.creator : lc(a.trader), a.isBuy,
            a.nativeAmount.toString(), a.tokenAmount.toString(), a.fee.toString(), price]
         );
         if (ins.rowCount) {

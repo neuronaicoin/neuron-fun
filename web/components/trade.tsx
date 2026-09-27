@@ -11,7 +11,7 @@ import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
 
 const PRESETS = [10, 25, 50, 100];
-const GAS_RESERVE = 300_000_000_000_000n; // 0.0003 ETH kept for fees
+const GAS_RESERVE = 50_000_000_000_000n; // 0.00005 ETH kept for network fees (L2 fees are far below this)
 
 type Bal = { eth: bigint; tok: bigint };
 
