@@ -7,6 +7,16 @@ import {NeuronCurveFactory} from "../../src/curve/NeuronCurveFactory.sol";
 import {CurveToken} from "../../src/curve/CurveToken.sol";
 
 contract MockMigrator is IGraduationMigrator {
+    uint256 public buybackReceived;
+
+    function poolManager() external pure returns (address) {
+        return address(0xB0B);
+    }
+
+    function depositBuyback(address) external payable {
+        buybackReceived += msg.value;
+    }
+
     address public lastToken;
     uint256 public lastTokenAmount;
     uint256 public lastNative;
@@ -92,7 +102,8 @@ contract NeuronCurveTest is Test {
 
     function _launch() internal returns (NeuronCurve c, CurveToken t) {
         vm.prank(creator);
-        (address curve,,) = factory.launch("Harbor Cat", "HCAT", "", "", keccak256("k1"), 0);
+        (address curve,,) =
+            factory.launch("Harbor Cat", "HCAT", "", "", keccak256("k1"), 0, NeuronCurve.FeeMode.Creator);
         c = NeuronCurve(payable(curve));
         t = c.token();
     }
@@ -142,19 +153,20 @@ contract NeuronCurveTest is Test {
         NeuronCurveFactory f = new NeuronCurveFactory(owner, migrator, operator, protocol, _config());
         vm.prank(creator);
         vm.expectRevert(NeuronCurveFactory.LaunchesClosed.selector);
-        f.launch("A", "A", "", "", bytes32(0), 0);
+        f.launch("A", "A", "", "", bytes32(0), 0, NeuronCurve.FeeMode.Creator);
     }
 
     function test_launch_needsNameAndSymbol() public {
         vm.prank(creator);
         vm.expectRevert(NeuronCurveFactory.BadConfig.selector);
-        factory.launch("", "A", "", "", bytes32(0), 0);
+        factory.launch("", "A", "", "", bytes32(0), 0, NeuronCurve.FeeMode.Creator);
     }
 
     function test_launch_firstBuyGoesToCreator() public {
         uint256 before = creator.balance;
         vm.prank(creator);
-        (address curve,, uint256 bought) = factory.launch{value: 0.5 ether}("A", "A", "", "", bytes32(0), 0);
+        (address curve,, uint256 bought) =
+            factory.launch{value: 0.5 ether}("A", "A", "", "", bytes32(0), 0, NeuronCurve.FeeMode.Creator);
         NeuronCurve c = NeuronCurve(payable(curve));
         assertGt(bought, 0);
         assertEq(c.token().balanceOf(creator), bought);
@@ -165,7 +177,8 @@ contract NeuronCurveTest is Test {
     function test_launch_firstBuySelloutRefundsCreator() public {
         uint256 before = creator.balance;
         vm.prank(creator);
-        (address curve,, uint256 bought) = factory.launch{value: 500 ether}("A", "A", "", "", bytes32(0), 0);
+        (address curve,, uint256 bought) =
+            factory.launch{value: 500 ether}("A", "A", "", "", bytes32(0), 0, NeuronCurve.FeeMode.Creator);
         NeuronCurve c = NeuronCurve(payable(curve));
         assertEq(bought, SALE);
         uint256 spent = before - creator.balance;
@@ -372,7 +385,9 @@ contract NeuronCurveTest is Test {
         assertEq(address(c).balance, c.creatorFees() + c.protocolFees());
         // Supply is unchanged; the rest sits at the dead address.
         assertEq(t.totalSupply(), supplyBefore);
-        assertEq(t.balanceOf(DEAD) + t.balanceOf(address(migrator)) + t.balanceOf(alice) + t.balanceOf(bob), supplyBefore);
+        assertEq(
+            t.balanceOf(DEAD) + t.balanceOf(address(migrator)) + t.balanceOf(alice) + t.balanceOf(bob), supplyBefore
+        );
 
         // No more curve trading.
         vm.prank(bob);
