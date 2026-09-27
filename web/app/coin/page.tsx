@@ -14,6 +14,7 @@ import { ShareButton } from "@/components/share";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
+import { ForumCard } from "@/components/forumcard";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
@@ -163,6 +164,8 @@ function CoinPage() {
               <TopHolders curve={chartCurve} />
             </div>
           )}
+
+          <ForumCard coin={coin} />
 
           <FeeBox coin={coin} onChange={load} />
 

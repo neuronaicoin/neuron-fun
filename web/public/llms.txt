@@ -16,3 +16,8 @@ Status: live on testnet, mainnet coming soon. X: https://x.com/sasapadfun
 - [How to launch a meme coin on Robinhood Chain](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-robinhood-chain/)
 - [What is a bonding curve?](https://sasapad.fun/learn/what-is-a-bonding-curve/)
 - [How to launch a token on multiple chains at once](https://sasapad.fun/learn/multi-chain-token-launch/)
+
+## Forum
+- [sasa forum](https://sasapad.fun/forum/): one discussion board per coin launched on sasa. Only holders of a coin can post on its board; anyone can read. Each board lists the coin's market cap, holders, chains and graduation status from the chain.
+- [sasa news & help](https://sasapad.fun/forum/sasa/): questions about launching and trading on sasa.
+- New threads: https://sasapad.fun/forum/feed.xml · all forum pages: https://sasapad.fun/forum/sitemap.xml

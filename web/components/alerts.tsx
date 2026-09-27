@@ -229,7 +229,7 @@ function MarkAllButton() {
   );
 }
 
-const NOTE_ICON: Record<string, string> = { mc: "🔔", price: "🔔", move: "⚡", bond: "🔥", grad: "🎓" };
+const NOTE_ICON: Record<string, string> = { mc: "🔔", price: "🔔", move: "⚡", bond: "🔥", grad: "🎓", forum: "💬" };
 
 function NotesList({ onPick, pad = "px-4" }: { onPick: () => void; pad?: string }) {
   const { notes, signedIn } = useAlerts();
@@ -239,8 +239,8 @@ function NotesList({ onPick, pad = "px-4" }: { onPick: () => void; pad?: string 
     onPick();
     try {
       const u = new URL(n.url, location.origin);
-      if (u.origin === location.origin) router.push(u.pathname + u.search);
-      else location.href = u.href;
+      if (u.origin === location.origin && !u.pathname.startsWith("/forum/")) router.push(u.pathname + u.search);
+      else location.href = u.origin === location.origin ? u.pathname + u.search + u.hash : u.href;
     } catch {}
   };
   if (!signedIn || (notes && notes.length === 0)) {

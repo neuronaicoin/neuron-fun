@@ -136,6 +136,7 @@ export async function alertLoop(pool, log) {
         log(`alerts: ${fired.length} fired`);
         if (push) await sendPushes(pool, fired, log);
       }
+      await sendPendingNotes(pool, push, log);
       if (Date.now() - lastPrune > HOUR) {
         lastPrune = Date.now();
         await pool.query("delete from notifications where created_at < now() - interval '30 days'");
@@ -276,6 +277,28 @@ async function checkOnce(pool, { cooldown, target, site }) {
     db.release();
   }
   return fired.filter((x) => !x.skip);
+}
+
+// Notifications written elsewhere (forum replies) wait with pushed = false.
+let pendingWarned = false;
+async function sendPendingNotes(pool, push, log) {
+  let rows;
+  try {
+    ({ rows } = await pool.query("select id, owner, title, body, url from notifications where not pushed order by id limit 200"));
+  } catch (e) {
+    // forum.sql not run yet (no "pushed" column): nothing to send.
+    if (!pendingWarned && !/column "pushed" does not exist/.test(e.message)) log(`notes: ${e.message}`);
+    pendingWarned = true;
+    return;
+  }
+  if (!rows.length) return;
+  await pool.query("update notifications set pushed = true where id = any($1)", [rows.map((r) => r.id)]);
+  if (!push) return;
+  await sendPushes(
+    pool,
+    rows.map((r) => ({ alert: { id: `n${r.id}`, owner: r.owner, push: true }, title: r.title, body: r.body, url: r.url })),
+    log
+  );
 }
 
 async function sendPushes(pool, fired, log) {

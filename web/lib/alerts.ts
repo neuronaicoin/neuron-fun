@@ -94,8 +94,11 @@ function loadSession(a: string): Session | null {
 }
 function saveSession(a: string, s: Session | null) {
   try {
-    if (s) localStorage.setItem(sessionKey(a), JSON.stringify(s));
-    else localStorage.removeItem(sessionKey(a));
+    if (s) {
+      localStorage.setItem(sessionKey(a), JSON.stringify(s));
+      // The forum pages (plain HTML) read this to know who is signed in.
+      localStorage.setItem("sasa-session-current", a.toLowerCase());
+    } else localStorage.removeItem(sessionKey(a));
   } catch {}
 }
 
@@ -162,6 +165,11 @@ export function setAlertsAddress(address: string | null) {
   const a = address ? address.toLowerCase() : null;
   if (a === state.address) return;
   session = a ? loadSession(a) : null;
+  if (a && session) {
+    try {
+      localStorage.setItem("sasa-session-current", a);
+    } catch {}
+  }
   set({ address: a, signedIn: !!session, alerts: null, notes: null, unread: 0 });
   wireOnce();
   void checkPush();

@@ -243,6 +243,7 @@ const NAV = [
   { href: "/terminal/", label: "Terminal" },
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
+  { href: "/forum/", label: "Forum" },
   { href: "/stats/", label: "Stats" },
 ];
 
@@ -261,11 +262,18 @@ export function Header() {
           <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-7 text-[0.9375rem] font-medium">
-          {NAV.map((n) => (
-            <Link key={n.href} href={n.href} className={isActive(pathname, n.href) ? "text-emerald" : "text-ink hover:text-emerald"}>
-              {n.label}
-            </Link>
-          ))}
+          {NAV.map((n) =>
+            n.href === "/forum/" ? (
+              // The forum is server-rendered HTML, not part of the app: a normal link.
+              <a key={n.href} href={n.href} className="text-ink hover:text-emerald">
+                {n.label}
+              </a>
+            ) : (
+              <Link key={n.href} href={n.href} className={isActive(pathname, n.href) ? "text-emerald" : "text-ink hover:text-emerald"}>
+                {n.label}
+              </Link>
+            )
+          )}
         </nav>
         <div className="flex items-center gap-1.5 sm:gap-2">
           <AlertsSync />
@@ -283,7 +291,7 @@ export function BottomNav() {
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       <div className="grid grid-cols-4">
-        {NAV.filter((n) => n.href !== "/stats/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
@@ -356,6 +364,7 @@ export function Footer() {
           </p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
+          <a href="/forum/" className="text-emerald">Forum</a>
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <Link href="/learn/" className="text-emerald">Learn</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>

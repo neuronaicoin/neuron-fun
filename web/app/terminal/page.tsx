@@ -16,6 +16,7 @@ import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
+import { forumBoardUrl } from "@/lib/forum";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
@@ -313,6 +314,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] leading-tight truncate">{coin.name}</h1>
               <Link href={coinHref(coin)} className="text-[0.75rem] text-ink-3 underline">Coin page</Link>
+              <a href={forumBoardUrl(coin)} className="text-[0.75rem] text-ink-3 underline">Forum</a>
             </div>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <span className="text-[0.8125rem] text-ink-3 mr-1">${coin.symbol}</span>
