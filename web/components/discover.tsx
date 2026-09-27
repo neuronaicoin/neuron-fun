@@ -96,7 +96,7 @@ export function CoinTile({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }
           {coin.curves.map((c) => (
             <span
               key={c.chain.key}
-              className={"h-5 sm:h-6 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-[11px] font-semibold flex items-center shrink-0 " + (c.state === "closed" ? "bg-black/60 text-white/60" : "text-white")}
+              className={"h-5 sm:h-6 px-1.5 sm:px-2 rounded-full text-[0.625rem] sm:text-[0.6875rem] font-semibold flex items-center shrink-0 " + (c.state === "closed" ? "bg-black/60 text-white/60" : "text-white")}
               style={c.state === "closed" ? undefined : { background: c.chain.color }}
             >
               {c.chain.short}
@@ -104,24 +104,24 @@ export function CoinTile({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }
           ))}
         </div>
         {coin.graduatedOn ? (
-          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[11px] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
+          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
         ) : pct >= 80 ? (
-          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[11px] font-bold bg-warn-ink text-on-accent flex items-center">🔥 {pct}%</span>
+          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-warn-ink text-on-accent flex items-center">🔥 {pct}%</span>
         ) : null}
       </div>
       <div className="px-1.5 sm:px-2 pt-3 pb-1">
-        <div className="font-display font-semibold text-[16px] sm:text-[19px] leading-tight truncate">{coin.name}</div>
-        <div className="text-[12px] sm:text-[13px] text-ink-3 mt-0.5">${coin.symbol}</div>
+        <div className="font-display font-semibold text-[1rem] sm:text-[1.1875rem] leading-tight truncate">{coin.name}</div>
+        <div className="text-[0.75rem] sm:text-[0.8125rem] text-ink-3 mt-0.5">${coin.symbol}</div>
         <div className="flex items-baseline gap-1.5 mt-2">
-          <span className="font-display font-semibold text-[20px] sm:text-[24px]">{compactUsd(coinMarketCapUsd(coin, ethUsd))}</span>
-          <span className="text-[11px] text-ink-3">MC</span>
+          <span className="font-display font-semibold text-[1.25rem] sm:text-[1.5rem]">{compactUsd(coinMarketCapUsd(coin, ethUsd))}</span>
+          <span className="text-[0.6875rem] text-ink-3">MC</span>
         </div>
-        <div className="flex justify-between text-[11px] sm:text-[12px] text-ink-3 mt-2 mb-1.5">
+        <div className="flex justify-between text-[0.6875rem] sm:text-[0.75rem] text-ink-3 mt-2 mb-1.5">
           <span>{coin.graduatedOn ? `Won on ${coin.graduatedOn.chain.short}` : "Graduation"}</span>
           <span className="font-mono text-ink-2">{pct}%</span>
         </div>
         <RaceBar coin={coin} />
-        <div className="flex justify-between items-center text-[11px] sm:text-[12px] mt-3 pt-2.5 border-t border-line">
+        <div className="flex justify-between items-center text-[0.6875rem] sm:text-[0.75rem] mt-3 pt-2.5 border-t border-line">
           <span className="font-mono text-ink-3 truncate">{coin.holders} holders · {shortAddr(coin.creator)}</span>
           <span className="text-emerald font-semibold shrink-0 ml-2">{timeAgo(coin.createdAt)}</span>
         </div>
@@ -145,7 +145,7 @@ export function GraduationRadar({ coins, ethUsd }: { coins: Coin[]; ethUsd: numb
           <Link key={c.id} href={coinHref(c)} className="flex gap-3 items-center rounded-2xl bg-surface border border-line p-3 hover:border-emerald/60">
             <div className="relative w-16 h-16 rounded-xl overflow-hidden shrink-0">
               <CoinArt coin={c} small />
-              <span className="absolute bottom-0 left-0 right-0 text-center text-[10px] font-bold bg-black/60 text-white">#{i + 1}</span>
+              <span className="absolute bottom-0 left-0 right-0 text-center text-[0.625rem] font-bold bg-black/60 text-white">#{i + 1}</span>
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex justify-between items-baseline gap-2">
@@ -155,7 +155,7 @@ export function GraduationRadar({ coins, ethUsd }: { coins: Coin[]; ethUsd: numb
               <div className="mt-2">
                 <RaceBar coin={c} />
               </div>
-              <div className="text-[12px] text-ink-3 mt-1.5 truncate">
+              <div className="text-[0.75rem] text-ink-3 mt-1.5 truncate">
                 {left > 0 ? `${usd(left, 2)} to go` : "Graduating now"} · MC {compactUsd(coinMarketCapUsd(c, ethUsd))}
               </div>
             </div>
@@ -188,7 +188,7 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
     .filter((x) => x.coin && x.chain);
   if (items.length === 0) return null;
   const row = items.map(({ t, coin, chain }) => (
-    <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-2 px-4 shrink-0 text-[13px]">
+    <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-2 px-4 shrink-0 text-[0.8125rem]">
       <span className={t.isBuy ? "text-up font-semibold" : "text-danger font-semibold"}>{t.isBuy ? "BUY" : "SELL"}</span>
       <span className="font-semibold">${coin!.symbol}</span>
       <span className="font-mono text-ink-2">{ethUsd ? usd((t.nativeAmount / 1e18) * ethUsd, 2) : `${(t.nativeAmount / 1e18).toFixed(4)} ETH`}</span>

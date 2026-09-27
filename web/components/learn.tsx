@@ -10,9 +10,9 @@ export function LearnHeader() {
       <div className="max-w-3xl mx-auto px-5 h-16 flex items-center justify-between">
         <a href="/" className="flex items-center gap-2.5" aria-label="sasa home">
           <SasaMark size={32} />
-          <span className="font-display font-bold text-[21px] tracking-tight">sasa</span>
+          <span className="font-display font-bold text-[1.3125rem] tracking-tight">sasa</span>
         </a>
-        <nav className="flex items-center gap-2 text-[14px]">
+        <nav className="flex items-center gap-2 text-[0.875rem]">
           <Link href="/learn/" className="h-9 px-3 rounded-full flex items-center font-semibold text-ink-2 hover:text-ink">Learn</Link>
           <a href={X_URL} target="_blank" rel="noreferrer" className="h-9 px-4 rounded-full border border-line flex items-center font-semibold hover:border-emerald">
             Follow on X
@@ -26,7 +26,7 @@ export function LearnHeader() {
 export function LearnFooter() {
   return (
     <footer className="border-t border-line mt-16">
-      <div className="max-w-3xl mx-auto px-5 py-8 flex flex-wrap gap-x-6 gap-y-2 justify-between text-[13px] text-ink-3">
+      <div className="max-w-3xl mx-auto px-5 py-8 flex flex-wrap gap-x-6 gap-y-2 justify-between text-[0.8125rem] text-ink-3">
         <span>© {new Date().getFullYear()} sasa · Launch once. Live on every chain.</span>
         <span>Meme coins are risky. Nothing here is financial advice.</span>
       </div>
@@ -36,9 +36,9 @@ export function LearnFooter() {
 
 export function ArticleBody({ blocks }: { blocks: Block[] }) {
   return (
-    <div className="grid gap-5 text-[17px] leading-[1.75] text-ink-2">
+    <div className="grid gap-5 text-[1.0625rem] leading-[1.75] text-ink-2">
       {blocks.map((b, i) => {
-        if ("h2" in b) return <h2 key={i} className="font-display font-bold text-[24px] text-ink mt-6 leading-snug">{b.h2}</h2>;
+        if ("h2" in b) return <h2 key={i} className="font-display font-bold text-[1.5rem] text-ink mt-6 leading-snug">{b.h2}</h2>;
         if ("p" in b) return <p key={i}>{b.p}</p>;
         if ("ul" in b)
           return (

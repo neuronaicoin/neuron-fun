@@ -122,14 +122,14 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
   return (
     <div>
       <div className="flex items-center justify-end sm:justify-between gap-3 mb-3">
-        <span className="hidden sm:inline text-[13px] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
+        <span className="hidden sm:inline text-[0.8125rem] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
         <div className="flex gap-1">
           {RANGES.map((r) => (
             <button
               key={r.s}
               type="button"
               onClick={() => setRange(r.s)}
-              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[12px] " + (range === r.s ? "bg-ink text-on-accent" : "bg-mist text-ink-2")}
+              className={"h-8 min-w-10 px-2 rounded-lg font-mono text-[0.75rem] " + (range === r.s ? "bg-ink text-on-accent" : "bg-mist text-ink-2")}
             >
               {r.label}
             </button>
@@ -139,7 +139,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       <div className="relative h-[300px] sm:h-[360px]">
         <div ref={box} className="absolute inset-0" />
         {empty && (
-          <div className="absolute inset-0 flex items-center justify-center text-[14px] text-ink-3">No trades yet. The first buy starts the chart.</div>
+          <div className="absolute inset-0 flex items-center justify-center text-[0.875rem] text-ink-3">No trades yet. The first buy starts the chart.</div>
         )}
       </div>
     </div>
@@ -186,7 +186,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
   }, [coinId, trader, limit]);
 
   if (!rows) return <div className="h-40 rounded-2xl bg-line/50 animate-pulse" />;
-  if (rows.length === 0) return <p className="text-[14px] text-ink-3 py-6 text-center">No trades yet.</p>;
+  if (rows.length === 0) return <p className="text-[0.875rem] text-ink-3 py-6 text-center">No trades yet.</p>;
   return (
     <ul className="divide-y divide-mist">
       {rows.map((t) => {
@@ -194,7 +194,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
         const eth = t.nativeAmount / 1e18;
         const n = names?.get(t.coinId);
         return (
-          <li key={t.txHash + t.curve} className="flex items-center gap-3 py-2.5 text-[13px]">
+          <li key={t.txHash + t.curve} className="flex items-center gap-3 py-2.5 text-[0.8125rem]">
             <span className={"w-12 shrink-0 font-semibold " + (t.isBuy ? "text-up" : "text-danger")}>{t.isBuy ? "Buy" : "Sell"}</span>
             {!compact && chain && <ChainChip chain={chain} />}
             <span className="min-w-0 flex-1 truncate">
@@ -242,9 +242,9 @@ export function TopHolders({ curve }: { curve: CurveInfo }) {
     };
   }, [curve.chain.chain.id, curve.token, curve.curve, curve.chain.poolManager]);
   if (!rows) return <div className="h-32 rounded-2xl bg-line/50 animate-pulse" />;
-  if (rows.length === 0) return <p className="text-[14px] text-ink-3">No holders yet.</p>;
+  if (rows.length === 0) return <p className="text-[0.875rem] text-ink-3">No holders yet.</p>;
   return (
-    <ol className="grid gap-2 text-[13px]">
+    <ol className="grid gap-2 text-[0.8125rem]">
       {rows.map((r, i) => (
         <li key={r.holder} className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2">
@@ -269,8 +269,8 @@ export function CoinStats({ coin, ethUsd }: { coin: Coin; ethUsd: number | null 
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {items.map(([l, v]) => (
         <div key={l} className="bg-surface border border-line rounded-2xl p-3.5">
-          <div className="text-[12px] text-ink-3">{l}</div>
-          <div className="font-mono text-[17px] mt-0.5">{v}</div>
+          <div className="text-[0.75rem] text-ink-3">{l}</div>
+          <div className="font-mono text-[1.0625rem] mt-0.5">{v}</div>
         </div>
       ))}
     </div>

@@ -30,7 +30,7 @@ function Bars({ data, pick, color, format }: { data: DailyStat[]; pick: (d: Dail
   const shown = hover ?? values.length - 1;
   return (
     <div>
-      <div className="flex justify-between text-[12px] text-ink-3 font-mono h-5">
+      <div className="flex justify-between text-[0.75rem] text-ink-3 font-mono h-5">
         <span>{data[shown]?.day ?? ""}</span>
         <span className="text-ink">{values.length ? format(values[shown]) : ""}</span>
       </div>
@@ -44,7 +44,7 @@ function Bars({ data, pick, color, format }: { data: DailyStat[]; pick: (d: Dail
           />
         ))}
       </div>
-      <div className="flex justify-between text-[11px] text-ink-3 font-mono mt-2">
+      <div className="flex justify-between text-[0.6875rem] text-ink-3 font-mono mt-2">
         <span>{data[0]?.day.slice(5)}</span>
         <span>{data[data.length - 1]?.day.slice(5)}</span>
       </div>
@@ -85,10 +85,10 @@ export default function StatsPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display font-bold text-[34px] sm:text-[44px] tracking-tight">Stats</h1>
+          <h1 className="font-display font-bold text-[2.125rem] sm:text-[2.75rem] tracking-tight">Stats</h1>
           <p className="text-ink-2 mt-1">Every launch on sasa, across every chain. Straight from the chain, updated live.</p>
         </div>
-        <span className="flex items-center gap-2 text-[13px] text-ink-3">
+        <span className="flex items-center gap-2 text-[0.8125rem] text-ink-3">
           <span className="w-2 h-2 rounded-full bg-up animate-pulse" aria-hidden="true" /> live
         </span>
       </div>
@@ -102,7 +102,7 @@ export default function StatsPage() {
               role="tab"
               aria-selected={chain === c.id}
               onClick={() => setChain(c.id)}
-              className={"h-9 px-4 rounded-full text-[14px] font-semibold shrink-0 " + (chain === c.id ? "bg-ink text-on-accent" : "text-ink-2")}
+              className={"h-9 px-4 rounded-full text-[0.875rem] font-semibold shrink-0 " + (chain === c.id ? "bg-ink text-on-accent" : "text-ink-2")}
             >
               {c.label}
             </button>
@@ -116,7 +116,7 @@ export default function StatsPage() {
               role="tab"
               aria-selected={days === r.days}
               onClick={() => setDays(r.days)}
-              className={"h-9 px-3 rounded-full text-[13px] font-mono " + (days === r.days ? "bg-surface border border-line text-ink" : "text-ink-3")}
+              className={"h-9 px-3 rounded-full text-[0.8125rem] font-mono " + (days === r.days ? "bg-surface border border-line text-ink" : "text-ink-3")}
             >
               {r.label}
             </button>
@@ -134,65 +134,65 @@ export default function StatsPage() {
           ["Traders", t ? t.traders.toLocaleString("en-US") : null, t ? `${t.holders.toLocaleString("en-US")} holders now` : ""],
         ].map(([label, value, sub]) => (
           <div key={label} className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-            <div className="text-[13px] text-ink-3">{label}</div>
-            <div className="font-display font-bold text-[26px] sm:text-[32px] mt-1 leading-tight">{value ?? <Skeleton className="h-8 w-24" />}</div>
-            <div className="text-[12px] text-ink-3 mt-1">{sub}</div>
+            <div className="text-[0.8125rem] text-ink-3">{label}</div>
+            <div className="font-display font-bold text-[1.625rem] sm:text-[2rem] mt-1 leading-tight">{value ?? <Skeleton className="h-8 w-24" />}</div>
+            <div className="text-[0.75rem] text-ink-3 mt-1">{sub}</div>
           </div>
         ))}
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-          <h2 className="font-display font-bold text-[18px]">Daily volume</h2>
+          <h2 className="font-display font-bold text-[1.125rem]">Daily volume</h2>
           <div className="mt-3">{stats ? <Bars data={daily} pick={(d) => d.volume} color="#ff6b1a" format={(v) => money(v, ethUsd)} /> : <Skeleton className="h-48" />}</div>
         </div>
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-          <h2 className="font-display font-bold text-[18px]">New coins per day</h2>
+          <h2 className="font-display font-bold text-[1.125rem]">New coins per day</h2>
           <div className="mt-3">{stats ? <Bars data={daily} pick={(d) => d.launches} color="#ffb020" format={(v) => String(v)} /> : <Skeleton className="h-48" />}</div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-          <h2 className="font-display font-bold text-[18px]">Top coins by volume</h2>
+          <h2 className="font-display font-bold text-[1.125rem]">Top coins by volume</h2>
           {!stats && <Skeleton className="h-48 mt-3" />}
-          {stats && stats.topCoins.length === 0 && <p className="text-ink-3 text-[14px] mt-3">No trades in this period.</p>}
+          {stats && stats.topCoins.length === 0 && <p className="text-ink-3 text-[0.875rem] mt-3">No trades in this period.</p>}
           <ol className="mt-3 grid gap-1">
             {stats?.topCoins.map((c, i) => (
               <li key={c.coinId}>
                 <Link href={coinHref({ id: c.coinId })} className="flex items-center gap-3 rounded-2xl px-2 py-2 hover:bg-paper">
-                  <span className="w-5 text-[13px] font-mono text-ink-3">{i + 1}</span>
+                  <span className="w-5 text-[0.8125rem] font-mono text-ink-3">{i + 1}</span>
                   <CoinAvatar logo={c.logo} symbol={c.symbol} size={34} />
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-[14px] truncate">{c.name}</span>
-                    <span className="block text-[12px] text-ink-3">${c.symbol} · {c.trades} trades</span>
+                    <span className="block font-semibold text-[0.875rem] truncate">{c.name}</span>
+                    <span className="block text-[0.75rem] text-ink-3">${c.symbol} · {c.trades} trades</span>
                   </span>
-                  <span className="font-mono text-[14px]">{money(c.volume, ethUsd)}</span>
+                  <span className="font-mono text-[0.875rem]">{money(c.volume, ethUsd)}</span>
                 </Link>
               </li>
             ))}
           </ol>
         </div>
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-          <h2 className="font-display font-bold text-[18px]">Top creators by earnings</h2>
+          <h2 className="font-display font-bold text-[1.125rem]">Top creators by earnings</h2>
           {!stats && <Skeleton className="h-48 mt-3" />}
-          {stats && stats.topCreators.length === 0 && <p className="text-ink-3 text-[14px] mt-3">No earnings in this period.</p>}
+          {stats && stats.topCreators.length === 0 && <p className="text-ink-3 text-[0.875rem] mt-3">No earnings in this period.</p>}
           <ol className="mt-3 grid gap-1">
             {stats?.topCreators.map((c, i) => (
               <li key={c.creator} className="flex items-center gap-3 px-2 py-2">
-                <span className="w-5 text-[13px] font-mono text-ink-3">{i + 1}</span>
+                <span className="w-5 text-[0.8125rem] font-mono text-ink-3">{i + 1}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-[14px]">{shortAddr(c.creator)}</span>
-                  <span className="block text-[12px] text-ink-3">{c.coins} coin{c.coins === 1 ? "" : "s"}</span>
+                  <span className="block font-mono text-[0.875rem]">{shortAddr(c.creator)}</span>
+                  <span className="block text-[0.75rem] text-ink-3">{c.coins} coin{c.coins === 1 ? "" : "s"}</span>
                 </span>
-                <span className="font-mono text-[14px] text-up">{money(c.earned, ethUsd)}</span>
+                <span className="font-mono text-[0.875rem] text-up">{money(c.earned, ethUsd)}</span>
               </li>
             ))}
           </ol>
         </div>
       </div>
 
-      <p className="mt-6 text-[12px] text-ink-3">
+      <p className="mt-6 text-[0.75rem] text-ink-3">
         Figures come from sasa&apos;s own index of on-chain events. Dollar values use the current ETH price.
       </p>
     </div>

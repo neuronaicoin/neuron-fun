@@ -108,20 +108,20 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
 
   return (
     <div className="bg-surface border border-line rounded-3xl p-5 sm:p-6">
-      <h2 className="font-display font-bold text-[18px]">{COPY[mode].title}</h2>
-      <p className="text-[14px] text-ink-2 mt-1">{COPY[mode].text}</p>
+      <h2 className="font-display font-bold text-[1.125rem]">{COPY[mode].title}</h2>
+      <p className="text-[0.875rem] text-ink-2 mt-1">{COPY[mode].text}</p>
 
       {!rows && <div className="mt-4 h-16 rounded-2xl bg-paper animate-pulse" />}
 
       {rows && mode === "holders" && address && (
         <div className="mt-4 rounded-2xl bg-paper p-4">
-          <div className="text-[13px] text-ink-3">Your rewards</div>
+          <div className="text-[0.8125rem] text-ink-3">Your rewards</div>
           <ul className="mt-2 grid gap-2">
             {rows.map((r) => (
               <li key={r.curve.chain.key} className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-2">
                   <ChainChip chain={r.curve.chain} />
-                  <span className="font-mono text-[15px]">{fmtEth(r.claimable ?? 0n, 6)}</span>
+                  <span className="font-mono text-[0.9375rem]">{fmtEth(r.claimable ?? 0n, 6)}</span>
                 </span>
                 <button
                   type="button"
@@ -129,7 +129,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                   onClick={() =>
                     send(`claim-${r.curve.chain.key}`, r.curve, call(r.curve.token, tokenAbi, "claim", [address]), "Rewards sent to your wallet.")
                   }
-                  className="h-9 px-4 rounded-xl bg-up text-on-accent text-[14px] font-semibold disabled:opacity-40"
+                  className="h-9 px-3 rounded-xl bg-up text-on-accent text-[0.875rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                 >
                   {busy === `claim-${r.curve.chain.key}` ? "…" : "Claim"}
                 </button>
@@ -147,7 +147,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
               <li key={c.chain.key} className="grid gap-2">
                 {r.waiting > 0n && (
                   <div className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-2 text-[14px]">
+                    <span className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-[0.875rem]">
                       <ChainChip chain={c.chain} muted={c.state === "closed"} />
                       <span className="text-ink-3">waiting</span>
                       <span className="font-mono">{fmtEth(r.waiting, 6)}</span>
@@ -158,7 +158,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       onClick={() =>
                         send(`move-${c.chain.key}`, c, call(c.curve, curveAbi, "claimCreatorFees"), "Done.")
                       }
-                      className="h-9 px-4 rounded-xl bg-emerald text-on-accent text-[13px] font-semibold disabled:opacity-40"
+                      className="h-9 px-3 rounded-xl bg-emerald text-on-accent text-[0.8125rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                     >
                       {busy === `move-${c.chain.key}` ? "…" : moveLabel(c)}
                     </button>
@@ -166,7 +166,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                 )}
                 {r.poolFees !== null && r.poolFees > 0n && (
                   <div className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-2 text-[14px]">
+                    <span className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-[0.875rem]">
                       <ChainChip chain={c.chain} />
                       <span className="text-ink-3">pool fees</span>
                       <span className="font-mono">{fmtEth(r.poolFees, 6)}</span>
@@ -177,7 +177,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       onClick={() =>
                         send(`collect-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "collectFees", [c.token]), "Pool fees collected.")
                       }
-                      className="h-9 px-4 rounded-xl border border-line text-[13px] font-semibold disabled:opacity-40"
+                      className="h-9 px-3 rounded-xl border border-line text-[0.8125rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                     >
                       {busy === `collect-${c.chain.key}` ? "…" : "Collect"}
                     </button>
@@ -185,7 +185,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                 )}
                 {r.buybackFund !== null && r.buybackFund > 0n && (
                   <div className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-2 text-[14px]">
+                    <span className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-[0.875rem]">
                       <ChainChip chain={c.chain} />
                       <span className="text-ink-3">buyback fund</span>
                       <span className="font-mono">{fmtEth(r.buybackFund, 6)}</span>
@@ -196,7 +196,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       onClick={() =>
                         send(`buyback-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "buyback", [c.token]), "Bought back and burned.")
                       }
-                      className="h-9 px-4 rounded-xl bg-emerald text-on-accent text-[13px] font-semibold disabled:opacity-40"
+                      className="h-9 px-3 rounded-xl bg-emerald text-on-accent text-[0.8125rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                     >
                       {busy === `buyback-${c.chain.key}` ? "…" : "Run buyback"}
                     </button>
@@ -209,11 +209,11 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
       )}
 
       {rows && rows.every((r) => r.waiting === 0n && !r.poolFees && !r.buybackFund) && (
-        <p className="text-[13px] text-ink-3 mt-3">Nothing waiting right now. Fees build up with every trade.</p>
+        <p className="text-[0.8125rem] text-ink-3 mt-3">Nothing waiting right now. Fees build up with every trade.</p>
       )}
-      {!address && mode !== "creator" && <p className="text-[12px] text-ink-3 mt-3">Connect a wallet to run these. Anyone can.</p>}
-      {error && <p className="mt-3 text-[13px] text-danger">{error}</p>}
-      {done && <p className="mt-3 text-[13px] text-up">{done}</p>}
+      {!address && mode !== "creator" && <p className="text-[0.75rem] text-ink-3 mt-3">Connect a wallet to run these. Anyone can.</p>}
+      {error && <p className="mt-3 text-[0.8125rem] text-danger">{error}</p>}
+      {done && <p className="mt-3 text-[0.8125rem] text-up">{done}</p>}
     </div>
   );
 }

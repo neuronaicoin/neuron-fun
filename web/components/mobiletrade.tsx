@@ -25,11 +25,11 @@ export function MobileTradeBar({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd:
             type="button"
             disabled={!canBuy}
             onClick={() => setSide("buy")}
-            className="h-12 rounded-2xl bg-up text-on-accent text-[16px] font-bold disabled:opacity-40"
+            className="h-12 rounded-2xl bg-up text-on-accent text-[1rem] font-bold disabled:opacity-40"
           >
             Buy
           </button>
-          <button type="button" onClick={() => setSide("sell")} className="h-12 rounded-2xl bg-danger text-white text-[16px] font-bold">
+          <button type="button" onClick={() => setSide("sell")} className="h-12 rounded-2xl bg-danger text-white text-[1rem] font-bold">
             Sell
           </button>
         </div>

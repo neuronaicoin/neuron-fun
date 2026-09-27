@@ -40,8 +40,8 @@ const FAQ: [string, string][] = [
 export default function HowItWorks() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-      <h1 className="font-display font-semibold text-[34px] sm:text-[46px] tracking-tight leading-tight">How it works</h1>
-      <p className="text-[18px] text-ink-2 mt-4 leading-relaxed">
+      <h1 className="font-display font-semibold text-[2.125rem] sm:text-[2.875rem] tracking-tight leading-tight">How it works</h1>
+      <p className="text-[1.125rem] text-ink-2 mt-4 leading-relaxed">
         sasa launches a meme coin on several chains at once. Buyers on every chain push it toward one shared
         target, and the chain with the most money wins.
       </p>
@@ -49,17 +49,17 @@ export default function HowItWorks() {
       <div className="mt-10 grid gap-3">
         {FAQ.map(([q, a]) => (
           <details key={q} className="group bg-surface border border-line rounded-2xl p-5 open:border-emerald">
-            <summary className="flex items-center justify-between gap-4 cursor-pointer list-none font-semibold text-[17px]">
+            <summary className="flex items-center justify-between gap-4 cursor-pointer list-none font-semibold text-[1.0625rem]">
               {q}
-              <span className="text-emerald text-[22px] leading-none transition-transform group-open:rotate-45" aria-hidden="true">+</span>
+              <span className="text-emerald text-[1.375rem] leading-none transition-transform group-open:rotate-45" aria-hidden="true">+</span>
             </summary>
-            <p className="text-[16px] text-ink-2 mt-3 leading-relaxed">{a}</p>
+            <p className="text-[1rem] text-ink-2 mt-3 leading-relaxed">{a}</p>
           </details>
         ))}
       </div>
 
       <div className="mt-10 bg-night text-ink rounded-3xl p-7 text-center">
-        <h2 className="font-display font-semibold text-[24px]">Ready?</h2>
+        <h2 className="font-display font-semibold text-[1.5rem]">Ready?</h2>
         <p className="text-[#a9bab3] mt-2">It takes about a minute.</p>
         <Link href="/create/" className="inline-flex mt-5 h-12 px-7 rounded-xl bg-mint text-on-accent font-semibold items-center">
           Create a coin

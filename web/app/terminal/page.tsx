@@ -83,11 +83,11 @@ function Terminal() {
         <button
           type="button"
           onClick={() => setMarketsOpen(true)}
-          className="h-9 px-3 rounded-xl border border-line bg-surface text-[13px] font-semibold flex items-center gap-2"
+          className="h-9 px-3 rounded-xl border border-line bg-surface text-[0.8125rem] font-semibold flex items-center gap-2"
         >
           <span aria-hidden="true">☰</span> All coins
         </button>
-        {coin && <span className="text-[12px] text-ink-3 truncate">{coin.curves.length} chain{coin.curves.length > 1 ? "s" : ""}</span>}
+        {coin && <span className="text-[0.75rem] text-ink-3 truncate">{coin.curves.length} chain{coin.curves.length > 1 ? "s" : ""}</span>}
       </div>
       {marketsOpen && (
         <Sheet title="Coins" onClose={() => setMarketsOpen(false)}>
@@ -169,7 +169,7 @@ function Markets(props: {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search name or ticker"
           aria-label="Search coins"
-          className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-[14px] focus:border-emerald"
+          className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-[0.875rem] focus:border-emerald"
         />
         <div className="grid grid-cols-3 gap-1 mt-2" role="tablist" aria-label="Sort">
           {([["hot", "Closest"], ["active", "Active"], ["new", "New"]] as const).map(([k, l]) => (
@@ -179,7 +179,7 @@ function Markets(props: {
               role="tab"
               aria-selected={sort === k}
               onClick={() => setSort(k)}
-              className={"h-8 rounded-lg text-[12px] font-semibold " + (sort === k ? "bg-ink text-on-accent" : "text-ink-2")}
+              className={"h-8 rounded-lg text-[0.75rem] font-semibold " + (sort === k ? "bg-ink text-on-accent" : "text-ink-2")}
             >
               {l}
             </button>
@@ -188,7 +188,7 @@ function Markets(props: {
       </div>
       <ul className="max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto divide-y divide-line">
         {!coins && [0, 1, 2, 3, 4].map((i) => <li key={i} className="p-3"><Skeleton className="h-10" /></li>)}
-        {coins?.length === 0 && <li className="p-6 text-center text-[14px] text-ink-3">No coins found.</li>}
+        {coins?.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
         {coins?.map((c) => (
           <li key={c.id}>
             <button
@@ -199,12 +199,12 @@ function Markets(props: {
               <CoinAvatar logo={c.logo} symbol={c.symbol} size={36} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-[14px] truncate">{c.name}</span>
-                  <span className="font-mono text-[13px] shrink-0">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
+                  <span className="font-semibold text-[0.875rem] truncate">{c.name}</span>
+                  <span className="font-mono text-[0.8125rem] shrink-0">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
                 </span>
                 <span className="flex items-center justify-between gap-2 mt-1">
-                  <span className="text-[12px] text-ink-3">${c.symbol} · {c.curves.length} chain{c.curves.length > 1 ? "s" : ""}</span>
-                  <span className="text-[12px] font-mono text-ink-2">{c.graduatedOn ? "Graduated" : `${Math.round(c.progress * 100)}%`}</span>
+                  <span className="text-[0.75rem] text-ink-3">${c.symbol} · {c.curves.length} chain{c.curves.length > 1 ? "s" : ""}</span>
+                  <span className="text-[0.75rem] font-mono text-ink-2">{c.graduatedOn ? "Graduated" : `${Math.round(c.progress * 100)}%`}</span>
                 </span>
                 <span className="block mt-1.5"><RaceBar coin={c} /></span>
               </span>
@@ -234,11 +234,11 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
           <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={52} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="font-display font-bold text-[22px] sm:text-[26px] leading-tight truncate">{coin.name}</h1>
-              <Link href={coinHref(coin)} className="text-[12px] text-ink-3 underline">Coin page</Link>
+              <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] leading-tight truncate">{coin.name}</h1>
+              <Link href={coinHref(coin)} className="text-[0.75rem] text-ink-3 underline">Coin page</Link>
             </div>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <span className="text-[13px] text-ink-3 mr-1">${coin.symbol}</span>
+              <span className="text-[0.8125rem] text-ink-3 mr-1">${coin.symbol}</span>
               {coin.curves.map((c) => (
                 <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
               ))}
@@ -253,8 +253,8 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
             ["Vol 24h", ethUsd ? usd(coin.volumeNative24h * ethUsd, 0) : `${coin.volumeNative24h.toFixed(3)} ETH`],
           ].map(([l, v]) => (
             <div key={l} className="rounded-xl sm:rounded-2xl bg-paper px-2 py-1.5 sm:px-3 sm:py-2.5 min-w-0">
-              <div className="text-[10px] sm:text-[11px] text-ink-3 truncate">{l}</div>
-              <div className="font-mono text-[13px] sm:text-[16px] mt-0.5 truncate">{v}</div>
+              <div className="text-[0.625rem] sm:text-[0.6875rem] text-ink-3 truncate">{l}</div>
+              <div className="font-mono text-[0.8125rem] sm:text-[1rem] mt-0.5 truncate">{v}</div>
             </div>
           ))}
         </div>
@@ -269,7 +269,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
                   key={c.chain.key}
                   type="button"
                   onClick={() => setChartChain(c.chain.key)}
-                  className={"h-8 px-3 rounded-full text-[12px] font-semibold border " + (c.chain.key === chartCurve.chain.key ? "border-emerald text-ink" : "border-line text-ink-2")}
+                  className={"h-8 px-3 rounded-full text-[0.75rem] font-semibold border " + (c.chain.key === chartCurve.chain.key ? "border-emerald text-ink" : "border-line text-ink-2")}
                 >
                   {c.chain.short}
                 </button>
@@ -289,7 +289,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               role="tab"
               aria-selected={tab === k}
               onClick={() => setTab(k)}
-              className={"h-9 px-4 rounded-xl text-[13px] font-semibold shrink-0 " + (tab === k ? "bg-paper text-ink" : "text-ink-3")}
+              className={"h-9 px-4 rounded-xl text-[0.8125rem] font-semibold shrink-0 " + (tab === k ? "bg-paper text-ink" : "text-ink-3")}
             >
               {l}
             </button>
@@ -300,7 +300,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
           {tab === "holders" && chartCurve && <TopHolders curve={chartCurve} />}
           {tab === "position" && <Position coin={coin} ethUsd={ethUsd} />}
           {tab === "about" && (
-            <div className="grid gap-3 text-[14px] text-ink-2">
+            <div className="grid gap-3 text-[0.875rem] text-ink-2">
               {coin.description ? <p className="leading-relaxed">{coin.description}</p> : <p className="text-ink-3">No description.</p>}
               <div className="flex justify-between gap-4">
                 <span>Created</span>
@@ -355,9 +355,9 @@ function Position({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   }, [address, coin.id, coin.curves]);
 
   const show = (eth: number) => (ethUsd ? usd(eth * ethUsd, 2) : `${eth.toFixed(5)} ETH`);
-  if (!address) return <p className="text-[14px] text-ink-3">Connect your wallet to see your position.</p>;
+  if (!address) return <p className="text-[0.875rem] text-ink-3">Connect your wallet to see your position.</p>;
   if (!data) return <Skeleton className="h-24" />;
-  if (data.spent === 0 && data.tokens === 0) return <p className="text-[14px] text-ink-3">You don&apos;t hold ${coin.symbol} yet.</p>;
+  if (data.spent === 0 && data.tokens === 0) return <p className="text-[0.875rem] text-ink-3">You don&apos;t hold ${coin.symbol} yet.</p>;
   const result = data.nowEth + data.back - data.spent;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -368,8 +368,8 @@ function Position({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
         ["Result", `${result >= 0 ? "+" : ""}${show(result)}`],
       ].map(([l, v], i) => (
         <div key={l} className="rounded-2xl bg-paper px-3 py-2.5">
-          <div className="text-[11px] text-ink-3">{l}</div>
-          <div className={"font-mono text-[15px] mt-0.5 " + (i === 3 ? (result >= 0 ? "text-up" : "text-danger") : "")}>{v}</div>
+          <div className="text-[0.6875rem] text-ink-3">{l}</div>
+          <div className={"font-mono text-[0.9375rem] mt-0.5 " + (i === 3 ? (result >= 0 ? "text-up" : "text-danger") : "")}>{v}</div>
         </div>
       ))}
     </div>

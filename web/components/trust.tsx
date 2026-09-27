@@ -144,11 +144,11 @@ export function TrustCard({ coin }: { coin: Coin }) {
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display font-bold text-[18px]">Safety check</h2>
+        <h2 className="font-display font-bold text-[1.125rem]">Safety check</h2>
         {worst && (
           <span
             className={
-              "inline-flex items-center gap-2 h-8 px-3 rounded-full text-[13px] font-semibold " +
+              "inline-flex items-center gap-2 h-8 px-3 rounded-full text-[0.8125rem] font-semibold " +
               (worst === "bad" ? "bg-danger/15 text-danger" : worst === "warn" ? "bg-warn-bg text-warn-ink" : "bg-up/15 text-up")
             }
           >
@@ -157,7 +157,7 @@ export function TrustCard({ coin }: { coin: Coin }) {
           </span>
         )}
       </div>
-      {failed && !checks && <p className="text-[14px] text-ink-3 mt-3">Could not load the checks right now.</p>}
+      {failed && !checks && <p className="text-[0.875rem] text-ink-3 mt-3">Could not load the checks right now.</p>}
       {!checks && !failed && <Skeleton className="h-40 mt-4" />}
       {checks && (
         <ul className="mt-4 grid gap-3">
@@ -165,14 +165,14 @@ export function TrustCard({ coin }: { coin: Coin }) {
             <li key={c.title} className="flex gap-3">
               <span className={"mt-2 w-2 h-2 rounded-full shrink-0 " + DOT[c.level]} aria-hidden="true" />
               <span>
-                <span className="block text-[14px] font-semibold">{c.title}</span>
-                <span className="block text-[13px] text-ink-3 leading-snug mt-0.5">{c.detail}</span>
+                <span className="block text-[0.875rem] font-semibold">{c.title}</span>
+                <span className="block text-[0.8125rem] text-ink-3 leading-snug mt-0.5">{c.detail}</span>
               </span>
             </li>
           ))}
         </ul>
       )}
-      <p className="text-[11px] text-ink-3 mt-4 leading-relaxed">
+      <p className="text-[0.6875rem] text-ink-3 mt-4 leading-relaxed">
         Automatic checks from on-chain data. They can&apos;t tell you whether a coin will go up; meme coins are always risky.
       </p>
     </div>

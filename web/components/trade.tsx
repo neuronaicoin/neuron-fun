@@ -166,7 +166,7 @@ export function QuickTrade({
 
   if (!open.length && !sellable.length) {
     return (
-      <div className="rounded-3xl border border-line bg-surface p-5 text-[15px] text-ink-2">
+      <div className="rounded-3xl border border-line bg-surface p-5 text-[0.9375rem] text-ink-2">
         ${coin.symbol} graduated on {coin.graduatedOn?.chain.short}. It now trades in its locked pool there.
       </div>
     );
@@ -270,7 +270,7 @@ export function QuickTrade({
             aria-selected={side === s}
             disabled={s === "buy" && !open.length}
             onClick={() => { setSide(s); setPicked(null); setError(""); setDone(null); }}
-            className={"h-11 rounded-xl text-[15px] font-bold disabled:opacity-30 " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
+            className={"h-11 rounded-xl text-[0.9375rem] font-bold disabled:opacity-30 " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
           >
             {s === "buy" ? "Buy" : "Sell"}
           </button>
@@ -280,15 +280,15 @@ export function QuickTrade({
       {side === "buy" ? (
         <>
           <label className="block mt-5">
-            <span className="text-[13px] font-semibold text-ink-3">You pay</span>
+            <span className="text-[0.8125rem] font-semibold text-ink-3">You pay</span>
             <div className="mt-2 flex items-center h-16 px-4 rounded-2xl border border-line bg-paper focus-within:border-emerald">
-              <span className="font-display text-[26px] text-ink-3 mr-1">$</span>
+              <span className="font-display text-[1.625rem] text-ink-3 mr-1">$</span>
               <input
                 value={usdIn}
                 onChange={(e) => setUsdIn(e.target.value.replace(/[^0-9.,]/g, ""))}
                 inputMode="decimal"
                 aria-label="Amount in dollars"
-                className="w-full bg-transparent font-display text-[28px] outline-none"
+                className="w-full bg-transparent font-display text-[1.75rem] outline-none"
               />
             </div>
           </label>
@@ -298,7 +298,7 @@ export function QuickTrade({
                 key={v}
                 type="button"
                 onClick={() => setUsdIn(String(v))}
-                className={"h-10 rounded-xl text-[14px] font-semibold border " + (Number(usdIn) === v ? "border-emerald text-ink" : "border-line text-ink-2")}
+                className={"h-10 rounded-xl text-[0.875rem] font-semibold border " + (Number(usdIn) === v ? "border-emerald text-ink" : "border-line text-ink-2")}
               >
                 ${v}
               </button>
@@ -307,21 +307,21 @@ export function QuickTrade({
         </>
       ) : (
         <>
-          <div className="mt-5 text-[13px] font-semibold text-ink-3">You sell</div>
+          <div className="mt-5 text-[0.8125rem] font-semibold text-ink-3">You sell</div>
           <div className="grid grid-cols-4 gap-2 mt-2">
             {[25, 50, 75, 100].map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setSellPct(v)}
-                className={"h-12 rounded-xl text-[15px] font-bold border " + (sellPct === v ? "border-danger text-ink" : "border-line text-ink-2")}
+                className={"h-12 rounded-xl text-[0.9375rem] font-bold border " + (sellPct === v ? "border-danger text-ink" : "border-line text-ink-2")}
               >
                 {v === 100 ? "All" : `${v}%`}
               </button>
             ))}
           </div>
           {address && bal && (
-            <p className="text-[12px] text-ink-3 mt-2">
+            <p className="text-[0.75rem] text-ink-3 mt-2">
               You hold {fmtTokens(bal.tok)} ${coin.symbol} on {chosen?.chain.short}
             </p>
           )}
@@ -330,7 +330,7 @@ export function QuickTrade({
 
       {(side === "buy" ? open : sellable).length > 1 && chosen && (
         <div className="mt-4">
-          <div className="flex items-center justify-between text-[12px] text-ink-3">
+          <div className="flex items-center justify-between text-[0.75rem] text-ink-3">
             <span>{side === "buy" ? "Buying on" : "Selling on"}</span>
             {side === "buy" && gap !== null && gap > 0 && picked === null && (
               <span className="text-up font-semibold">Best price picked · up to {gap}% cheaper</span>
@@ -342,7 +342,7 @@ export function QuickTrade({
                 key={c.chain.key}
                 type="button"
                 onClick={() => setPicked(c.chain.key)}
-                className={"h-8 px-3 rounded-full text-[12px] font-semibold border " + (c.chain.key === chosen.chain.key ? "text-white border-transparent" : "border-line text-ink-2")}
+                className={"h-8 px-3 rounded-full text-[0.75rem] font-semibold border " + (c.chain.key === chosen.chain.key ? "text-white border-transparent" : "border-line text-ink-2")}
                 style={c.chain.key === chosen.chain.key ? { background: c.chain.color } : undefined}
               >
                 {c.chain.short}
@@ -354,12 +354,12 @@ export function QuickTrade({
       )}
 
       {closedHere && (
-        <p className="mt-3 text-[13px] text-warn-ink bg-warn-bg rounded-xl p-3">
+        <p className="mt-3 text-[0.8125rem] text-warn-ink bg-warn-bg rounded-xl p-3">
           Buying stopped on {chosen?.chain.short}. You can always sell here and get your money back.
         </p>
       )}
 
-      <div className="mt-4 flex items-center justify-between rounded-2xl bg-paper px-4 py-3 text-[14px]">
+      <div className="mt-4 flex items-center justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
         <span className="text-ink-3">You get</span>
         <span className="font-mono">{amount === 0n ? "—" : receive}</span>
       </div>
@@ -372,7 +372,7 @@ export function QuickTrade({
             type="button"
             onClick={submit}
             disabled={!!busy || amount === 0n || notEnough || !ethUsd && side === "buy"}
-            className={"w-full h-14 rounded-2xl text-[16px] font-bold disabled:opacity-40 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+            className={"w-full h-14 rounded-2xl text-[1rem] font-bold disabled:opacity-40 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
           >
             {busy ||
               (notEnough
@@ -386,16 +386,16 @@ export function QuickTrade({
         )}
       </div>
 
-      {error && <p className="mt-3 text-[13px] text-danger" role="alert">{error}</p>}
+      {error && <p className="mt-3 text-[0.8125rem] text-danger" role="alert">{error}</p>}
       {done && doneChain && (
-        <p className="mt-3 text-[13px] text-up">
+        <p className="mt-3 text-[0.8125rem] text-up">
           Done.{" "}
           <a className="underline" href={explorerTx(doneChain, done.hash)} target="_blank" rel="noreferrer">
             View transaction
           </a>
         </p>
       )}
-      <p className="mt-4 text-[11px] leading-relaxed text-ink-3">
+      <p className="mt-4 text-[0.6875rem] leading-relaxed text-ink-3">
         1% fee. If the price moves more than 5% before it lands, the trade is cancelled and nothing is spent.
       </p>
     </div>

@@ -56,7 +56,7 @@ function CoinPage() {
   if (!valid || notFound) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
-        <h1 className="font-display font-semibold text-[28px]">Coin not found</h1>
+        <h1 className="font-display font-semibold text-[1.75rem]">Coin not found</h1>
         <p className="text-ink-2 mt-3">This link doesn&apos;t point to a sasa coin, or it was created moments ago. Try again in a few seconds.</p>
         <Link href="/" className="inline-flex mt-6 h-12 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Explore coins</Link>
       </div>
@@ -79,13 +79,13 @@ function CoinPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-      <Link href="/" className="text-[14px] font-semibold text-emerald">← All coins</Link>
+      <Link href="/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
 
       <div className="mt-5 flex items-start gap-4">
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={68} />
         <div className="min-w-0">
-          <h1 className="font-display font-semibold text-[26px] sm:text-[36px] leading-tight tracking-tight break-words">{coin.name}</h1>
-          <p className="text-ink-2 text-[15px] mt-1">
+          <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2.25rem] leading-tight tracking-tight break-words">{coin.name}</h1>
+          <p className="text-ink-2 text-[0.9375rem] mt-1">
             ${coin.symbol} · created {timeAgo(coin.createdAt)} by <span className="font-mono">{shortAddr(coin.creator)}</span>
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -95,13 +95,13 @@ function CoinPage() {
           </div>
         </div>
       </div>
-      {coin.description && <p className="text-[16px] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
+      {coin.description && <p className="text-[1rem] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
 
       {winner && (
         <div className="mt-6 rounded-2xl bg-emerald-soft border border-emerald/40 text-ink p-5 sm:p-6">
-          <p className="font-mono text-[12px] tracking-[0.14em] text-mint">GRADUATED</p>
-          <h2 className="font-display font-semibold text-[22px] sm:text-[26px] mt-2">Winning chain: {winner.chain.name}</h2>
-          <p className="text-[#a9bab3] mt-2 text-[15px] leading-relaxed">
+          <p className="font-mono text-[0.75rem] tracking-[0.14em] text-mint">GRADUATED</p>
+          <h2 className="font-display font-semibold text-[1.375rem] sm:text-[1.625rem] mt-2">Winning chain: {winner.chain.name}</h2>
+          <p className="text-[#a9bab3] mt-2 text-[0.9375rem] leading-relaxed">
             ${coin.symbol} now trades in a locked pool on {winner.chain.short}. That is where the coin lives from here on.
             On the other chains buying has stopped; holders there can take their money back at any time.
           </p>
@@ -123,7 +123,7 @@ function CoinPage() {
                       key={c.chain.key}
                       type="button"
                       onClick={() => setChartChain(c.chain.key)}
-                      className={"h-9 px-3 rounded-xl border-2 text-[13px] font-semibold " + (c.chain.key === chartCurve.chain.key ? "border-emerald" : "border-line")}
+                      className={"h-9 px-3 rounded-xl border-2 text-[0.8125rem] font-semibold " + (c.chain.key === chartCurve.chain.key ? "border-emerald" : "border-line")}
                     >
                       {c.chain.short}
                     </button>
@@ -137,27 +137,27 @@ function CoinPage() {
           <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
             <ProgressBar coin={coin} big />
             <div className="mt-6">
-              <h2 className="font-display font-semibold text-[18px] mb-3">The race</h2>
+              <h2 className="font-display font-semibold text-[1.125rem] mb-3">The race</h2>
               <ChainRace coin={coin} />
             </div>
           </div>
 
           <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
-            <h2 className="font-display font-semibold text-[18px] mb-2">Trades</h2>
+            <h2 className="font-display font-semibold text-[1.125rem] mb-2">Trades</h2>
             <TradesFeed coinId={coin.id} ethUsd={ethUsd} />
           </div>
 
           {chartCurve && (
             <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display font-semibold text-[18px] mb-3">Top holders on {chartCurve.chain.short}</h2>
+              <h2 className="font-display font-semibold text-[1.125rem] mb-3">Top holders on {chartCurve.chain.short}</h2>
               <TopHolders curve={chartCurve} />
             </div>
           )}
 
           <FeeBox coin={coin} onChange={load} />
 
-          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6 text-[14px] text-ink-2 grid gap-2">
-            <h2 className="font-display font-semibold text-[18px] text-ink mb-1">Details</h2>
+          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6 text-[0.875rem] text-ink-2 grid gap-2">
+            <h2 className="font-display font-semibold text-[1.125rem] text-ink mb-1">Details</h2>
             {coin.curves.map((c) => (
               <div key={c.chain.key} className="flex justify-between gap-4">
                 <span>{c.chain.short} coin</span>

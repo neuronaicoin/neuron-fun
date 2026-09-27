@@ -29,6 +29,40 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+}
+
+/* Phones: every size in the app is in rem, so one line scales text,
+   spacing and controls together (about 12% smaller than desktop). */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Light theme: same names, daytime values. Set by the ☀/☾ button, or by
+   the phone's own setting until the user picks. */
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-mist: #f7f3ef;
+  --color-paper: #fdfbf9;
+  --color-surface: #ffffff;
+  --color-line: #e8dfd6;
+  --color-ink: #1c140e;
+  --color-ink-2: #4d4239;
+  --color-ink-3: #8a7c70;
+  --color-emerald: #f2600c;
+  --color-emerald-dark: #d65209;
+  --color-emerald-soft: #ffeadb;
+  --color-on-accent: #ffffff;
+  --color-mint: #d98a00;
+  --color-night: #f3ede7;
+  --color-night-2: #ebe3db;
+  --color-night-line: #ddd2c7;
+  --color-danger: #d9443a;
+  --color-up: #0f9d62;
+  --color-warn-bg: #fff3d6;
+  --color-warn-ink: #8a5a00;
 }
 
 body {

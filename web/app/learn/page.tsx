@@ -16,16 +16,16 @@ export default function LearnIndex() {
     <div className="min-h-dvh flex flex-col bg-mist">
       <LearnHeader />
       <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-12">
-        <p className="font-mono text-[12px] tracking-[0.16em] text-emerald">LEARN</p>
-        <h1 className="font-display font-bold text-[36px] sm:text-[48px] tracking-tight mt-3 leading-[1.05]">Guides to launching meme coins</h1>
-        <p className="text-[17px] text-ink-2 mt-4 max-w-xl">Short, honest explanations of how meme coin launches work, across Robinhood Chain, Base and beyond.</p>
+        <p className="font-mono text-[0.75rem] tracking-[0.16em] text-emerald">LEARN</p>
+        <h1 className="font-display font-bold text-[2.25rem] sm:text-[3rem] tracking-tight mt-3 leading-[1.05]">Guides to launching meme coins</h1>
+        <p className="text-[1.0625rem] text-ink-2 mt-4 max-w-xl">Short, honest explanations of how meme coin launches work, across Robinhood Chain, Base and beyond.</p>
         <ul className="mt-10 grid gap-4">
           {ARTICLES.map((a) => (
             <li key={a.slug}>
               <Link href={`/learn/${a.slug}/`} className="block rounded-3xl border border-line bg-surface p-6 hover:border-emerald/60">
-                <h2 className="font-display font-bold text-[21px] leading-snug">{a.title}</h2>
-                <p className="text-[15px] text-ink-2 mt-2">{a.summary}</p>
-                <p className="text-[13px] text-ink-3 mt-3 font-mono">{a.readMin} min read</p>
+                <h2 className="font-display font-bold text-[1.3125rem] leading-snug">{a.title}</h2>
+                <p className="text-[0.9375rem] text-ink-2 mt-2">{a.summary}</p>
+                <p className="text-[0.8125rem] text-ink-3 mt-3 font-mono">{a.readMin} min read</p>
               </Link>
             </li>
           ))}

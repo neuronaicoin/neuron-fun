@@ -120,8 +120,8 @@ export default function CreatePage() {
   if (allDone && launchKey && address) {
     return (
       <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <div className="mx-auto w-16 h-16 rounded-full bg-emerald-soft flex items-center justify-center text-[30px]">🎉</div>
-        <h1 className="font-display font-bold text-[30px] mt-6">${cleanSymbol} is live on {chosen.length} chain{chosen.length > 1 ? "s" : ""}</h1>
+        <div className="mx-auto w-16 h-16 rounded-full bg-emerald-soft flex items-center justify-center text-[1.875rem]">🎉</div>
+        <h1 className="font-display font-bold text-[1.875rem] mt-6">${cleanSymbol} is live on {chosen.length} chain{chosen.length > 1 ? "s" : ""}</h1>
         <p className="text-ink-2 mt-3">Every buy, on every chain, now counts toward one {usd(TARGET_USD)} target. Share it so people can find it.</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {chosen.map((c) => <ChainChip key={c.key} chain={c} />)}
@@ -135,9 +135,9 @@ export default function CreatePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-12">
-      <p className="hidden sm:block font-mono text-[12px] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
-      <h1 className="font-display font-bold text-[26px] sm:text-[46px] tracking-tight sm:mt-2">Launch a coin</h1>
-      <p className="text-ink-2 mt-1 sm:mt-2 text-[14px] sm:text-[16px] max-w-2xl">
+      <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
+      <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.875rem] tracking-tight sm:mt-2">Launch a coin</h1>
+      <p className="text-ink-2 mt-1 sm:mt-2 text-[0.875rem] sm:text-[1rem] max-w-2xl">
         A name, a ticker and a picture. It goes live on every chain you pick, in one go. Everything else is optional.
       </p>
 
@@ -150,9 +150,9 @@ export default function CreatePage() {
                 <img src={logo} alt="" className="absolute inset-0 w-full h-full object-cover" />
               ) : (
                 <>
-                  <span className="text-[24px] sm:text-[28px]" aria-hidden="true">＋</span>
-                  <span className="text-[12px] sm:text-[14px] font-semibold mt-1">{picBusy ? "Preparing…" : "Picture"}</span>
-                  <span className="hidden sm:block text-[12px] text-ink-3 mt-1 px-3">Square works best</span>
+                  <span className="text-[1.5rem] sm:text-[1.75rem]" aria-hidden="true">＋</span>
+                  <span className="text-[0.75rem] sm:text-[0.875rem] font-semibold mt-1">{picBusy ? "Preparing…" : "Picture"}</span>
+                  <span className="hidden sm:block text-[0.75rem] text-ink-3 mt-1 px-3">Square works best</span>
                 </>
               )}
               <input
@@ -187,11 +187,11 @@ export default function CreatePage() {
                 </div>
               </Field>
               {logo && (
-                <button type="button" onClick={() => setLogo("")} className="justify-self-start text-[13px] text-ink-3 underline">
+                <button type="button" onClick={() => setLogo("")} className="justify-self-start text-[0.8125rem] text-ink-3 underline">
                   Remove picture
                 </button>
               )}
-              {picError && <p className="text-[13px] text-danger">{picError}</p>}
+              {picError && <p className="text-[0.8125rem] text-danger">{picError}</p>}
             </div>
           </div>
 
@@ -201,8 +201,8 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[14px] font-semibold">Chains</span>
-              <span className="text-[12px] text-ink-3">More chains, more buyers</span>
+              <span className="text-[0.875rem] font-semibold">Chains</span>
+              <span className="text-[0.75rem] text-ink-3">More chains, more buyers</span>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {CHAINS.map((c) => {
@@ -213,7 +213,7 @@ export default function CreatePage() {
                     type="button"
                     aria-pressed={on}
                     onClick={() => setPicked((p) => (on ? p.filter((k) => k !== c.key) : [...p, c.key]))}
-                    className={"h-11 px-4 rounded-2xl border-2 flex items-center gap-2 font-semibold text-[14px] " + (on ? "text-ink" : "border-line text-ink-3")}
+                    className={"h-11 px-4 rounded-2xl border-2 flex items-center gap-2 font-semibold text-[0.875rem] " + (on ? "text-ink" : "border-line text-ink-3")}
                     style={on ? { borderColor: c.color } : undefined}
                   >
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color, opacity: on ? 1 : 0.35 }} aria-hidden="true" />
@@ -227,8 +227,8 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[14px] font-semibold">Where your fees go</span>
-              <span className="text-[12px] text-ink-3">can&apos;t be changed later</span>
+              <span className="text-[0.875rem] font-semibold">Where your fees go</span>
+              <span className="text-[0.75rem] text-ink-3">can&apos;t be changed later</span>
             </div>
             <div className="grid gap-2 mt-2 sm:grid-cols-3" role="radiogroup" aria-label="Where your fees go">
               {FEE_MODES.map((m) => (
@@ -240,8 +240,8 @@ export default function CreatePage() {
                   onClick={() => setFeeMode(m.id)}
                   className={"text-left rounded-2xl border-2 p-3.5 " + (feeMode === m.id ? "border-emerald bg-emerald-soft" : "border-line")}
                 >
-                  <span className="block font-semibold text-[14px]">{m.title}</span>
-                  <span className="block text-[12px] text-ink-3 mt-1 leading-snug">{m.text}</span>
+                  <span className="block font-semibold text-[0.875rem]">{m.title}</span>
+                  <span className="block text-[0.75rem] text-ink-3 mt-1 leading-snug">{m.text}</span>
                 </button>
               ))}
             </div>
@@ -249,8 +249,8 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[14px] font-semibold">Buy some yourself</span>
-              <span className="text-[12px] text-ink-3">optional · lands first, so nobody gets in before you</span>
+              <span className="text-[0.875rem] font-semibold">Buy some yourself</span>
+              <span className="text-[0.75rem] text-ink-3">optional · lands first, so nobody gets in before you</span>
             </div>
             <div className="grid grid-cols-4 gap-2 mt-2">
               {DEV_OPTIONS.map((p) => (
@@ -258,14 +258,14 @@ export default function CreatePage() {
                   key={p}
                   type="button"
                   onClick={() => setDevPct(p)}
-                  className={"h-11 rounded-2xl border text-[14px] font-semibold " + (devPct === p ? "border-emerald text-ink" : "border-line text-ink-2")}
+                  className={"h-11 rounded-2xl border text-[0.875rem] font-semibold " + (devPct === p ? "border-emerald text-ink" : "border-line text-ink-2")}
                 >
                   {p === 0 ? "None" : `${p}%`}
                 </button>
               ))}
             </div>
             {devPct > 0 && (
-              <p className="text-[13px] text-ink-2 mt-2">
+              <p className="text-[0.8125rem] text-ink-2 mt-2">
                 {devPct}% of the supply on each chain · about{" "}
                 <span className="font-mono text-ink">{ethUsd ? usd(totalDevEth * ethUsd, 2) : `${totalDevEth.toFixed(5)} ETH`}</span> in total
               </p>
@@ -277,7 +277,7 @@ export default function CreatePage() {
               {chosen.map((c) => {
                 const r = runs[c.key];
                 return (
-                  <li key={c.key} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-paper text-[14px]">
+                  <li key={c.key} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-paper text-[0.875rem]">
                     <span className="flex items-center gap-2">
                       <ChainChip chain={c} />
                       <span className="text-ink-2">{r?.note ?? (r?.status === "done" ? "Live" : "Waiting")}</span>
@@ -298,21 +298,21 @@ export default function CreatePage() {
                 type="button"
                 onClick={launch}
                 disabled={!!problem || busy}
-                className="w-full h-14 rounded-2xl bg-emerald text-on-accent text-[17px] font-bold hover:bg-emerald-dark disabled:opacity-40"
+                className="w-full h-14 rounded-2xl bg-emerald text-on-accent text-[1.0625rem] font-bold hover:bg-emerald-dark disabled:opacity-40"
               >
                 {busy ? "Launching…" : anyDone ? "Continue on the remaining chains" : `Launch on ${chosen.length} chain${chosen.length === 1 ? "" : "s"}`}
               </button>
             ) : (
               <ConnectButton full />
             )}
-            <p className="text-[12px] text-ink-3 mt-2 text-center">
+            <p className="text-[0.75rem] text-ink-3 mt-2 text-center">
               {problem && (name || symbol) ? problem : "No launch fee. You only pay network gas. Your wallet confirms once per chain."}
             </p>
           </div>
         </div>
 
         <aside className="lg:sticky lg:top-24 grid gap-4">
-          <p className="hidden lg:flex items-center gap-2 text-[12px] font-mono tracking-[0.14em] text-ink-3">
+          <p className="hidden lg:flex items-center gap-2 text-[0.75rem] font-mono tracking-[0.14em] text-ink-3">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald" aria-hidden="true" /> LIVE PREVIEW
           </p>
           <div className="hidden lg:block rounded-3xl border border-line bg-surface p-3">
@@ -321,20 +321,20 @@ export default function CreatePage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logo} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span className="font-display font-bold text-[64px] text-ink-3">{cleanSymbol.slice(0, 2) || "?"}</span>
+                <span className="font-display font-bold text-[4rem] text-ink-3">{cleanSymbol.slice(0, 2) || "?"}</span>
               )}
               <div className="absolute top-2 left-2 flex gap-1">
                 {chosen.map((c) => (
-                  <span key={c.key} className="h-6 px-2 rounded-full text-[11px] font-semibold text-white flex items-center" style={{ background: c.color }}>
+                  <span key={c.key} className="h-6 px-2 rounded-full text-[0.6875rem] font-semibold text-white flex items-center" style={{ background: c.color }}>
                     {c.short}
                   </span>
                 ))}
               </div>
             </div>
             <div className="px-2 pt-3 pb-1">
-              <div className="font-display font-bold text-[20px] truncate">{name.trim() || "Your coin"}</div>
-              <div className="text-[13px] text-ink-3">${cleanSymbol || "TICKER"}</div>
-              <div className="flex justify-between text-[12px] text-ink-3 mt-3 mb-1.5">
+              <div className="font-display font-bold text-[1.25rem] truncate">{name.trim() || "Your coin"}</div>
+              <div className="text-[0.8125rem] text-ink-3">${cleanSymbol || "TICKER"}</div>
+              <div className="flex justify-between text-[0.75rem] text-ink-3 mt-3 mb-1.5">
                 <span>Graduation</span>
                 <span className="font-mono">0%</span>
               </div>
@@ -342,7 +342,7 @@ export default function CreatePage() {
             </div>
           </div>
 
-          <dl className="rounded-3xl border border-line bg-surface p-4 grid gap-2.5 text-[13px]">
+          <dl className="rounded-3xl border border-line bg-surface p-4 grid gap-2.5 text-[0.8125rem]">
             {[
               ["Chains", chosen.map((c) => c.short).join(" · ") || "—"],
               ["Starting market cap", startMc ? usd(startMc, 0) : "—"],
@@ -359,8 +359,8 @@ export default function CreatePage() {
           </dl>
 
           <div className="rounded-3xl border border-line bg-surface p-4">
-            <p className="font-semibold text-[14px]">Nothing to rug.</p>
-            <p className="text-[13px] text-ink-2 mt-1.5 leading-relaxed">
+            <p className="font-semibold text-[0.875rem]">Nothing to rug.</p>
+            <p className="text-[0.8125rem] text-ink-2 mt-1.5 leading-relaxed">
               Fixed supply, no owner, no minting. Before graduation anyone can sell back at any time; after it, the pool
               is locked forever. Nobody, including you and us, can pull the money.
             </p>
@@ -376,11 +376,11 @@ const input = "w-full h-12 px-4 rounded-2xl border border-line bg-paper text-ink
 function Field({ label, hint, right, children }: { label: string; hint?: string; right?: string; children: React.ReactNode }) {
   return (
     <label className="grid gap-2">
-      <span className="flex items-baseline justify-between text-[14px] font-semibold">
+      <span className="flex items-baseline justify-between text-[0.875rem] font-semibold">
         <span>
           {label} {hint && <span className="text-ink-3 font-normal">{hint}</span>}
         </span>
-        {right && <span className="text-[12px] text-ink-3 font-mono">{right}</span>}
+        {right && <span className="text-[0.75rem] text-ink-3 font-mono">{right}</span>}
       </span>
       {children}
     </label>

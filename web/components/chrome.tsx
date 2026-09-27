@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { IS_TESTNET } from "@/lib/config";
@@ -16,7 +16,7 @@ export function LogoMark({ size = 32 }: { size?: number }) {
 export function TestnetBanner() {
   if (!IS_TESTNET) return null;
   return (
-    <div className="bg-paper border-b border-line text-ink-3 text-center text-[12px] leading-snug px-4 py-1.5"><span className="inline-block w-1.5 h-1.5 rounded-full bg-warn-ink mr-2 align-middle" aria-hidden="true" />
+    <div className="bg-paper border-b border-line text-ink-3 text-center text-[0.75rem] leading-snug px-4 py-1.5"><span className="inline-block w-1.5 h-1.5 rounded-full bg-warn-ink mr-2 align-middle" aria-hidden="true" />
       <span className="sm:hidden">Testnet · free test ETH, no real value</span>
       <span className="hidden sm:inline">Test version. It uses free test ETH, so nothing here has real value.</span>
     </div>
@@ -29,7 +29,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
   const [sheet, setSheet] = useState<"none" | "pick" | "account">("none");
   const [error, setError] = useState("");
   const base =
-    "h-11 px-5 rounded-xl text-[15px] font-semibold inline-flex items-center justify-center gap-2 transition-colors " +
+    "h-11 px-5 rounded-xl text-[0.9375rem] font-semibold inline-flex items-center justify-center gap-2 transition-colors " +
     (full ? "w-full " : "");
 
   async function pick(w: WalletOption) {
@@ -50,7 +50,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
   if (address) {
     return (
       <>
-        <button type="button" onClick={() => setSheet("account")} className={base + "bg-surface border border-line text-ink font-mono text-[14px]"}>
+        <button type="button" onClick={() => setSheet("account")} className={base + "bg-surface border border-line text-ink font-mono text-[0.875rem]"}>
           <span className="w-2 h-2 rounded-full bg-emerald" aria-hidden="true" />
           {shortAddr(address)}
         </button>
@@ -58,8 +58,8 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
           <Sheet title={embedded ? "Your sasa account" : "Your wallet"} onClose={() => setSheet("none")}>
             {embedded ? (
               <>
-                {email && <p className="text-ink-2 text-[15px]">Signed in as <span className="text-ink">{email}</span></p>}
-                <p className="text-ink-3 text-[13px] mt-3">Your wallet address, the same on every chain. Send test ETH here to start trading. You never pay network fees.</p>
+                {email && <p className="text-ink-2 text-[0.9375rem]">Signed in as <span className="text-ink">{email}</span></p>}
+                <p className="text-ink-3 text-[0.8125rem] mt-3">Your wallet address, the same on every chain. Send test ETH here to start trading. You never pay network fees.</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -68,14 +68,14 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
                       setTimeout(() => setCopied(false), 1500);
                     });
                   }}
-                  className="mt-2 w-full rounded-xl bg-paper border border-line px-3 py-3 font-mono text-[13px] break-all text-left hover:border-emerald"
+                  className="mt-2 w-full rounded-xl bg-paper border border-line px-3 py-3 font-mono text-[0.8125rem] break-all text-left hover:border-emerald"
                 >
                   {address}
-                  <span className="block text-[12px] text-emerald mt-1 font-sans">{copied ? "Copied" : "Tap to copy"}</span>
+                  <span className="block text-[0.75rem] text-emerald mt-1 font-sans">{copied ? "Copied" : "Tap to copy"}</span>
                 </button>
               </>
             ) : (
-              <p className="text-ink-2 text-[15px]">
+              <p className="text-ink-2 text-[0.9375rem]">
                 Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
               </p>
             )}
@@ -107,7 +107,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
       >
         {connecting ? "Connecting…" : "Log in"}
       </button>
-      {error && sheet === "none" && <p className="text-[13px] text-danger mt-2 max-w-xs">{error}</p>}
+      {error && sheet === "none" && <p className="text-[0.8125rem] text-danger mt-2 max-w-xs">{error}</p>}
       {sheet === "pick" && (
         <Sheet title="Log in to sasa" onClose={() => setSheet("none")}>
           <button
@@ -116,12 +116,12 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
               setSheet("none");
               loginWithEmail();
             }}
-            className="h-14 w-full rounded-xl bg-emerald text-on-accent font-bold text-[16px] hover:bg-emerald-dark"
+            className="h-14 w-full rounded-xl bg-emerald text-on-accent font-bold text-[1rem] hover:bg-emerald-dark"
           >
             Continue with email or Google
           </button>
-          <p className="text-[12px] text-ink-3 mt-2 text-center">No wallet needed. No network fees.</p>
-          <div className="flex items-center gap-3 my-5 text-[12px] text-ink-3" aria-hidden="true">
+          <p className="text-[0.75rem] text-ink-3 mt-2 text-center">No wallet needed. No network fees.</p>
+          <div className="flex items-center gap-3 my-5 text-[0.75rem] text-ink-3" aria-hidden="true">
             <span className="h-px flex-1 bg-line" />
             or use your own wallet
             <span className="h-px flex-1 bg-line" />
@@ -148,13 +148,13 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
             </div>
           ) : (
             <>
-              <p className="text-ink-2 text-[15px] leading-relaxed">
+              <p className="text-ink-2 text-[0.9375rem] leading-relaxed">
                 A wallet is an app that holds your coins. On a phone, open this page inside your wallet app. On a
                 computer, install a wallet extension such as MetaMask or Rabby and refresh.
               </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {walletAppLinks().map((l) => (
-                  <a key={l.name} href={l.href} className="h-12 px-3 rounded-xl bg-emerald text-on-accent text-[14px] font-semibold flex items-center justify-center text-center">
+                  <a key={l.name} href={l.href} className="h-12 px-3 rounded-xl bg-emerald text-on-accent text-[0.875rem] font-semibold flex items-center justify-center text-center">
                     {l.name}
                   </a>
                 ))}
@@ -169,10 +169,46 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
               </a>
             </>
           )}
-          {error && <p className="text-[14px] text-danger mt-4" role="alert">{error}</p>}
+          {error && <p className="text-[0.875rem] text-danger mt-4" role="alert">{error}</p>}
         </Sheet>
       )}
     </>
+  );
+}
+
+/** ☀ / ☾ switch. Remembers the choice; until then the device setting wins. */
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark" | null>(null);
+  useEffect(() => {
+    setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+  }, []);
+  const flip = () => {
+    const next = theme === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("sasa-theme", next);
+    } catch {}
+    setTheme(next);
+  };
+  return (
+    <button
+      type="button"
+      onClick={flip}
+      aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+      title={theme === "light" ? "Dark mode" : "Light mode"}
+      className="w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 hover:text-ink flex items-center justify-center"
+    >
+      {theme === "light" ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      )}
+    </button>
   );
 }
 
@@ -189,8 +225,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4 mb-4">
-          <h2 className="font-display text-[22px] font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="w-10 h-10 -mr-2 rounded-full text-ink-3 text-[26px] leading-none">
+          <h2 className="font-display text-[1.375rem] font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="w-10 h-10 -mr-2 rounded-full text-ink-3 text-[1.625rem] leading-none">
             ×
           </button>
         </div>
@@ -221,16 +257,19 @@ export function Header() {
       <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
-          <span className="font-display font-bold text-[22px] tracking-tight">sasa</span>
+          <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
         </Link>
-        <nav aria-label="Main" className="hidden md:flex items-center gap-7 text-[15px] font-medium">
+        <nav aria-label="Main" className="hidden md:flex items-center gap-7 text-[0.9375rem] font-medium">
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} className={isActive(pathname, n.href) ? "text-emerald" : "text-ink hover:text-emerald"}>
               {n.label}
             </Link>
           ))}
         </nav>
-        <ConnectButton />
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <ConnectButton />
+        </div>
       </div>
     </header>
   );
@@ -247,7 +286,7 @@ export function BottomNav() {
             <Link
               key={n.href}
               href={n.href}
-              className={"flex flex-col items-center gap-1 py-1 text-[12px] font-semibold " + (active ? "text-emerald" : "text-ink-3")}
+              className={"flex flex-col items-center gap-1 py-1 text-[0.75rem] font-semibold " + (active ? "text-emerald" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
               {n.label === "Create a coin" ? "Create" : n.label === "Your coins" ? "You" : n.label === "Terminal" ? "Trade" : n.label}
@@ -307,13 +346,13 @@ export function Footer() {
             <LogoMark size={26} />
             <span className="font-display font-bold">sasa</span>
           </div>
-          <p className="text-[13px] leading-relaxed text-ink-2 mt-3">
+          <p className="text-[0.8125rem] leading-relaxed text-ink-2 mt-3">
             Meme coins are risky and can lose all their value. Only use money you can afford to lose. Nothing on this
             site is financial advice. Every transaction is signed in your own wallet; sasa never holds your
             funds.
           </p>
         </div>
-        <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] font-medium">
+        <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <Link href="/learn/" className="text-emerald">Learn</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>

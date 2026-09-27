@@ -26,7 +26,7 @@ export function CoinAvatar({ logo, symbol, size = 48 }: { logo: string; symbol: 
 export function ChainChip({ chain, muted = false }: { chain: NeuronChain; muted?: boolean }) {
   return (
     <span
-      className={"inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] font-semibold border " + (muted ? "border-line text-ink-3 bg-paper" : "border-transparent text-white")}
+      className={"inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[0.75rem] font-semibold border " + (muted ? "border-line text-ink-3 bg-paper" : "border-transparent text-white")}
       style={muted ? undefined : { background: chain.color }}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" aria-hidden="true" />
@@ -43,7 +43,7 @@ export function ProgressBar({ coin, big = false }: { coin: Coin; big?: boolean }
   const done = !!coin.graduatedOn;
   return (
     <div>
-      <div className={"flex justify-between items-baseline " + (big ? "text-[15px]" : "text-[13px]")}>
+      <div className={"flex justify-between items-baseline " + (big ? "text-[0.9375rem]" : "text-[0.8125rem]")}>
         <span className="font-semibold">{done ? "Graduated" : `${pct}% to graduation`}</span>
         <span className="text-ink-3 font-mono">
           {done ? `on ${coin.graduatedOn!.chain.short}` : `${usd(coin.totalUsd, 2)} / ${usd(TARGET_USD)}`}
@@ -73,11 +73,11 @@ function RaceRow({ c, share, leading }: { c: CurveInfo; share: number; leading: 
   const label = c.state === "graduated" ? "Winner" : c.state === "closed" ? "Closed" : leading ? "Leading" : "";
   return (
     <li>
-      <div className="flex items-center justify-between gap-3 text-[14px]">
+      <div className="flex items-center justify-between gap-3 text-[0.875rem]">
         <span className="flex items-center gap-2">
           <ChainChip chain={c.chain} muted={c.state === "closed"} />
           {label && (
-            <span className={"text-[12px] font-semibold " + (c.state === "graduated" || leading ? "text-emerald" : "text-ink-3")}>{label}</span>
+            <span className={"text-[0.75rem] font-semibold " + (c.state === "graduated" || leading ? "text-emerald" : "text-ink-3")}>{label}</span>
           )}
         </span>
         <span className="font-mono text-ink-2">
@@ -97,8 +97,8 @@ export function CoinCard({ coin }: { coin: Coin }) {
       <div className="flex items-center gap-3.5">
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} />
         <div className="min-w-0 flex-1">
-          <div className="font-display font-semibold text-[17px] truncate">{coin.name}</div>
-          <div className="text-[13px] text-ink-2">${coin.symbol} · {timeAgo(coin.createdAt)}</div>
+          <div className="font-display font-semibold text-[1.0625rem] truncate">{coin.name}</div>
+          <div className="text-[0.8125rem] text-ink-2">${coin.symbol} · {timeAgo(coin.createdAt)}</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 mt-3">
@@ -106,7 +106,7 @@ export function CoinCard({ coin }: { coin: Coin }) {
           <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2 mt-3 text-[12px] text-ink-3">
+      <div className="grid grid-cols-3 gap-2 mt-3 text-[0.75rem] text-ink-3">
         <span><strong className="text-ink font-semibold">{coin.holders}</strong> holders</span>
         <span><strong className="text-ink font-semibold">{coin.trades24h}</strong> trades 24h</span>
         <span className="text-right">
@@ -132,8 +132,8 @@ export function timeAgo(iso: string | null): string {
 export function Stat({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
   return (
     <div className="min-w-0">
-      <div className={"text-[12px] " + (dark ? "text-[#a9bab3]" : "text-ink-3")}>{label}</div>
-      <div className="font-mono text-[15px] truncate">{value}</div>
+      <div className={"text-[0.75rem] " + (dark ? "text-[#a9bab3]" : "text-ink-3")}>{label}</div>
+      <div className="font-mono text-[0.9375rem] truncate">{value}</div>
     </div>
   );
 }

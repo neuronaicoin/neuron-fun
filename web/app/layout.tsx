@@ -40,10 +40,15 @@ export const metadata: Metadata = {
  * page; /learn pages always use their own simple chrome.
  */
 const HOST_CHECK = String.raw`try{var h=location.hostname,p=location.pathname,c=document.documentElement.classList;if(p.indexOf("/learn")===0){c.add("is-learn")}else if(p==="/"&&(/(^|\.)sasapad\.(fun|com)$/.test(h)||/[?&]landing\b/.test(location.search))){c.add("is-landing")}}catch(e){}`;
+/** Runs before first paint: the saved theme, or the phone/computer setting. No flash. */
+const THEME_CHECK = String.raw`try{var t=localStorage.getItem("sasa-theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)}catch(e){}`;
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Inputs are under 16px on phones; this stops iOS zooming in on focus.
+  // People can still pinch-zoom (iOS ignores this for manual zoom).
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#0a0d0c",
 };
@@ -59,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
         />
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_CHECK }} />
       </head>
       <body className="min-h-dvh flex flex-col">
         <WalletProvider>
