@@ -169,12 +169,15 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
       const pool = inPool(chosen);
       const spender = pool ? chosen.chain.router : chosen.curve;
       const pub = clientFor(chosen.chain);
-      setBusy("Getting the price…");
+      setBusy("Preparing…");
       const calls: Call[] = [];
       if (side === "buy") {
-        const out = pool
-          ? ((await pub.simulateContract({ account: address, address: spender, abi: routerAbi, functionName: "buy", args: [chosen.token, 0n, address, deadline()], value: amount })).result as bigint)
-          : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint);
+        // The quote on screen is fresh (it follows every change); only fetch if it isn't there yet.
+        const out =
+          quote ??
+          (pool
+            ? ((await pub.simulateContract({ account: address, address: spender, abi: routerAbi, functionName: "buy", args: [chosen.token, 0n, address, deadline()], value: amount })).result as bigint)
+            : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint));
         const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
         calls.push(
           pool
@@ -182,9 +185,11 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
             : call(spender, curveAbi, "buy", [minOut, address], amount)
         );
       } else {
-        const out = pool
-          ? ((
-              await pub.simulateContract({
+        const [out, allowance] = await Promise.all([
+          quote !== null
+            ? Promise.resolve(quote)
+            : pool
+          ? pub.simulateContract({
                 account: address,
                 address: spender,
                 abi: routerAbi,
@@ -193,11 +198,11 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
                 stateOverride: [
                   { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, spender), value: numberToHex(maxUint256, { size: 32 }) }] },
                 ],
-              })
-            ).result as bigint)
-          : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteSell", args: [amount] })) as bigint);
+              }).then((r) => r.result as bigint)
+          : (pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteSell", args: [amount] }) as Promise<bigint>),
+          pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
+        ]);
         const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
-        const allowance = (await pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] })) as bigint;
         // Email users get approve + sell as one gasless bundle; wallets confirm each.
         if (allowance < amount) calls.push(call(chosen.token, tokenAbi, "approve", [spender, amount]));
         calls.push(
@@ -208,7 +213,8 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
       }
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
-      await loadBalances();
+      // Refresh in the background; the trade is already confirmed.
+      loadBalances().catch(() => {});
       onTraded();
     } catch (e) {
       setError(friendlyError(e));

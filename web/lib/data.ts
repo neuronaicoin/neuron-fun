@@ -1,6 +1,6 @@
 import { PostgrestClient } from "@supabase/postgrest-js";
-import { createPublicClient, formatEther, http, type Address, type PublicClient } from "viem";
-import { CHAINS, SUPABASE_KEY, SUPABASE_URL, TARGET_USD, chainById, type NeuronChain } from "./config";
+import { createPublicClient, fallback, formatEther, http, type Address, type PublicClient } from "viem";
+import { ALCHEMY_KEY, CHAINS, SUPABASE_KEY, SUPABASE_URL, TARGET_USD, chainById, type NeuronChain } from "./config";
 import { fetchPrices } from "./price";
 
 /** Read-only database client (just the query part of Supabase, to keep the page light). */
@@ -14,7 +14,12 @@ const clients = new Map<number, PublicClient>();
 export function clientFor(c: NeuronChain): PublicClient {
   let p = clients.get(c.chain.id);
   if (!p) {
-    p = createPublicClient({ chain: c.chain, transport: http() }) as PublicClient;
+    // Alchemy first (fast), the chain's public RPC if Alchemy is unreachable.
+    p = createPublicClient({
+      chain: c.chain,
+      transport: fallback([http(`https://${c.alchemyNetwork}.g.alchemy.com/v2/${ALCHEMY_KEY}`), http()]),
+      pollingInterval: 500,
+    }) as PublicClient;
     clients.set(c.chain.id, p);
   }
   return p;

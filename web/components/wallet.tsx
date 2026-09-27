@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { createPublicClient, http, type Hex } from "viem";
 import { ALCHEMY_KEY, CHAINS, WALLETCONNECT_PROJECT_ID } from "@/lib/config";
 import type { Call } from "@/lib/tx";
+import { clientFor } from "@/lib/data";
 import type { PrivyState } from "./privy-bridge";
 import type { SmartWalletClient } from "@alchemy/wallet-apis";
 
@@ -336,7 +337,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
         });
         onStep?.("Almost done…");
-        const status = await client.waitForCallsStatus({ id: sent.id, timeout: 90_000 });
+        // Blocks come every ~0.1-2 s on our chains: ask often.
+        const status = await client.waitForCallsStatus({ id: sent.id, timeout: 90_000, pollingInterval: 400 });
         const receipts = status.receipts ?? [];
         if (status.status !== "success" || receipts.some((r) => r.status !== "success")) {
           throw new Error("The network rejected the transaction.");
@@ -348,7 +350,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       onStep?.(`Switching to ${chain.name}…`);
       await switchTo(chain);
       const wc = createWalletClient({ account: address, chain, transport: custom(active.provider) });
-      const pub = createPublicClient({ chain, transport: http() });
+      const conf = CHAINS.find((c) => c.chain.id === chain.id);
+      const pub = conf ? clientFor(conf) : createPublicClient({ chain, transport: http() });
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}: confirm in your wallet…` : "Confirm in your wallet…");
