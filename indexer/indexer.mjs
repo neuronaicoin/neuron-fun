@@ -14,9 +14,11 @@
 //   MAX_RANGE       blocks per batch (default 2000)
 //   POLL_MS         pause when caught up (default 2500)
 //   REFRESH_MS      how often the precomputed coin list is rebuilt (default 10000)
+//   Price alerts and web push: see alerts.mjs
 
 import pg from "pg";
 import { cardLoop } from "./cards.mjs";
+import { alertLoop } from "./alerts.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -317,7 +319,7 @@ async function refreshLoop() {
 async function main() {
   await pool.query("select 1");
   log(`indexing ${CHAINS.map((c) => c.name).join(", ")}`);
-  await Promise.all([...CHAINS.map((c) => runChain(makeChain(c))), refreshLoop(), cardLoop(pool, log)]);
+  await Promise.all([...CHAINS.map((c) => runChain(makeChain(c))), refreshLoop(), cardLoop(pool, log), alertLoop(pool, log)]);
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

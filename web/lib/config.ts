@@ -100,3 +100,6 @@ export const explorerTx = (c: NeuronChain, h: string) => `${c.chain.blockExplore
 export const PRIVY_APP_ID = "cmujtak3700dc0ejx5f6jbnca";
 /** Alchemy key for gasless transactions. Public by design; locked to our domains in the Alchemy dashboard. */
 export const ALCHEMY_KEY = "alch_8v9VILwONIJvenP--84Pt";
+
+/** Web push (price alerts). Public half of the VAPID key pair; the private half lives on Railway only. */
+export const VAPID_PUBLIC_KEY = "BL0G7RxxAC6NJKoWlGEz2CpdhQYVlcqigiWxzu461f2ymQVeg0DRei5bkZwvMkAqZZYnvFKOIEcvRxe7A8QnDrg";

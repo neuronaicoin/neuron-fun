@@ -18,6 +18,9 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
+  // Lets phones add sasa to the Home Screen (needed for alerts on iPhone).
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "sasa", statusBarStyle: "black" },
   openGraph: {
     title: "sasa — Launch once. Live on every chain.",
     description: "The multi-chain launchpad. Testnet live, mainnet coming soon.",

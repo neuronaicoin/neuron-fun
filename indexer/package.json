@@ -10,7 +10,8 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "pg": "8.16.3",
-    "viem": "2.56.8"
+    "viem": "2.56.8",
+    "web-push": "3.6.7"
   },
   "engines": {
     "node": ">=20"

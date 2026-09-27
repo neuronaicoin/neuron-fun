@@ -13,6 +13,8 @@ import { MobileTradeBar } from "@/components/mobiletrade";
 import { ShareButton } from "@/components/share";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
+import { CoinAlertButton } from "@/components/alerts";
+import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
@@ -35,6 +37,8 @@ function CoinPage() {
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [chartChain, setChartChain] = useState("");
+  const { alerts } = useAlerts();
+  const alertLines = useMemo(() => alertLinesFor(alerts, id), [alerts, id]);
 
   const load = useCallback(async () => {
     if (!valid) return;
@@ -97,6 +101,7 @@ function CoinPage() {
         </div>
         <div className="flex gap-1.5 shrink-0">
           <ShareButton coin={coin} />
+          <CoinAlertButton coin={coin} ethUsd={ethUsd} />
           <StarButton coinId={coin.id} />
         </div>
       </div>
@@ -135,7 +140,7 @@ function CoinPage() {
                   ))}
                 </div>
               )}
-              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} />
+              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} />
             </div>
           )}
 

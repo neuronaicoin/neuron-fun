@@ -204,3 +204,18 @@ html.is-landing body { background: #0b0806; }
 /* Horizontal chip rows: scroll without a visible bar. */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* 🔔 rings once when a new alert arrives. */
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-4deg); }
+}
+.bell-ring svg { animation: bell-ring 0.8s ease-in-out; transform-origin: 50% 15%; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 0.5rem); } }
+.toast-in { animation: toast-in 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .bell-ring svg, .toast-in { animation: none; }
+}

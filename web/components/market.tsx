@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { IChartApi, UTCTimestamp } from "lightweight-charts";
+import type { IChartApi, IPriceLine, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { burst, onTrade } from "@/lib/live";
 import { chainById, explorerAddress, explorerTx } from "@/lib/config";
 import { fetchCandles, fetchTopHolders, fetchTrades, type Coin, type CurveInfo, type Trade } from "@/lib/data";
@@ -35,9 +35,10 @@ const SCALE_MODE = { normal: 0, log: 1, percent: 2 } as const;
  * Market-value candles for one curve (price x 1B supply, in dollars when a
  * price is available, otherwise in the chain's coin).
  */
-export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number | null }) {
+export function PriceChart({ curve, ethUsd, alertLines = [] }: { curve: CurveInfo; ethUsd: number | null; alertLines?: number[] }) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const [prefs, setPrefs] = useState<ChartPrefs>({ range: 300, volume: true, mode: "normal", auto: true });
   const range = prefs.range;
   const volRef = useRef<{ applyOptions: (o: { visible: boolean }) => void } | null>(null);
@@ -90,6 +91,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       volRef.current = vol;
       chartRef.current = chart;
+      candlesRef.current = candles;
 
       let first = true;
       let lastBar: { time: UTCTimestamp; open: number; high: number; low: number; close: number } | null = null;
@@ -144,6 +146,7 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
       chart?.remove();
       chartRef.current = null;
       volRef.current = null;
+      candlesRef.current = null;
     };
   }, [curve.chain.chain.id, curve.curve, range, ethUsd, unit]);
 
@@ -161,6 +164,34 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
     const t = setInterval(() => apply() && clearInterval(t), 200);
     return () => clearInterval(t);
   }, [prefs.mode, prefs.auto, prefs.volume, range, curve.curve]);
+
+  // Dashed lines at the market values of this coin's price alerts (dollar charts only).
+  const lineKey = unit === "$" ? alertLines.join(",") : "";
+  useEffect(() => {
+    const values = lineKey ? lineKey.split(",").map(Number).filter((v) => v > 0) : [];
+    let lines: IPriceLine[] = [];
+    let series: ISeriesApi<"Candlestick"> | null = null;
+    const draw = () => {
+      series = candlesRef.current;
+      if (!series) return false;
+      lines = values.map((v) =>
+        series!.createPriceLine({ price: v, color: "#8f7f73", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "🔔" })
+      );
+      return true;
+    };
+    let t: ReturnType<typeof setInterval> | null = null;
+    if (!draw()) t = setInterval(() => draw() && t && clearInterval(t), 200);
+    return () => {
+      if (t) clearInterval(t);
+      if (series && candlesRef.current === series) {
+        for (const l of lines) {
+          try {
+            series.removePriceLine(l);
+          } catch {}
+        }
+      }
+    };
+  }, [lineKey, range, curve.curve, ethUsd]);
 
   return (
     <div>

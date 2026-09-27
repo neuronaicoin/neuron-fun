@@ -105,6 +105,8 @@ type WalletState = {
    * one gasless bundle.
    */
   send: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
+  /** Signs a plain text message (free, no transaction). Email users sign without a popup. */
+  signMessage: (message: string) => Promise<Hex>;
 };
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -365,6 +367,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [active, address, privy, switchTo]
   );
 
+  const signMessage = useCallback(
+    async (message: string): Promise<Hex> => {
+      if (!active && privy?.authenticated && privy.signer) {
+        return privy.signer.signMessage({ message });
+      }
+      if (!active || !address) throw new Error("Log in or connect a wallet first.");
+      const wc = createWalletClient({ account: address, transport: custom(active.provider) });
+      return wc.signMessage({ account: address, message });
+    },
+    [active, address, privy]
+  );
+
   const disconnectAll = useCallback(() => {
     if (active) disconnect();
     else if (privy?.authenticated) privy.logout().catch(() => {});
@@ -385,8 +399,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       email: embedded ? (privy?.email ?? null) : null,
       loginWithEmail,
       send,
+      signMessage,
     }),
-    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage]
   );
 
   return (

@@ -8,6 +8,7 @@ import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { IS_TESTNET } from "@/lib/config";
 import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
+import { AlertsSync, HeaderBell } from "./alerts";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -266,8 +267,10 @@ export function Header() {
             </Link>
           ))}
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <AlertsSync />
           <ThemeToggle />
+          <HeaderBell />
           <ConnectButton />
         </div>
       </div>
