@@ -14,6 +14,8 @@ import { ShareButton } from "@/components/share";
 import { Sheet } from "@/components/chrome";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
+import { CoinAlertButton } from "@/components/alerts";
+import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
@@ -299,6 +301,8 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
     coin.graduatedOn ??
     [...coin.curves].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0];
   const mc = coinMarketCapUsd(coin, ethUsd);
+  const { alerts } = useAlerts();
+  const alertLines = useMemo(() => alertLinesFor(alerts, coin.id), [alerts, coin.id]);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
@@ -319,6 +323,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
           </div>
           <div className="flex gap-1.5 shrink-0">
             <ShareButton coin={coin} />
+            <CoinAlertButton coin={coin} ethUsd={ethUsd} />
             <StarButton coinId={coin.id} />
           </div>
         </div>
@@ -353,7 +358,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
             </div>
           )}
-          <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} />
+          <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} />
         </div>
       )}
 
