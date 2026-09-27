@@ -134,25 +134,25 @@ export default function CreatePage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      <p className="font-mono text-[12px] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
-      <h1 className="font-display font-bold text-[34px] sm:text-[46px] tracking-tight mt-2">Launch a coin</h1>
-      <p className="text-ink-2 mt-2 text-[16px] max-w-2xl">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-12">
+      <p className="hidden sm:block font-mono text-[12px] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
+      <h1 className="font-display font-bold text-[26px] sm:text-[46px] tracking-tight sm:mt-2">Launch a coin</h1>
+      <p className="text-ink-2 mt-1 sm:mt-2 text-[14px] sm:text-[16px] max-w-2xl">
         A name, a ticker and a picture. It goes live on every chain you pick, in one go. Everything else is optional.
       </p>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
-        <div className="rounded-3xl border border-line bg-surface p-5 sm:p-7 grid gap-6">
-          <div className="grid gap-5 sm:grid-cols-[180px_1fr]">
+      <div className="mt-4 sm:mt-8 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-7 grid gap-5 sm:gap-6">
+          <div className="grid gap-4 sm:gap-5 grid-cols-[96px_1fr] sm:grid-cols-[180px_1fr] items-start">
             <label className="relative aspect-square rounded-2xl border-2 border-dashed border-line hover:border-emerald bg-paper flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden">
               {logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logo} alt="" className="absolute inset-0 w-full h-full object-cover" />
               ) : (
                 <>
-                  <span className="text-[28px]" aria-hidden="true">＋</span>
-                  <span className="text-[14px] font-semibold mt-1">{picBusy ? "Preparing…" : "Add picture"}</span>
-                  <span className="text-[12px] text-ink-3 mt-1 px-3">Square works best</span>
+                  <span className="text-[24px] sm:text-[28px]" aria-hidden="true">＋</span>
+                  <span className="text-[12px] sm:text-[14px] font-semibold mt-1">{picBusy ? "Preparing…" : "Picture"}</span>
+                  <span className="hidden sm:block text-[12px] text-ink-3 mt-1 px-3">Square works best</span>
                 </>
               )}
               <input
@@ -312,10 +312,10 @@ export default function CreatePage() {
         </div>
 
         <aside className="lg:sticky lg:top-24 grid gap-4">
-          <p className="flex items-center gap-2 text-[12px] font-mono tracking-[0.14em] text-ink-3">
+          <p className="hidden lg:flex items-center gap-2 text-[12px] font-mono tracking-[0.14em] text-ink-3">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald" aria-hidden="true" /> LIVE PREVIEW
           </p>
-          <div className="rounded-3xl border border-line bg-surface p-3">
+          <div className="hidden lg:block rounded-3xl border border-line bg-surface p-3">
             <div className="relative aspect-square rounded-2xl overflow-hidden bg-paper flex items-center justify-center">
               {logo ? (
                 // eslint-disable-next-line @next/next/no-img-element

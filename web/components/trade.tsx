@@ -37,13 +37,27 @@ function ethFromUsd(usdAmount: number, ethUsd: number): bigint {
  * The one trade box used everywhere. Buys are in dollars; the chain is picked
  * for you (cheapest chain where your wallet has enough), and you can change it.
  */
-export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: number | null; onTraded: () => void }) {
+export function QuickTrade({
+  coin,
+  ethUsd,
+  onTraded,
+  initialSide,
+  bare = false,
+}: {
+  coin: Coin;
+  ethUsd: number | null;
+  onTraded: () => void;
+  /** Which tab to open on (the phone Buy / Sell buttons pass this). */
+  initialSide?: "buy" | "sell";
+  /** Without its own card frame, for use inside a sheet. */
+  bare?: boolean;
+}) {
   const { address, embedded, send } = useWallet();
   // Email users pay no network fees, so nothing needs to be kept back.
   const reserve = embedded ? 0n : GAS_RESERVE;
   const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
   const sellable = coin.curves;
-  const [side, setSide] = useState<"buy" | "sell">(open.length ? "buy" : "sell");
+  const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
   const [usdIn, setUsdIn] = useState("25");
   const [sellPct, setSellPct] = useState(100);
   const [picked, setPicked] = useState<string | null>(null);
@@ -246,7 +260,7 @@ export function QuickTrade({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: num
           : fmtEth(quote, 6);
 
   return (
-    <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
+    <div className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"}>
       <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
         {(["buy", "sell"] as const).map((s) => (
           <button

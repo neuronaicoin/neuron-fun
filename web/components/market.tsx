@@ -121,8 +121,8 @@ export function PriceChart({ curve, ethUsd }: { curve: CurveInfo; ethUsd: number
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <span className="text-[13px] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
+      <div className="flex items-center justify-end sm:justify-between gap-3 mb-3">
+        <span className="hidden sm:inline text-[13px] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
         <div className="flex gap-1">
           {RANGES.map((r) => (
             <button

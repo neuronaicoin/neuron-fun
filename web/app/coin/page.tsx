@@ -9,6 +9,7 @@ import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, timeAgo } from "@/components/coins";
 import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
+import { MobileTradeBar } from "@/components/mobiletrade";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { curveAbi, tokenAbi } from "@/lib/abis";
@@ -111,7 +112,7 @@ function CoinPage() {
         <CoinStats coin={coin} ethUsd={ethUsd} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="order-2 lg:order-1 grid gap-6 min-w-0">
           {chartCurve && (
             <div className="bg-surface border border-line rounded-2xl p-4 sm:p-5">
@@ -166,7 +167,10 @@ function CoinPage() {
           </div>
         </div>
         <div className="order-1 lg:order-2 lg:sticky lg:top-20">
-          <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={load} />
+          <div className="hidden lg:block">
+            <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={load} />
+          </div>
+          <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={load} />
           <div className="mt-3"><TrustCard coin={coin} /></div>
         </div>
       </div>

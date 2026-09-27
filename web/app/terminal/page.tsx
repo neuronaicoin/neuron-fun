@@ -9,6 +9,8 @@ import { ChainChip, ChainRace, CoinAvatar, ProgressBar, Skeleton, timeAgo, useCo
 import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
+import { MobileTradeBar } from "@/components/mobiletrade";
+import { Sheet } from "@/components/chrome";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { tokenAbi } from "@/lib/abis";
@@ -25,15 +27,13 @@ export default function TerminalPage() {
   );
 }
 
-type MobileTab = "markets" | "chart" | "trade";
-
 function Terminal() {
   const params = useSearchParams();
   const [selected, setSelected] = useState<string>((params.get("id") ?? "").toLowerCase());
   const [sort, setSort] = useState<SortKey>("hot");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<MobileTab>(params.get("id") ? "chart" : "markets");
+  const [marketsOpen, setMarketsOpen] = useState(false);
   const { coins } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [coin, setCoin] = useState<Coin | null>(null);
@@ -71,32 +71,44 @@ function Terminal() {
 
   const choose = (id: string) => {
     setSelected(id);
-    setTab("chart");
     try {
       window.history.replaceState(null, "", `/terminal/?id=${encodeURIComponent(id)}`);
     } catch {}
   };
 
   return (
-    <div className="max-w-[1500px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
-      {/* Phone: one panel at a time */}
-      <div className="lg:hidden grid grid-cols-3 gap-1 p-1 mb-3 rounded-2xl bg-surface border border-line" role="tablist" aria-label="Terminal view">
-        {(["markets", "chart", "trade"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={"h-10 rounded-xl text-[14px] font-semibold capitalize " + (tab === t ? "bg-ink text-on-accent" : "text-ink-2")}
-          >
-            {t}
-          </button>
-        ))}
+    <div className="max-w-[1500px] mx-auto px-3 sm:px-4 py-2 sm:py-4">
+      {/* Phone: switch coins from a sheet instead of a separate tab */}
+      <div className="lg:hidden flex items-center justify-between gap-2 mb-2">
+        <button
+          type="button"
+          onClick={() => setMarketsOpen(true)}
+          className="h-9 px-3 rounded-xl border border-line bg-surface text-[13px] font-semibold flex items-center gap-2"
+        >
+          <span aria-hidden="true">☰</span> All coins
+        </button>
+        {coin && <span className="text-[12px] text-ink-3 truncate">{coin.curves.length} chain{coin.curves.length > 1 ? "s" : ""}</span>}
       </div>
+      {marketsOpen && (
+        <Sheet title="Coins" onClose={() => setMarketsOpen(false)}>
+          <Markets
+            coins={coins}
+            ethUsd={ethUsd}
+            selected={selected}
+            onChoose={(id) => {
+              choose(id);
+              setMarketsOpen(false);
+            }}
+            sort={sort}
+            setSort={setSort}
+            query={query}
+            setQuery={setQuery}
+          />
+        </Sheet>
+      )}
 
-      <div className="grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)_360px] lg:items-start">
-        <aside className={(tab === "markets" ? "block" : "hidden") + " lg:block lg:sticky lg:top-[76px]"}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[300px_minmax(0,1fr)_360px] lg:items-start">
+        <aside className="hidden lg:block lg:sticky lg:top-[76px]">
           <Markets
             coins={coins}
             ethUsd={ethUsd}
@@ -109,14 +121,16 @@ function Terminal() {
           />
         </aside>
 
-        <section className={(tab === "chart" ? "block" : "hidden") + " lg:block min-w-0"}>
+        <section className="min-w-0">
           {coin ? <Center coin={coin} ethUsd={ethUsd} /> : <Skeleton className="h-[640px]" />}
         </section>
 
-        <aside className={(tab === "trade" ? "block" : "hidden") + " lg:block lg:sticky lg:top-[76px] grid gap-3"}>
+        <aside className="min-w-0 lg:sticky lg:top-[76px]">
           {coin ? (
             <>
-              <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />
+              <div className="hidden lg:block">
+                <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />
+              </div>
               <div className="mt-3"><FeeBox coin={coin} onChange={loadCoin} /></div>
               <div className="mt-3"><TrustCard coin={coin} /></div>
               <div className="mt-3 rounded-3xl border border-line bg-surface p-4 sm:p-5">
@@ -131,6 +145,7 @@ function Terminal() {
           )}
         </aside>
       </div>
+      {coin && <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />}
     </div>
   );
 }
@@ -213,8 +228,8 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const mc = coinMarketCapUsd(coin, ethUsd);
 
   return (
-    <div className="grid gap-3">
-      <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      <div className="rounded-3xl border border-line bg-surface p-3.5 sm:p-5">
         <div className="flex items-start gap-3">
           <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={52} />
           <div className="min-w-0 flex-1">
@@ -230,16 +245,16 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+        <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-4">
           {[
             ["Market cap", compactUsd(mc)],
-            ["Graduation", coin.graduatedOn ? "Done" : `${Math.round(coin.progress * 100)}%`],
+            ["Grad.", coin.graduatedOn ? "Done" : `${Math.round(coin.progress * 100)}%`],
             ["Holders", String(coin.holders)],
-            ["Volume 24h", ethUsd ? usd(coin.volumeNative24h * ethUsd, 0) : `${coin.volumeNative24h.toFixed(3)} ETH`],
+            ["Vol 24h", ethUsd ? usd(coin.volumeNative24h * ethUsd, 0) : `${coin.volumeNative24h.toFixed(3)} ETH`],
           ].map(([l, v]) => (
-            <div key={l} className="rounded-2xl bg-paper px-3 py-2.5">
-              <div className="text-[11px] text-ink-3">{l}</div>
-              <div className="font-mono text-[16px] mt-0.5">{v}</div>
+            <div key={l} className="rounded-xl sm:rounded-2xl bg-paper px-2 py-1.5 sm:px-3 sm:py-2.5 min-w-0">
+              <div className="text-[10px] sm:text-[11px] text-ink-3 truncate">{l}</div>
+              <div className="font-mono text-[13px] sm:text-[16px] mt-0.5 truncate">{v}</div>
             </div>
           ))}
         </div>
