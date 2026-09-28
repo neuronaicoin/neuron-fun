@@ -128,10 +128,10 @@ function alertOut(r) {
 }
 const ALERT_COLS = "id,coin_id,kind,dir,target,repeat,push,active,fired_at,created_at,coins(name,symbol,logo)";
 
-async function readBody(request) {
+async function readBody(request, limit = 8192) {
   try {
     const t = await request.text();
-    if (t.length > 8192) return null;
+    if (t.length > limit) return null;
     return t ? JSON.parse(t) : {};
   } catch {
     return null;
@@ -358,7 +358,9 @@ export async function onRequest(ctx) {
   if (method === "OPTIONS") return new Response(null, { status: 204 });
 
   try {
-    const body = method === "GET" || method === "HEAD" ? {} : await readBody(request);
+    // Profile pictures travel as a data URL (a 256px WebP is ~10-40 KB); everything else stays small.
+    const limit = parts[0] === "social" && parts[1] === "avatar" ? 400_000 : 8192;
+    const body = method === "GET" || method === "HEAD" ? {} : await readBody(request, limit);
     if (body === null) return fail(400, "Bad request.");
 
     if (parts[0] === "session" && parts.length === 1 && method === "POST") return await session(env, request, body);
