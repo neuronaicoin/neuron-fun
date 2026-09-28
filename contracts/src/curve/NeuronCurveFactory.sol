@@ -13,6 +13,15 @@ import {NeuronCurve, IGraduationMigrator} from "./NeuronCurve.sol";
  *
  * The owner sets terms for future launches only. Every curve freezes its
  * terms, fee recipient and migrator when it is created.
+ *
+ * Beta safety (v3):
+ * - Pause: the guardian (a hot key, for emergencies) or the owner can stop
+ *   new launches and buys on every curve of this factory. Selling, fee
+ *   claims, closing and graduation are never paused, so nobody's money is
+ *   ever stuck. Only the owner (the Safe) can unpause.
+ * - Total cap: the native coin held by all curves together can't go above
+ *   `nativeCap` through buys (0 = no cap). Sells always work.
+ * - Owner: meant to be a Safe multisig (two-step transfer, can't renounce).
  */
 contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
     struct Config {
@@ -34,6 +43,15 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
     mapping(address curve => bool) public isCurve;
     address[] public allCurves;
 
+    /// @notice Can pause buys and launches, nothing else.
+    address public guardian;
+    /// @notice When true, launches and buys stop; everything else stays open.
+    bool public buysPaused;
+    /// @notice Most native coin all curves may hold together (0 = no cap).
+    uint256 public nativeCap;
+    /// @notice Native coin currently held by all curves for their holders.
+    uint256 public totalNative;
+
     event Launched(
         address indexed curve,
         address indexed token,
@@ -47,8 +65,15 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
     event OperatorSet(address operator);
     event ProtocolFeeRecipientSet(address recipient);
     event LaunchesOpenSet(bool open);
+    event GuardianSet(address guardian);
+    event BuysPausedSet(bool paused, address by);
+    event NativeCapSet(uint256 cap);
 
     error ZeroAddress();
+    error NotGuardian();
+    error NotCurve();
+    error BuysPaused();
+    error CapReached(uint256 total, uint256 cap);
     error LaunchesClosed();
     error BadConfig();
     error RenounceDisabled();
@@ -85,6 +110,7 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         NeuronCurve.FeeMode feeMode
     ) external payable nonReentrant returns (address curve, address token, uint256 tokensBought) {
         if (!launchesOpen) revert LaunchesClosed();
+        if (buysPaused) revert BuysPaused();
         if (bytes(name).length == 0 || bytes(symbol).length == 0) revert BadConfig();
         NeuronCurve created = new NeuronCurve(_params(name, symbol, logo, description, launchKey, feeMode));
         curve = address(created);
@@ -133,6 +159,55 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
 
     function curveCount() external view returns (uint256) {
         return allCurves.length;
+    }
+
+    /// @notice Room left under the total cap (max uint if there is no cap).
+    function capRoom() external view returns (uint256) {
+        if (nativeCap == 0) return type(uint256).max;
+        return nativeCap > totalNative ? nativeCap - totalNative : 0;
+    }
+
+    // ------------------------------------------------------------ curve hooks
+
+    /// @notice A curve took in `amount` for its holders. Buys pass
+    /// `enforceCap = true`; fee buybacks pass false so a claim never fails.
+    function noteNativeIn(uint256 amount, bool enforceCap) external {
+        if (!isCurve[msg.sender]) revert NotCurve();
+        uint256 total = totalNative + amount;
+        if (enforceCap && nativeCap != 0 && total > nativeCap) revert CapReached(total, nativeCap);
+        totalNative = total;
+    }
+
+    /// @notice A curve paid out `amount` (a sell or its graduation).
+    function noteNativeOut(uint256 amount) external {
+        if (!isCurve[msg.sender]) revert NotCurve();
+        totalNative = amount >= totalNative ? 0 : totalNative - amount;
+    }
+
+    // ------------------------------------------------------------ safety
+
+    /// @notice Emergency stop for launches and buys. Selling stays open.
+    function pauseBuys() external {
+        if (msg.sender != guardian && msg.sender != owner()) revert NotGuardian();
+        buysPaused = true;
+        emit BuysPausedSet(true, msg.sender);
+    }
+
+    function unpauseBuys() external onlyOwner {
+        buysPaused = false;
+        emit BuysPausedSet(false, msg.sender);
+    }
+
+    /// @param g Zero address removes the guardian.
+    function setGuardian(address g) external onlyOwner {
+        guardian = g;
+        emit GuardianSet(g);
+    }
+
+    /// @param cap Zero removes the cap.
+    function setNativeCap(uint256 cap) external onlyOwner {
+        nativeCap = cap;
+        emit NativeCapSet(cap);
     }
 
     // ------------------------------------------------------------ admin

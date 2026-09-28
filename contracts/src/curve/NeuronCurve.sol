@@ -19,6 +19,9 @@ interface IPoolManagerSource {
 
 interface ICurveFactoryOperator {
     function operator() external view returns (address);
+    function buysPaused() external view returns (bool);
+    function noteNativeIn(uint256 amount, bool enforceCap) external;
+    function noteNativeOut(uint256 amount) external;
 }
 
 /**
@@ -44,6 +47,8 @@ interface ICurveFactoryOperator {
  *   and graduation can only send funds to the migrator fixed at deployment.
  * - Until graduation, every holder can always sell back to the curve, and
  *   the curve always holds enough native coin to pay for it.
+ * - The factory's beta locks (pause, total cap) only ever stop buys. Sells,
+ *   fee claims, closing and graduation are never blocked by them.
  *
  * Fees: `feeBps` of the native amount that enters or leaves the curve,
  * charged on top of buys and taken out of sells. Split between the creator
@@ -109,6 +114,7 @@ contract NeuronCurve is ReentrancyGuard {
     error BadConfig();
     error BelowGraduationMinimum(uint256 have, uint256 min);
     error NoReport();
+    error BuysPaused();
 
     /// @notice Where the creator's share of fees goes. Chosen at launch, never changes.
     ///  Creator: paid to the creator.
@@ -194,6 +200,7 @@ contract NeuronCurve is ReentrancyGuard {
         if (state != State.Trading) revert NotTrading();
         if (msg.value == 0) revert ZeroAmount();
         if (tokensForSale == 0) revert SoldOut();
+        if (factory.buysPaused()) revert BuysPaused();
 
         uint256 v = virtualNative;
         uint256 t = virtualToken;
@@ -220,6 +227,7 @@ contract NeuronCurve is ReentrancyGuard {
         realNative += net;
         tokensForSale -= tokensOut;
         _takeFee(fee);
+        factory.noteNativeIn(net, true);
 
         emit Trade(msg.sender, true, cost, tokensOut, fee, v + net, t - tokensOut);
 
@@ -254,6 +262,7 @@ contract NeuronCurve is ReentrancyGuard {
         realNative -= gross;
         tokensForSale += tokenAmount;
         _takeFee(fee);
+        factory.noteNativeOut(gross);
 
         emit Trade(msg.sender, false, nativeOut, tokenAmount, fee, v - gross, t + tokenAmount);
 
@@ -313,6 +322,7 @@ contract NeuronCurve is ReentrancyGuard {
         realNative = 0;
         tokensForSale = 0;
         graduationTokens = 0;
+        factory.noteNativeOut(nativeToPool);
 
         emit Graduated(report, nativeToPool, tokensToPool, burn);
 
@@ -370,6 +380,7 @@ contract NeuronCurve is ReentrancyGuard {
         virtualToken = t - out;
         realNative += spent;
         tokensForSale -= out;
+        factory.noteNativeIn(spent, false);
         emit Trade(DEAD, true, spent, out, 0, v + spent, t - out);
         emit Buyback(spent, out);
         _sendToken(DEAD, out);
