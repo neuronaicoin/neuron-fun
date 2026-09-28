@@ -35,7 +35,18 @@ const SCALE_MODE = { normal: 0, log: 1, percent: 2 } as const;
  * Market-value candles for one curve (price x 1B supply, in dollars when a
  * price is available, otherwise in the chain's coin).
  */
-export function PriceChart({ curve, ethUsd, alertLines = [] }: { curve: CurveInfo; ethUsd: number | null; alertLines?: number[] }) {
+export function PriceChart({
+  curve,
+  ethUsd,
+  alertLines = [],
+  markers = [],
+}: {
+  curve: CurveInfo;
+  ethUsd: number | null;
+  alertLines?: number[];
+  /** Buys by people you follow and big buys, shown under the candles. */
+  markers?: { time: number; label: string; color: string; followed: boolean }[];
+}) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -192,6 +203,51 @@ export function PriceChart({ curve, ethUsd, alertLines = [] }: { curve: CurveInf
       }
     };
   }, [lineKey, range, curve.curve, ethUsd]);
+
+  // Buyer markers: one per candle (people you follow win over big buys).
+  const markerKey = markers.map((m) => `${m.time}:${m.label}:${m.followed ? 1 : 0}`).join("|");
+  useEffect(() => {
+    let plugin: { detach?: () => void } | null = null;
+    let alive = true;
+    let t: ReturnType<typeof setInterval> | null = null;
+    const draw = async () => {
+      const series = candlesRef.current;
+      if (!series) return false;
+      const { createSeriesMarkers } = await import("lightweight-charts");
+      if (!alive) return true;
+      const byBar = new Map<number, (typeof markers)[number]>();
+      for (const m of markers) {
+        const bar = Math.floor(m.time / range) * range;
+        const cur = byBar.get(bar);
+        if (!cur || (m.followed && !cur.followed)) byBar.set(bar, m);
+      }
+      const list = [...byBar.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([bar, m]) => ({
+          time: bar as UTCTimestamp,
+          position: "belowBar" as const,
+          color: m.color,
+          shape: "circle" as const,
+          size: m.followed ? 1.4 : 1,
+          text: m.label,
+        }));
+      plugin = createSeriesMarkers(series, list) as unknown as { detach?: () => void };
+      return true;
+    };
+    if (markers.length) {
+      void draw().then((ok) => {
+        if (!ok && alive) t = setInterval(() => void draw().then((done) => done && t && clearInterval(t)), 300);
+      });
+    }
+    return () => {
+      alive = false;
+      if (t) clearInterval(t);
+      try {
+        plugin?.detach?.();
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerKey, range, curve.curve, ethUsd]);
 
   return (
     <div>

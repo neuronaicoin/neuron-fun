@@ -16,6 +16,7 @@ import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
+import { useBuyerMarkers } from "@/lib/social";
 import { forumBoardUrl } from "@/lib/forum";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
@@ -304,6 +305,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const mc = coinMarketCapUsd(coin, ethUsd);
   const { alerts } = useAlerts();
   const alertLines = useMemo(() => alertLinesFor(alerts, coin.id), [alerts, coin.id]);
+  const buyerMarkers = useBuyerMarkers(coin.id, chartCurve?.curve ?? null, ethUsd);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
@@ -360,7 +362,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
             </div>
           )}
-          <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} />
+          <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
         </div>
       )}
 

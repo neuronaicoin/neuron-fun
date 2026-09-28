@@ -26,6 +26,7 @@
  */
 import { createPublicClient, defineChain, getAddress, http, isAddress, recoverMessageAddress } from "viem";
 import { forumRoute } from "../../edge/forum-api.js";
+import { socialRoute } from "../../edge/social-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SESSION_DAYS = 30;
@@ -378,6 +379,7 @@ export async function onRequest(ctx) {
       if (parts.length === 2 && parts[1] === "read" && method === "POST") return await readNotes(env, me, body);
     }
     if (parts[0] === "forum") return await forumRoute(ctx, me, parts, method, body, url);
+    if (parts[0] === "social") return await socialRoute(ctx, me, parts, method, body);
     if (parts[0] === "push" && parts.length === 1) {
       if (method === "POST") return await savePush(env, me, body);
       if (method === "DELETE") return await deletePush(env, me, body);

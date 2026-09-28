@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sheet } from "./chrome";
 import { QuickTrade } from "./trade";
 import type { Coin } from "@/lib/data";
@@ -11,6 +11,11 @@ import type { Coin } from "@/lib/data";
  */
 export function MobileTradeBar({ coin, ethUsd, onTraded }: { coin: Coin; ethUsd: number | null; onTraded: () => void }) {
   const [side, setSide] = useState<"buy" | "sell" | null>(null);
+  // "…&buy=1" (from a follow alert's "Buy too") opens the Buy box right away on phones.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get("buy") === "1" && window.matchMedia("(max-width: 1023px)").matches) setSide("buy");
+  }, []);
   const canBuy = coin.curves.some((c) => c.state === "trading" || c.state === "graduated");
   return (
     <>

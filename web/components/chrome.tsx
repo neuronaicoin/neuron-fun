@@ -10,6 +10,7 @@ import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
 import { BalancePill, MoneyHost } from "./portfolio";
+import { SocialSync } from "./social";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -198,6 +199,7 @@ const NAV = [
   { href: "/terminal/", label: "Terminal" },
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
+  { href: "/traders/", label: "Traders" },
   { href: "/forum/", label: "Forum" },
   { href: "/stats/", label: "Stats" },
 ];
@@ -233,6 +235,7 @@ export function Header() {
         <div className="flex items-center gap-1.5 sm:gap-2">
           <AlertsSync />
           <MoneyHost />
+          <SocialSync />
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />
@@ -247,7 +250,7 @@ export function BottomNav() {
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       <div className="grid grid-cols-4">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link

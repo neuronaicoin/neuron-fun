@@ -136,6 +136,7 @@ export async function alertLoop(pool, log) {
         log(`alerts: ${fired.length} fired`);
         if (push) await sendPushes(pool, fired, log);
       }
+      await followAlerts(pool, site, log);
       await sendPendingNotes(pool, push, log);
       if (Date.now() - lastPrune > HOUR) {
         lastPrune = Date.now();
@@ -277,6 +278,51 @@ async function checkOnce(pool, { cooldown, target, site }) {
     db.release();
   }
   return fired.filter((x) => !x.skip);
+}
+
+// Someone you follow bought: a 🔔 (and phone push) with a link that opens the Buy box.
+let followCursor = null;
+let followWarned = false;
+async function followAlerts(pool, site, log) {
+  try {
+    if (!followCursor) {
+      // Kept as text: JavaScript dates drop the microseconds and would re-read the same trade.
+      const { rows } = await pool.query("select now()::text as t");
+      followCursor = rows[0].t;
+      return;
+    }
+    const { rows } = await pool.query(
+      `select t.trader, t.coin_id, t.chain_id, t.native_amount::float8 as native, t.ts::text as ts,
+              c.name, c.symbol, p.username
+       from trades t
+       join coins c on c.id = t.coin_id
+       left join profiles p on p.address = t.trader
+       where t.is_buy and t.ts > $1::timestamptz
+         and coalesce(p.hide_trades, false) = false
+         and exists (select 1 from follows f where f.followee = t.trader)
+       order by t.ts asc limit 200`,
+      [followCursor]
+    );
+    if (!rows.length) return;
+    followCursor = rows[rows.length - 1].ts;
+    const prices = await gasPrices();
+    for (const r of rows) {
+      const px = prices ? prices[NATIVE_BY_CHAIN[r.chain_id] ?? "ETH"] : null;
+      const usd = px ? (r.native / 1e18) * px : null;
+      const who = r.username ? `@${r.username}` : `${r.trader.slice(0, 6)}…${r.trader.slice(-4)}`;
+      const title = `${who} bought ${usd !== null ? money(usd) + " of " : ""}$${r.symbol}`;
+      await pool.query(
+        `insert into notifications (owner, coin_id, kind, title, body, url, pushed)
+         select f.follower, $2, 'follow', $3, $4, $5, false from follows f where f.followee = $1`,
+        [r.trader, r.coin_id, title, `${r.name}. Tap to buy too.`, `${site}/coin/?id=${encodeURIComponent(r.coin_id)}&buy=1`]
+      );
+    }
+    followWarned = false;
+  } catch (e) {
+    // social.sql not run yet: stay quiet until it is.
+    if (!/relation "(profiles|follows)" does not exist/.test(e.message) && !followWarned) log(`follow alerts: ${e.message}`);
+    followWarned = true;
+  }
 }
 
 // Notifications written elsewhere (forum replies) wait with pushed = false.

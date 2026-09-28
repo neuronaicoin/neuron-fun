@@ -63,6 +63,17 @@ export default function MePage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <h1 className="font-display font-semibold text-[1.875rem] sm:text-[2.5rem] tracking-tight">Your coins</h1>
       <p className="text-ink-3 font-mono text-[0.875rem] mt-1">{shortAddr(address)}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a href={`/u/${address.toLowerCase()}/`} className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center hover:border-emerald">
+          🙂 Your profile
+        </a>
+        <Link href="/traders/" className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center hover:border-emerald">
+          🏆 Top traders
+        </Link>
+        <Link href="/traders/?tab=following" className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center hover:border-emerald">
+          👥 Following
+        </Link>
+      </div>
 
       {error && <p className="mt-4 text-danger text-[0.875rem]">{error}</p>}
 

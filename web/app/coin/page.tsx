@@ -16,6 +16,7 @@ import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
 import { ForumCard } from "@/components/forumcard";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
+import { useBuyerMarkers } from "@/lib/social";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
@@ -40,6 +41,10 @@ function CoinPage() {
   const [chartChain, setChartChain] = useState("");
   const { alerts } = useAlerts();
   const alertLines = useMemo(() => alertLinesFor(alerts, id), [alerts, id]);
+  const markerCurve = coin
+    ? (coin.curves.find((c) => c.chain.key === chartChain) ?? coin.graduatedOn ?? [...coin.curves].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0])?.curve ?? null
+    : null;
+  const buyerMarkers = useBuyerMarkers(id, markerCurve, ethUsd);
 
   const load = useCallback(async () => {
     if (!valid) return;
@@ -141,7 +146,7 @@ function CoinPage() {
                   ))}
                 </div>
               )}
-              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} />
+              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
             </div>
           )}
 
