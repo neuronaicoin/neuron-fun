@@ -40,14 +40,21 @@ jobs:
           TARGET_USD: "5"
           REPORT_DIR: reports
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+          # Live factory first, then earlier ones (their coins still graduate).
           CHAINS: >-
             [{"name":"robinhood-testnet","chainId":46630,
               "rpc":"https://rpc.testnet.chain.robinhood.com/rpc",
-              "factory":"0xd72eF7A8134407b4ebC8d764f431457439bC901a",
+              "factory":["0xda5a4EA92862e1b254E42E55Da8C10E4e0501746",
+                         "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
+                         "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
+                         "0xd72eF7A8134407b4ebC8d764f431457439bC901a"],
               "startBlock":123588465,"native":"ETH"},
              {"name":"base-sepolia","chainId":84532,
               "rpc":"https://sepolia.base.org",
-              "factory":"0x00cB1E0bC065C821481411a95c0A2e1afA432919",
+              "factory":["0x0bE77729d6682ee64Ca6327AcA34e5FC555C6AC4",
+                         "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",
+                         "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
+                         "0x00cB1E0bC065C821481411a95c0A2e1afA432919"],
               "startBlock":47265800,"native":"ETH"}]
         run: node graduation.mjs
 
