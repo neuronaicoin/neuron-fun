@@ -1,0 +1,130 @@
+// AI launch helper (update-39), on Cloudflare Workers AI (binding named "AI").
+//
+//   POST /api/ai/ideas  { idea }    → { ideas: [{ name, symbol, description, art }] }
+//   POST /api/ai/logo   { art }     → { image: "data:image/jpeg;base64,…" }
+//
+// Signed-in users only, with a daily allowance per account (ai.sql). If the
+// binding isn't set up, or the free daily quota is used up, it answers with a
+// friendly message and the normal launch form keeps working.
+
+import { sec } from "./forum-core.js";
+
+const TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
+const IDEAS_PER_DAY = 10;
+const LOGOS_PER_DAY = 40;
+
+const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+const fail = (status, error) => json({ error }, status);
+
+// Words we won't put on a coin, and names we won't imitate.
+const BLOCK = /\b(nazi|hitler|isis|rape|child|kid|porn|sex|nsfw|terror|kill|suicide|nigg|fag|retard|jew|muslim|christian)\w*/i;
+const BRANDS = /\b(bitcoin|btc|ethereum|eth|solana|sol|binance|bnb|coinbase|robinhood|tether|usdt|usdc|trump|musk|elon|pepe|doge|shib|disney|nike|apple|google|tesla|pokemon|mario)\b/i;
+
+async function take(env, me, kind, limit) {
+  try {
+    const ok = await sec(env, "rpc/ai_take", { method: "POST", body: { p_address: me, p_kind: kind, p_limit: limit } });
+    return ok === true;
+  } catch (e) {
+    // Table not set up yet: allow, but only while the rest works.
+    if (/ai_take|does not exist|schema cache/i.test(e.message || "")) return true;
+    throw e;
+  }
+}
+
+function clean(s, max) {
+  return String(s ?? "")
+    .replace(/[\u0000-\u001f<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/** Pulls the first JSON array (or {ideas:[…]}) out of whatever the model said. */
+function parseIdeas(out) {
+  let v = out;
+  if (v && typeof v === "object" && "response" in v) v = v.response;
+  if (typeof v === "string") {
+    const s = v.replace(/```(?:json)?/gi, "");
+    const a = s.indexOf("[");
+    const b = s.lastIndexOf("]");
+    const o = s.indexOf("{");
+    try {
+      v = a >= 0 && b > a && (o < 0 || a < o) ? JSON.parse(s.slice(a, b + 1)) : JSON.parse(s.slice(o, s.lastIndexOf("}") + 1));
+    } catch {
+      return [];
+    }
+  }
+  if (v && !Array.isArray(v) && Array.isArray(v.ideas)) v = v.ideas;
+  return Array.isArray(v) ? v : [];
+}
+
+export async function aiRoute(ctx, me, parts, method, body) {
+  const env = ctx.env;
+  if (method !== "POST" || parts.length !== 2) return fail(404, "Not found.");
+  if (!env.AI || typeof env.AI.run !== "function") return fail(503, "AI ideas aren't switched on yet. Fill in the form below instead.");
+
+  if (parts[1] === "ideas") {
+    const idea = clean(body.idea, 200);
+    if (idea.length < 3) return fail(400, "Write a few words about your coin first.");
+    if (BLOCK.test(idea)) return fail(400, "Let's keep it friendly. Try another idea.");
+    if (!(await take(env, me, "ideas", IDEAS_PER_DAY))) return fail(429, `That's your ${IDEAS_PER_DAY} AI ideas for today. Come back tomorrow, or fill in the form below.`);
+
+    const system =
+      "You name meme coins. Reply with ONLY a JSON array of exactly 3 objects, no other text. " +
+      'Each object: {"name": catchy coin name, 2-4 words, max 28 characters; ' +
+      '"symbol": ticker, 3-6 capital letters A-Z only; ' +
+      '"description": one fun sentence, max 140 characters, no promises of profit, no emojis; ' +
+      '"art": a short visual description of a cute mascot logo for this coin, max 25 words}. ' +
+      "Make the 3 ideas clearly different. Never use real people, brands, celebrities, existing crypto names, " +
+      "or anything hateful, sexual or violent.";
+    let out;
+    try {
+      out = await env.AI.run(TEXT_MODEL, {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: `Coin idea: ${idea}` },
+        ],
+        max_tokens: 700,
+        temperature: 0.9,
+      });
+    } catch (e) {
+      console.error("ai ideas", e && e.message);
+      return fail(503, "Our AI is busy right now. Try again in a minute, or fill in the form below.");
+    }
+    const seen = new Set();
+    const ideas = parseIdeas(out)
+      .map((x) => ({
+        name: clean(x && x.name, 32),
+        symbol: clean(x && x.symbol, 12).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
+        description: clean(x && x.description, 200),
+        art: clean(x && x.art, 240),
+      }))
+      .filter((x) => x.name.length >= 2 && x.symbol.length >= 2 && !BLOCK.test(x.name + " " + x.description) && !BRANDS.test(x.name + " " + x.symbol))
+      .filter((x) => (seen.has(x.symbol) ? false : (seen.add(x.symbol), true)))
+      .slice(0, 3);
+    if (!ideas.length) return fail(502, "The AI came back empty. Try again, maybe with a different sentence.");
+    return json({ ideas });
+  }
+
+  if (parts[1] === "logo") {
+    const art = clean(body.art, 240);
+    if (art.length < 3 || BLOCK.test(art)) return fail(400, "Can't draw that one.");
+    if (!(await take(env, me, "logo", LOGOS_PER_DAY))) return fail(429, "That's all the AI pictures for today. Upload your own below.");
+    const prompt =
+      `Cute meme coin mascot logo: ${art}. Centered single character, bold simple shapes, vibrant colors, ` +
+      "soft gradient background, flat vector illustration, sticker style, no text, no letters, no watermark.";
+    let out;
+    try {
+      out = await env.AI.run(IMAGE_MODEL, { prompt, steps: 4 });
+    } catch (e) {
+      console.error("ai logo", e && e.message);
+      return fail(503, "Couldn't draw a picture right now. Try again, or upload your own.");
+    }
+    const b64 = out && typeof out.image === "string" ? out.image : null;
+    if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64.slice(0, 200))) return fail(502, "Couldn't draw a picture right now. Try again.");
+    return json({ image: `data:image/jpeg;base64,${b64}` });
+  }
+
+  return fail(404, "Not found.");
+}

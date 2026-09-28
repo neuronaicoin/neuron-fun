@@ -282,3 +282,17 @@ a.press {
   .shimmer::after, .confetti-piece { animation: none; }
   button:not(:disabled):active, a.press:active { transform: none; }
 }
+
+/* AI launch box: a soft gradient frame. */
+.ai-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(120deg, #ff6b1a, #ffb020, #f472b6, #ff6b1a);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}

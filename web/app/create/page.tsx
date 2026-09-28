@@ -1,5 +1,6 @@
 "use client";
 
+import { AiLaunch } from "@/components/ailaunch";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toHex, type Address, type Hex } from "viem";
@@ -165,10 +166,29 @@ export default function CreatePage() {
       <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
       <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.875rem] tracking-tight sm:mt-2">Launch a coin</h1>
       <p className="text-ink-2 mt-1 sm:mt-2 text-[0.875rem] sm:text-[1rem] max-w-2xl">
-        A name, a ticker and a picture. It goes live on every chain you pick, in one go. Everything else is optional.
+        A name, a ticker and a picture. It goes live on every chain you pick, in one go. Let AI design it for you, or fill it in yourself.
       </p>
 
-      <div className="mt-4 sm:mt-8 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="mt-4 sm:mt-8 lg:max-w-[calc(100%-404px)]">
+        <AiLaunch
+          onPick={(p) => {
+            setName(p.name);
+            setSymbol(p.symbol);
+            setDescription(p.description);
+            if (p.logo) {
+              setLogo(p.logo);
+              setPicError("");
+            }
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-3 text-[0.8125rem] text-ink-3 mt-6 lg:max-w-[calc(100%-404px)]" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        or fill it in yourself
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-7 grid gap-5 sm:gap-6">
           <div className="grid gap-4 sm:gap-5 grid-cols-[96px_1fr] sm:grid-cols-[180px_1fr] items-start">
             <label className="relative aspect-square rounded-2xl border-2 border-dashed border-line hover:border-emerald bg-paper flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden">

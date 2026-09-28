@@ -155,6 +155,12 @@ async function api<T>(path: string, init: { method?: string; body?: unknown } = 
   return j;
 }
 
+/** A signed-in POST to /api/<path> (signs in first if needed). */
+export async function authedPost<T>(sign: SignFn, path: string, body: unknown): Promise<T> {
+  await ensureSession(sign);
+  return api<T>(path, { method: "POST", body });
+}
+
 // ------------------------------------------------------------------ wallet changes, polling
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
