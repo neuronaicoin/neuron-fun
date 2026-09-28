@@ -9,7 +9,7 @@ import { IS_TESTNET } from "@/lib/config";
 import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
-import { DepositSheet, WithdrawSheet } from "./money";
+import { BalancePill, MoneyHost } from "./portfolio";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -26,9 +26,8 @@ export function TestnetBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, walletName, wallets, connecting, connect, disconnect, embedded, email, loginWithEmail } = useWallet();
-  const [copied, setCopied] = useState(false);
-  const [sheet, setSheet] = useState<"none" | "pick" | "account" | "deposit" | "withdraw">("none");
+  const { address, wallets, connecting, connect, loginWithEmail } = useWallet();
+  const [sheet, setSheet] = useState<"none" | "pick">("none");
   const [error, setError] = useState("");
   const base =
     "h-11 px-5 rounded-xl text-[0.9375rem] font-semibold inline-flex items-center justify-center gap-2 transition-colors " +
@@ -49,68 +48,8 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
     }
   }
 
-  if (address) {
-    return (
-      <>
-        <button type="button" onClick={() => setSheet("account")} className={base + "bg-surface border border-line text-ink font-mono text-[0.875rem]"}>
-          <span className="w-2 h-2 rounded-full bg-emerald" aria-hidden="true" />
-          {shortAddr(address)}
-        </button>
-        {sheet === "account" && (
-          <Sheet title={embedded ? "Your sasa account" : "Your wallet"} onClose={() => setSheet("none")}>
-            {embedded ? (
-              <>
-                {email && <p className="text-ink-2 text-[0.9375rem]">Signed in as <span className="text-ink">{email}</span></p>}
-                <p className="text-ink-3 text-[0.8125rem] mt-3">Your wallet address, the same on every chain. Send test ETH here to start trading. You never pay network fees.</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(address).then(() => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    });
-                  }}
-                  className="mt-2 w-full rounded-xl bg-paper border border-line px-3 py-3 font-mono text-[0.8125rem] break-all text-left hover:border-emerald"
-                >
-                  {address}
-                  <span className="block text-[0.75rem] text-emerald mt-1 font-sans">{copied ? "Copied" : "Tap to copy"}</span>
-                </button>
-              </>
-            ) : (
-              <p className="text-ink-2 text-[0.9375rem]">
-                Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2 mt-5">
-              <button
-                type="button"
-                onClick={() => setSheet("deposit")}
-                className="h-12 rounded-xl bg-emerald text-on-accent font-bold hover:bg-emerald-dark"
-              >
-                ＋ Deposit
-              </button>
-              <button type="button" onClick={() => setSheet("withdraw")} className="h-12 rounded-xl border border-line font-semibold hover:border-emerald">
-                Withdraw
-              </button>
-            </div>
-            <p className="text-[0.75rem] text-ink-3 mt-2 text-center">From or to any chain, wallet or exchange. sasa fee: $0.</p>
-            <button
-              type="button"
-              onClick={() => {
-                disconnect();
-                setSheet("none");
-              }}
-              className="mt-5 h-12 w-full rounded-xl border border-ink font-semibold"
-            >
-              {embedded ? "Log out" : "Disconnect"}
-            </button>
-          </Sheet>
-        )}
-        {sheet === "deposit" && <DepositSheet onClose={() => setSheet("none")} />}
-        {sheet === "withdraw" && <WithdrawSheet onClose={() => setSheet("none")} />}
-      </>
-    );
-  }
+  // Logged in: the balance (opens the portfolio, with address and log out) and ＋ Deposit.
+  if (address) return <BalancePill />;
   return (
     <>
       <button
@@ -293,6 +232,7 @@ export function Header() {
         </nav>
         <div className="flex items-center gap-1.5 sm:gap-2">
           <AlertsSync />
+          <MoneyHost />
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />

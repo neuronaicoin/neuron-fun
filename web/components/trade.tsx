@@ -16,6 +16,7 @@ import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
+import { openMoney, refreshPortfolio } from "@/lib/portfolio";
 
 const PRESETS = [10, 25, 50, 100];
 const GAS_RESERVE = 50_000_000_000_000n; // 0.00005 ETH kept for network fees (L2 fees are far below this)
@@ -48,6 +49,7 @@ export function QuickTrade({
   onTraded,
   initialSide,
   bare = false,
+  initialSellPct,
 }: {
   coin: Coin;
   ethUsd: number | null;
@@ -56,6 +58,8 @@ export function QuickTrade({
   initialSide?: "buy" | "sell";
   /** Without its own card frame, for use inside a sheet. */
   bare?: boolean;
+  /** Share to sell when opening on the Sell tab (portfolio quick sell). */
+  initialSellPct?: number;
 }) {
   const { address, embedded, send } = useWallet();
   // Email users pay no network fees, so nothing needs to be kept back.
@@ -64,7 +68,7 @@ export function QuickTrade({
   const sellable = coin.curves;
   const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
   const [usdIn, setUsdIn] = useState("25");
-  const [sellPct, setSellPct] = useState(100);
+  const [sellPct, setSellPct] = useState(initialSellPct ?? 100);
   const [picked, setPicked] = useState<string | null>(null);
   const [bals, setBals] = useState<Record<string, Bal>>({});
   const [quote, setQuote] = useState<bigint | null>(null);
@@ -281,6 +285,7 @@ export function QuickTrade({
           .catch(() => signal(null));
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
+      void refreshPortfolio();
       onTraded();
       // A sell that made 5% or more gets a card to share.
       if (side === "sell" && proceeds !== null) {
@@ -326,7 +331,17 @@ export function QuickTrade({
       {side === "buy" ? (
         <>
           <label className="block mt-5">
-            <span className="text-[0.8125rem] font-semibold text-ink-3">You pay</span>
+            <span className="flex items-center justify-between gap-2 text-[0.8125rem] font-semibold text-ink-3">
+              <span>You pay</span>
+              {address && bal && ethUsd !== null && (
+                <span className="font-normal">
+                  Cash {usd((Number(bal.eth) / 1e18) * ethUsd, 2)} ·{" "}
+                  <button type="button" onClick={(e) => { e.preventDefault(); openMoney({ kind: "deposit" }); }} className="font-bold text-emerald">
+                    ＋ Deposit
+                  </button>
+                </span>
+              )}
+            </span>
             <div className="mt-2 flex items-center h-16 px-4 rounded-2xl border border-line bg-paper focus-within:border-emerald">
               <span className="font-display text-[1.625rem] text-ink-3 mr-1">$</span>
               <input
@@ -369,6 +384,7 @@ export function QuickTrade({
           {address && bal && (
             <p className="text-[0.75rem] text-ink-3 mt-2">
               You hold {fmtTokens(bal.tok)} ${coin.symbol} on {chosen?.chain.short}
+              {ethUsd !== null && chosen && bal.tok > 0n ? ` (≈ ${usd(Number(formatEther(bal.tok)) * nativePerToken(chosen) * ethUsd, 2)})` : ""}
             </p>
           )}
         </>
@@ -425,7 +441,7 @@ export function QuickTrade({
             {busy ||
               (notEnough
                 ? side === "buy"
-                  ? `Not enough ETH on ${chosen?.chain.short}`
+                  ? "Not enough cash"
                   : `No $${coin.symbol} to sell here`
                 : side === "buy"
                   ? `Buy $${coin.symbol}`
@@ -434,6 +450,14 @@ export function QuickTrade({
         )}
       </div>
 
+      {address && side === "buy" && notEnough && (
+        <p className="mt-2 text-center text-[0.875rem] text-ink-2">
+          <button type="button" onClick={() => openMoney({ kind: "deposit" })} className="font-bold text-emerald">
+            Deposit
+          </button>{" "}
+          from any chain or exchange.
+        </p>
+      )}
       {error && <p className="mt-3 text-[0.8125rem] text-danger" role="alert">{error}</p>}
       {done && doneChain && (
         <p className="mt-3 text-[0.8125rem] text-up">
