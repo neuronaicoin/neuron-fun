@@ -373,7 +373,7 @@ export async function renderHome(env, fresh) {
     .map((coin) => {
       const f = facts(coin, px, env);
       const n = counts.get(coin.id)?.threads || 0;
-      return `<a class="row" href="${esc(boardUrl(coin))}">${avatar(coin)}<div class="grow"><div class="t">${esc(coin.name)} ($${esc(coin.symbol)})</div><div class="s">Market cap ${money(f.mc)} · ${f.holders} holders${f.chains.length ? ` · ${esc(f.chains.join(", "))}` : ""}</div></div><div class="num">${n} ${n === 1 ? "thread" : "threads"}</div></a>`;
+      return `<a class="row" href="${esc(boardUrl(coin))}">${avatar(coin)}<div class="grow"><div class="t">${esc(coin.name)} ($${esc(coin.symbol)})</div><div class="s">Market cap ${money(f.mc)} · ${f.holders} ${f.holders === 1 ? "holder" : "holders"}${f.chains.length ? ` · ${esc(f.chains.join(", "))}` : ""}</div></div><div class="num">${n} ${n === 1 ? "thread" : "threads"}</div></a>`;
     })
     .join("")}</div></section>`;
 
@@ -435,7 +435,7 @@ export async function renderBoard(env, slug, url, fresh) {
     const desc = plain(coin.description);
     title = `${coin.name} (${sym}) forum: news, price talk and holders`;
     description = clip(
-      `${coin.name} (${sym}) community forum on sasa. ${f.mc !== null ? `Market cap ${money(f.mc)}, ` : ""}${f.holders} holders, ${f.graduated ? `graduated on ${f.winner}` : `on ${f.chains.join(" and ") || "sasa"}`}. ${desc}`,
+      `${coin.name} (${sym}) community forum on sasa. ${f.mc !== null ? `Market cap ${money(f.mc)}, ` : ""}${f.holders} ${f.holders === 1 ? "holder" : "holders"}, ${f.graduated ? `graduated on ${f.winner}` : `on ${f.chains.join(" and ") || "sasa"}`}. ${desc}`,
       158
     );
     const change = f.change === null ? "—" : `<span class="${f.change >= 0 ? "up" : "down"}">${f.change >= 0 ? "+" : "−"}${Math.abs(f.change * 100).toFixed(1)}%</span>`;

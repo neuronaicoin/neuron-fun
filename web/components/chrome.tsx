@@ -9,6 +9,7 @@ import { IS_TESTNET } from "@/lib/config";
 import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
+import { DepositSheet, WithdrawSheet } from "./money";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -27,7 +28,7 @@ export function TestnetBanner() {
 export function ConnectButton({ full = false }: { full?: boolean }) {
   const { address, walletName, wallets, connecting, connect, disconnect, embedded, email, loginWithEmail } = useWallet();
   const [copied, setCopied] = useState(false);
-  const [sheet, setSheet] = useState<"none" | "pick" | "account">("none");
+  const [sheet, setSheet] = useState<"none" | "pick" | "account" | "deposit" | "withdraw">("none");
   const [error, setError] = useState("");
   const base =
     "h-11 px-5 rounded-xl text-[0.9375rem] font-semibold inline-flex items-center justify-center gap-2 transition-colors " +
@@ -80,6 +81,19 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
                 Connected with {walletName ?? "your wallet"}: <span className="font-mono">{shortAddr(address)}</span>
               </p>
             )}
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setSheet("deposit")}
+                className="h-12 rounded-xl bg-emerald text-on-accent font-bold hover:bg-emerald-dark"
+              >
+                ＋ Deposit
+              </button>
+              <button type="button" onClick={() => setSheet("withdraw")} className="h-12 rounded-xl border border-line font-semibold hover:border-emerald">
+                Withdraw
+              </button>
+            </div>
+            <p className="text-[0.75rem] text-ink-3 mt-2 text-center">From or to any chain, wallet or exchange. sasa fee: $0.</p>
             <button
               type="button"
               onClick={() => {
@@ -92,6 +106,8 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
             </button>
           </Sheet>
         )}
+        {sheet === "deposit" && <DepositSheet onClose={() => setSheet("none")} />}
+        {sheet === "withdraw" && <WithdrawSheet onClose={() => setSheet("none")} />}
       </>
     );
   }
