@@ -8,6 +8,8 @@ import { CHAINS, TARGET_USD } from "@/lib/config";
 import { fetchCoinCount, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
+import { ScrollRow } from "@/components/scrollrow";
+import { useSparks } from "@/lib/spark";
 
 const SORTS: { id: SortKey; label: string }[] = [
   { id: "trending", label: "🔥 Trending" },
@@ -43,6 +45,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     return l;
   }, [coins, sort, chain]);
 
+  const sparks = useSparks(useMemo(() => list.map((c) => c.id), [list]));
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
   const liveUsd = coins ? racing.reduce((s, c) => s + (c.totalUsd ?? 0), 0) : null;
   const trades24h = coins?.reduce((s, c) => s + c.trades24h, 0) ?? null;
@@ -135,33 +138,42 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
             </div>
           </div>
-          <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1" role="tablist" aria-label="Sort coins">
+          <ScrollRow label="Sort coins" className="mt-4">
             {SORTS.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                role="tab"
-                aria-selected={sort === s.id}
-                onClick={() => setSort(s.id)}
+                aria-pressed={sort === s.id}
+                onClick={(e) => {
+                  setSort(s.id);
+                  e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+                }}
                 className={
-                  "h-10 px-4 rounded-xl text-[0.875rem] font-semibold shrink-0 whitespace-nowrap border " +
-                  (sort === s.id ? "bg-emerald text-on-accent border-emerald" : "bg-paper border-line text-ink-2 hover:text-ink")
+                  "h-10 w-[9.75rem] sm:w-[10.5rem] shrink-0 px-3 rounded-xl text-[0.8125rem] sm:text-[0.875rem] font-semibold whitespace-nowrap border flex items-center justify-center " +
+                  (sort === s.id ? "bg-emerald text-on-accent border-emerald shadow-[0_4px_14px_rgba(242,96,12,0.25)]" : "bg-paper border-line text-ink-2 hover:text-ink hover:border-emerald/50")
                 }
               >
                 {s.label}
               </button>
             ))}
-          </div>
-          <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1" role="tablist" aria-label="Chain">
-            {[{ key: "all", short: "All chains" }, ...CHAINS].map((c) => (
+          </ScrollRow>
+          <div
+            className="mt-2.5 grid grid-flow-col auto-cols-fr gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit"
+            role="group"
+            aria-label="Chain"
+          >
+            {[{ key: "all", short: "All chains", color: "" }, ...CHAINS].map((c) => (
               <button
                 key={c.key}
                 type="button"
-                role="tab"
-                aria-selected={chain === c.key}
+                aria-pressed={chain === c.key}
                 onClick={() => setChain(c.key)}
-                className={"h-9 px-4 rounded-full text-[0.8125rem] font-semibold shrink-0 border " + (chain === c.key ? "bg-ink text-on-accent border-ink" : "border-line text-ink-2")}
+                className={
+                  "h-9 sm:w-[9.75rem] px-3 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center gap-2 " +
+                  (chain === c.key ? "bg-ink text-paper shadow-sm" : "text-ink-2 hover:text-ink")
+                }
               >
+                {c.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
                 {c.short}
               </button>
             ))}
@@ -177,7 +189,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           <div className="mt-5 grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {!coins && !error && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="aspect-[3/4]" />)}
             {list.map((c) => (
-              <CoinTile key={c.id} coin={c} ethUsd={ethUsd} />
+              <CoinTile key={c.id} coin={c} ethUsd={ethUsd} spark={sparks.get(c.id)} />
             ))}
           </div>
           {coins && hasMore && (

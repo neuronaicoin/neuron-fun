@@ -181,7 +181,10 @@ export function HeaderBell() {
         onClick={toggle}
         aria-label={unread ? `${unread} unread notifications` : "Notifications"}
         aria-expanded={open !== "none"}
-        className={"relative w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 hover:text-ink flex items-center justify-center " + (ringing ? "bell-ring" : "")}
+        className={
+          "relative w-11 h-11 shrink-0 rounded-2xl border border-line bg-surface text-ink-2 hover:text-ink hover:border-emerald/60 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] flex items-center justify-center " +
+          (ringing ? "bell-ring" : "")
+        }
       >
         <BellIcon />
         <Badge n={unread} />

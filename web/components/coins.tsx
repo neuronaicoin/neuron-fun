@@ -141,7 +141,7 @@ export function Stat({ label, value, dark = false }: { label: string; value: str
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={"animate-pulse rounded-2xl bg-line/60 " + className} />;
+  return <div className={"shimmer rounded-2xl " + className} aria-hidden="true" />;
 }
 
 export function useCoins(sort: SortKey, search: string) {

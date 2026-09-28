@@ -169,7 +169,7 @@ export function ThemeToggle() {
       onClick={flip}
       aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
       title={theme === "light" ? "Dark mode" : "Light mode"}
-      className="w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 hover:text-ink flex items-center justify-center"
+      className="w-11 h-11 shrink-0 rounded-2xl border border-line bg-surface text-ink-2 hover:text-ink hover:border-emerald/60 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] flex items-center justify-center"
     >
       {theme === "light" ? (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -230,12 +230,12 @@ export function Header() {
   const pathname = usePathname() || "/";
   return (
     <header className="relative md:sticky md:top-0 z-40 bg-paper/90 md:backdrop-blur border-b border-line">
-      <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
         <Link href="/explore/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
           <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
         </Link>
-        <nav aria-label="Main" className="hidden md:flex items-center gap-7 text-[0.9375rem] font-medium">
+        <nav aria-label="Main" className="hidden md:flex items-center gap-4 lg:gap-6 xl:gap-7 text-[0.875rem] lg:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
             n.href === "/forum/" ? (
               // The forum is server-rendered HTML, not part of the app: a normal link.

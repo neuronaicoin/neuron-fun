@@ -35,23 +35,42 @@ export function BalancePill() {
   const total = portfolio ? money(portfolio.totalUsd) : null;
   const cash = portfolio ? money(portfolio.cashUsd) : null;
   return (
-    <button
-      type="button"
-      onClick={() => openMoney({ kind: "portfolio" })}
-      aria-label={total ? `Your portfolio: ${total}, cash ${cash}` : "Your portfolio"}
-      className="h-11 px-3 sm:px-4 rounded-xl border border-line bg-surface hover:border-emerald flex flex-col items-end justify-center leading-none shrink-0 min-w-[5.5rem]"
-    >
-      {total ? (
-        <>
-          <span className="font-mono text-[0.9375rem] font-semibold text-ink">{total}</span>
-          <span className="text-[0.6875rem] text-ink-3 mt-1">
-            Cash <span className="font-mono text-up font-semibold">{cash}</span>
+    <div className="h-11 flex items-center gap-1 pl-1 pr-1 rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] shrink-0 hover:border-emerald/60 transition-colors">
+      <button
+        type="button"
+        onClick={() => openMoney({ kind: "portfolio" })}
+        aria-label={total ? `Your portfolio: ${total}, cash ${cash}` : "Your portfolio"}
+        className="h-9 flex items-center gap-2 pl-1 pr-1.5 rounded-xl"
+      >
+        <span className="hidden sm:flex w-8 h-8 rounded-[0.625rem] bg-emerald-soft text-emerald items-center justify-center shrink-0" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="6" width="18" height="14" rx="3" />
+            <path d="M3 10h18M16 15h2" />
+          </svg>
+        </span>
+        {total ? (
+          <span className="flex flex-col items-start leading-none min-w-[3.75rem]">
+            <span className="font-mono text-[0.9375rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
+            <span className="text-[0.6875rem] text-ink-3 mt-1 whitespace-nowrap">
+              Cash <span className="font-mono text-up font-semibold tabular-nums">{cash}</span>
+            </span>
           </span>
-        </>
-      ) : (
-        <span className="inline-block w-16 h-4 rounded bg-line animate-pulse" aria-hidden="true" />
-      )}
-    </button>
+        ) : (
+          <span className="shimmer inline-block w-16 h-5 rounded-md" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => openMoney({ kind: "deposit" })}
+        aria-label="Add money"
+        title="Add money"
+        className="w-8 h-8 rounded-[0.625rem] bg-emerald text-on-accent flex items-center justify-center shrink-0 hover:bg-emerald-dark"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+    </div>
   );
 }
 

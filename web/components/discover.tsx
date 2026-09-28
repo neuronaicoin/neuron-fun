@@ -6,7 +6,7 @@ import { TARGET_USD, chainById } from "@/lib/config";
 import { coinHref, fetchTrades, isImageUrl, marketCapNative, type Coin, type Trade } from "@/lib/data";
 import { shortAddr } from "@/lib/format";
 import { ChainChip, timeAgo, usd } from "./coins";
-import { ChangeBadge } from "./coins";
+import { Sparkline } from "./spark";
 
 /** Market value in dollars: the biggest of the coin's chains (the one that matters). */
 export function coinMarketCapUsd(coin: Coin, ethUsd: number | null): number | null {
@@ -72,7 +72,7 @@ export function RaceBar({ coin, thick = false }: { coin: Coin; thick?: boolean }
 }
 
 /** A coin card. Flashes when a new trade lands. */
-export function CoinTile({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
+export function CoinTile({ coin, ethUsd, spark }: { coin: Coin; ethUsd: number | null; spark?: number[] | null }) {
   const last = useRef(coin.lastTradeAt);
   const [flash, setFlash] = useState(false);
   useEffect(() => {
@@ -113,10 +113,15 @@ export function CoinTile({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }
       <div className="px-1.5 sm:px-2 pt-3 pb-1">
         <div className="font-display font-semibold text-[1rem] sm:text-[1.1875rem] leading-tight truncate">{coin.name}</div>
         <div className="text-[0.75rem] sm:text-[0.8125rem] text-ink-3 mt-0.5">${coin.symbol}</div>
-        <div className="flex items-baseline gap-1.5 mt-2">
-          <span className="font-display font-semibold text-[1.25rem] sm:text-[1.5rem]">{compactUsd(coinMarketCapUsd(coin, ethUsd))}</span>
-          <span className="text-[0.6875rem] text-ink-3">MC</span>
-          <ChangeBadge value={coin.change24h} className="ml-auto text-[0.75rem] sm:text-[0.8125rem]" />
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-3 mt-2.5">
+          <span className="leading-none">
+            <span className="block text-[0.625rem] font-semibold tracking-wider uppercase text-ink-3">MC</span>
+            <span className="block font-mono font-bold tabular-nums tracking-tight text-[1.0625rem] sm:text-[1.3125rem] mt-1">
+              {compactUsd(coinMarketCapUsd(coin, ethUsd))}
+            </span>
+          </span>
+          <Sparkline pts={spark} className="w-full h-8 sm:h-9" />
+          <ChangePill value={coin.change24h} />
         </div>
         <div className="flex justify-between text-[0.6875rem] sm:text-[0.75rem] text-ink-3 mt-2 mb-1.5">
           <span>{coin.graduatedOn ? `Won on ${coin.graduatedOn.chain.short}` : "Graduation"}</span>
@@ -210,5 +215,27 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
         <div className="flex" aria-hidden="true">{row}</div>
       </div>
     </div>
+  );
+}
+
+/** The 24h change as a small tinted pill (bold, easy to scan). */
+export function ChangePill({ value }: { value: number | null }) {
+  if (value === null || !Number.isFinite(value)) {
+    return <span className="font-mono font-bold text-[0.75rem] sm:text-[0.8125rem] px-2 py-1 rounded-lg bg-line/60 text-ink-3">—</span>;
+  }
+  const pct = value * 100;
+  const up = pct > 0.05;
+  const down = pct < -0.05;
+  const text = Math.abs(pct) >= 1000 ? `${(Math.abs(pct) / 1000).toFixed(1)}K%` : `${Math.abs(pct) >= 100 ? Math.abs(pct).toFixed(0) : Math.abs(pct).toFixed(1)}%`;
+  return (
+    <span
+      className={
+        "font-mono font-bold tabular-nums whitespace-nowrap text-[0.75rem] sm:text-[0.8125rem] px-2 py-1 rounded-lg " +
+        (up ? "bg-up/15 text-up" : down ? "bg-danger/15 text-danger" : "bg-line/60 text-ink-3")
+      }
+    >
+      {up ? "+" : down ? "−" : ""}
+      {text}
+    </span>
   );
 }

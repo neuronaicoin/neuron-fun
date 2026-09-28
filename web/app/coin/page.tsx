@@ -1,5 +1,6 @@
 "use client";
 
+import { Confetti, useGraduationParty } from "@/components/confetti";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -65,6 +66,8 @@ function CoinPage() {
     const t = setInterval(load, 8_000);
     return () => clearInterval(t);
   }, [load]);
+  const party = useGraduationParty(coin?.id ?? "", !!coin?.graduatedOn);
+  const [partyDone, setPartyDone] = useState(false);
 
   if (!valid || notFound) {
     return (
@@ -92,6 +95,7 @@ function CoinPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      {party && !partyDone && <Confetti onDone={() => setPartyDone(true)} />}
       <Link href="/explore/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
 
       <div className="mt-4 sm:mt-5 flex items-start gap-3 sm:gap-4">

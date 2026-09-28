@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { ScrollRow } from "@/components/scrollrow";
+import { Confetti, useGraduationParty } from "@/components/confetti";
+import { Sparkline } from "@/components/spark";
+import { useSparks } from "@/lib/spark";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatEther } from "viem";
@@ -199,21 +203,26 @@ const MARKET_TABS: readonly (readonly [SortKey, string])[] = [
 
 function MarketTabs({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) => void }) {
   return (
-    <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Sort">
+    <ScrollRow label="Sort" edge="surface">
       {MARKET_TABS.map(([k, l]) => (
         <button
           key={k}
           type="button"
-          role="tab"
-          aria-selected={sort === k}
+          aria-pressed={sort === k}
           aria-label={k === "watchlist" ? "Favourites" : undefined}
-          onClick={() => setSort(k)}
-          className={"h-9 px-3 rounded-xl text-[0.8125rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-emerald text-on-accent" : "text-ink-2 hover:text-ink")}
+          onClick={(e) => {
+            setSort(k);
+            e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+          }}
+          className={
+            "h-9 px-3.5 rounded-xl text-[0.8125rem] font-semibold shrink-0 whitespace-nowrap " +
+            (sort === k ? "bg-emerald text-on-accent" : "text-ink-2 hover:text-ink hover:bg-paper")
+          }
         >
           {l}
         </button>
       ))}
-    </div>
+    </ScrollRow>
   );
 }
 
@@ -230,6 +239,7 @@ function Markets(props: {
   full?: boolean;
 }) {
   const { coins, ethUsd, selected, onChoose, sort, setSort, query, setQuery, full = false } = props;
+  const sparks = useSparks(useMemo(() => (coins ?? []).map((c) => c.id), [coins]));
   return (
     <div className="rounded-3xl border border-line bg-surface overflow-hidden">
       <div className="p-3 border-b border-line">
@@ -256,15 +266,18 @@ function Markets(props: {
             >
               <CoinAvatar logo={c.logo} symbol={c.symbol} size={36} />
               <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-[0.875rem] truncate">{c.name}</span>
-                  <span className="font-mono text-[0.8125rem] shrink-0">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
-                </span>
-                <span className="flex items-center justify-between gap-2 mt-1">
-                  <span className="text-[0.75rem] text-ink-3 truncate">
-                    ${c.symbol} · {c.graduatedOn ? "graduated" : `${Math.round(c.progress * 100)}% to grad.`}
+                <span className="grid grid-cols-[minmax(0,1fr)_3.5rem_auto] items-center gap-2">
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-[0.875rem] truncate">{c.name}</span>
+                    <span className="block text-[0.75rem] text-ink-3 truncate mt-0.5">
+                      ${c.symbol} · {c.graduatedOn ? "graduated" : `${Math.round(c.progress * 100)}% to grad.`}
+                    </span>
                   </span>
-                  <ChangeBadge value={c.change24h} className="text-[0.75rem] shrink-0" />
+                  <Sparkline pts={sparks.get(c.id)} fill={false} className="w-14 h-6" />
+                  <span className="text-right shrink-0">
+                    <span className="block font-mono font-bold tabular-nums text-[0.875rem]">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
+                    <ChangeBadge value={c.change24h} className="block text-[0.75rem] font-semibold mt-0.5" />
+                  </span>
                 </span>
                 <span className="block mt-1.5"><RaceBar coin={c} /></span>
               </span>
@@ -289,9 +302,12 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const { alerts } = useAlerts();
   const alertLines = useMemo(() => alertLinesFor(alerts, coin.id), [alerts, coin.id]);
   const buyerMarkers = useBuyerMarkers(coin.id, chartCurve?.curve ?? null, ethUsd);
+  const party = useGraduationParty(coin.id, !!coin.graduatedOn);
+  const [partyDone, setPartyDone] = useState(false);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      {party && !partyDone && <Confetti onDone={() => setPartyDone(true)} />}
       <div className="rounded-3xl border border-line bg-surface p-3.5 sm:p-5">
         <div className="flex items-start gap-3">
           <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={46} />
