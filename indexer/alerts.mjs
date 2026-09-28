@@ -21,7 +21,7 @@ import webpush from "web-push";
 
 const SUPPLY = 1e9;
 const HOUR = 3600_000;
-const NATIVE_BY_CHAIN = { 56: "BNB", 97: "BNB" }; // everything else is priced in ETH
+export const NATIVE_BY_CHAIN = { 56: "BNB", 97: "BNB" }; // everything else is priced in ETH
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -62,7 +62,7 @@ export function describe(a) {
 // ------------------------------------------------------------------ prices of the gas coins
 
 let priceCache = { at: 0, prices: null };
-async function gasPrices() {
+export async function gasPrices() {
   if (priceCache.prices && Date.now() - priceCache.at < 60_000) return priceCache.prices;
   const out = { USD: 1 };
   await Promise.all(
@@ -313,7 +313,9 @@ async function followAlerts(pool, site, log) {
       const title = `${who} bought ${usd !== null ? money(usd) + " of " : ""}$${r.symbol}`;
       await pool.query(
         `insert into notifications (owner, coin_id, kind, title, body, url, pushed)
-         select f.follower, $2, 'follow', $3, $4, $5, false from follows f where f.followee = $1`,
+         select f.follower, $2, 'follow', $3, $4, $5, false from follows f where f.followee = $1
+           -- people copying this trader get a copy signal instead (copy.mjs)
+           and not exists (select 1 from copy_follows c where c.follower = f.follower and c.trader = $1)`,
         [r.trader, r.coin_id, title, `${r.name}. Tap to buy too.`, `${site}/coin/?id=${encodeURIComponent(r.coin_id)}&buy=1`]
       );
     }

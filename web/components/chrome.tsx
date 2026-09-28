@@ -216,6 +216,7 @@ const NAV = [
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
   { href: "/traders/", label: "Traders" },
+  { href: "/copy/", label: "Copy" },
   { href: "/forum/", label: "Forum" },
   { href: "/stats/", label: "Stats" },
 ];
@@ -266,7 +267,7 @@ export function BottomNav() {
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       <div className="grid grid-cols-4">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link

@@ -63,6 +63,9 @@ function Traders() {
           </button>
         ))}
       </div>
+      <Link href="/copy/?tab=best" className="mt-3 inline-flex items-center gap-1.5 text-[0.875rem] font-bold text-emerald">
+        🪞 Best traders to copy
+      </Link>
       {tab === "top" ? <Leaderboard ethUsd={ethUsd} /> : <Following ethUsd={ethUsd} />}
     </div>
   );

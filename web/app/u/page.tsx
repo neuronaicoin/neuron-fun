@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/components/wallet";
 import { Avatar, EditProfileSheet, FollowButton } from "@/components/social";
+import { CopyBadge, CopyButton } from "@/components/copy";
 import { CoinAvatar, Skeleton, timeAgo, usd } from "@/components/coins";
 import { toast } from "@/components/alerts";
 import { coinHref, db, fetchPortfolio, fetchTrades, nativePerToken, type Trade } from "@/lib/data";
@@ -99,10 +100,19 @@ export default function ProfilePage() {
       <div className="flex items-center gap-4">
         <Avatar profile={profile} size={76} />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2rem] tracking-tight truncate">{displayName(profile)}</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2rem] tracking-tight truncate">{displayName(profile)}</h1>
+            {profile.allowCopy && !profile.hideTrades && <CopyBadge className="shrink-0" />}
+          </div>
           {profile.bio && <p className="text-ink-2 mt-0.5 leading-snug">{profile.bio}</p>}
           <p className="text-[0.8125rem] text-ink-3 mt-1">
             <b className="text-ink">{profile.followers}</b> followers · <b className="text-ink">{profile.following}</b> following
+            {profile.allowCopy && profile.copiers > 0 && (
+              <>
+                {" "}
+                · <b className="text-ink">{profile.copiers}</b> copying
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -112,7 +122,10 @@ export default function ProfilePage() {
             Edit profile
           </button>
         ) : (
-          <FollowButton profile={profile} big />
+          <>
+            <FollowButton profile={profile} big />
+            {!profile.hideTrades && <CopyButton profile={profile} big />}
+          </>
         )}
         <button
           type="button"

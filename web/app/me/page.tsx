@@ -12,6 +12,7 @@ import { CoinCard, Skeleton } from "@/components/coins";
 import { TradesFeed } from "@/components/market";
 import { PositionRow } from "@/components/portfolio";
 import { Avatar, EditProfileSheet } from "@/components/social";
+import { AllowCopyCard } from "@/components/copy";
 import { FollowListSheet } from "@/components/follows";
 import { coinHref, fetchPortfolio } from "@/lib/data";
 import { money, openMoney, pctText, refreshPortfolio, signed, useMoney, CASH_SYMBOL } from "@/lib/portfolio";
@@ -87,6 +88,7 @@ export default function MePage() {
         {[
           ["/traders/", "🏆 Top traders", false],
           ["/traders/?tab=following", "👥 Following feed", false],
+          ["/copy/", "🪞 Copy signals", false],
           ["/forum/", "💬 Forum", true],
           [`/u/${address.toLowerCase()}/`, "🙂 Public profile", true],
         ].map(([href, label, plain]) =>
@@ -135,6 +137,13 @@ export default function MePage() {
           </>
         )}
       </section>
+
+      {/* Copy trading: let followers copy me */}
+      {profile && (
+        <div className="mt-6">
+          <AllowCopyCard profile={profile} onChange={load} />
+        </div>
+      )}
 
       {/* Coins held */}
       <section className="mt-8">

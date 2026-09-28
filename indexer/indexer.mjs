@@ -24,6 +24,7 @@ import pg from "pg";
 import { cardLoop } from "./cards.mjs";
 import { alertLoop } from "./alerts.mjs";
 import { safetyLoop } from "./safety.mjs";
+import { copyLoop } from "./copy.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -334,6 +335,7 @@ async function main() {
     cardLoop(pool, log),
     alertLoop(pool, log),
     safetyLoop(pool, chains, log),
+    copyLoop(pool, log),
   ]);
 }
 

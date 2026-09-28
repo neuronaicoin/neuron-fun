@@ -52,6 +52,9 @@ export function QuickTrade({
   initialSide,
   bare = false,
   initialSellPct,
+  initialUsd,
+  initialChainId,
+  onDone,
 }: {
   coin: Coin;
   ethUsd: number | null;
@@ -62,6 +65,12 @@ export function QuickTrade({
   bare?: boolean;
   /** Share to sell when opening on the Sell tab (portfolio quick sell). */
   initialSellPct?: number;
+  /** Dollar amount to start with (copy signals). */
+  initialUsd?: string;
+  /** Chain to start on (copy signals: where the trader traded). */
+  initialChainId?: number;
+  /** Called once a trade is confirmed. */
+  onDone?: (r: { hash: string; side: "buy" | "sell"; chainKey: string }) => void;
 }) {
   const { address, embedded, send } = useWallet();
   // Email users pay no network fees, so nothing needs to be kept back.
@@ -69,9 +78,11 @@ export function QuickTrade({
   const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
   const sellable = coin.curves;
   const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
-  const [usdIn, setUsdIn] = useState("25");
+  const [usdIn, setUsdIn] = useState(initialUsd ?? "25");
   const [sellPct, setSellPct] = useState(initialSellPct ?? 100);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(
+    () => coin.curves.find((c) => c.chain.chain.id === initialChainId)?.chain.key ?? null
+  );
   const [bals, setBals] = useState<Record<string, Bal>>({});
   const [quote, setQuote] = useState<bigint | null>(null);
   const [busy, setBusy] = useState("");
@@ -304,6 +315,7 @@ export function QuickTrade({
       }
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
+      onDone?.({ hash, side, chainKey: chosen.chain.key });
       // Tell the chart and trade list right away; read the new curve price for an instant update.
       const signal = (nativePerToken: number | null) =>
         signalTrade({ chainId: chosen.chain.chain.id, curve: chosen.curve, coinId: coin.id, nativePerToken });

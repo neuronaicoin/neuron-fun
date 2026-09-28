@@ -19,6 +19,10 @@ export type Profile = {
   following: number;
   /** Uploaded profile picture (null: the sasa mark or an emoji on their color). */
   avatar: string | null;
+  /** Lets followers copy their trades (copy.sql). */
+  allowCopy: boolean;
+  /** How many people copy them. */
+  copiers: number;
 };
 
 export const COLORS = ["#ff6b1a", "#8a5cf6", "#2563eb", "#12b886", "#ef4444", "#f59e0b", "#ec4899", "#0ea5e9"];
@@ -37,9 +41,23 @@ const EMPTY = (address: string): Profile => ({
   followers: 0,
   following: 0,
   avatar: null,
+  allowCopy: false,
+  copiers: 0,
 });
 
-type Row = { address: string; username: string | null; color: string; emoji: string; bio: string; hide_trades: boolean; followers: number; following: number; avatar_url?: string | null };
+type Row = {
+  address: string;
+  username: string | null;
+  color: string;
+  emoji: string;
+  bio: string;
+  hide_trades: boolean;
+  followers: number;
+  following: number;
+  avatar_url?: string | null;
+  allow_copy?: boolean;
+  copiers?: number;
+};
 const toProfile = (r: Row): Profile => ({
   address: r.address,
   username: r.username,
@@ -50,6 +68,8 @@ const toProfile = (r: Row): Profile => ({
   followers: r.followers,
   following: r.following,
   avatar: r.avatar_url ?? null,
+  allowCopy: !!r.allow_copy,
+  copiers: r.copiers ?? 0,
 });
 
 export const displayName = (p: Pick<Profile, "address" | "username">) =>
@@ -139,7 +159,7 @@ export async function loadFollowing(me: string | null) {
   if (follow.me === a) setFollow({ me: a, set: new Set(((data ?? []) as { followee: string }[]).map((r) => r.followee)) });
 }
 
-async function socialApi<T>(path: string, body: unknown): Promise<T> {
+export async function socialApi<T>(path: string, body: unknown): Promise<T> {
   const addr = follow.me;
   const raw = addr ? localStorage.getItem(`sasa-session:${addr}`) : null;
   const token = raw ? (JSON.parse(raw) as { token?: string }).token : null;
@@ -176,6 +196,11 @@ export async function setFollowing(sign: SignFn, address: string, on: boolean) {
     setFollow({ ...follow, set: back });
     throw e;
   }
+}
+
+/** Forgets a cached profile (after changing it). */
+export function forgetProfile(address: string) {
+  cache.delete(address.toLowerCase());
 }
 
 /** Uploads a profile picture (a data: URL, already resized) or removes it (null). */
