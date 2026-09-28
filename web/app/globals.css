@@ -226,3 +226,7 @@ html.is-landing body { background: #0b0806; }
 .flash-up { animation: flash-up 0.9s ease-out; }
 .flash-down { animation: flash-down 0.9s ease-out; }
 @media (prefers-reduced-motion: reduce) { .flash-up, .flash-down { animation: none; } }
+
+/* The You page's Deposit / Withdraw bar sits just above the phone menu (58px), and at the bottom on computers. */
+:root { --money-bar-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 768px) { :root { --money-bar-bottom: 0px; } }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toHex, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
+import { useMoney } from "@/lib/portfolio";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
 import { factoryAbi } from "@/lib/abis";
@@ -17,7 +18,7 @@ import { fetchPrices } from "@/lib/price";
 type Terms = { v0: bigint; t0: bigint; feeBps: bigint };
 type Run = { status: "working" | "done" | "failed"; note?: string; hash?: string };
 const SUPPLY = 1_000_000_000n * 10n ** 18n;
-const DEV_OPTIONS = [0, 1, 2, 5];
+const DEV_OPTIONS = [0, 1, 2, 5, 10];
 
 /** Where the creator's 0.3% of every trade goes. Fixed at launch. */
 const FEE_MODES = [
@@ -45,6 +46,9 @@ export default function CreatePage() {
   const [description, setDescription] = useState("");
   const [picked, setPicked] = useState<string[]>(CHAINS.map((c) => c.key));
   const [devPct, setDevPct] = useState(0);
+  // Or a dollar amount (typed, or 10% of your cash), split evenly across the chosen chains.
+  const [devUsd, setDevUsd] = useState("");
+  const { portfolio } = useMoney();
   const [feeMode, setFeeMode] = useState<0 | 1 | 2>(0);
   const [terms, setTerms] = useState<Record<string, Terms>>({});
   const [ethUsd, setEthUsd] = useState<number | null>(null);
@@ -67,7 +71,12 @@ export default function CreatePage() {
   const cleanSymbol = symbol.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
   const chosen = CHAINS.filter((c) => picked.includes(c.key));
   const devTokens = (SUPPLY * BigInt(devPct)) / 100n;
-  const devCost = (c: NeuronChain) => (terms[c.key] ? costFor(terms[c.key], devTokens) : 0n);
+  const customUsd = Number(devUsd.replace(/[$,\s]/g, ""));
+  const custom = devUsd.trim() !== "" && Number.isFinite(customUsd) && customUsd > 0 && ethUsd !== null;
+  const devCost = (c: NeuronChain) => {
+    if (custom && chosen.length) return BigInt(Math.floor((customUsd / chosen.length / (ethUsd as number)) * 1e18));
+    return terms[c.key] ? costFor(terms[c.key], devTokens) : 0n;
+  };
   const totalDevEth = chosen.reduce((s, c) => s + Number(devCost(c)) / 1e18, 0);
   const startMc = useMemo(() => {
     const t = terms[CHAINS[0].key];
@@ -151,7 +160,7 @@ export default function CreatePage() {
               ) : (
                 <>
                   <span className="text-[1.5rem] sm:text-[1.75rem]" aria-hidden="true">＋</span>
-                  <span className="text-[0.75rem] sm:text-[0.875rem] font-semibold mt-1">{picBusy ? "Preparing…" : "Picture"}</span>
+                  <span className="text-[0.8125rem] sm:text-[0.9375rem] font-bold text-ink mt-1">{picBusy ? "Preparing…" : "Picture"}</span>
                   <span className="hidden sm:block text-[0.75rem] text-ink-3 mt-1 px-3">Square works best</span>
                 </>
               )}
@@ -201,8 +210,8 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[0.875rem] font-semibold">Chains</span>
-              <span className="text-[0.75rem] text-ink-3">More chains, more buyers</span>
+              <span className="text-[0.9375rem] font-bold text-ink">Chains</span>
+              <span className="text-[0.875rem] sm:text-[0.9375rem] font-bold text-emerald">More chains, more buyers ↗</span>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {CHAINS.map((c) => {
@@ -227,7 +236,7 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[0.875rem] font-semibold">Where your fees go</span>
+              <span className="text-[0.9375rem] font-bold text-ink">Where your fees go</span>
               <span className="text-[0.75rem] text-ink-3">can&apos;t be changed later</span>
             </div>
             <div className="grid gap-2 mt-2 sm:grid-cols-3" role="radiogroup" aria-label="Where your fees go">
@@ -249,25 +258,52 @@ export default function CreatePage() {
 
           <div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[0.875rem] font-semibold">Buy some yourself</span>
+              <span className="text-[0.9375rem] font-bold text-ink">Buy some yourself</span>
               <span className="text-[0.75rem] text-ink-3">optional · lands first, so nobody gets in before you</span>
             </div>
-            <div className="grid grid-cols-4 gap-2 mt-2">
+            <div className="grid grid-cols-5 gap-2 mt-2">
               {DEV_OPTIONS.map((p) => (
                 <button
                   key={p}
                   type="button"
-                  onClick={() => setDevPct(p)}
-                  className={"h-11 rounded-2xl border text-[0.875rem] font-semibold " + (devPct === p ? "border-emerald text-ink" : "border-line text-ink-2")}
+                  onClick={() => {
+                    setDevPct(p);
+                    setDevUsd("");
+                  }}
+                  aria-pressed={!custom && devPct === p}
+                  className={"h-11 rounded-2xl border-2 text-[0.875rem] font-semibold " + (!custom && devPct === p ? "border-emerald text-ink bg-emerald-soft" : "border-line text-ink-2")}
                 >
                   {p === 0 ? "None" : `${p}%`}
                 </button>
               ))}
             </div>
-            {devPct > 0 && (
+            <div className="grid grid-cols-[1fr_auto] gap-2 mt-2">
+              <label className={"flex items-center gap-2 h-11 rounded-2xl border-2 px-3 bg-paper " + (custom ? "border-emerald" : "border-line") + " focus-within:border-emerald"}>
+                <span className="text-ink-3 font-mono">$</span>
+                <input
+                  value={devUsd}
+                  onChange={(e) => setDevUsd(e.target.value.replace(/[^0-9.,]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="Or type an amount"
+                  aria-label="Amount to buy yourself, in dollars"
+                  style={{ outline: "none" }}
+                  className="flex-1 min-w-0 bg-transparent font-mono text-[0.9375rem]"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!portfolio || portfolio.cashUsd <= 0}
+                onClick={() => portfolio && setDevUsd((Math.floor(portfolio.cashUsd * 10) / 100).toFixed(2))}
+                className="h-11 px-3 rounded-2xl border-2 border-line text-[0.8125rem] font-semibold text-ink-2 whitespace-nowrap hover:border-emerald disabled:opacity-40"
+              >
+                10% cash
+              </button>
+            </div>
+            {(custom || devPct > 0) && (
               <p className="text-[0.8125rem] text-ink-2 mt-2">
-                {devPct}% of the supply on each chain · about{" "}
+                {custom ? `${usd(customUsd / Math.max(1, chosen.length), 2)} on each chain` : `${devPct}% of the supply on each chain`} · about{" "}
                 <span className="font-mono text-ink">{ethUsd ? usd(totalDevEth * ethUsd, 2) : `${totalDevEth.toFixed(5)} ETH`}</span> in total
+                {portfolio && ethUsd && totalDevEth * ethUsd > portfolio.cashUsd && <span className="text-danger"> · more than your cash</span>}
               </p>
             )}
           </div>
@@ -376,7 +412,7 @@ const input = "w-full h-12 px-4 rounded-2xl border border-line bg-paper text-ink
 function Field({ label, hint, right, children }: { label: string; hint?: string; right?: string; children: React.ReactNode }) {
   return (
     <label className="grid gap-2">
-      <span className="flex items-baseline justify-between text-[0.875rem] font-semibold">
+      <span className="flex items-baseline justify-between text-[0.9375rem] font-bold text-ink">
         <span>
           {label} {hint && <span className="text-ink-3 font-normal">{hint}</span>}
         </span>

@@ -11,13 +11,14 @@ import { Avatar, EditProfileSheet, FollowButton } from "@/components/social";
 import { CoinAvatar, Skeleton, timeAgo, usd } from "@/components/coins";
 import { toast } from "@/components/alerts";
 import { coinHref, db, fetchPortfolio, fetchTrades, nativePerToken, type Trade } from "@/lib/data";
-import { displayName, fetchProfile, fetchTraderStats, isQuickSeller, winRate, type Profile, type TraderStats } from "@/lib/social";
+import { displayName, fetchProfile, fetchTraderStats, isQuickSeller, reportAvatar, winRate, type Profile, type TraderStats } from "@/lib/social";
+import { friendlyError } from "@/lib/format";
 import { money, signed } from "@/lib/portfolio";
 
 type Holding = Awaited<ReturnType<typeof fetchPortfolio>>["holdings"][number];
 
 export default function ProfilePage() {
-  const { address } = useWallet();
+  const { address, signMessage } = useWallet();
   const [key, setKey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const [week, setWeek] = useState<TraderStats | null>(null);
@@ -124,6 +125,24 @@ export default function ProfilePage() {
           Share
         </button>
       </div>
+      {!mine && profile.avatar && address && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (!confirm("Report this profile picture as inappropriate?")) return;
+            try {
+              const removed = await reportAvatar(signMessage, profile.address);
+              toast(removed ? "Picture removed" : "Reported. Thanks.");
+              if (removed) void load();
+            } catch (e) {
+              toast(friendlyError(e));
+            }
+          }}
+          className="mt-2 text-[0.75rem] text-ink-3 underline"
+        >
+          Report picture
+        </button>
+      )}
       {isQuickSeller(all) && (
         <p className="text-[0.8125rem] text-ink-3 mt-3">⚡ Often sells within minutes of buying. Keep that in mind before following their buys.</p>
       )}

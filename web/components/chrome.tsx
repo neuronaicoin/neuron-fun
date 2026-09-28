@@ -195,7 +195,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 }
 
 const NAV = [
-  { href: "/", label: "Explore" },
+  { href: "/explore/", label: "Explore" },
   { href: "/terminal/", label: "Terminal" },
   { href: "/create/", label: "Create a coin" },
   { href: "/me/", label: "Your coins" },
@@ -214,7 +214,7 @@ export function Header() {
   return (
     <header className="relative md:sticky md:top-0 z-40 bg-paper/90 md:backdrop-blur border-b border-line">
       <div className="max-w-6xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-2.5 text-ink shrink-0">
+        <Link href="/explore/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
           <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
         </Link>

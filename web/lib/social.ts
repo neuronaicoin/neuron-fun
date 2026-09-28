@@ -17,6 +17,8 @@ export type Profile = {
   hideTrades: boolean;
   followers: number;
   following: number;
+  /** Uploaded profile picture (null: the sasa mark or an emoji on their color). */
+  avatar: string | null;
 };
 
 export const COLORS = ["#ff6b1a", "#8a5cf6", "#2563eb", "#12b886", "#ef4444", "#f59e0b", "#ec4899", "#0ea5e9"];
@@ -34,9 +36,10 @@ const EMPTY = (address: string): Profile => ({
   hideTrades: false,
   followers: 0,
   following: 0,
+  avatar: null,
 });
 
-type Row = { address: string; username: string | null; color: string; emoji: string; bio: string; hide_trades: boolean; followers: number; following: number };
+type Row = { address: string; username: string | null; color: string; emoji: string; bio: string; hide_trades: boolean; followers: number; following: number; avatar_url?: string | null };
 const toProfile = (r: Row): Profile => ({
   address: r.address,
   username: r.username,
@@ -46,6 +49,7 @@ const toProfile = (r: Row): Profile => ({
   hideTrades: r.hide_trades,
   followers: r.followers,
   following: r.following,
+  avatar: r.avatar_url ?? null,
 });
 
 export const displayName = (p: Pick<Profile, "address" | "username">) =>
@@ -172,6 +176,21 @@ export async function setFollowing(sign: SignFn, address: string, on: boolean) {
     setFollow({ ...follow, set: back });
     throw e;
   }
+}
+
+/** Uploads a profile picture (a data: URL, already resized) or removes it (null). */
+export async function saveAvatar(sign: SignFn, image: string | null): Promise<string | null> {
+  await ensureSession(sign);
+  const j = await socialApi<{ avatar: string | null }>("avatar", { image });
+  if (follow.me) cache.delete(follow.me);
+  return j.avatar;
+}
+
+export async function reportAvatar(sign: SignFn, address: string): Promise<boolean> {
+  await ensureSession(sign);
+  const j = await socialApi<{ removed?: boolean }>("avatar-report", { address });
+  cache.delete(address.toLowerCase());
+  return !!j.removed;
 }
 
 export async function saveProfile(

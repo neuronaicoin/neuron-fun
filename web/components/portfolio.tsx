@@ -29,30 +29,29 @@ import {
   type Position,
 } from "@/lib/portfolio";
 
-/** Logged-in header control: total balance opens the portfolio, ＋ opens Deposit. */
+/** Logged-in header control: total balance, and the cash left to spend under it. Opens the portfolio. */
 export function BalancePill() {
   const { portfolio } = useMoney();
   const total = portfolio ? money(portfolio.totalUsd) : null;
+  const cash = portfolio ? money(portfolio.cashUsd) : null;
   return (
-    <div className="h-11 flex items-stretch rounded-xl border border-line bg-surface overflow-hidden shrink-0">
-      <button
-        type="button"
-        onClick={() => openMoney({ kind: "portfolio" })}
-        aria-label={total ? `Your portfolio: ${total}` : "Your portfolio"}
-        className="px-3 sm:px-4 flex items-center gap-2 font-mono text-[0.9375rem] font-medium hover:bg-paper"
-      >
-        <span className="w-2 h-2 rounded-full bg-up" aria-hidden="true" />
-        {total ?? <span className="inline-block w-14 h-4 rounded bg-line animate-pulse" aria-hidden="true" />}
-      </button>
-      <button
-        type="button"
-        onClick={() => openMoney({ kind: "deposit" })}
-        aria-label="Deposit"
-        className="w-11 bg-emerald text-on-accent text-[1.375rem] font-bold leading-none flex items-center justify-center hover:bg-emerald-dark"
-      >
-        ＋
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => openMoney({ kind: "portfolio" })}
+      aria-label={total ? `Your portfolio: ${total}, cash ${cash}` : "Your portfolio"}
+      className="h-11 px-3 sm:px-4 rounded-xl border border-line bg-surface hover:border-emerald flex flex-col items-end justify-center leading-none shrink-0 min-w-[5.5rem]"
+    >
+      {total ? (
+        <>
+          <span className="font-mono text-[0.9375rem] font-semibold text-ink">{total}</span>
+          <span className="text-[0.6875rem] text-ink-3 mt-1">
+            Cash <span className="font-mono text-up font-semibold">{cash}</span>
+          </span>
+        </>
+      ) : (
+        <span className="inline-block w-16 h-4 rounded bg-line animate-pulse" aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -206,7 +205,7 @@ function PortfolioSheet() {
   );
 }
 
-function PositionRow({ pos }: { pos: Position }) {
+export function PositionRow({ pos, big = false }: { pos: Position; big?: boolean }) {
   const { coin } = pos;
   return (
     <li className="py-3 border-t border-line first:border-t-0">
@@ -219,9 +218,9 @@ function PositionRow({ pos }: { pos: Position }) {
           </span>
         </Link>
         <div className="text-right font-mono shrink-0">
-          <div>{money(pos.valueUsd)}</div>
+          <div className={big ? "text-[1.0625rem] font-semibold" : ""}>{money(pos.valueUsd)}</div>
           {pos.pnlUsd !== null && (
-            <div className={"text-[0.8125rem] " + (pos.pnlUsd >= 0 ? "text-up" : "text-danger")}>
+            <div className={(big ? "text-[0.875rem] font-semibold " : "text-[0.8125rem] ") + (pos.pnlUsd >= 0 ? "text-up" : "text-danger")}>
               {signed(pos.pnlUsd)}
               {pos.pnlPct !== null ? ` (${pctText(pos.pnlPct)})` : ""}
             </div>
@@ -229,9 +228,9 @@ function PositionRow({ pos }: { pos: Position }) {
         </div>
       </div>
       {(pos.costUsd !== null || pos.avgMcapUsd !== null) && (
-        <div className="flex justify-between gap-3 text-[0.75rem] text-ink-3 mt-1.5">
-          <span>{pos.costUsd !== null ? `Bought for ${money(pos.costUsd)}` : ""}</span>
-          <span>{pos.avgMcapUsd !== null ? `Avg. price ${capText(pos.avgMcapUsd)} mcap` : ""}</span>
+        <div className={"flex justify-between gap-3 mt-1.5 " + (big ? "text-[0.8125rem] text-ink-2" : "text-[0.75rem] text-ink-3")}>
+          <span>{pos.costUsd !== null ? <>Cost <b className="font-mono font-semibold text-ink">{money(pos.costUsd)}</b></> : ""}</span>
+          <span>{pos.avgMcapUsd !== null ? <>Avg. buy <b className="font-mono font-semibold text-ink">{capText(pos.avgMcapUsd)}</b> mcap</> : ""}</span>
         </div>
       )}
       <div className="grid grid-cols-3 gap-1.5 mt-2" role="group" aria-label={`Quick sell ${coin.symbol}`}>

@@ -1,7 +1,10 @@
 // Social API: called from functions/api/[[path]].js once the session is checked.
 //   POST /api/social/profile   { username, color, emoji, bio, hideTrades } → { profile }
 //   POST /api/social/follow    { address, follow }                         → { following }
-import { q, sec } from "./forum-core.js";
+import { admins, q, sec } from "./forum-core.js";
+
+const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
+const MAX_AVATAR = 200 * 1024;
 
 const RESERVED = new Set([
   "admin", "sasa", "sasapad", "support", "help", "team", "official", "mod", "moderator", "root", "system",
@@ -63,6 +66,47 @@ export async function socialRoute(ctx, me, parts, method, body) {
       prefer: "resolution=ignore-duplicates",
     });
     return json({ following: true });
+  }
+
+  // Profile picture: { image: "data:image/webp;base64,…" } or { image: null } to remove it.
+  if (p[0] === "avatar" && p.length === 1 && method === "POST") {
+    const base = env.SUPABASE_URL || SUPABASE_URL;
+    if (body.image === null) {
+      await sec(env, `profiles?address=eq.${q(me)}`, { method: "PATCH", body: { avatar_url: null } });
+      return json({ avatar: null });
+    }
+    const m = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(typeof body.image === "string" ? body.image : "");
+    if (!m) return fail(400, "Use a JPG, PNG or WebP picture.");
+    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    if (bytes.length > MAX_AVATAR) return fail(400, "That picture is too big. Try a smaller one.");
+    const ext = m[1] === "image/png" ? "png" : m[1] === "image/jpeg" ? "jpg" : "webp";
+    const file = `${me}-${Date.now()}.${ext}`;
+    const key = env.SUPABASE_SERVICE_KEY;
+    const headers = { apikey: key, "content-type": m[1], "x-upsert": "true", "cache-control": "31536000" };
+    if (key.startsWith("eyJ")) headers.authorization = `Bearer ${key}`;
+    const up = await fetch(`${base}/storage/v1/object/avatars/${file}`, { method: "POST", headers, body: bytes });
+    if (!up.ok) return fail(500, "Couldn't upload the picture. Try again.");
+    const url = `${base}/storage/v1/object/public/avatars/${file}`;
+    // Make sure a profile row exists, then point it at the new picture.
+    await sec(env, "profiles?on_conflict=address", {
+      method: "POST",
+      body: { address: me },
+      prefer: "resolution=ignore-duplicates",
+    });
+    await sec(env, `profiles?address=eq.${q(me)}`, { method: "PATCH", body: { avatar_url: url, updated_at: new Date().toISOString() } });
+    return json({ avatar: url });
+  }
+
+  // Report someone's picture (3 reports remove it) or, for admins, remove it now.
+  if (p[0] === "avatar-report" && p.length === 1 && method === "POST") {
+    const target = typeof body.address === "string" ? body.address.toLowerCase() : "";
+    if (!/^0x[0-9a-f]{40}$/.test(target) || target === me) return fail(400, "Unknown profile.");
+    if (admins(env).includes(me)) {
+      await sec(env, `profiles?address=eq.${q(target)}`, { method: "PATCH", body: { avatar_url: null } });
+      return json({ removed: true });
+    }
+    await sec(env, "rpc/report_avatar", { method: "POST", body: { p_address: target, p_reporter: me } });
+    return json({ ok: true });
   }
 
   return fail(404, "Not found.");

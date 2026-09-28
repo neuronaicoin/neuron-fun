@@ -71,7 +71,7 @@ function CoinPage() {
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-semibold text-[1.75rem]">Coin not found</h1>
         <p className="text-ink-2 mt-3">This link doesn&apos;t point to a sasa coin, or it was created moments ago. Try again in a few seconds.</p>
-        <Link href="/" className="inline-flex mt-6 h-12 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Explore coins</Link>
+        <Link href="/explore/" className="inline-flex mt-6 h-12 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Explore coins</Link>
       </div>
     );
   }
@@ -92,7 +92,7 @@ function CoinPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-      <Link href="/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
+      <Link href="/explore/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
 
       <div className="mt-4 sm:mt-5 flex items-start gap-3 sm:gap-4">
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={56} />

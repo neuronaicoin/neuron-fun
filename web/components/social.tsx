@@ -14,6 +14,7 @@ import {
   fetchProfile,
   loadFollowing,
   profileHref,
+  saveAvatar,
   saveProfile,
   setFollowing,
   useFollowing,
@@ -31,7 +32,19 @@ function SasaMark({ size }: { size: number }) {
   );
 }
 
-export function Avatar({ profile, size = 40, ring = false }: { profile: Pick<Profile, "color" | "emoji">; size?: number; ring?: boolean }) {
+export function Avatar({ profile, size = 40, ring = false }: { profile: Pick<Profile, "color" | "emoji"> & { avatar?: string | null }; size?: number; ring?: boolean }) {
+  if (profile.avatar)
+    return (
+      <img
+        src={profile.avatar}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        className="rounded-full object-cover shrink-0 bg-line"
+        style={{ width: size, height: size, boxShadow: ring ? "0 0 0 2px var(--color-emerald)" : undefined }}
+      />
+    );
   return (
     <span
       className="rounded-full inline-flex items-center justify-center shrink-0"
@@ -102,6 +115,27 @@ export function EditProfileSheet({ current, onClose, onSaved }: { current: Profi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [taken, setTaken] = useState(false);
+  // New picture waiting to be uploaded on Save (data: URL), "" = remove, null = unchanged.
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const shownPhoto = photo === null ? current.avatar : photo || null;
+
+  async function pickPhoto(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    if (!/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(file.type) && !/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) {
+      setError("Pick a photo (JPG, PNG or WebP).");
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      setPhoto(await squareWebp(file, 256));
+    } catch {
+      setError("Couldn't read that photo. Try another one.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
 
   const valid = username === "" || /^[a-z0-9_]{3,20}$/.test(username);
   useEffect(() => {
@@ -117,6 +151,7 @@ export function EditProfileSheet({ current, onClose, onSaved }: { current: Profi
     setBusy(true);
     setError("");
     try {
+      if (photo !== null) await saveAvatar(signMessage, photo || null);
       await saveProfile(signMessage, { username, color, emoji, bio, hideTrades: hide });
       toast("Profile saved");
       onSaved();
@@ -129,8 +164,19 @@ export function EditProfileSheet({ current, onClose, onSaved }: { current: Profi
 
   return (
     <Sheet title="Edit profile" onClose={onClose}>
-      <div className="flex justify-center">
-        <Avatar profile={{ color, emoji }} size={76} />
+      <div className="flex flex-col items-center gap-2">
+        <Avatar profile={{ color, emoji, avatar: shownPhoto }} size={84} />
+        <div className="flex gap-2">
+          <label className={"h-9 px-4 rounded-xl border border-line text-[0.8125rem] font-semibold flex items-center cursor-pointer hover:border-emerald " + (photoBusy ? "opacity-60" : "")}>
+            {photoBusy ? "Preparing…" : shownPhoto ? "Change photo" : "Upload photo"}
+            <input type="file" accept="image/*" className="sr-only" onChange={(e) => void pickPhoto(e.target.files?.[0])} />
+          </label>
+          {shownPhoto && (
+            <button type="button" onClick={() => setPhoto("")} className="h-9 px-3 rounded-xl text-[0.8125rem] text-ink-3 hover:text-danger">
+              Remove
+            </button>
+          )}
+        </div>
       </div>
       <label className="block mt-4">
         <span className="font-semibold text-[0.875rem]">Username</span>
@@ -149,7 +195,7 @@ export function EditProfileSheet({ current, onClose, onSaved }: { current: Profi
           Your link: sasapad.fun/u/{username || "name"}
         </span>
       </label>
-      <span className="block font-semibold text-[0.875rem] mt-4">Avatar</span>
+      <span className="block font-semibold text-[0.875rem] mt-4">{shownPhoto ? "Or pick a color and icon" : "Avatar"}</span>
       <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Color">
         {COLORS.map((c) => (
           <button
@@ -216,6 +262,31 @@ export function EditProfileSheet({ current, onClose, onSaved }: { current: Profi
       {!embedded && <p className="text-[0.75rem] text-ink-3 text-center mt-2">Your wallet signs once to prove it&apos;s you. Free.</p>}
     </Sheet>
   );
+}
+
+/** Crops the middle square of a photo and shrinks it to size x size WebP (JPEG if WebP isn't supported). */
+async function squareWebp(file: File, size: number): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no canvas");
+    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    let out = canvas.toDataURL("image/webp", 0.85);
+    if (!out.startsWith("data:image/webp")) out = canvas.toDataURL("image/jpeg", 0.85);
+    return out;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** When someone you follow buys (and the site is open): a card with "Buy too". */
