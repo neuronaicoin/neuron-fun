@@ -37,6 +37,10 @@ function textOf(out) {
   return "";
 }
 
+// Admins (FORUM_ADMINS) see the model's own error, to fix things fast.
+let adminView = false;
+const adminMsg = (e) => `Admin view: ${String((e && (e.message || e)) || "no error message").slice(0, 160)}`;
+
 const codeOf = (e) => {
   const m = /\b(\d{4})\b/.exec(String((e && e.message) || ""));
   return m ? ` (code ${m[1]})` : "";
@@ -91,6 +95,11 @@ function parseIdeas(out) {
 
 export async function aiRoute(ctx, me, parts, method, body) {
   const env = ctx.env;
+  adminView = String(env.FORUM_ADMINS || "")
+    .toLowerCase()
+    .split(",")
+    .map((a) => a.trim())
+    .includes(String(me).toLowerCase());
   if (method !== "POST" || parts.length !== 2) return fail(404, "Not found.");
   if (!env.AI || typeof env.AI.run !== "function") return fail(503, "AI ideas aren't switched on yet. Fill in the form below instead.");
 
@@ -134,7 +143,7 @@ export async function aiRoute(ctx, me, parts, method, body) {
     }
     if (out === null) {
       console.error("ai ideas failed", lastErr && lastErr.message);
-      return fail(503, `Our AI is busy right now. Try again in a minute, or fill in the form below.${codeOf(lastErr)}`);
+      return fail(503, adminView ? adminMsg(lastErr) : `Our AI is busy right now. Try again in a minute, or fill in the form below.${codeOf(lastErr)}`);
     }
     const seen = new Set();
     const ideas = parseIdeas(out)
@@ -170,7 +179,8 @@ export async function aiRoute(ctx, me, parts, method, body) {
         console.error("ai logo", e && e.message);
       }
     }
-    if (!out || typeof out.image !== "string") return fail(503, `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}`);
+    if (!out || typeof out.image !== "string")
+      return fail(503, adminView ? adminMsg(lastErr) : `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}`);
     const b64 = out && typeof out.image === "string" ? out.image : null;
     if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64.slice(0, 200))) return fail(502, "Couldn't draw a picture right now. Try again.");
     return json({ image: `data:image/jpeg;base64,${b64}` });
