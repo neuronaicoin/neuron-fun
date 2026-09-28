@@ -9,6 +9,16 @@ import { useId } from "react";
 export function Sparkline({ pts, className = "", fill = true }: { pts: number[] | null | undefined; className?: string; fill?: boolean }) {
   const gid = useId().replace(/:/g, "");
   if (!pts || pts.length < 2) return <span className={className} aria-hidden="true" />;
+  // No price change in the window: a faint dashed line, so quiet coins read as "calm", not "broken".
+  const lo0 = Math.min(...pts);
+  const hi0 = Math.max(...pts);
+  if (!(hi0 - lo0 > 0) || (hi0 - lo0) / (hi0 || 1) < 0.0005) {
+    return (
+      <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={"block text-ink-3 " + className} aria-hidden="true" focusable="false">
+        <path d="M0,16L100,16" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
+      </svg>
+    );
+  }
   const W = 100;
   const H = 32;
   const lo = Math.min(...pts);

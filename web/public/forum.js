@@ -26,7 +26,8 @@
   // ---------------------------------------------------------------- theme
   var themeBtn = $("#themeBtn");
   function theme() { return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"; }
-  function paintTheme() { if (themeBtn) { themeBtn.textContent = theme() === "light" ? "☾" : "☀"; themeBtn.setAttribute("aria-label", theme() === "light" ? "Switch to dark mode" : "Switch to light mode"); } }
+  // The sun / moon icons swap by CSS; only the label changes here.
+  function paintTheme() { if (themeBtn) themeBtn.setAttribute("aria-label", theme() === "light" ? "Switch to dark mode" : "Switch to light mode"); }
   if (themeBtn) themeBtn.onclick = function () {
     var next = theme() === "light" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", next);
@@ -60,13 +61,85 @@
     } catch (e) {}
   })();
 
+  // ---------------------------------------------------------------- header: balance and bell (as in the app)
   var acct = $("#acct");
+  var WALLET = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18M16 15h2"/></svg>';
+  var PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
   if (acct && session) {
+    // The app leaves the last known balance behind; show it if it's this wallet's.
+    var bal = null;
+    try {
+      var b = JSON.parse(localStorage.getItem("sasa-balance") || "null");
+      if (b && b.address === session.address && typeof b.total === "string" && typeof b.cash === "string") bal = b;
+    } catch (e) {}
     acct.className = "acct";
-    acct.href = "/terminal/";
-    acct.innerHTML = '<span class="d"></span>' + esc(short(session.address));
+    acct.innerHTML =
+      '<a class="main" href="/me/?money=portfolio" aria-label="' + esc(bal ? "Your portfolio: " + bal.total + ", cash " + bal.cash : "Your portfolio") + '">' +
+      '<span class="ic">' + WALLET + "</span>" +
+      (bal
+        ? '<span class="v"><b>' + esc(bal.total) + "</b><small>Cash <em>" + esc(bal.cash) + "</em></small></span>"
+        : '<span class="addr">' + esc(short(session.address)) + "</span>") +
+      "</a>" +
+      '<a class="plus" href="/me/?money=deposit" aria-label="Add money" title="Add money">' + PLUS + "</a>";
   } else if (acct) {
-    acct.href = loginUrl;
+    var a = acct.querySelector("a");
+    if (a) a.href = loginUrl;
+  }
+
+  var bellWrap = $("#bellWrap"), bellBtn = $("#bellBtn"), bellPop = $("#bellPop"), bellBadge = $("#bellBadge");
+  var notes = null;
+  function notesApi(path, opts) {
+    opts = opts || {};
+    return fetch("/api/" + path, {
+      method: opts.method || "GET",
+      headers: Object.assign({ authorization: "Bearer " + session.token }, opts.body ? { "content-type": "application/json" } : {}),
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  }
+  function paintBadge(n) {
+    if (!bellBadge) return;
+    bellBadge.hidden = !(n > 0);
+    bellBadge.textContent = n > 9 ? "9+" : String(n || "");
+    if (bellBtn) bellBtn.setAttribute("aria-label", n > 0 ? n + " unread notifications" : "Notifications");
+  }
+  function ago(iso) {
+    var s = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + "m ago" : s < 86400 ? Math.round(s / 3600) + "h ago" : Math.round(s / 86400) + "d ago";
+  }
+  function paintPop() {
+    if (!bellPop) return;
+    var list = (notes && notes.notes) || [];
+    bellPop.innerHTML = "<h2>Notifications</h2>" +
+      (list.length
+        ? list.slice(0, 12).map(function (n) {
+            var href = /^https?:\/\//.test(n.url || "") ? n.url.replace(/^https?:\/\/[^/]+/, "") : "/me/";
+            return '<a class="n' + (n.read ? "" : " u") + '" href="' + esc(href || "/me/") + '">' + esc(n.title) + "<small>" + esc(ago(n.createdAt)) + "</small></a>";
+          }).join("")
+        : '<div class="e">Nothing yet. Alerts, follows and copy signals show up here.</div>') +
+      '<a class="f" href="/me/">Open the app</a>';
+  }
+  if (session && bellWrap) {
+    bellWrap.hidden = false;
+    notesApi("notes").then(function (j) { if (j) { notes = j; paintBadge(j.unread || 0); } });
+    bellBtn.onclick = function () {
+      var open = bellPop.hidden;
+      bellPop.hidden = !open;
+      bellBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) {
+        paintPop();
+        if (notes && notes.unread > 0) {
+          notesApi("notes/read", { method: "POST", body: { all: true } });
+          notes.unread = 0;
+          paintBadge(0);
+        }
+      }
+    };
+    document.addEventListener("mousedown", function (e) {
+      if (!bellPop.hidden && !bellWrap.contains(e.target)) { bellPop.hidden = true; bellBtn.setAttribute("aria-expanded", "false"); }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !bellPop.hidden) { bellPop.hidden = true; bellBtn.setAttribute("aria-expanded", "false"); bellBtn.focus(); }
+    });
   }
 
   function api(path, opts) {

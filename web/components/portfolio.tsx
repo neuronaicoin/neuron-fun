@@ -34,6 +34,14 @@ export function BalancePill() {
   const { portfolio } = useMoney();
   const total = portfolio ? money(portfolio.totalUsd) : null;
   const cash = portfolio ? money(portfolio.cashUsd) : null;
+  const { address } = useWallet();
+  // The forum pages are plain HTML: leave them the last known balance to show.
+  useEffect(() => {
+    if (!address || !total || !cash) return;
+    try {
+      localStorage.setItem("sasa-balance", JSON.stringify({ address: address.toLowerCase(), total, cash, at: Date.now() }));
+    } catch {}
+  }, [address, total, cash]);
   return (
     <div className="h-11 flex items-center gap-1 pl-1 pr-1 rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] shrink-0 hover:border-emerald/60 transition-colors">
       <button
@@ -79,6 +87,18 @@ export function MoneyHost() {
   const { address } = useWallet();
   const { sheet } = useMoney();
   useEffect(() => setMoneyAddress(address ?? null), [address]);
+  // ?money=deposit (or withdraw / portfolio) opens that sheet, e.g. from the forum header.
+  useEffect(() => {
+    if (!address) return;
+    const q = new URLSearchParams(window.location.search);
+    const m = q.get("money");
+    if (m === "deposit" || m === "withdraw" || m === "portfolio") {
+      openMoney({ kind: m });
+      q.delete("money");
+      const rest = q.toString();
+      window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
+    }
+  }, [address]);
   if (!address || !sheet) return null;
   if (sheet.kind === "deposit") return <DepositSheet onClose={closeMoney} />;
   if (sheet.kind === "withdraw") return <WithdrawSheet onClose={closeMoney} />;

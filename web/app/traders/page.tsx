@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { Avatar, FollowButton } from "@/components/social";
+import { CopyBadge, CopyButton } from "@/components/copy";
 import { Skeleton, timeAgo, usd } from "@/components/coins";
 import { coinHref, db, type Trade } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
@@ -128,6 +129,7 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
                     <span className="block font-semibold truncate">
                       {p ? displayName(p) : `${r.trader.slice(0, 6)}…`}
                       {isQuickSeller(r) && <span className="text-[0.75rem] text-ink-3 font-normal" title="Often sells within minutes of buying"> ⚡</span>}
+                      {p && p.allowCopy && !p.hideTrades && <CopyBadge className="ml-1.5 align-middle" />}
                     </span>
                     <span className="block text-[0.75rem] text-ink-3">
                       {wr !== null ? `${Math.round(wr * 100)}% win · ` : ""}
@@ -138,7 +140,18 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
                 <span className={"font-mono text-[0.9375rem] shrink-0 " + (r.realized >= 0 ? "text-up" : "text-danger")}>
                   {pnl !== null ? signed(pnl) : `${r.realized.toFixed(4)} ETH`}
                 </span>
-                {p && <FollowButton profile={p} />}
+                {p &&
+                  (p.allowCopy && !p.hideTrades ? (
+                    <>
+                      {/* Copying follows them too, so phones only get the Copy button. */}
+                      <span className="hidden sm:block">
+                        <FollowButton profile={p} />
+                      </span>
+                      <CopyButton profile={p} />
+                    </>
+                  ) : (
+                    <FollowButton profile={p} />
+                  ))}
               </li>
             );
           })}

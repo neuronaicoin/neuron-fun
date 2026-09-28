@@ -140,15 +140,35 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .mono{font-family:var(--mono)}
 .skip{position:absolute;left:-999px}.skip:focus{left:1rem;top:1rem;z-index:99;background:var(--surface);padding:.5rem 1rem;border-radius:.5rem}
 header.top{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--paper) 92%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
-.hbar{max-width:72rem;margin:0 auto;padding:0 1rem;height:4rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+.hbar{max-width:80rem;margin:0 auto;padding:0 1rem;height:4rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+@media (min-width:640px){.hbar{padding:0 1.5rem}}
 .logo{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:700;font-size:1.375rem;letter-spacing:-.01em}
-.nav{display:flex;gap:1.6rem;font-weight:500;font-size:.9375rem}.nav a:hover,.nav a[aria-current]{color:var(--acc)}
+.nav{display:flex;gap:1rem;font-weight:500;font-size:.875rem;white-space:nowrap;min-width:0}.nav a:hover,.nav a[aria-current]{color:var(--acc)}
+@media (min-width:1024px){.nav{gap:1.5rem;font-size:.9375rem}}@media (min-width:1280px){.nav{gap:1.75rem}}
 @media (max-width:767px){.nav{display:none}}
 .hr{display:flex;gap:.5rem;align-items:center}
-.iconbtn{width:2.5rem;height:2.5rem;border-radius:.75rem;border:1px solid var(--line);color:var(--ink2);display:flex;align-items:center;justify-content:center}
-.acct{height:2.75rem;padding:0 1rem;border-radius:.75rem;background:var(--surface);border:1px solid var(--line);font-family:var(--mono);font-size:.875rem;display:flex;align-items:center;gap:.5rem;white-space:nowrap}
-.acct .d{width:.5rem;height:.5rem;border-radius:999px;background:var(--acc)}
-.acct.login{background:var(--ink);color:var(--mist);font-family:var(--sans);font-weight:600;border:0}
+.hbtn{position:relative;width:2.75rem;height:2.75rem;border-radius:1rem;border:1px solid var(--line);background:var(--surface);color:var(--ink2);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 18px rgba(0,0,0,.06);cursor:pointer;flex-shrink:0}
+.hbtn:hover{color:var(--ink);border-color:color-mix(in srgb,var(--acc) 60%,var(--line))}
+html[data-theme="light"] .hbtn .i-sun,html:not([data-theme="light"]) .hbtn .i-moon{display:none}
+.badge{position:absolute;top:-.375rem;right:-.375rem;min-width:1.15rem;height:1.15rem;padding:0 .25rem;border-radius:999px;background:var(--acc);color:var(--on-acc);font-size:.6875rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--paper)}
+.bellwrap{position:relative}
+.bellpop{position:absolute;right:0;top:calc(100% + .5rem);width:min(22rem,calc(100vw - 2rem));background:var(--surface);border:1px solid var(--line);border-radius:1rem;box-shadow:0 18px 50px rgba(0,0,0,.35);overflow:hidden;z-index:50}
+.bellpop h2{font-family:var(--display);font-size:1.0625rem;margin:0;padding:1rem 1rem .5rem}
+.bellpop a.n{display:block;padding:.65rem 1rem;border-top:1px solid var(--line);font-size:.875rem}
+.bellpop a.n:hover{background:var(--paper)}.bellpop a.n.u{font-weight:600}.bellpop a.n small{display:block;color:var(--ink3);font-weight:400;font-size:.75rem;margin-top:.15rem}
+.bellpop .e{padding:1rem;color:var(--ink3);font-size:.875rem;border-top:1px solid var(--line)}
+.bellpop .f{display:block;padding:.75rem 1rem;border-top:1px solid var(--line);color:var(--acc);font-weight:600;font-size:.8125rem}
+.acct{height:2.75rem;display:flex;align-items:center;gap:.25rem;padding:0 .25rem;border-radius:1rem;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 18px rgba(0,0,0,.06);white-space:nowrap}
+.acct:hover{border-color:color-mix(in srgb,var(--acc) 60%,var(--line))}
+.acct .main{display:flex;align-items:center;gap:.5rem;height:2.25rem;padding:0 .4rem 0 .25rem}
+.acct .ic{width:2rem;height:2rem;border-radius:.625rem;background:var(--acc-soft);color:var(--acc);display:none;align-items:center;justify-content:center}
+@media (min-width:640px){.acct .ic{display:flex}}
+.acct .v{display:flex;flex-direction:column;line-height:1;min-width:3.75rem}
+.acct .v b{font-family:var(--mono);font-size:.9375rem;font-weight:700;letter-spacing:-.01em}
+.acct .v small{font-size:.6875rem;color:var(--ink3);margin-top:.25rem}.acct .v small em{font-style:normal;font-family:var(--mono);color:var(--up);font-weight:600}
+.acct .addr{font-family:var(--mono);font-size:.875rem;padding:0 .35rem}
+.acct .plus{width:2rem;height:2rem;border-radius:.625rem;background:var(--acc);color:var(--on-acc);display:flex;align-items:center;justify-content:center}
+.acct.login{background:var(--ink);color:var(--mist);font-weight:600;border:0;padding:0 1.1rem;box-shadow:none}
 .wrap{max-width:52rem;margin:0 auto;padding:1.25rem 1rem 4rem}
 .crumbs{font-size:.8125rem;color:var(--ink3);display:flex;flex-wrap:wrap;gap:.35rem;margin:0;padding:0;list-style:none}
 .crumbs a{color:var(--acc);font-weight:600}
@@ -280,9 +300,9 @@ ${ld.map(jsonLd).join("\n")}
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="top"><div class="hbar">
-<a class="logo" href="/terminal/">${LOGO}sasa</a>
-<nav class="nav" aria-label="Main"><a href="/">Explore</a><a href="/terminal/">Terminal</a><a href="/forum/" aria-current="page">Forum</a><a href="/stats/">Stats</a></nav>
-<div class="hr"><button class="iconbtn" id="themeBtn" type="button" aria-label="Switch theme">☀</button><a class="acct login" id="acct" href="/login/?next=${encodeURIComponent(path)}">Log in</a></div>
+<a class="logo" href="/explore/">${LOGO}sasa</a>
+<nav class="nav" aria-label="Main"><a href="/explore/">Explore</a><a href="/terminal/">Terminal</a><a href="/create/">Create a coin</a><a href="/me/">Your coins</a><a href="/traders/">Traders</a><a href="/copy/">Copy</a><a href="/forum/" aria-current="page">Forum</a><a href="/stats/">Stats</a></nav>
+<div class="hr"><button class="hbtn" id="themeBtn" type="button" aria-label="Switch theme"><svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button><div class="bellwrap" id="bellWrap" hidden><button class="hbtn" id="bellBtn" type="button" aria-label="Notifications" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="badge" id="bellBadge" hidden></span></button><div class="bellpop" id="bellPop" role="dialog" aria-label="Notifications" hidden></div></div><div class="acct login" id="acct"><a class="main" href="/login/?next=${encodeURIComponent(path)}">Log in</a></div></div>
 </div></header>
 <main id="main" class="wrap">
 ${body}
@@ -292,7 +312,7 @@ Meme coins are risky and can lose all their value. Posts are written by users an
 <nav aria-label="Footer"><a href="/forum/">Forum</a><a href="/forum/sasa/">sasa news &amp; help</a><a href="/learn/">Learn</a><a href="/how-it-works/">How it works</a><a href="/stats/">Stats</a><a href="https://x.com/sasapadfun" rel="noopener">X</a></nav>
 </div></footer>
 <script id="forum-data" type="application/json">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>
-<script src="/forum.js" defer></script>
+<script src="/forum.js?v=37" defer></script>
 </body>
 </html>`;
 }

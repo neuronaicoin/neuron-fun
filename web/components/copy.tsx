@@ -164,13 +164,13 @@ function CopySheet({ profile, current, onClose }: { profile: Profile; current: C
           : `If ${name} buys $100, ${n > 0 ? n : 20}% suggests ${usd(n > 0 ? n : 20, 2)}.`}{" "}
         You can change it on every signal.
       </p>
-      <label className="mt-4 flex items-center justify-between gap-4 cursor-pointer">
-        <span>
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <span id="copy-sells-label">
           <span className="font-semibold block">Copy their sells too</span>
           <span className="text-[0.8125rem] text-ink-3">When they sell part of a coin you hold, you get a signal to sell the same share.</span>
         </span>
-        <input type="checkbox" checked={sells} onChange={(e) => setSells(e.target.checked)} className="w-6 h-6 accent-[var(--color-emerald)] shrink-0" />
-      </label>
+        <Toggle on={sells} onChange={setSells} labelledBy="copy-sells-label" />
+      </div>
       <p className="text-[0.75rem] text-ink-3 mt-4">
         Nothing is ever bought for you. Every signal waits for you to tap Apply or Reject, and expires after 24 hours.
       </p>
@@ -229,22 +229,15 @@ export function AllowCopyCard({ profile, onChange }: { profile: Profile; onChang
 
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-      <label className="flex items-center justify-between gap-4 cursor-pointer">
-        <span>
+      <div className="flex items-center justify-between gap-4">
+        <span id="allow-copy-label">
           <span className="font-semibold block">Let followers copy my trades</span>
           <span className="text-[0.8125rem] text-ink-3">
             They get a signal when you buy or sell and choose whether to follow it. Trades in coins you created are never sent.
           </span>
         </span>
-        <input
-          type="checkbox"
-          checked={on}
-          disabled={busy}
-          onChange={(e) => void toggle(e.target.checked)}
-          aria-label="Let followers copy my trades"
-          className="w-6 h-6 accent-[var(--color-emerald)] shrink-0"
-        />
-      </label>
+        <Toggle on={on} disabled={busy} onChange={(v) => void toggle(v)} labelledBy="allow-copy-label" />
+      </div>
       {on && (
         <>
           <div className="grid grid-cols-3 gap-2 mt-4 text-center">
@@ -268,5 +261,41 @@ export function AllowCopyCard({ profile, onChange }: { profile: Profile; onChang
         Your copy signals
       </Link>
     </div>
+  );
+}
+
+/** An on / off switch (role="switch"), the same size on phones and desktop. */
+export function Toggle({
+  on,
+  onChange,
+  disabled = false,
+  labelledBy,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  labelledBy?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-labelledby={labelledBy}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className={
+        "relative w-[3.25rem] h-8 shrink-0 rounded-full transition-colors disabled:opacity-50 " +
+        (on ? "bg-emerald" : "bg-line")
+      }
+    >
+      <span
+        aria-hidden="true"
+        className={
+          "absolute top-1 left-1 w-6 h-6 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] transition-transform duration-200 " +
+          (on ? "translate-x-6" : "translate-x-0")
+        }
+      />
+    </button>
   );
 }
