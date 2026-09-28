@@ -9,6 +9,10 @@ on:
         options:
           - robinhood-testnet
           - base-sepolia
+      cap_eth:
+        description: "Beta total cap for this chain, in ETH (0 = no cap)"
+        type: string
+        default: "0.5"
       broadcast:
         description: "Actually send transactions (leave unticked for a free dry run)"
         type: boolean
@@ -32,6 +36,10 @@ jobs:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
           NETWORK: ${{ inputs.network }}
           BROADCAST: ${{ inputs.broadcast }}
+          CAP_ETH: ${{ inputs.cap_eth }}
+          # Repo variables (Settings > Secrets and variables > Actions > Variables).
+          GUARDIAN_VAR: ${{ vars.GUARDIAN }}
+          SAFE_VAR: ${{ vars.SAFE }}
           # Testnet terms: small enough to graduate with faucet money.
           VIRTUAL_NATIVE: "10000000000000000"
           MIN_GRADUATION: "1000000000000000"
@@ -41,6 +49,9 @@ jobs:
           case "$KEY" in 0x*) ;; *) KEY="0x$KEY" ;; esac
           echo "::add-mask::$KEY"
           export PRIVATE_KEY="$KEY"
+          if [ -n "$GUARDIAN_VAR" ]; then export GUARDIAN="$GUARDIAN_VAR"; fi
+          if [ -n "$SAFE_VAR" ]; then export SAFE="$SAFE_VAR"; fi
+          export NATIVE_CAP="$(cast to-wei "${CAP_ETH:-0}" ether)"
           case "$NETWORK" in
             robinhood-testnet) RPC="https://rpc.testnet.chain.robinhood.com/rpc" ;;
             base-sepolia)      RPC="https://sepolia.base.org" ;;
