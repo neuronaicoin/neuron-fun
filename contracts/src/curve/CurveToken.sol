@@ -21,11 +21,24 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  * Rewards wait (in `pendingRewards`) until holders own at least
  * MIN_SHARES between them, so a dust holder can never capture a whole
  * distribution or push the accounting toward overflow.
+ *
+ * Creator lock (v4, optional): when the creator chose one at launch, every
+ * coin in the creator's wallet stays put until `lockedUntil`: it can't be
+ * sold or sent anywhere (so it can't be moved to another wallet and sold
+ * from there either). Coins can still arrive in that wallet. Fixed at
+ * creation, at most MAX_LOCK long, nobody can change or lift it early.
  */
 contract CurveToken is ERC20, ReentrancyGuard {
     uint256 private constant MAGNITUDE = 2 ** 128;
     /// @notice 0.1% of the supply must be in holders' hands before rewards are shared.
     uint256 public constant MIN_SHARES = 1_000_000 ether;
+    /// @notice The longest creator lock allowed.
+    uint256 public constant MAX_LOCK = 1 days;
+
+    /// @notice Wallet whose coins can't move before `lockedUntil` (zero: no lock).
+    address public immutable lockedAccount;
+    /// @notice When the creator's coins unlock (unix time; 0: no lock).
+    uint256 public immutable lockedUntil;
 
     string public logo;
     string public description;
@@ -47,6 +60,8 @@ contract CurveToken is ERC20, ReentrancyGuard {
     event RewardsClaimed(address indexed holder, address indexed to, uint256 amount);
 
     error ClaimFailed();
+    error CreatorLocked(uint256 until);
+    error LockTooLong();
 
     constructor(
         string memory name_,
@@ -55,8 +70,15 @@ contract CurveToken is ERC20, ReentrancyGuard {
         string memory description_,
         uint256 supply,
         address to,
-        address[] memory excludedAccounts
+        address[] memory excludedAccounts,
+        address lockedAccount_,
+        uint256 lockSeconds
     ) ERC20(name_, symbol_) {
+        if (lockSeconds > MAX_LOCK) revert LockTooLong();
+        if (lockSeconds > 0 && lockedAccount_ != address(0)) {
+            lockedAccount = lockedAccount_;
+            lockedUntil = block.timestamp + lockSeconds;
+        }
         logo = logo_;
         description = description_;
         excluded[address(0)] = true;
@@ -105,6 +127,7 @@ contract CurveToken is ERC20, ReentrancyGuard {
 
     /// @dev Keeps every holder's earned rewards unchanged when balances move.
     function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && from == lockedAccount && block.timestamp < lockedUntil) revert CreatorLocked(lockedUntil);
         super._update(from, to, value);
         int256 magnified = int256(_perShare * value);
         if (!excluded[from]) {

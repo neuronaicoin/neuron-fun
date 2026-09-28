@@ -66,6 +66,8 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
     event ProtocolFeeRecipientSet(address recipient);
     event LaunchesOpenSet(bool open);
     event GuardianSet(address guardian);
+    /// @notice The creator's coins in `token` can't move until `until`.
+    event CreatorLocked(address indexed curve, address indexed token, address indexed creator, uint256 until);
     event BuysPausedSet(bool paused, address by);
     event NativeCapSet(uint256 cap);
 
@@ -109,15 +111,49 @@ contract NeuronCurveFactory is Ownable2Step, ReentrancyGuard {
         uint256 minTokensOut,
         NeuronCurve.FeeMode feeMode
     ) external payable nonReentrant returns (address curve, address token, uint256 tokensBought) {
+        return _launch(name, symbol, logo, description, launchKey, minTokensOut, feeMode, 0);
+    }
+
+    /**
+     * @notice Like `launch`, with the creator's coins locked for `lockSeconds`
+     * (up to one day): they can't be sold or moved until then. The first buy
+     * made here lands in the locked wallet too.
+     */
+    function launchLocked(
+        string calldata name,
+        string calldata symbol,
+        string calldata logo,
+        string calldata description,
+        bytes32 launchKey,
+        uint256 minTokensOut,
+        NeuronCurve.FeeMode feeMode,
+        uint256 lockSeconds
+    ) external payable nonReentrant returns (address curve, address token, uint256 tokensBought) {
+        return _launch(name, symbol, logo, description, launchKey, minTokensOut, feeMode, lockSeconds);
+    }
+
+    function _launch(
+        string calldata name,
+        string calldata symbol,
+        string calldata logo,
+        string calldata description,
+        bytes32 launchKey,
+        uint256 minTokensOut,
+        NeuronCurve.FeeMode feeMode,
+        uint256 lockSeconds
+    ) private returns (address curve, address token, uint256 tokensBought) {
         if (!launchesOpen) revert LaunchesClosed();
         if (buysPaused) revert BuysPaused();
         if (bytes(name).length == 0 || bytes(symbol).length == 0) revert BadConfig();
-        NeuronCurve created = new NeuronCurve(_params(name, symbol, logo, description, launchKey, feeMode));
+        NeuronCurve.Params memory p = _params(name, symbol, logo, description, launchKey, feeMode);
+        p.creatorLock = lockSeconds;
+        NeuronCurve created = new NeuronCurve(p);
         curve = address(created);
         token = address(created.token());
         isCurve[curve] = true;
         allCurves.push(curve);
         emit Launched(curve, token, msg.sender, launchKey, name, symbol, feeMode);
+        if (lockSeconds > 0) emit CreatorLocked(curve, token, msg.sender, block.timestamp + lockSeconds);
 
         if (msg.value > 0) {
             tokensBought = created.buy{value: msg.value}(minTokensOut, msg.sender);

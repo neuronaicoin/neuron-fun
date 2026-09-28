@@ -148,6 +148,8 @@ contract NeuronCurve is ReentrancyGuard {
         uint16 creatorShareBps;
         uint256 minGraduationNative;
         FeeMode feeMode;
+        /// @dev Creator lock in seconds (0: none, at most CurveToken.MAX_LOCK).
+        uint256 creatorLock;
     }
 
     FeeMode public immutable feeMode;
@@ -183,7 +185,15 @@ contract NeuronCurve is ReentrancyGuard {
         shared[1] = address(p.migrator);
         shared[2] = IPoolManagerSource(address(p.migrator)).poolManager();
         token = new CurveToken(
-            p.name, p.symbol, p.logo, p.description, p.tokensForSale + p.graduationTokens, address(this), shared
+            p.name,
+            p.symbol,
+            p.logo,
+            p.description,
+            p.tokensForSale + p.graduationTokens,
+            address(this),
+            shared,
+            p.creator,
+            p.creatorLock
         );
     }
 
