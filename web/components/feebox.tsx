@@ -8,6 +8,7 @@ import { ChainChip } from "./coins";
 import { curveAbi, migratorAbi, tokenAbi } from "@/lib/abis";
 import { clientFor, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, friendlyError } from "@/lib/format";
+import { migratorFor } from "@/lib/contracts";
 
 const ANYONE: Address = "0x000000000000000000000000000000000000c0de";
 
@@ -16,6 +17,7 @@ type Row = {
   waiting: bigint; // creator share still in the curve
   poolFees: bigint | null; // uncollected pool fees (graduated chain)
   buybackFund: bigint | null; // migrator fund (graduated chain, buyback mode)
+  migrator: Address; // this coin's own migrator (older coins keep theirs)
   claimable: bigint | null; // your holder rewards on this chain
 };
 
@@ -48,14 +50,15 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
           .catch(() => 0n)) as bigint;
         let poolFees: bigint | null = null;
         let buybackFund: bigint | null = null;
+        const migrator = c.state === "graduated" ? await migratorFor(c) : c.chain.migrator;
         if (c.state === "graduated") {
           poolFees = await pub
-            .simulateContract({ account: ANYONE, address: c.chain.migrator, abi: migratorAbi, functionName: "collectFees", args: [c.token] })
+            .simulateContract({ account: ANYONE, address: migrator, abi: migratorAbi, functionName: "collectFees", args: [c.token] })
             .then((r) => (r.result as readonly [bigint, bigint])[0])
             .catch(() => null);
           if (mode === "buyback") {
             buybackFund = (await pub
-              .readContract({ address: c.chain.migrator, abi: migratorAbi, functionName: "buybackFunds", args: [c.token] })
+              .readContract({ address: migrator, abi: migratorAbi, functionName: "buybackFunds", args: [c.token] })
               .catch(() => null)) as bigint | null;
           }
         }
@@ -63,7 +66,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
           mode === "holders" && address
             ? ((await pub.readContract({ address: c.token, abi: tokenAbi, functionName: "claimable", args: [address] }).catch(() => null)) as bigint | null)
             : null;
-        return { curve: c, waiting, poolFees, buybackFund, claimable };
+        return { curve: c, waiting, poolFees, buybackFund, claimable, migrator };
       })
     );
     setRows(out);
@@ -175,7 +178,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       type="button"
                       disabled={!address || !!busy}
                       onClick={() =>
-                        send(`collect-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "collectFees", [c.token]), "Pool fees collected.")
+                        send(`collect-${c.chain.key}`, c, call(r.migrator, migratorAbi, "collectFees", [c.token]), "Pool fees collected.")
                       }
                       className="h-9 px-3 rounded-xl border border-line text-[0.8125rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                     >
@@ -194,7 +197,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                       type="button"
                       disabled={!address || !!busy}
                       onClick={() =>
-                        send(`buyback-${c.chain.key}`, c, call(c.chain.migrator, migratorAbi, "buyback", [c.token]), "Bought back and burned.")
+                        send(`buyback-${c.chain.key}`, c, call(r.migrator, migratorAbi, "buyback", [c.token]), "Bought back and burned.")
                       }
                       className="h-9 px-3 rounded-xl bg-emerald text-on-accent text-[0.8125rem] font-semibold whitespace-nowrap shrink-0 disabled:opacity-40"
                     >

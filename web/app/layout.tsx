@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
-import { Header, BottomNav, Footer, TestnetBanner } from "@/components/chrome";
+import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";
 
 const SITE = "https://sasapad.fun";
 
@@ -73,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <WalletProvider>
           <div className="app-chrome">
             <TestnetBanner />
+            <PauseBanner />
             <Header />
           </div>
           <main className="flex-1 w-full">{children}</main>

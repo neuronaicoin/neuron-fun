@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
-import { IS_TESTNET } from "@/lib/config";
+import { CHAINS, IS_TESTNET } from "@/lib/config";
+import { useSafety } from "@/lib/safety";
 import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
@@ -22,6 +23,21 @@ export function TestnetBanner() {
     <div className="bg-paper border-b border-line text-ink-3 text-center text-[0.75rem] leading-snug px-4 py-1.5"><span className="inline-block w-1.5 h-1.5 rounded-full bg-warn-ink mr-2 align-middle" aria-hidden="true" />
       <span className="sm:hidden">Testnet · free test ETH, no real value</span>
       <span className="hidden sm:inline">Test version. It uses free test ETH, so nothing here has real value.</span>
+    </div>
+  );
+}
+
+/** Shown on every app page while buying is paused on any chain (beta safety lock). */
+export function PauseBanner() {
+  const safety = useSafety();
+  const paused = CHAINS.filter((c) => safety[c.key]?.paused).map((c) => c.short);
+  if (!paused.length) return null;
+  const where =
+    paused.length === CHAINS.length ? "every chain" : paused.length === 1 ? paused[0] : `${paused.slice(0, -1).join(", ")} and ${paused[paused.length - 1]}`;
+  return (
+    <div role="status" className="bg-warn-bg text-warn-ink text-center text-[0.8125rem] leading-snug px-4 py-2 border-b border-line">
+      <span aria-hidden="true" className="mr-1.5">⏸</span>
+      Buying on {where} is paused for a moment. Selling works as usual.
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useMoney } from "@/lib/portfolio";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
 import { factoryAbi } from "@/lib/abis";
+import { overCap, useSafety } from "@/lib/safety";
 import { CHAINS, SLIPPAGE_BPS, TARGET_USD, explorerTx, type NeuronChain } from "@/lib/config";
 import { clientFor, coinHref, isImageUrl } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
@@ -55,6 +56,7 @@ export default function CreatePage() {
   const [launchKey, setLaunchKey] = useState<Hex | null>(null);
   const [runs, setRuns] = useState<Record<string, Run>>({});
   const [busy, setBusy] = useState(false);
+  const safety = useSafety();
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
@@ -84,6 +86,9 @@ export default function CreatePage() {
     return (Number(t.v0) / Number(t.t0)) * 1e9 * ethUsd;
   }, [terms, ethUsd]);
 
+  // Beta locks on the live contracts: a paused chain takes no launches; a full one no first buy.
+  const pausedChain = chosen.find((c) => safety[c.key]?.paused);
+  const fullChain = chosen.find((c) => overCap(safety[c.key], (devCost(c) * 100n) / 101n));
   const problem =
     name.trim().length === 0
       ? "Give your coin a name."
@@ -93,7 +98,11 @@ export default function CreatePage() {
           ? "That picture could not be used."
           : chosen.length === 0
             ? "Pick at least one chain."
-            : "";
+            : pausedChain
+              ? `Launching on ${pausedChain.short} is paused for a moment. Untick it to launch on the others.`
+              : fullChain
+                ? `${fullChain.short} is at its beta capacity, so your first buy there can't go through. Lower it, or untick ${fullChain.short}.`
+                : "";
   const allDone = chosen.length > 0 && chosen.every((c) => runs[c.key]?.status === "done");
   const anyDone = chosen.some((c) => runs[c.key]?.status === "done");
 

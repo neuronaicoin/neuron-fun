@@ -17,6 +17,8 @@ import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
 import { openMoney, refreshPortfolio } from "@/lib/portfolio";
+import { routerOf, setOf } from "@/lib/contracts";
+import { overCap, refreshSafety, useSafety } from "@/lib/safety";
 
 const PRESETS = [10, 25, 50, 100];
 const GAS_RESERVE = 50_000_000_000_000n; // 0.00005 ETH kept for network fees (L2 fees are far below this)
@@ -76,6 +78,19 @@ export function QuickTrade({
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ chainKey: string; hash: string } | null>(null);
   const [profit, setProfit] = useState<ProfitInfo | null>(null);
+  const safety = useSafety();
+  // Curves from an earlier contract set have no beta locks; only the live set does.
+  const [legacy, setLegacy] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let live = true;
+    Promise.all(coin.curves.map(async (c) => ((await setOf(c)).live ? null : c.curve.toLowerCase())))
+      .then((r) => live && setLegacy(new Set(r.filter((x): x is string => !!x))))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coin.id]);
 
   const loadBalances = useCallback(async () => {
     if (!address) return;
@@ -106,17 +121,30 @@ export function QuickTrade({
   }, [walletEmpty, loadBalances]);
 
   const buyWei = ethUsd ? ethFromUsd(Number(usdIn.replace(",", ".")) || 0, ethUsd) : 0n;
+  // What a buy adds to the curve (the 1% fee is on top).
+  const buyNet = (buyWei * 100n) / 101n;
+
+  /** Why a buy can't go through on this curve right now (beta locks), or null. */
+  const lockOf = (c: CurveInfo | undefined): "paused" | "full" | null => {
+    if (!c || inPool(c) || c.state !== "trading" || legacy.has(c.curve.toLowerCase())) return null;
+    const s = safety[c.chain.key];
+    if (s?.paused) return "paused";
+    if (buyNet > 0n && overCap(s, buyNet)) return "full";
+    return null;
+  };
 
   // Cheapest chain where the wallet can pay; otherwise just the cheapest.
   const best = useMemo(() => {
     if (side === "sell") {
       return [...sellable].sort((a, b) => Number((bals[b.chain.key]?.tok ?? 0n) - (bals[a.chain.key]?.tok ?? 0n)))[0];
     }
-    const byPrice = [...open].sort((a, b) => nativePerToken(a) - nativePerToken(b));
-    const affordable = byPrice.find((c) => (bals[c.chain.key]?.eth ?? 0n) >= buyWei + reserve);
+    const sorted = [...open].sort((a, b) => nativePerToken(a) - nativePerToken(b));
+    // Chains that are paused or full go last.
+    const byPrice = [...sorted.filter((c) => !lockOf(c)), ...sorted.filter((c) => lockOf(c))];
+    const affordable = byPrice.find((c) => !lockOf(c) && (bals[c.chain.key]?.eth ?? 0n) >= buyWei + reserve);
     return affordable ?? byPrice[0];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [side, bals, buyWei, coin.id]);
+  }, [side, bals, buyWei, coin.id, safety, legacy]);
 
   const chosen: CurveInfo | undefined =
     (side === "buy" ? open : sellable).find((c) => c.chain.key === picked) ?? best;
@@ -140,10 +168,11 @@ export function QuickTrade({
         const pub = clientFor(chosen.chain);
         if (inPool(chosen)) {
           // Quote by simulating the router trade, with enough balance or allowance pretended.
+          const router = await routerOf(chosen);
           if (side === "buy") {
             const sim = await pub.simulateContract({
               account: QUOTE_ACCOUNT,
-              address: chosen.chain.router,
+              address: router,
               abi: routerAbi,
               functionName: "buy",
               args: [chosen.token, 0n, QUOTE_ACCOUNT, deadline()],
@@ -154,12 +183,12 @@ export function QuickTrade({
           } else if (address) {
             const sim = await pub.simulateContract({
               account: address,
-              address: chosen.chain.router,
+              address: router,
               abi: routerAbi,
               functionName: "sell",
               args: [chosen.token, amount, 0n, address, deadline()],
               stateOverride: [
-                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, chosen.chain.router), value: numberToHex(maxUint256, { size: 32 }) }] },
+                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, router), value: numberToHex(maxUint256, { size: 32 }) }] },
               ],
             });
             setQuote(sim.result as bigint);
@@ -191,6 +220,9 @@ export function QuickTrade({
 
   const notEnough = side === "buy" ? !!bal && bal.eth < buyWei + reserve : sellWei === 0n;
   const closedHere = chosen?.state === "closed";
+  const lock = side === "buy" ? lockOf(chosen) : null;
+  // Another chain of this coin where the buy would go through.
+  const elsewhere = lock ? open.find((c) => c.chain.key !== chosen?.chain.key && !lockOf(c)) : undefined;
 
   /** Compares a sale with the average price this wallet paid for the coin. */
   async function checkProfit(soldTokens: bigint, got: bigint, chainName: string) {
@@ -224,7 +256,7 @@ export function QuickTrade({
     try {
       // Curve before graduation, locked pool (through the router) after.
       const pool = inPool(chosen);
-      const spender = pool ? chosen.chain.router : chosen.curve;
+      const spender = pool ? await routerOf(chosen) : chosen.curve;
       const pub = clientFor(chosen.chain);
       setBusy("Preparing…");
       const calls: Call[] = [];
@@ -295,6 +327,8 @@ export function QuickTrade({
       }
     } catch (e) {
       setError(friendlyError(e));
+      // A pause or a full chain may be why: show it on the button right away.
+      void refreshSafety().catch(() => {});
     } finally {
       setBusy("");
     }
@@ -408,11 +442,35 @@ export function QuickTrade({
                 style={c.chain.key === chosen.chain.key ? { background: c.chain.color } : undefined}
               >
                 {c.chain.short}
-                {c.state === "closed" ? " · closed" : inPool(c) ? " · pool" : ""}
+                {c.state === "closed"
+                  ? " · closed"
+                  : inPool(c)
+                    ? " · pool"
+                    : side === "buy" && lockOf(c) === "paused"
+                      ? " · paused"
+                      : side === "buy" && lockOf(c) === "full"
+                        ? " · full"
+                        : ""}
               </button>
             ))}
           </div>
         </div>
+      )}
+
+      {lock && chosen && (
+        <p className="mt-3 text-[0.8125rem] text-warn-ink bg-warn-bg rounded-xl p-3" role="status">
+          {lock === "paused"
+            ? `Buying on ${chosen.chain.short} is paused for a moment. Selling works as usual.`
+            : `${chosen.chain.short} is at its beta capacity right now, so this buy can't go through. Try a smaller amount${elsewhere ? "" : " or come back soon"}.`}
+          {elsewhere && (
+            <>
+              {" "}
+              <button type="button" onClick={() => setPicked(elsewhere.chain.key)} className="font-bold text-emerald">
+                Buy on {elsewhere.chain.short} instead
+              </button>
+            </>
+          )}
+        </p>
       )}
 
       {closedHere && (
@@ -435,11 +493,15 @@ export function QuickTrade({
           <button
             type="button"
             onClick={submit}
-            disabled={!!busy || amount === 0n || notEnough || !ethUsd && side === "buy"}
+            disabled={!!busy || amount === 0n || notEnough || !!lock || (!ethUsd && side === "buy")}
             className={"w-full h-14 rounded-2xl text-[1rem] font-bold disabled:opacity-40 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
           >
             {busy ||
-              (notEnough
+              (lock === "paused"
+                ? "Buying paused"
+                : lock === "full"
+                  ? "Chain full"
+                  : notEnough
                 ? side === "buy"
                   ? "Not enough cash"
                   : `No $${coin.symbol} to sell here`

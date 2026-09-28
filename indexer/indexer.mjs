@@ -9,7 +9,11 @@
 // Env:
 //   DATABASE_URL    Postgres connection string (Supabase: Project Settings -> Database)
 //   CHAINS          JSON array: [{ "name", "chainId", "rpc", "factory", "startBlock", "router"? }]
-//                   router: the pool router, so trades after graduation are indexed too
+//                   factory: one address, or a list with the LIVE factory first and
+//                            earlier ones after it (their coins keep being indexed)
+//                   router:  the pool router(s), same format, so trades after
+//                            graduation are indexed too
+//   ADMINS          admin wallets for pause / capacity alerts (see safety.mjs)
 //   CONFIRMATIONS   blocks to stay behind the tip (default 3)
 //   MAX_RANGE       blocks per batch (default 2000)
 //   POLL_MS         pause when caught up (default 2500)
@@ -19,6 +23,7 @@
 import pg from "pg";
 import { cardLoop } from "./cards.mjs";
 import { alertLoop } from "./alerts.mjs";
+import { safetyLoop } from "./safety.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -34,10 +39,13 @@ const CONFIRMATIONS = BigInt(env("CONFIRMATIONS", "3"));
 const MAX_RANGE = BigInt(env("MAX_RANGE", "2000"));
 const POLL_MS = Number(env("POLL_MS", "2500"));
 const REFRESH_MS = Number(env("REFRESH_MS", "10000"));
+const list = (v) => (v ? (Array.isArray(v) ? v : [v]).map((a) => getAddress(a)) : []);
 const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   ...c,
-  factory: getAddress(c.factory),
-  router: c.router ? getAddress(c.router) : null,
+  factories: list(c.factory),
+  // The live factory (new launches, beta locks) is the first one.
+  factory: list(c.factory)[0],
+  routers: list(c.router),
   startBlock: BigInt(c.startBlock ?? 0),
 }));
 
@@ -123,7 +131,7 @@ async function indexRange(c, from, to) {
   const { pub } = c;
 
   // 1. New coins on this chain.
-  const launches = await pub.getLogs({ address: c.factory, event: launchedEvent, fromBlock: from, toBlock: to });
+  const launches = await pub.getLogs({ address: c.factories, event: launchedEvent, fromBlock: from, toBlock: to });
   const launchInfo = await Promise.all(
     launches.map(async (l) => {
       const [ivn, logo, description] = await Promise.all([
@@ -178,7 +186,7 @@ async function indexRange(c, from, to) {
            on conflict do nothing returning 1`,
           [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ts, k.curve, k.coin_id,
            // The opening buy is made by the factory on the creator's behalf: credit the creator.
-           lc(a.trader) === lc(c.factory) ? k.creator : lc(a.trader), a.isBuy,
+           c.factories.some((f) => lc(f) === lc(a.trader)) ? k.creator : lc(a.trader), a.isBuy,
            a.nativeAmount.toString(), a.tokenAmount.toString(), a.fee.toString(), price]
         );
         if (ins.rowCount) {
@@ -201,8 +209,8 @@ async function indexRange(c, from, to) {
 
     // 2b. Trades in the locked pools after graduation (through our router).
     let poolTrades = 0;
-    if (c.router) {
-      const logs = (await pub.getLogs({ address: c.router, event: poolTradeEvent, fromBlock: from, toBlock: to })).filter((l) =>
+    if (c.routers.length) {
+      const logs = (await pub.getLogs({ address: c.routers, event: poolTradeEvent, fromBlock: from, toBlock: to })).filter((l) =>
         known.byToken.has(lc(l.args.token))
       );
       const ptimes = await blockTimes(pub, logs.map((l) => l.blockNumber));
@@ -319,7 +327,14 @@ async function refreshLoop() {
 async function main() {
   await pool.query("select 1");
   log(`indexing ${CHAINS.map((c) => c.name).join(", ")}`);
-  await Promise.all([...CHAINS.map((c) => runChain(makeChain(c))), refreshLoop(), cardLoop(pool, log), alertLoop(pool, log)]);
+  const chains = CHAINS.map((c) => makeChain(c));
+  await Promise.all([
+    ...chains.map((c) => runChain(c)),
+    refreshLoop(),
+    cardLoop(pool, log),
+    alertLoop(pool, log),
+    safetyLoop(pool, chains, log),
+  ]);
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

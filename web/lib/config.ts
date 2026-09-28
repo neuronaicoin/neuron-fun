@@ -37,7 +37,17 @@ export type NeuronChain = {
   alchemyNetwork: string;
   /** Where to get free test coins (testnets only). */
   faucet?: string;
+  /** Multisig that owns this chain's factory (mainnet). Empty on testnet. */
+  safe?: Address;
+  /**
+   * Earlier contract sets on this chain. Their coins keep trading, so the
+   * site finds each coin's own router and migrator (see lib/contracts.ts).
+   * `factory`, `router` and `migrator` above are always the live set.
+   */
+  legacy?: ContractSet[];
 };
+
+export type ContractSet = { factory: Address; router: Address; migrator: Address };
 
 const robinhoodTestnet = defineChain({
   id: 46630,
@@ -64,12 +74,20 @@ export const CHAINS: NeuronChain[] = [
     short: "Robinhood",
     color: "#12B886",
     chain: robinhoodTestnet,
-    factory: "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
+    // v3 (beta safety locks), Sep 28, 2026.
+    factory: "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
     startBlock: 123588465n,
     priceSymbol: "ETH",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-    router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
-    migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
+    router: "0x824aF6707F0f472Ea486E5adaABC1aE8b12C51E8",
+    migrator: "0xaA92cCcFa811EAEEB2972351E8b6B4F674692467",
+    legacy: [
+      {
+        factory: "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
+        router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
+        migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
+      },
+    ],
     gasPolicy: "6d52f227-a36c-4671-bca1-3b088153a180",
     alchemyNetwork: "robinhood-testnet",
     faucet: "https://faucet.testnet.chain.robinhood.com",
@@ -80,12 +98,20 @@ export const CHAINS: NeuronChain[] = [
     short: "Base",
     color: "#3B6FF5",
     chain: baseSepolia,
-    factory: "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
+    // v3 (beta safety locks), Sep 28, 2026.
+    factory: "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",
     startBlock: 47265800n,
     priceSymbol: "ETH",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
-    router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",
-    migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
+    router: "0x4c283e95627FA53beD6bA03dA2d1C6866e14c9f1",
+    migrator: "0xd9E69Af53576d320bd2c4dCf863240027156Fe92",
+    legacy: [
+      {
+        factory: "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
+        router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",
+        migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
+      },
+    ],
     gasPolicy: "4832ceec-26ce-4fc0-bd12-76f8b9bb99fe",
     alchemyNetwork: "base-sepolia",
     faucet: "https://www.alchemy.com/faucets/base-sepolia",

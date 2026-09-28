@@ -32,5 +32,14 @@ export function friendlyError(e: unknown): string {
   if (/SlippageExceeded|slippage/i.test(msg)) return "The price moved while you were confirming. Please try again.";
   if (/ParentNotListed/i.test(msg)) return "That family coin is not available right now. Pick another one.";
   if (/LaunchFeeNotCovered/i.test(msg)) return "The amount sent does not cover the creation fee.";
+  // Beta safety locks (v3). Selectors too, for errors that arrive undecoded.
+  let raw = msg;
+  try {
+    raw += " " + JSON.stringify(err ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v)).slice(0, 4000);
+  } catch {
+    // circular error objects: the message alone will do
+  }
+  if (/BuysPaused|0xf7cdbb58/i.test(raw)) return "Buying on this chain is paused for a moment. Selling works as usual.";
+  if (/CapReached|0x55f8a908/i.test(raw)) return "This chain is at its beta capacity right now. Try a smaller amount or another chain. Selling is open.";
   return msg.split("\n")[0].slice(0, 180);
 }

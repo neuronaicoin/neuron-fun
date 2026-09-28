@@ -8,6 +8,30 @@ export const factoryAbi = parseAbi([
   "function launch(string name, string symbol, string logo, string description, bytes32 launchKey, uint256 minTokensOut, uint8 feeMode) payable returns (address curve, address token, uint256 tokensBought)",
   "function launchesOpen() view returns (bool)",
   "function config() view returns (uint256 virtualNative, uint256 virtualToken, uint256 tokensForSale, uint256 graduationTokens, uint16 feeBps, uint16 creatorShareBps, uint256 minGraduationNative)",
+  "error BuysPaused()",
+  "error CapReached(uint256 total, uint256 cap)",
+  "error LaunchesClosed()",
+]);
+
+/** Beta safety locks on the v3 factory (see contracts/src/curve/NeuronCurveFactory.sol). */
+export const safetyAbi = parseAbi([
+  "function owner() view returns (address)",
+  "function pendingOwner() view returns (address)",
+  "function guardian() view returns (address)",
+  "function buysPaused() view returns (bool)",
+  "function nativeCap() view returns (uint256)",
+  "function totalNative() view returns (uint256)",
+  "function capRoom() view returns (uint256)",
+  "function curveCount() view returns (uint256)",
+  "function pauseBuys()",
+  "function unpauseBuys()",
+  "function setNativeCap(uint256 cap)",
+  "function setGuardian(address g)",
+  "function acceptOwnership()",
+  "event BuysPausedSet(bool paused, address by)",
+  "event NativeCapSet(uint256 cap)",
+  "event GuardianSet(address guardian)",
+  "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
 ]);
 
 export const curveAbi = parseAbi([
@@ -23,6 +47,9 @@ export const curveAbi = parseAbi([
   "function buy(uint256 minTokensOut, address recipient) payable returns (uint256)",
   "function sell(uint256 tokenAmount, uint256 minNativeOut, address recipient) returns (uint256)",
   "function claimCreatorFees() returns (uint256)",
+  "function migrator() view returns (address)",
+  "error BuysPaused()",
+  "error CapReached(uint256 total, uint256 cap)",
 ]);
 
 export const tokenAbi = parseAbi([

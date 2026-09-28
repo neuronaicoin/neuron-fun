@@ -17,6 +17,8 @@
 //   PRIVATE_KEY       operator key (the curve factories' operator on every chain)
 //   CHAINS            JSON array: [{ "name", "chainId", "rpc", "factory", "startBlock", "native" }]
 //                     native is the price symbol of the chain's gas coin: ETH, BNB or USD
+//                     factory: one address, or a list (live factory first, earlier
+//                     ones after it); coins from every listed factory are handled
 //   TARGET_USD        graduation target, in dollars, across all chains (default 20000)
 //   REPORT_DIR        where tallies are written as JSON (default ./reports)
 //   PRICE_OVERRIDES   optional JSON, e.g. {"ETH":2500} (tests only)
@@ -59,11 +61,10 @@ let rawKey = env("PRIVATE_KEY").trim();
 if (!rawKey.startsWith("0x")) rawKey = `0x${rawKey}`;
 const account = privateKeyToAccount(rawKey);
 
-const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
-  ...c,
-  factory: getAddress(c.factory),
-  startBlock: BigInt(c.startBlock ?? 0),
-}));
+const CHAINS = JSON.parse(env("CHAINS")).map((c) => {
+  const factories = (Array.isArray(c.factory) ? c.factory : [c.factory]).map((a) => getAddress(a));
+  return { ...c, factories, factory: factories[0], startBlock: BigInt(c.startBlock ?? 0) };
+});
 if (CHAINS.length === 0) throw new Error("CHAINS is empty");
 
 const launchedEvent = parseAbiItem(
@@ -223,16 +224,22 @@ async function main() {
     const wallet = createWalletClient({ account, chain, transport: http(c.rpc) });
     const actual = await pub.getChainId();
     if (actual !== c.chainId) throw new Error(`${c.name}: RPC is chain ${actual}, expected ${c.chainId}`);
-    const op = await pub.readContract({ address: c.factory, abi: factoryAbi, functionName: "operator" });
-    const isOperator = getAddress(op) === account.address;
-    if (!isOperator) log(`WARNING ${c.name}: operator is ${op}; this pass will only report`);
+    // Every factory on a chain must name this key as operator for it to act there.
+    let isOperator = true;
+    for (const f of c.factories) {
+      const op = await pub.readContract({ address: f, abi: factoryAbi, functionName: "operator" });
+      if (getAddress(op) !== account.address) {
+        isOperator = false;
+        log(`WARNING ${c.name}: operator of ${f} is ${op}; this pass will only report`);
+      }
+    }
     ctx.push({ ...c, pub, wallet, isOperator });
   }
 
   // Group every curve by coin: same creator, same launchKey.
   const coins = new Map();
   for (const c of ctx) {
-    for (const l of await allLaunches(c.pub, c.factory, c.startBlock)) {
+    for (const l of await allLaunches(c.pub, c.factories, c.startBlock)) {
       const id = `${l.creator.toLowerCase()}:${l.launchKey}`;
       if (!coins.has(id)) coins.set(id, { creator: l.creator, launchKey: l.launchKey, symbol: l.symbol, curves: [] });
       coins.get(id).curves.push({ chain: c, curve: l.curve, token: l.token });
