@@ -30,7 +30,13 @@ interface IPositionManagerPoolManager {
  *
  * Curve terms (env, in wei of the chain's gas coin where relevant):
  *   VIRTUAL_NATIVE (default 1 ether)   MIN_GRADUATION (default 0.5 ether)
- *   OPERATOR, PROTOCOL_FEE_RECIPIENT   (default: the deployer)
+ *   OPERATOR, PROTOCOL_FEE_RECIPIENT   (default: the deployer, or SAFE for fees)
+ *
+ * Beta safety (v3, all optional):
+ *   GUARDIAN    hot key that can only pause buys and launches
+ *   NATIVE_CAP  most native coin all curves may hold together, in wei (0 = none)
+ *   SAFE        multisig that should own the factory; ownership is offered to
+ *               it here and the Safe must call acceptOwnership() to take it
  */
 contract DeployCurves is Script {
     address internal constant PERMIT2_CANONICAL = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
@@ -45,7 +51,11 @@ contract DeployCurves is Script {
         uint256 key = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(key);
         address operator = vm.envOr("OPERATOR", deployer);
-        address feeRecipient = vm.envOr("PROTOCOL_FEE_RECIPIENT", deployer);
+        address safe = vm.envOr("SAFE", address(0));
+        address feeRecipient = vm.envOr("PROTOCOL_FEE_RECIPIENT", safe == address(0) ? deployer : safe);
+        address guardian = vm.envOr("GUARDIAN", address(0));
+        uint256 nativeCap = vm.envOr("NATIVE_CAP", uint256(0));
+        if (safe != address(0)) require(safe.code.length > 0, "SAFE has no contract on this chain");
 
         V4 memory v4 = _v4();
         require(v4.poolManager.code.length > 0, "PoolManager not found on this chain");
@@ -92,6 +102,9 @@ contract DeployCurves is Script {
             new NeuronPoolRouter(IPoolManager(address(migrator.poolManager())), IGraduatedPools(address(migrator)));
         migrator.bindRouter(IBuybackRouter(address(router)));
         factory.setLaunchesOpen(true);
+        if (guardian != address(0)) factory.setGuardian(guardian);
+        if (nativeCap != 0) factory.setNativeCap(nativeCap);
+        if (safe != address(0)) factory.transferOwnership(safe);
         vm.stopBroadcast();
 
         console2.log("--- Neuron.fun curves ---");
@@ -100,6 +113,11 @@ contract DeployCurves is Script {
         console2.log("GraduationHook:     ", address(migrator.hook()));
         console2.log("NeuronPoolRouter:   ", address(router));
         console2.log("Operator:           ", operator);
+        console2.log("Fee recipient:      ", feeRecipient);
+        console2.log("Guardian:           ", guardian);
+        console2.log("Total cap (wei):    ", nativeCap);
+        console2.log("Owner now:          ", factory.owner());
+        console2.log("Pending owner (Safe):", factory.pendingOwner());
         console2.log("Start block:        ", block.number);
     }
 
