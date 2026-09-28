@@ -18,6 +18,8 @@ import { CoinAlertButton } from "@/components/alerts";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { useBuyerMarkers } from "@/lib/social";
 import { forumBoardUrl } from "@/lib/forum";
+import { LiveStats } from "@/components/livestats";
+import { CoinComments } from "@/components/comments";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
@@ -39,6 +41,8 @@ function Terminal() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [marketsOpen, setMarketsOpen] = useState(false);
+  // Phones: the coin list fills the screen; tapping a coin opens it (chart + trade).
+  const [phoneView, setPhoneView] = useState<"list" | "coin">(params.get("id") ? "coin" : "list");
   const { coins } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [coin, setCoin] = useState<Coin | null>(null);
@@ -76,6 +80,8 @@ function Terminal() {
 
   const choose = (id: string) => {
     setSelected(id);
+    setPhoneView("coin");
+    if (window.matchMedia("(max-width: 1023px)").matches) window.scrollTo(0, 0);
     try {
       window.history.replaceState(null, "", `/terminal/?id=${encodeURIComponent(id)}`);
     } catch {}
@@ -83,16 +89,41 @@ function Terminal() {
 
   return (
     <div className="max-w-[1500px] mx-auto px-3 sm:px-4 py-2 sm:py-4">
-      {/* Phone: switch coins from a sheet instead of a separate tab */}
-      <MarketStrip
-        coins={coins}
-        ethUsd={ethUsd}
-        selected={selected}
-        onChoose={choose}
-        sort={sort}
-        setSort={setSort}
-        onOpenList={() => setMarketsOpen(true)}
-      />
+      {/* Phones: a full-width list of coins, or the chosen coin with a way back */}
+      {phoneView === "list" ? (
+        <div className="lg:hidden">
+          <Markets
+            coins={coins}
+            ethUsd={ethUsd}
+            selected={selected}
+            onChoose={choose}
+            sort={sort}
+            setSort={setSort}
+            query={query}
+            setQuery={setQuery}
+            full
+          />
+        </div>
+      ) : (
+        <div className="lg:hidden flex items-center justify-between gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPhoneView("list");
+              window.scrollTo(0, 0);
+            }}
+            className="h-10 px-3 -ml-1 rounded-xl text-emerald font-semibold text-[0.9375rem] flex items-center gap-1"
+          >
+            ← All coins
+          </button>
+          <button type="button" onClick={() => setMarketsOpen(true)} aria-label="Search coins" className="w-10 h-10 rounded-xl border border-line text-ink-2 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </button>
+        </div>
+      )}
       {marketsOpen && (
         <Sheet title="Coins" onClose={() => setMarketsOpen(false)}>
           <Markets
@@ -111,7 +142,7 @@ function Terminal() {
         </Sheet>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[300px_minmax(0,1fr)_360px] lg:items-start">
+      <div className={(phoneView === "list" ? "hidden lg:grid " : "grid ") + "grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[300px_minmax(0,1fr)_360px] lg:items-start"}>
         <aside className="hidden lg:block lg:sticky lg:top-[76px]">
           <Markets
             coins={coins}
@@ -149,7 +180,7 @@ function Terminal() {
           )}
         </aside>
       </div>
-      {coin && <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />}
+      {coin && phoneView === "coin" && <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />}
     </div>
   );
 }
@@ -160,8 +191,9 @@ const MARKET_TABS: readonly (readonly [SortKey, string])[] = [
   ["trending", "🔥 Trending"],
   ["gainers", "Gainers"],
   ["losers", "Losers"],
+  ["hot", "Closest to grad."],
+  ["bonding", "Bonding"],
   ["new", "New"],
-  ["hot", "Racing"],
   ["graduated", "Graduated"],
 ];
 
@@ -176,62 +208,11 @@ function MarketTabs({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) =>
           aria-selected={sort === k}
           aria-label={k === "watchlist" ? "Favourites" : undefined}
           onClick={() => setSort(k)}
-          className={"h-8 px-3 rounded-lg text-[0.75rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
+          className={"h-9 px-3 rounded-xl text-[0.8125rem] font-semibold shrink-0 whitespace-nowrap " + (sort === k ? "bg-emerald text-on-accent" : "text-ink-2 hover:text-ink")}
         >
           {l}
         </button>
       ))}
-    </div>
-  );
-}
-
-/** Phones: the market is always on screen, as a swipeable strip above the chart. */
-function MarketStrip(props: {
-  coins: Coin[] | null;
-  ethUsd: number | null;
-  selected: string;
-  onChoose: (id: string) => void;
-  sort: SortKey;
-  setSort: (s: SortKey) => void;
-  onOpenList: () => void;
-}) {
-  const { coins, ethUsd, selected, onChoose, sort, setSort, onOpenList } = props;
-  return (
-    <div className="lg:hidden mb-2">
-      <div className="flex items-center gap-1">
-        <div className="min-w-0 flex-1">
-          <MarketTabs sort={sort} setSort={setSort} />
-        </div>
-        <button type="button" onClick={onOpenList} aria-label="Search all coins" className="w-8 h-8 shrink-0 rounded-lg border border-line text-ink-2 flex items-center justify-center">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-        </button>
-      </div>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar mt-2 -mx-3 px-3 pb-1">
-        {!coins && [0, 1, 2, 3].map((i) => <div key={i} className="shrink-0 w-[124px] h-[62px] rounded-2xl bg-surface border border-line animate-pulse" />)}
-        {coins?.length === 0 && (
-          <p className="text-[0.8125rem] text-ink-3 py-3">{sort === "watchlist" ? "Tap ☆ on a coin to add it here." : "No coins here yet."}</p>
-        )}
-        {coins?.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => onChoose(c.id)}
-            className={"shrink-0 w-[124px] rounded-2xl border bg-surface p-2 text-left " + (c.id === selected ? "border-emerald" : "border-line")}
-          >
-            <span className="flex items-center gap-2">
-              <CoinAvatar logo={c.logo} symbol={c.symbol} size={26} />
-              <span className="min-w-0">
-                <span className="block font-semibold text-[0.8125rem] truncate">${c.symbol}</span>
-                <span className="block font-mono text-[0.6875rem] text-ink-3">{compactUsd(coinMarketCapUsd(c, ethUsd))}</span>
-              </span>
-            </span>
-            <ChangeBadge value={c.change24h} className="block text-[0.75rem] mt-1" />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -245,8 +226,10 @@ function Markets(props: {
   setSort: (s: SortKey) => void;
   query: string;
   setQuery: (q: string) => void;
+  /** Phones: no height cap, the page scrolls. */
+  full?: boolean;
 }) {
-  const { coins, ethUsd, selected, onChoose, sort, setSort, query, setQuery } = props;
+  const { coins, ethUsd, selected, onChoose, sort, setSort, query, setQuery, full = false } = props;
   return (
     <div className="rounded-3xl border border-line bg-surface overflow-hidden">
       <div className="p-3 border-b border-line">
@@ -261,7 +244,7 @@ function Markets(props: {
           <MarketTabs sort={sort} setSort={setSort} />
         </div>
       </div>
-      <ul className="max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto divide-y divide-line">
+      <ul className={(full ? "" : "max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto ") + "divide-y divide-line"}>
         {!coins && [0, 1, 2, 3, 4].map((i) => <li key={i} className="p-3"><Skeleton className="h-10" /></li>)}
         {coins?.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
         {coins?.map((c) => (
@@ -293,7 +276,7 @@ function Markets(props: {
   );
 }
 
-type CenterTab = "trades" | "holders" | "position" | "about";
+type CenterTab = "trades" | "comments" | "holders" | "position" | "about";
 
 function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const [chartChain, setChartChain] = useState("");
@@ -331,18 +314,8 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
             <StarButton coinId={coin.id} />
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-4">
-          {[
-            ["Market cap", compactUsd(mc)],
-            ["Grad.", coin.graduatedOn ? "Done" : `${Math.round(coin.progress * 100)}%`],
-            ["Holders", String(coin.holders)],
-            ["Vol 24h", ethUsd ? usd(coin.volumeNative24h * ethUsd, 0) : `${coin.volumeNative24h.toFixed(3)} ETH`],
-          ].map(([l, v]) => (
-            <div key={l} className="rounded-xl sm:rounded-2xl bg-paper px-2 py-1.5 sm:px-3 sm:py-2.5 min-w-0">
-              <div className="text-[0.625rem] sm:text-[0.6875rem] text-ink-3 truncate">{l}</div>
-              <div className="font-mono text-[0.8125rem] sm:text-[1rem] mt-0.5 truncate">{v}</div>
-            </div>
-          ))}
+        <div className="mt-3 sm:mt-4">
+          <LiveStats coin={coin} ethUsd={ethUsd} />
         </div>
       </div>
 
@@ -368,7 +341,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
 
       <div className="rounded-3xl border border-line bg-surface">
         <div className="flex gap-1 p-2 border-b border-line overflow-x-auto" role="tablist" aria-label="Details">
-          {([["trades", "Trades"], ["holders", "Holders"], ["position", "My position"], ["about", "About"]] as const).map(([k, l]) => (
+          {([["trades", "Trades"], ["comments", "Comments"], ["holders", "Holders"], ["position", "My position"], ["about", "About"]] as const).map(([k, l]) => (
             <button
               key={k}
               type="button"
@@ -385,6 +358,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
           {tab === "trades" && <TradesFeed coinId={coin.id} ethUsd={ethUsd} limit={30} />}
           {tab === "holders" && chartCurve && <TopHolders curve={chartCurve} />}
           {tab === "position" && <Position coin={coin} ethUsd={ethUsd} />}
+          {tab === "comments" && <CoinComments coin={coin} bare />}
           {tab === "about" && (
             <div className="grid gap-3 text-[0.875rem] text-ink-2">
               {coin.description ? <p className="leading-relaxed">{coin.description}</p> : <p className="text-ink-3">No description.</p>}

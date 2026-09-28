@@ -81,7 +81,8 @@ export function PriceChart({
         layout: { background: { color: "transparent" }, textColor: "#8f7f73", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
         grid: { vertLines: { color: "rgba(143,127,115,0.12)" }, horzLines: { color: "rgba(143,127,115,0.12)" } },
         rightPriceScale: { borderVisible: false },
-        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+        // Slim candles from the start, even when a coin has only a few.
+        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, barSpacing: 7, minBarSpacing: 2, rightOffset: 4 },
         crosshair: { mode: 1 },
       });
       const candles = chart.addSeries(CandlestickSeries, {
@@ -119,7 +120,9 @@ export function PriceChart({
             rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
           );
           if (first && chart) {
-            chart.timeScale().fitContent();
+            // Many candles: show them all. Few: keep them slim and pinned to the right.
+            if (bars.length > 90) chart.timeScale().fitContent();
+            else chart.timeScale().scrollToRealTime();
             first = false;
           }
         } catch {
@@ -274,29 +277,29 @@ export function PriceChart({
           <div className="absolute inset-0 flex items-center justify-center text-[0.875rem] text-ink-3">No trades yet. The first buy starts the chart.</div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 mt-2 text-[0.75rem] font-mono">
-        <button
-          type="button"
-          aria-pressed={prefs.volume}
-          onClick={() => setPref({ volume: !prefs.volume })}
-          className={"h-7 px-2.5 rounded-lg " + (prefs.volume ? "bg-paper text-ink" : "text-ink-3")}
-        >
+      <div className="flex items-center justify-between gap-2 mt-2.5 text-[0.8125rem] font-semibold">
+        <button type="button" aria-pressed={prefs.volume} onClick={() => setPref({ volume: !prefs.volume })} className={chipClass(prefs.volume)}>
           Volume
         </button>
-        <div className="flex gap-1">
-          <button type="button" aria-pressed={prefs.mode === "percent"} title="Percent scale" onClick={() => setPref({ mode: prefs.mode === "percent" ? "normal" : "percent" })} className={"h-7 min-w-8 px-2 rounded-lg " + (prefs.mode === "percent" ? "bg-paper text-ink" : "text-ink-3")}>
+        <div className="flex gap-1.5">
+          <button type="button" aria-pressed={prefs.mode === "percent"} title="Percent scale" onClick={() => setPref({ mode: prefs.mode === "percent" ? "normal" : "percent" })} className={chipClass(prefs.mode === "percent") + " min-w-9"}>
             %
           </button>
-          <button type="button" aria-pressed={prefs.mode === "log"} title="Logarithmic scale" onClick={() => setPref({ mode: prefs.mode === "log" ? "normal" : "log" })} className={"h-7 px-2 rounded-lg " + (prefs.mode === "log" ? "bg-paper text-ink" : "text-ink-3")}>
-            log
+          <button type="button" aria-pressed={prefs.mode === "log"} title="Logarithmic scale" onClick={() => setPref({ mode: prefs.mode === "log" ? "normal" : "log" })} className={chipClass(prefs.mode === "log")}>
+            Log
           </button>
-          <button type="button" aria-pressed={prefs.auto} title="Fit prices to the view" onClick={() => setPref({ auto: !prefs.auto })} className={"h-7 px-2 rounded-lg " + (prefs.auto ? "bg-paper text-ink" : "text-ink-3")}>
-            auto
+          <button type="button" aria-pressed={prefs.auto} title="Fit prices to the view" onClick={() => setPref({ auto: !prefs.auto })} className={chipClass(prefs.auto)}>
+            Auto
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+/** Chart option chips: clearly on (accent) or off (outlined), in both themes. */
+function chipClass(on: boolean) {
+  return "h-8 px-3 rounded-lg border transition-colors " + (on ? "bg-emerald-soft text-emerald border-emerald/60" : "border-line text-ink-2 hover:text-ink");
 }
 
 function fmtMoney(v: number, unit: string) {

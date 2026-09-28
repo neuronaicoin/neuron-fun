@@ -219,3 +219,10 @@ html.is-landing body { background: #0b0806; }
 @media (prefers-reduced-motion: reduce) {
   .bell-ring svg, .toast-in { animation: none; }
 }
+
+/* Live numbers: a short flash when they change. */
+@keyframes flash-up { 0% { background: color-mix(in srgb, var(--color-up) 35%, transparent); } 100% { background: transparent; } }
+@keyframes flash-down { 0% { background: color-mix(in srgb, var(--color-danger) 35%, transparent); } 100% { background: transparent; } }
+.flash-up { animation: flash-up 0.9s ease-out; }
+.flash-down { animation: flash-down 0.9s ease-out; }
+@media (prefers-reduced-motion: reduce) { .flash-up, .flash-down { animation: none; } }

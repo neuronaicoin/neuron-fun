@@ -7,7 +7,8 @@ import { formatEther, formatUnits, parseEther, parseUnits, type Hex } from "viem
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, StarButton, timeAgo } from "@/components/coins";
-import { CoinStats, PriceChart, TopHolders, TradesFeed } from "@/components/market";
+import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
+import { LiveStats } from "@/components/livestats";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
 import { ShareButton } from "@/components/share";
@@ -15,6 +16,7 @@ import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
 import { ForumCard } from "@/components/forumcard";
+import { CoinComments } from "@/components/comments";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { useBuyerMarkers } from "@/lib/social";
 import { curveAbi, tokenAbi } from "@/lib/abis";
@@ -125,7 +127,7 @@ function CoinPage() {
       )}
 
       <div className="mt-6">
-        <CoinStats coin={coin} ethUsd={ethUsd} />
+        <LiveStats coin={coin} ethUsd={ethUsd} />
       </div>
 
       <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
@@ -169,6 +171,8 @@ function CoinPage() {
               <TopHolders curve={chartCurve} />
             </div>
           )}
+
+          <CoinComments coin={coin} />
 
           <ForumCard coin={coin} />
 

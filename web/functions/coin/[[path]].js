@@ -26,7 +26,7 @@ export async function onRequestGet(ctx) {
   const key = (ctx.env && ctx.env.SUPABASE_KEY) || SUPABASE_KEY;
   let coin = null;
   try {
-    const r = await fetch(`${base}/rest/v1/coin_list?id=eq.${encodeURIComponent(id)}&select=name,symbol,description`, {
+    const r = await fetch(`${base}/rest/v1/coin_list?id=eq.${encodeURIComponent(id)}&select=name,symbol,description,launch_key,created_at,holders_total`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cf: { cacheTtl: 60, cacheEverything: true },
     });
@@ -65,6 +65,37 @@ export async function onRequestGet(ctx) {
       .on('meta[property="og:image:width"]', set("1200"))
       .on('meta[property="og:image:height"]', set("630"));
   }
+  // Structured data for search engines and AI answers: what this page is,
+  // where it sits, and where people discuss the coin (its forum board).
+  const slug = (x, max) =>
+    String(x || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, max).replace(/-+$/g, "");
+  const nameSlug = slug(coin.name, 40) || "coin";
+  const symSlug = slug(coin.symbol, 16);
+  const board = `${SITE}/forum/${[nameSlug, symSlug && symSlug !== nameSlug ? symSlug : "", String(coin.launch_key || "").slice(2, 10)].filter(Boolean).join("-")}/`;
+  const ld = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      name: title,
+      url: pageUrl,
+      description,
+      ...(hasImage ? { image: image } : {}),
+      isPartOf: { "@type": "WebSite", name: "sasa", url: SITE },
+      about: { "@type": "Thing", name: `${coin.name} ($${coin.symbol})`, description: (coin.description || "").trim().slice(0, 300) || undefined },
+      discussionUrl: board,
+      ...(coin.created_at ? { datePublished: new Date(coin.created_at).toISOString() } : {}),
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "sasa", item: `${SITE}/` },
+        { "@type": "ListItem", position: 2, name: `${coin.name} ($${coin.symbol})`, item: pageUrl },
+      ],
+    },
+  ];
+  const ldTag = `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\u003c")}</script><link rel="alternate" href="${board}" title="${String(coin.name).replace(/"/g, "&quot;")} forum">`;
+  rw = rw.on("head", { element: (e) => e.append(ldTag, { html: true }) });
   const out = rw.transform(res);
   const headers = new Headers(out.headers);
   headers.set("cache-control", "public, max-age=60");

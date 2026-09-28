@@ -159,6 +159,46 @@ export async function forumRoute(ctx, me, parts, method, body, url) {
     return json({ url: path }, 201);
   }
 
+  // Comment under a coin: goes into the coin's pinned "comments" thread (created on first use).
+  if (p[0] === "comments" && p.length === 1 && method === "POST") {
+    const board = typeof body.coinId === "string" ? body.coinId.toLowerCase() : "";
+    const info = await boardInfo(env, board);
+    if (!info || !info.coin) return fail(404, "Unknown coin.");
+    const text = clean(body.body);
+    if (text.length < 2) return fail(400, "Write a comment first.");
+    if (text.length > 1000) return fail(400, "Keep comments under 1000 characters.");
+    if (linkCount(text) > LIMITS.links) return fail(400, `At most ${LIMITS.links} links per comment.`);
+    const right = await postingRight(env, me, info);
+    if (!right.ok) return fail(403, `Only $${info.coin.symbol} holders can comment.`);
+    const slow = await rateCheck(env, me, false);
+    if (slow) return fail(429, slow);
+    let rows = await sec(env, `forum_threads?board=eq.${q(board)}&kind=eq.comments&select=id,title,author,hidden`);
+    let t = rows && rows[0];
+    if (!t) {
+      try {
+        [t] = await sec(env, "forum_threads?select=id,title,author,hidden", {
+          method: "POST",
+          body: { board, title: `${info.coin.name} ($${info.coin.symbol}) comments`, author: me, words: 0, pinned: true, kind: "comments" },
+          prefer: "return=representation",
+        });
+      } catch {
+        rows = await sec(env, `forum_threads?board=eq.${q(board)}&kind=eq.comments&select=id,title,author,hidden`);
+        t = rows && rows[0];
+      }
+    }
+    if (!t) return fail(500, "Couldn't save the comment. Try again.");
+    if (t.hidden) return fail(403, "Comments are closed on this coin.");
+    const [post] = await sec(env, "forum_posts?select=id", {
+      method: "POST",
+      body: { thread_id: t.id, author: me, body: text, share_bps: right.share },
+      prefer: "return=representation",
+    });
+    await sec(env, "rpc/forum_after_post", { method: "POST", body: { p_thread: t.id, p_words: wordCount(text) } });
+    const path = threadUrl(info.coin, t);
+    pingIndexNow(ctx, [`${SITE}${path}`]);
+    return json({ id: post.id, url: `${path}#p${post.id}` }, 201);
+  }
+
   if (p[0] === "threads" && /^\d{1,15}$/.test(p[1] || "") && p[2] === "posts" && p.length === 3 && method === "POST") {
     const found = await threadWithBoard(env, p[1]);
     if (!found) return fail(404, "This thread is gone.");

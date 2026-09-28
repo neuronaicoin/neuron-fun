@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChainChip, Skeleton, useCoins, usd } from "@/components/coins";
-import { CoinTile, GraduationRadar, LiveTicker } from "@/components/discover";
+import { CoinTile, LiveTicker } from "@/components/discover";
 import { CHAINS, TARGET_USD } from "@/lib/config";
 import { fetchCoinCount, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 
 const SORTS: { id: SortKey; label: string }[] = [
-  { id: "trending", label: "Trending" },
-  { id: "gainers", label: "Top gainers (24h)" },
-  { id: "losers", label: "Top losers (24h)" },
-  { id: "hot", label: "Closest to graduating" },
+  { id: "trending", label: "🔥 Trending" },
+  { id: "gainers", label: "Top gainers 24h" },
+  { id: "losers", label: "Top losers 24h" },
+  { id: "hot", label: "Closest to graduate" },
+  { id: "bonding", label: "Bonding" },
   { id: "new", label: "Newest" },
   { id: "graduated", label: "Graduated" },
 ];
@@ -109,17 +110,12 @@ export default function Discover() {
         </div>
       </section>
 
-      {coins && coins.some((c) => !c.graduatedOn) && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-warn-ink animate-pulse" aria-hidden="true" />
-            <h2 className="font-display font-semibold text-[1.125rem] sm:text-[1.25rem]">About to graduate</h2>
-          </div>
-          <GraduationRadar coins={coins} ethUsd={ethUsd} />
-        </section>
-      )}
+      <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2">
+        <Link href="/traders/" className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
+        <a href="/forum/" className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>
+      </nav>
 
-      <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10 scroll-mt-20">
+      <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 sm:py-8 scroll-mt-20">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
@@ -134,19 +130,27 @@ export default function Discover() {
                 aria-label="Search coins"
                 className="h-11 px-4 rounded-xl border border-line bg-paper focus:border-emerald sm:w-56"
               />
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                aria-label="Sort coins"
-                className="h-11 px-3 rounded-xl border border-line bg-paper text-ink font-semibold text-[0.875rem]"
-              >
-                {SORTS.map((s) => (
-                  <option key={s.id} value={s.id}>{s.label}</option>
-                ))}
-              </select>
+
             </div>
           </div>
-          <div className="flex gap-2 mt-4 overflow-x-auto pb-1" role="tablist" aria-label="Chain">
+          <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1" role="tablist" aria-label="Sort coins">
+            {SORTS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={sort === s.id}
+                onClick={() => setSort(s.id)}
+                className={
+                  "h-10 px-4 rounded-xl text-[0.875rem] font-semibold shrink-0 whitespace-nowrap border " +
+                  (sort === s.id ? "bg-emerald text-on-accent border-emerald" : "bg-paper border-line text-ink-2 hover:text-ink")
+                }
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1" role="tablist" aria-label="Chain">
             {[{ key: "all", short: "All chains" }, ...CHAINS].map((c) => (
               <button
                 key={c.key}
@@ -188,7 +192,7 @@ export default function Discover() {
           )}
           {coins && list.length === 0 && (
             <div className="mt-5 text-center py-12 border border-dashed border-line rounded-2xl">
-              <p className="text-ink-2">{search ? "Nothing matches that search." : sort === "graduated" ? "No graduates yet." : "No coins here yet. Start one."}</p>
+              <p className="text-ink-2">{search ? "Nothing matches that search." : sort === "graduated" ? "No graduates yet." : sort === "bonding" ? "No coins on their bonding curve right now." : "No coins here yet. Start one."}</p>
               <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
             </div>
           )}
