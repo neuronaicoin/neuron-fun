@@ -40,6 +40,7 @@ export function friendlyError(e: unknown): string {
     // circular error objects: the message alone will do
   }
   if (/BuysPaused|0xf7cdbb58/i.test(raw)) return "Buying on this chain is paused for a moment. Selling works as usual.";
+  if (/CreatorLocked|0xdd5074de/i.test(raw)) return "Your coins are locked until the time you set at launch. You can sell once the lock ends.";
   if (/CapReached|0x55f8a908/i.test(raw)) return "This chain is at its beta capacity right now. Try a smaller amount or another chain. Selling is open.";
   return msg.split("\n")[0].slice(0, 180);
 }

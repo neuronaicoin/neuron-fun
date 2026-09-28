@@ -57,6 +57,7 @@ const pool = new pg.Pool({
   ssl: /localhost|127\.0\.0\.1/.test(env("DATABASE_URL")) ? false : { rejectUnauthorized: false },
 });
 
+let lockWarned = false;
 const launchedEvent = parseAbiItem(
   "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol, uint8 feeMode)"
 );
@@ -74,7 +75,11 @@ const curveReadAbi = parseAbi([
   "function initialVirtualNative() view returns (uint256)",
   "function initialVirtualToken() view returns (uint256)",
 ]);
-const tokenReadAbi = parseAbi(["function logo() view returns (string)", "function description() view returns (string)"]);
+const tokenReadAbi = parseAbi([
+  "function logo() view returns (string)",
+  "function description() view returns (string)",
+  "function lockedUntil() view returns (uint256)",
+]);
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -142,7 +147,9 @@ async function indexRange(c, from, to) {
         pub.readContract({ address: l.args.token, abi: tokenReadAbi, functionName: "description" }).catch(() => ""),
       ]);
       const ivt = await pub.readContract({ address: l.args.curve, abi: curveReadAbi, functionName: "initialVirtualToken" });
-      return { l, ivn, ivt, logo, description };
+      // Creator lock (v4 coins; older tokens don't have it).
+      const lockedUntil = await pub.readContract({ address: l.args.token, abi: tokenReadAbi, functionName: "lockedUntil" }).catch(() => 0n);
+      return { l, ivn, ivt, logo, description, lockedUntil };
     })
   );
 
@@ -150,7 +157,7 @@ async function indexRange(c, from, to) {
   try {
     await db.query("begin");
 
-    for (const { l, ivn, ivt, logo, description } of launchInfo) {
+    for (const { l, ivn, ivt, logo, description, lockedUntil } of launchInfo) {
       const a = l.args;
       const coinId = `${lc(a.creator)}:${a.launchKey}`;
       const ts = (await blockTimes(pub, [l.blockNumber])).get(String(l.blockNumber));
@@ -164,6 +171,22 @@ async function indexRange(c, from, to) {
          values ($1,$2,$3,$4,$5,$5,$6,$7,$8) on conflict (chain_id, curve) do nothing`,
         [c.chainId, lc(a.curve), lc(a.token), coinId, ivn.toString(), ivt.toString(), l.blockNumber.toString(), ts]
       );
+      if (lockedUntil > 0n) {
+        // In a savepoint: if lock.sql hasn't been run yet, indexing carries on.
+        await db.query("savepoint lock_row");
+        try {
+          await db.query(
+            `insert into coin_lock (coin_id, chain_id, until) values ($1, $2, to_timestamp($3))
+             on conflict (coin_id, chain_id) do update set until = excluded.until`,
+            [coinId, c.chainId, Number(lockedUntil)]
+          );
+          await db.query("release savepoint lock_row");
+        } catch (e) {
+          await db.query("rollback to savepoint lock_row");
+          if (!lockWarned) log("creator locks: run indexer/lock.sql in Supabase");
+          lockWarned = true;
+        }
+      }
     }
 
     const known = await knownCurves(db, c.chainId);

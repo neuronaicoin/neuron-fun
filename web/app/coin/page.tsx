@@ -1,5 +1,6 @@
 "use client";
 
+import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -102,6 +103,7 @@ function CoinPage() {
         <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={56} />
         <div className="min-w-0 flex-1">
           <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2.25rem] leading-tight tracking-tight break-words">{coin.name}</h1>
+          <LockBadge coinId={coin.id} className="mt-2" />
           <p className="text-ink-2 text-[0.9375rem] mt-1">
             ${coin.symbol} · created {timeAgo(coin.createdAt)} by <span className="font-mono">{shortAddr(coin.creator)}</span>
           </p>

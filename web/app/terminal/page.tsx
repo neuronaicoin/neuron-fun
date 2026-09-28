@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ScrollRow } from "@/components/scrollrow";
+import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
 import { Sparkline } from "@/components/spark";
 import { useSparks } from "@/lib/spark";
@@ -322,6 +323,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               {coin.curves.map((c) => (
                 <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
               ))}
+              <LockBadge coinId={coin.id} />
             </div>
           </div>
           <div className="flex gap-1.5 shrink-0">

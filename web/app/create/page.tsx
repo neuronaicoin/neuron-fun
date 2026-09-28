@@ -51,6 +51,8 @@ export default function CreatePage() {
   const [devUsd, setDevUsd] = useState("");
   const { portfolio } = useMoney();
   const [feeMode, setFeeMode] = useState<0 | 1 | 2>(0);
+  // Optional creator lock (seconds): your coins can't be sold or moved until it ends.
+  const [lock, setLock] = useState<0 | 3600 | 86400>(0);
   const [terms, setTerms] = useState<Record<string, Terms>>({});
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [launchKey, setLaunchKey] = useState<Hex | null>(null);
@@ -119,11 +121,18 @@ export default function CreatePage() {
         const args = [name.trim(), cleanSymbol, logo, description.trim(), key, 0n, feeMode] as const;
         const pub = clientFor(c);
         set({ status: "working", note: "Checking…" });
-        const sim = await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, value });
+        const sim =
+          lock > 0
+            ? await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launchLocked", args: [...args, BigInt(lock)], value })
+            : await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, value });
         const minOut = value > 0n ? (sim.result[2] * (10_000n - SLIPPAGE_BPS)) / 10_000n : 0n;
         const hash = await send(
           c.chain,
-          [call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode], value)],
+          [
+            lock > 0
+              ? call(c.factory, factoryAbi, "launchLocked", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode, BigInt(lock)], value)
+              : call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode], value),
+          ],
           (note) => set({ status: "working", note })
         );
         set({ status: "done", hash });
@@ -263,6 +272,40 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[0.9375rem] font-bold text-ink">Lock your coins</span>
+              <span className="text-[0.75rem] text-ink-3 text-right">optional · shows buyers you won&apos;t dump</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-2" role="radiogroup" aria-label="Lock your coins">
+              {(
+                [
+                  [0, "No lock", "Sell any time"],
+                  [3600, "1 hour", "🔒 badge on your coin"],
+                  [86400, "24 hours", "🔒 strongest signal"],
+                ] as const
+              ).map(([s, title, text]) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={lock === s}
+                  onClick={() => setLock(s)}
+                  className={"text-left rounded-2xl border-2 p-3 sm:p-3.5 " + (lock === s ? "border-emerald bg-emerald-soft" : "border-line")}
+                >
+                  <span className="block font-semibold text-[0.875rem]">{title}</span>
+                  <span className="block text-[0.6875rem] sm:text-[0.75rem] text-ink-3 mt-1 leading-snug">{text}</span>
+                </button>
+              ))}
+            </div>
+            {lock > 0 && (
+              <p className="text-[0.75rem] text-ink-3 mt-2 leading-snug">
+                For {lock === 3600 ? "1 hour" : "24 hours"} after launch, the coins in your wallet can&apos;t be sold or sent anywhere, on every chain
+                you pick. You can still buy more. Nobody, not even you, can end it early.
+              </p>
+            )}
           </div>
 
           <div>

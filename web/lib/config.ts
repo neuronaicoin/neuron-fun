@@ -74,14 +74,19 @@ export const CHAINS: NeuronChain[] = [
     short: "Robinhood",
     color: "#12B886",
     chain: robinhoodTestnet,
-    // v3 (beta safety locks), Sep 28, 2026.
-    factory: "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
+    // v4 (optional creator lock), Sep 28, 2026.
+    factory: "0xda5a4EA92862e1b254E42E55Da8C10E4e0501746",
     startBlock: 123588465n,
     priceSymbol: "ETH",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-    router: "0x824aF6707F0f472Ea486E5adaABC1aE8b12C51E8",
-    migrator: "0xaA92cCcFa811EAEEB2972351E8b6B4F674692467",
+    router: "0xC61580cCAE3BC86854EEB062F61f9139c4e358ae",
+    migrator: "0x7b4f96D9229A65F1CF61e487082d1b086E9d4833",
     legacy: [
+      {
+        factory: "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
+        router: "0x824aF6707F0f472Ea486E5adaABC1aE8b12C51E8",
+        migrator: "0xaA92cCcFa811EAEEB2972351E8b6B4F674692467",
+      },
       {
         factory: "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
         router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
@@ -98,14 +103,19 @@ export const CHAINS: NeuronChain[] = [
     short: "Base",
     color: "#3B6FF5",
     chain: baseSepolia,
-    // v3 (beta safety locks), Sep 28, 2026.
-    factory: "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",
+    // v4 (optional creator lock), Sep 28, 2026.
+    factory: "0x0bE77729d6682ee64Ca6327AcA34e5FC555C6AC4",
     startBlock: 47265800n,
     priceSymbol: "ETH",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
-    router: "0x4c283e95627FA53beD6bA03dA2d1C6866e14c9f1",
-    migrator: "0xd9E69Af53576d320bd2c4dCf863240027156Fe92",
+    router: "0x2A3BfE65e2afbb160665c63F8fB0B0d31b1d52a2",
+    migrator: "0xD69E2a9Ff6914920625DfFc90AaF6A41C9A95685",
     legacy: [
+      {
+        factory: "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",
+        router: "0x4c283e95627FA53beD6bA03dA2d1C6866e14c9f1",
+        migrator: "0xd9E69Af53576d320bd2c4dCf863240027156Fe92",
+      },
       {
         factory: "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
         router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",

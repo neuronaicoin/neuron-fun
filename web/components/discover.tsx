@@ -7,6 +7,7 @@ import { coinHref, fetchTrades, isImageUrl, marketCapNative, type Coin, type Tra
 import { shortAddr } from "@/lib/format";
 import { ChainChip, timeAgo, usd } from "./coins";
 import { Sparkline } from "./spark";
+import { LockBadge } from "./lock";
 
 /** Market value in dollars: the biggest of the coin's chains (the one that matters). */
 export function coinMarketCapUsd(coin: Coin, ethUsd: number | null): number | null {
@@ -104,6 +105,7 @@ export function CoinTile({ coin, ethUsd, spark }: { coin: Coin; ethUsd: number |
             </span>
           ))}
         </div>
+        <LockBadge coinId={coin.id} size="sm" onArt className="absolute bottom-2 left-2" />
         {coin.graduatedOn ? (
           <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
         ) : pct >= 80 ? (

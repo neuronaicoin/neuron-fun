@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchLock, timeLeft } from "@/lib/lock";
 import { useEffect, useState } from "react";
 import { db, type Coin, type CurveInfo } from "@/lib/data";
 import { Skeleton } from "./coins";
@@ -99,6 +100,17 @@ async function readChecks(coin: Coin): Promise<Check[]> {
           ? { level: "warn", title: `${made} coins, none graduated`, detail: "This creator launches often; none have graduated so far." }
           : { level: "info", title: `${made} coins, none graduated yet`, detail: "A short track record so far." }
   );
+
+  // Optional creator lock (v4).
+  const until = await fetchLock(coin.id);
+  if (until && until > Date.now()) {
+    const at = new Date(until).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    checks.unshift({
+      level: "good",
+      title: `Creator's coins locked until ${at}`,
+      detail: `The creator chose to lock their coins at launch (${timeLeft(until)} left). Until then they can't sell or move them. Nobody can lift it early.`,
+    });
+  }
 
   // True for every sasa coin, by contract.
   checks.push({

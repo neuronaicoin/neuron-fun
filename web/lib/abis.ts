@@ -11,6 +11,9 @@ export const factoryAbi = parseAbi([
   "error BuysPaused()",
   "error CapReached(uint256 total, uint256 cap)",
   "error LaunchesClosed()",
+  "function launchLocked(string name, string symbol, string logo, string description, bytes32 launchKey, uint256 minTokensOut, uint8 feeMode, uint256 lockSeconds) payable returns (address curve, address token, uint256 tokensBought)",
+  "error CreatorLocked(uint256 until)",
+  "error LockTooLong()",
 ]);
 
 /** Beta safety locks on the v3 factory (see contracts/src/curve/NeuronCurveFactory.sol). */
