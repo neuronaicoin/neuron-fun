@@ -80,3 +80,16 @@ export const migratorAbi = parseAbi([
   "function buybackFunds(address token) view returns (uint256)",
   "function buyback(address token) returns (uint256 spent, uint256 burned)",
 ]);
+
+/** Auto orders (contracts/src/curve/SasaOrders.sol). */
+export const ordersAbi = parseAbi([
+  "function placeSell(address curve, address router, uint256 amount, uint256 minOut, uint256 maxOut, uint64 expiry) returns (uint256)",
+  "function placeBuy(address curve, address router, uint256 minOut, uint256 maxOut, uint64 expiry) payable returns (uint256)",
+  "function cancel(uint256 id)",
+  "function ordersOf(address owner) view returns (uint256[])",
+  "function orders(uint256 id) view returns (address owner, address curve, address token, address router, bool isBuy, bool open, uint64 expiry, uint256 amount, uint256 minOut, uint256 maxOut)",
+  "error NotOwner()",
+  "error NotOpen()",
+  "error Expired()",
+  "error BadOrder()",
+]);

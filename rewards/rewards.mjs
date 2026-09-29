@@ -18,7 +18,8 @@
 // Env:
 //   DATABASE_URL          Postgres (same as the indexer)
 //   REWARDS_PRIVATE_KEY   the rewards wallet's key (only here)
-//   CHAINS                JSON: [{ name, chainId, rpc, splitter, disperse, native? }]
+//   CHAINS                JSON: [{ name, chainId, rpc, splitter, disperse, orders?, native? }]
+//                         orders: the SasaOrders contract; its auto orders get filled here too
 //   PAYOUT_HOUR_UTC       hour to pay (default 0)
 //   MIN_PAYOUT_USD        smaller amounts wait for the next day (default 0.5)
 //   DAILY_CAP_USD         most paid per chain per day (default 500)
@@ -30,6 +31,7 @@
 import pg from "pg";
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, getAddress, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { ordersLoop } from "./orders.mjs";
 
 const env = (k, d) => {
   const v = process.env[k];
@@ -79,6 +81,7 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => {
     ...c,
     splitter: getAddress(c.splitter),
     disperse: getAddress(c.disperse),
+    orders: c.orders ? getAddress(c.orders) : null,
     pub: createPublicClient({ chain, transport: http(c.rpc) }),
     wallet: createWalletClient({ chain, account, transport: http(c.rpc) }),
   };
@@ -333,6 +336,10 @@ async function main() {
   for (const c of CHAINS) {
     const r = await c.pub.readContract({ address: c.splitter, abi: splitterAbi, functionName: "rewards" }).catch(() => null);
     if (r && getAddress(r) !== account.address) log(`WARNING ${c.name}: the splitter pays ${r}, not this wallet`);
+  }
+  // Auto orders run on their own, quicker loop (one per chain).
+  for (const c of CHAINS) {
+    void ordersLoop(c, pool, log, account).catch((e) => log(`${c.name} orders stopped: ${e.message}`));
   }
   let lastLedger = 0;
   for (;;) {

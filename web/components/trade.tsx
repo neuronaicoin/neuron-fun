@@ -18,6 +18,7 @@ import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
 import { openMoney, refreshPortfolio } from "@/lib/portfolio";
 import { routerOf, setOf } from "@/lib/contracts";
+import { AutoOrders } from "./autoorders";
 import { overCap, refreshSafety, useSafety } from "@/lib/safety";
 
 const PRESETS = [10, 25, 50, 100];
@@ -78,6 +79,9 @@ export function QuickTrade({
   const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
   const sellable = coin.curves;
   const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
+  // Auto orders (take profit, stop loss, buy the dip) live in their own tab.
+  const [auto, setAuto] = useState(false);
+  const autoReady = coin.curves.some((c) => !!c.chain.orders);
   const [usdIn, setUsdIn] = useState(initialUsd ?? "25");
   const [sellPct, setSellPct] = useState(initialSellPct ?? 100);
   const [picked, setPicked] = useState<string | null>(
@@ -356,23 +360,48 @@ export function QuickTrade({
           ? usd(Number(formatEther(quote)) * ethUsd, 2)
           : fmtEth(quote, 6);
 
+  const tabs = (
+    <div className={"grid gap-1 p-1 rounded-2xl bg-paper " + (autoReady ? "grid-cols-3" : "grid-cols-2")} role="tablist" aria-label="Buy, sell or auto">
+      {(["buy", "sell"] as const).map((s) => (
+        <button
+          key={s}
+          type="button"
+          role="tab"
+          aria-selected={!auto && side === s}
+          disabled={s === "buy" && !open.length}
+          onClick={() => { setAuto(false); setSide(s); setPicked(null); setError(""); setDone(null); }}
+          className={"h-11 rounded-xl text-[0.9375rem] font-bold disabled:opacity-30 " + (!auto && side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
+        >
+          {s === "buy" ? "Buy" : "Sell"}
+        </button>
+      ))}
+      {autoReady && (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={auto}
+          onClick={() => { setAuto(true); setError(""); setDone(null); }}
+          className={"h-11 rounded-xl text-[0.9375rem] font-bold flex items-center justify-center gap-1 " + (auto ? "bg-surface text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2")}
+        >
+          Auto
+          <span className="text-[0.5625rem] font-bold uppercase tracking-wide px-1 py-px rounded bg-emerald text-on-accent">new</span>
+        </button>
+      )}
+    </div>
+  );
+
+  if (auto) {
+    return (
+      <div className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"}>
+        {tabs}
+        <AutoOrders coin={coin} ethUsd={ethUsd} />
+      </div>
+    );
+  }
+
   return (
     <div className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"}>
-      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
-        {(["buy", "sell"] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            role="tab"
-            aria-selected={side === s}
-            disabled={s === "buy" && !open.length}
-            onClick={() => { setSide(s); setPicked(null); setError(""); setDone(null); }}
-            className={"h-11 rounded-xl text-[0.9375rem] font-bold disabled:opacity-30 " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
-          >
-            {s === "buy" ? "Buy" : "Sell"}
-          </button>
-        ))}
-      </div>
+      {tabs}
 
       {side === "buy" ? (
         <>

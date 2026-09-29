@@ -21,6 +21,7 @@ function systemAddrs(curves: CurveInfo[]): string[] {
   for (const c of curves) {
     out.add(c.curve.toLowerCase());
     out.add(c.chain.poolManager.toLowerCase());
+    if (c.chain.orders) out.add(c.chain.orders.toLowerCase());
     for (const s of allSets(c.chain)) {
       out.add(s.migrator.toLowerCase());
       out.add(s.router.toLowerCase());

@@ -37,6 +37,8 @@ export type NeuronChain = {
   alchemyNetwork: string;
   /** Where to get free test coins (testnets only). */
   faucet?: string;
+  /** Auto orders (take profit, stop loss, buy the dip) on this chain. */
+  orders?: Address;
   /** Multisig that owns this chain's factory (mainnet). Empty on testnet. */
   safe?: Address;
   /**
@@ -81,6 +83,7 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
     router: "0xC61580cCAE3BC86854EEB062F61f9139c4e358ae",
     migrator: "0x7b4f96D9229A65F1CF61e487082d1b086E9d4833",
+    orders: "0x3ece9F6A1057332B25c94825060Ed9FF7765061b",
     legacy: [
       {
         factory: "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
@@ -110,6 +113,7 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
     router: "0x2A3BfE65e2afbb160665c63F8fB0B0d31b1d52a2",
     migrator: "0xD69E2a9Ff6914920625DfFc90AaF6A41C9A95685",
+    orders: "0x6F43BfA2bC5d93D3067302f718A0fBAAc7B38a1d",
     legacy: [
       {
         factory: "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",

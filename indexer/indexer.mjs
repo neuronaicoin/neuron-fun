@@ -14,6 +14,7 @@
 //                   router:  the pool router(s), same format, so trades after
 //                            graduation are indexed too
 //   ADMINS          admin wallets for pause / capacity alerts (see safety.mjs)
+//   CHAINS[].orders the SasaOrders contract(s): trades it makes are credited to the order owner
 //   CONFIRMATIONS   blocks to stay behind the tip (default 3)
 //   MAX_RANGE       blocks per batch (default 2000)
 //   POLL_MS         pause when caught up (default 2500)
@@ -49,6 +50,8 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   // The live factory (new launches, beta locks) is the first one.
   factory: list(c.factory)[0],
   routers: list(c.router),
+  // Auto-orders contracts: their fills are credited to the order's owner.
+  orders: list(c.orders),
   startBlock: BigInt(c.startBlock ?? 0),
 }));
 
@@ -68,6 +71,9 @@ const curveEvents = parseAbi([
   "event Graduated(bytes32 indexed report, uint256 nativeToPool, uint256 tokensToPool, uint256 tokensBurned)",
 ]);
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
+const orderExecutedEvent = parseAbiItem(
+  "event Executed(uint256 indexed id, address indexed owner, address indexed curve, bool isBuy, uint256 amountIn, uint256 amountOut)"
+);
 const poolTradeEvent = parseAbiItem(
   "event PoolTrade(address indexed token, address indexed trader, bool indexed isBuy, uint256 nativeAmount, uint256 tokenAmount, uint160 sqrtPriceX96After)"
 );
@@ -199,6 +205,15 @@ async function indexRange(c, from, to) {
     curveLogs.sort((x, y) => (x.blockNumber === y.blockNumber ? x.logIndex - y.logIndex : x.blockNumber < y.blockNumber ? -1 : 1));
     const times = await blockTimes(pub, curveLogs.map((l) => l.blockNumber));
 
+    // Auto-order fills: the orders contract trades, but the trade is its owner's.
+    const orderOwner = new Map(); // tx hash -> owner
+    if (c.orders.length) {
+      const fills = await pub.getLogs({ address: c.orders, event: orderExecutedEvent, fromBlock: from, toBlock: to });
+      for (const f of fills) orderOwner.set(lc(f.transactionHash), lc(f.args.owner));
+    }
+    const isOrders = (a) => c.orders.some((o) => lc(o) === lc(a));
+    const traderOf = (a, tx) => (isOrders(a) ? orderOwner.get(lc(tx)) ?? lc(a) : lc(a));
+
     for (const l of curveLogs) {
       const k = known.byCurve.get(lc(l.address));
       const ts = times.get(String(l.blockNumber));
@@ -212,7 +227,7 @@ async function indexRange(c, from, to) {
            on conflict do nothing returning 1`,
           [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ts, k.curve, k.coin_id,
            // The opening buy is made by the factory on the creator's behalf: credit the creator.
-           c.factories.some((f) => lc(f) === lc(a.trader)) ? k.creator : lc(a.trader), a.isBuy,
+           c.factories.some((f) => lc(f) === lc(a.trader)) ? k.creator : traderOf(a.trader, l.transactionHash), a.isBuy,
            a.nativeAmount.toString(), a.tokenAmount.toString(), a.fee.toString(), price]
         );
         if (ins.rowCount) {
@@ -254,7 +269,7 @@ async function indexRange(c, from, to) {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            on conflict do nothing returning 1`,
           [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ptimes.get(String(l.blockNumber)), k.curve, k.coin_id,
-           lc(a.trader), a.isBuy, a.nativeAmount.toString(), a.tokenAmount.toString(), fee.toString(), nativePerToken.toPrecision(18)]
+           traderOf(a.trader, l.transactionHash), a.isBuy, a.nativeAmount.toString(), a.tokenAmount.toString(), fee.toString(), nativePerToken.toPrecision(18)]
         );
         if (ins.rowCount && nativePerToken > 0) {
           // Keep the market value current: virtual_native / virtual_token = pool price.
