@@ -11,10 +11,27 @@ import { aiIdeas, aiLogo, IDEA_SPARKS, type AiIdea } from "@/lib/ai";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 
-type Card = AiIdea & { logo: string | null; logoState: "loading" | "done" | "failed" };
+type Card = AiIdea & { logo: string | null; logoState: "loading" | "done" | "failed"; logoError?: string };
 export type AiPick = { name: string; symbol: string; description: string; logo: string | null };
 
-export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | void }) {
+/** A picture as the same small JPEG an upload becomes (stored with the coin). */
+async function toCoinLogo(dataUrl: string): Promise<string | null> {
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    return await fileToLogo(new File([blob], "logo.jpg", { type: blob.type || "image/jpeg" }));
+  } catch {
+    return null;
+  }
+}
+
+export function AiLaunch({
+  onPick,
+  onLogo,
+}: {
+  onPick: (p: AiPick) => Promise<void> | void;
+  /** A picture that arrived after its idea was already picked. */
+  onLogo?: (logo: string) => void;
+}) {
   const { address, signMessage } = useWallet();
   const [idea, setIdea] = useState("");
   const [spark, setSpark] = useState<string | null>(null);
@@ -23,16 +40,23 @@ export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | vo
   const [error, setError] = useState("");
   const [chosen, setChosen] = useState<number | null>(null);
   const run = useRef(0);
+  const chosenRef = useRef<number | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
   async function drawLogo(i: number, art: string, id: number) {
     try {
       const img = await aiLogo(signMessage, art);
       if (run.current !== id) return;
-      setCards((c) => c && c.map((x, k) => (k === i ? { ...x, logo: img, logoState: "done" } : x)));
-    } catch {
+      setCards((c) => c && c.map((x, k) => (k === i ? { ...x, logo: img, logoState: "done", logoError: undefined } : x)));
+      // Picked while it was still drawing: hand the picture over now.
+      if (chosenRef.current === i && onLogo) {
+        const small = await toCoinLogo(img);
+        if (small && run.current === id && chosenRef.current === i) onLogo(small);
+      }
+    } catch (e) {
       if (run.current !== id) return;
-      setCards((c) => c && c.map((x, k) => (k === i ? { ...x, logoState: "failed" } : x)));
+      const msg = friendlyError(e);
+      setCards((c) => c && c.map((x, k) => (k === i ? { ...x, logoState: "failed", logoError: msg } : x)));
     }
   }
 
@@ -42,6 +66,7 @@ export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | vo
     setBusy(true);
     setError("");
     setChosen(null);
+    chosenRef.current = null;
     setCards(null);
     try {
       const list = await aiIdeas(signMessage, text);
@@ -60,16 +85,8 @@ export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | vo
     const c = cards?.[i];
     if (!c) return;
     setChosen(i);
-    let logo: string | null = null;
-    if (c.logo) {
-      try {
-        // Same size and format as an uploaded picture (a small JPEG stored with the coin).
-        const blob = await (await fetch(c.logo)).blob();
-        logo = await fileToLogo(new File([blob], "logo.jpg", { type: blob.type || "image/jpeg" }));
-      } catch {
-        logo = null;
-      }
-    }
+    chosenRef.current = i;
+    const logo = c.logo ? await toCoinLogo(c.logo) : null;
     await onPick({ name: c.name, symbol: c.symbol, description: c.description, logo });
   }
 
@@ -166,8 +183,29 @@ export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | vo
                   ) : c.logoState === "loading" ? (
                     <span className="shimmer absolute inset-0" />
                   ) : (
-                    <span className="absolute inset-0 flex items-center justify-center font-display font-bold text-[1.5rem] text-white/90 bg-gradient-to-br from-emerald to-[#7c3aed]">
-                      {c.symbol.slice(0, 2)}
+                    <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-emerald to-[#7c3aed] text-white">
+                      <span className="font-display font-bold text-[1.25rem] sm:text-[1.5rem] opacity-90">{c.symbol.slice(0, 2)}</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={c.logoError}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCards((cs) => cs && cs.map((x, k) => (k === i ? { ...x, logoState: "loading", logoError: undefined } : x)));
+                          void drawLogo(i, c.art, run.current);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setCards((cs) => cs && cs.map((x, k) => (k === i ? { ...x, logoState: "loading", logoError: undefined } : x)));
+                            void drawLogo(i, c.art, run.current);
+                          }
+                        }}
+                        className="text-[0.625rem] sm:text-[0.75rem] font-semibold bg-black/30 rounded-full px-2 py-0.5 hover:bg-black/45"
+                      >
+                        ↻ Draw again
+                      </span>
                     </span>
                   )}
                 </span>
@@ -179,6 +217,12 @@ export function AiLaunch({ onPick }: { onPick: (p: AiPick) => Promise<void> | vo
               </button>
             ))}
         </div>
+      )}
+      {cards && !busy && cards.some((c) => c.logoState === "failed") && (
+        <p className="text-[0.75rem] text-warn-ink mt-2">
+          Some pictures didn&apos;t come out. Tap &quot;Draw again&quot;, or upload your own below.{" "}
+          {cards.find((c) => c.logoError?.startsWith("Admin view"))?.logoError ?? ""}
+        </p>
       )}
       {cards && !busy && (
         <p className="text-[0.75rem] text-ink-3 mt-2">

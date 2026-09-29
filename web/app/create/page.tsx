@@ -54,6 +54,20 @@ export default function CreatePage() {
   const [feeMode, setFeeMode] = useState<0 | 1 | 2>(0);
   // Optional creator lock (seconds): your coins can't be sold or moved until it ends.
   const [lock, setLock] = useState<0 | 3600 | 86400>(0);
+  // "Create your coin with AI": the same page with the AI helper on top (?ai=1).
+  const [aiMode, setAiMode] = useState(false);
+  useEffect(() => {
+    setAiMode(new URLSearchParams(window.location.search).get("ai") === "1");
+  }, []);
+  const setMode = (on: boolean) => {
+    setAiMode(on);
+    const q = new URLSearchParams(window.location.search);
+    if (on) q.set("ai", "1");
+    else q.delete("ai");
+    const rest = q.toString();
+    window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const [terms, setTerms] = useState<Record<string, Terms>>({});
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [launchKey, setLaunchKey] = useState<Hex | null>(null);
@@ -164,29 +178,69 @@ export default function CreatePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-12">
       <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
-      <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.875rem] tracking-tight sm:mt-2">Launch a coin</h1>
+      <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.875rem] tracking-tight sm:mt-2">
+        {aiMode ? (
+          <>
+            Create your coin <span className="bg-gradient-to-r from-emerald to-[#f472b6] bg-clip-text text-transparent">with AI</span>
+          </>
+        ) : (
+          "Launch a coin"
+        )}
+      </h1>
       <p className="text-ink-2 mt-1 sm:mt-2 text-[0.875rem] sm:text-[1rem] max-w-2xl">
-        A name, a ticker and a picture. It goes live on every chain you pick, in one go. Let AI design it for you, or fill it in yourself.
+        {aiMode
+          ? "Describe your idea, pick the design you love, then launch it on every chain you choose. Everything stays editable."
+          : "A name, a ticker and a picture. It goes live on every chain you pick, in one go. Everything else is optional."}
       </p>
+      {aiMode && (
+        <button type="button" onClick={() => setMode(false)} className="mt-2 text-[0.875rem] font-semibold text-ink-3 hover:text-ink">
+          ← Create without AI
+        </button>
+      )}
 
-      <div className="mt-4 sm:mt-8 lg:max-w-[calc(100%-404px)]">
-        <AiLaunch
-          onPick={(p) => {
-            setName(p.name);
-            setSymbol(p.symbol);
-            setDescription(p.description);
-            if (p.logo) {
-              setLogo(p.logo);
-              setPicError("");
-            }
-          }}
-        />
-      </div>
-      <div className="flex items-center gap-3 text-[0.8125rem] text-ink-3 mt-6 lg:max-w-[calc(100%-404px)]" aria-hidden="true">
-        <span className="h-px flex-1 bg-line" />
-        or fill it in yourself
-        <span className="h-px flex-1 bg-line" />
-      </div>
+      {!aiMode ? (
+        <button
+          type="button"
+          onClick={() => setMode(true)}
+          className="group mt-4 sm:mt-6 w-full sm:w-auto inline-flex items-center gap-3 rounded-2xl pl-3 pr-5 py-3 text-left text-white bg-gradient-to-r from-emerald via-[#ff7a2e] to-[#f472b6] shadow-[0_10px_30px_rgba(242,96,12,0.3)] hover:brightness-105"
+        >
+          <span className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-[1.25rem] shrink-0" aria-hidden="true">
+            ✨
+          </span>
+          <span className="min-w-0">
+            <span className="block font-bold text-[1rem] sm:text-[1.0625rem] leading-tight">Create your coin with AI</span>
+            <span className="block text-[0.8125rem] text-white/85 leading-snug mt-0.5">One sentence in. Name, ticker, story and logo out.</span>
+          </span>
+          <span className="ml-auto pl-2 text-[1.25rem] transition-transform group-hover:translate-x-0.5" aria-hidden="true">
+            →
+          </span>
+        </button>
+      ) : (
+        <>
+          <div className="mt-4 sm:mt-6 lg:max-w-[calc(100%-404px)]">
+            <AiLaunch
+              onPick={(p) => {
+                setName(p.name);
+                setSymbol(p.symbol);
+                setDescription(p.description);
+                if (p.logo) {
+                  setLogo(p.logo);
+                  setPicError("");
+                }
+              }}
+              onLogo={(l) => {
+                setLogo(l);
+                setPicError("");
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-3 text-[0.8125rem] text-ink-3 mt-6 lg:max-w-[calc(100%-404px)]" aria-hidden="true">
+            <span className="h-px flex-1 bg-line" />
+            your coin, ready to edit
+            <span className="h-px flex-1 bg-line" />
+          </div>
+        </>
+      )}
 
       <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-7 grid gap-5 sm:gap-6">

@@ -17,7 +17,27 @@ const TEXT_MODELS = [
   "@cf/zai-org/glm-4.7-flash",
   "@cf/google/gemma-4-26b-a4b-it",
 ];
-const IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
+// Tried in order. flux answers { image: base64 JPEG }; the others answer raw PNG bytes.
+const IMAGE_MODELS = [
+  ["@cf/black-forest-labs/flux-1-schnell", (prompt) => ({ prompt, steps: 4 })],
+  ["@cf/bytedance/stable-diffusion-xl-lightning", (prompt) => ({ prompt, num_steps: 4, width: 512, height: 512 })],
+  ["@cf/lykon/dreamshaper-8-lcm", (prompt) => ({ prompt, num_steps: 8, width: 512, height: 512 })],
+];
+
+/** The picture as a data URL, whatever shape the model returned. */
+async function imageOf(out) {
+  if (!out) return null;
+  if (typeof out.image === "string" && out.image.length > 100) return `data:image/jpeg;base64,${out.image}`;
+  let bytes = null;
+  if (out instanceof Uint8Array) bytes = out;
+  else if (out instanceof ArrayBuffer) bytes = new Uint8Array(out);
+  else if (typeof out.getReader === "function") bytes = new Uint8Array(await new Response(out).arrayBuffer());
+  if (!bytes || bytes.length < 100) return null;
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+  return `data:image/${jpeg ? "jpeg" : "png"};base64,${btoa(bin)}`;
+}
 
 /** The generated text, whatever envelope the model uses. */
 function textOf(out) {
@@ -167,23 +187,24 @@ export async function aiRoute(ctx, me, parts, method, body) {
     const prompt =
       `Cute meme coin mascot logo: ${art}. Centered single character, bold simple shapes, vibrant colors, ` +
       "soft gradient background, flat vector illustration, sticker style, no text, no letters, no watermark.";
-    let out = null;
+    let image = null;
     let lastErr = null;
-    // The image model's safety check sometimes trips on harmless words; a plainer prompt usually passes.
-    for (const p of [prompt, `Cute cartoon mascot logo, ${art.split(/[,.]/)[0]}, flat vector, vibrant colors, no text`]) {
-      try {
-        out = await env.AI.run(IMAGE_MODEL, { prompt: p, num_steps: 4 });
-        if (out && typeof out.image === "string") break;
-      } catch (e) {
-        lastErr = e;
-        console.error("ai logo", e && e.message);
+    // A safety check sometimes trips on harmless words; a plainer prompt usually passes.
+    const plain = `Cute cartoon mascot logo, ${art.split(/[,.]/)[0]}, flat vector, vibrant colors, no text`;
+    outer: for (const [model, input] of IMAGE_MODELS) {
+      for (const p of [prompt, plain]) {
+        try {
+          image = await imageOf(await env.AI.run(model, input(p)));
+          if (image) break outer;
+          lastErr = new Error(`${model}: empty picture`);
+        } catch (e) {
+          lastErr = e;
+          console.error("ai logo", model, e && e.message);
+        }
       }
     }
-    if (!out || typeof out.image !== "string")
-      return fail(503, adminView ? adminMsg(lastErr) : `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}`);
-    const b64 = out && typeof out.image === "string" ? out.image : null;
-    if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64.slice(0, 200))) return fail(502, "Couldn't draw a picture right now. Try again.");
-    return json({ image: `data:image/jpeg;base64,${b64}` });
+    if (!image) return fail(503, adminView ? adminMsg(lastErr) : `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}`);
+    return json({ image });
   }
 
   return fail(404, "Not found.");
