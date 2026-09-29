@@ -15,7 +15,7 @@ import { PriceChart, TradesFeed } from "@/components/market";
 import { LiveStats } from "@/components/livestats";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
-import { ShareButton } from "@/components/share";
+import { ShareButton, coinShareUrl, postOnX } from "@/components/share";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
@@ -142,6 +142,15 @@ function CoinPage() {
             ${coin.symbol} now trades in a locked pool on {winner.chain.short}. That is where the coin lives from here on.
             On the other chains buying has stopped; holders there can take their money back at any time.
           </p>
+          <button
+            type="button"
+            onClick={() =>
+              postOnX(`$${coin.symbol} just graduated on ${winner.chain.short} 🎓 Liquidity locked forever on @sasapadfun`, coinShareUrl(coin.id))
+            }
+            className="mt-4 h-11 px-4 rounded-xl bg-ink text-mist font-bold inline-flex items-center gap-2"
+          >
+            🎓 Share the win on X
+          </button>
         </div>
       )}
 

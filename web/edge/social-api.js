@@ -7,6 +7,7 @@
 //   POST /api/social/copy-list     {}                                      → { copying, results }
 //   POST /api/social/signals       {}                                      → { signals, coins }
 //   POST /api/social/signal        { id, action: "apply"|"reject", tx? }   → { ok }
+//   POST /api/social/quest         { id: "follow_x" | "share_x" }         → { ok }
 //   POST /api/social/links         { coinId, x, telegram, website }        → { ok, links }
 //   POST /api/social/referral      { ref }                                 → { ok, referrer? , reason? }
 import { cleanTelegram, cleanWebsite, cleanX } from "../lib/links.js";
@@ -201,6 +202,24 @@ export async function socialRoute(ctx, me, parts, method, body) {
       prefer: "return=representation",
     });
     if (!done || !done.length) return fail(409, "This signal was already handled or has expired.");
+    return json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------- X quests
+
+  // POST /api/social/quest { id: "follow_x" | "share_x" }
+  // One-time points for following @sasapadfun and sharing on X. X doesn't let
+  // us check this for free, so it counts the tap; each is worth it only once.
+  if (p[0] === "quest" && p.length === 1 && method === "POST") {
+    const QUESTS = { follow_x: 50, share_x: 100 };
+    const id = typeof body.id === "string" ? body.id : "";
+    const pts = QUESTS[id];
+    if (!pts) return fail(400, "Unknown quest.");
+    await sec(env, "points_events?on_conflict=owner,kind,ref", {
+      method: "POST",
+      body: { owner: me, kind: "quest", ref: id, pts },
+      prefer: "resolution=ignore-duplicates",
+    });
     return json({ ok: true });
   }
 

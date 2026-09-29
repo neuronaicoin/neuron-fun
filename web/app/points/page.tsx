@@ -10,15 +10,16 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { toast } from "@/components/alerts";
 import { Avatar } from "@/components/social";
+import { followOnX, postOnX } from "@/components/share";
 import { Skeleton, usd } from "@/components/coins";
 import { fetchPrices } from "@/lib/price";
 import { displayName, profileHref, useProfiles } from "@/lib/social";
-import { QUESTS, boostFor, fetchBoard, fetchMyPoints, fetchRewards, type BoardRow, type MyPoints, type Rewards } from "@/lib/points";
+import { claimQuest, QUESTS, boostFor, fetchBoard, fetchMyPoints, fetchRewards, type BoardRow, type MyPoints, type Rewards } from "@/lib/points";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function PointsPage() {
-  const { address } = useWallet();
+  const { address, signMessage } = useWallet();
   const me = address?.toLowerCase() ?? null;
   const [mine, setMine] = useState<MyPoints | null>(null);
   const [board, setBoard] = useState<BoardRow[] | null>(null);
@@ -53,17 +54,31 @@ export default function PointsPage() {
   const boost = boostFor(mine?.streak ?? 0);
   const toUsd = (wei: number) => (ethUsd ? usd((wei / 1e18) * ethUsd, 2) : `${(wei / 1e18).toFixed(5)} ETH`);
 
+  async function questAction(a: "follow" | "share") {
+    if (a === "share") {
+      shareOnX();
+      return;
+    }
+    followOnX();
+    if (!address) return;
+    try {
+      await claimQuest(signMessage, "follow_x");
+      setMine((m) => (m && !m.quests.includes("follow_x") ? { ...m, quests: [...m.quests, "follow_x"], total: m.total + 50 } : m));
+      toast("Thanks for following! +50 points");
+    } catch {}
+  }
+
+  function shareOnX() {
+    postOnX(
+      inviteLink
+        ? "I'm on @sasapadfun, the meme coin launchpad that launches on every chain at once 🚀 Join with my link and start with 100 points 👇"
+        : "Found @sasapadfun: launch a meme coin on every chain at once, designed by AI from one sentence 🚀",
+      inviteLink || "https://sasapad.fun"
+    );
+  }
+
   async function share() {
     if (!inviteLink) return;
-    const text = "Join me on sasa, the multi-chain meme coin launchpad. You start with 100 points:";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: "sasa", text, url: inviteLink });
-        return;
-      }
-    } catch {
-      return; // closed the share sheet
-    }
     try {
       await navigator.clipboard.writeText(inviteLink);
       toast("Invite link copied");
@@ -135,9 +150,19 @@ export default function PointsPage() {
                   ) : (
                     <span className="flex items-center gap-2 shrink-0">
                       <span className="font-mono font-bold text-[0.8125rem] text-warn-ink">+{q.pts}</span>
-                      <Link href={q.href} className="h-8 px-3 rounded-lg border border-line bg-paper text-[0.75rem] font-bold flex items-center hover:border-emerald">
-                        Go
-                      </Link>
+                      {q.action ? (
+                        <button
+                          type="button"
+                          onClick={() => void questAction(q.action!)}
+                          className="h-8 px-3 rounded-lg border border-line bg-paper text-[0.75rem] font-bold flex items-center hover:border-emerald"
+                        >
+                          Go
+                        </button>
+                      ) : (
+                        <Link href={q.href ?? "/"} className="h-8 px-3 rounded-lg border border-line bg-paper text-[0.75rem] font-bold flex items-center hover:border-emerald">
+                          Go
+                        </Link>
+                      )}
                     </span>
                   )}
                 </li>
@@ -176,10 +201,17 @@ export default function PointsPage() {
                     aria-label="Your invite link"
                     className="flex-1 min-w-0 h-11 rounded-xl border border-line bg-surface px-3 font-mono text-[0.75rem] sm:text-[0.8125rem]"
                   />
-                  <button type="button" onClick={() => void share()} className="h-11 px-4 rounded-xl bg-emerald text-on-accent font-bold shrink-0">
-                    Share
+                  <button type="button" onClick={() => void share()} className="h-11 px-4 rounded-xl border border-line bg-surface font-bold shrink-0">
+                    Copy
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={shareOnX}
+                  className="mt-2 w-full h-11 rounded-xl bg-ink text-mist font-bold flex items-center justify-center gap-2"
+                >
+                  <XLogo /> Post my invite on X
+                </button>
                 <div className="grid grid-cols-3 gap-2 mt-3 text-center">
                   <Mini value={fmt(mine?.friends ?? 0)} label="friends joined" />
                   <Mini value={`+${fmt(mine?.friendsPts ?? 0)}`} label="points from friends" />
@@ -282,5 +314,13 @@ function Daily({ icon, title, note, pts }: { icon: string; title: string; note: 
       </span>
       <span className="font-mono font-bold text-[0.8125rem] text-warn-ink shrink-0">{pts}</span>
     </li>
+  );
+}
+
+function XLogo() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { coinShareUrl, postOnX } from "@/components/share";
 import { toast } from "@/components/alerts";
 import { EMPTY_DRAFT, LinkFields, draftProblems, draftToLinks, type LinkDraft } from "@/components/coinlinks";
 import { saveLinks } from "@/lib/coinlinks";
@@ -190,7 +191,23 @@ export default function CreatePage() {
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {chosen.map((c) => <ChainChip key={c.key} chain={c} />)}
         </div>
-        <Link href={coinHref({ creator: address, launchKey })} className="mt-8 h-13 rounded-2xl bg-emerald text-on-accent font-bold flex items-center justify-center">
+        <button
+          type="button"
+          onClick={() =>
+            postOnX(
+              `I just launched $${cleanSymbol} on @sasapadfun 🚀 Live on ${chosen.map((c) => c.short).join(" + ")} at once. Be early 👇`,
+              coinShareUrl(`${address.toLowerCase()}:${launchKey}`)
+            )
+          }
+          className="mt-8 w-full h-13 rounded-2xl bg-ink text-mist font-bold flex items-center justify-center gap-2"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+          Share your coin on X
+        </button>
+        <p className="text-[0.75rem] text-ink-3 mt-2">First share earns you 100 points. Coins that get shared get buyers.</p>
+        <Link href={coinHref({ creator: address, launchKey })} className="mt-4 h-13 rounded-2xl bg-emerald text-on-accent font-bold flex items-center justify-center">
           Go to your coin
         </Link>
       </div>

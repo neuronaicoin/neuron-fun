@@ -17,7 +17,10 @@ export type MyPoints = {
 export type BoardRow = { owner: string; total: number; rank: number };
 export type Rewards = { earned: number; paid: number; pending: number; friends: number; friendsTraded: number };
 
-export const QUESTS = [
+type Quest = { id: string; icon: string; title: string; note: string; pts: number; href?: string; action?: "follow" | "share" };
+export const QUESTS: readonly Quest[] = [
+  { id: "follow_x", icon: "𝕏", title: "Follow @sasapadfun on X", note: "News, launches and giveaways", pts: 50, action: "follow" },
+  { id: "share_x", icon: "📣", title: "Share sasa on X", note: "Post your invite link or a coin", pts: 100, action: "share" },
   { id: "launch", icon: "🚀", title: "Launch your first coin", note: "Any chain, any idea", pts: 200, href: "/create/" },
   { id: "ai", icon: "✨", title: "Create a coin with AI", note: "Try the AI designer once", pts: 100, href: "/create/?ai=1" },
   { id: "buy", icon: "🛒", title: "Make your first buy", note: "Any coin", pts: 50, href: "/explore/" },
@@ -26,7 +29,12 @@ export const QUESTS = [
   { id: "alert", icon: "🔔", title: "Set a price alert", note: "Tap the bell on any coin", pts: 30, href: "/explore/" },
   { id: "forum", icon: "💬", title: "Post in a coin forum", note: "As a holder", pts: 50, href: "/forum/" },
   { id: "locked", icon: "🔒", title: "Launch with a creator lock", note: "1 hour or 24 hours", pts: 150, href: "/create/" },
-] as const;
+];
+
+/** Marks an X quest done (follow / share). Each counts once; repeats are ignored. */
+export async function claimQuest(sign: SignFn, id: "follow_x" | "share_x"): Promise<void> {
+  await authedPost<{ ok: boolean }>(sign, "social/quest", { id });
+}
 
 const n = (v: unknown) => Number(v ?? 0) || 0;
 

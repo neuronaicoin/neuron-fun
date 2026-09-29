@@ -13,11 +13,25 @@ export const coinShareUrl = (coinId: string) => `${SITE}/coin/?id=${encodeURICom
 export const coinCardUrl = (coinId: string) =>
   `${SUPABASE_URL}/storage/v1/object/public/cards/${coinId.toLowerCase().replace(/[^0-9a-z]/g, "-")}.png`;
 
-/** Opens X's composer with text and a link (X adds the link's card itself). */
+export const SASA_X = "sasapadfun";
+/** Fired whenever someone opens the X composer from sasa (the points quest listens). */
+export const SHARED_X_EVENT = "sasa:shared-x";
+
+/**
+ * Opens X's composer with text and a link (X adds the link's card itself).
+ * Every post mentions @sasapadfun, so each share also shows people where it came from.
+ */
 export function postOnX(text: string, url?: string) {
-  const q = new URLSearchParams({ text });
+  const t = /@sasapadfun/i.test(text) ? text : `${text}\n\nvia @${SASA_X}`;
+  const q = new URLSearchParams({ text: t });
   if (url) q.set("url", url);
   window.open(`https://x.com/intent/post?${q.toString()}`, "_blank", "noopener,noreferrer");
+  window.dispatchEvent(new Event(SHARED_X_EVENT));
+}
+
+/** Opens X's "follow @sasapadfun" screen. */
+export function followOnX() {
+  window.open(`https://x.com/intent/follow?screen_name=${SASA_X}`, "_blank", "noopener,noreferrer");
 }
 
 export function ShareButton({ coin }: { coin: Coin }) {
@@ -26,8 +40,8 @@ export function ShareButton({ coin }: { coin: Coin }) {
   const [imgOk, setImgOk] = useState(true);
   const url = coinShareUrl(coin.id);
   const text = coin.graduatedOn
-    ? `$${coin.symbol} graduated on ${coin.graduatedOn.chain.short} 🎓 Liquidity locked forever.`
-    : `$${coin.symbol} is racing on every chain at once 🏁 ${Math.round(coin.progress * 100)}% to graduation.`;
+    ? `$${coin.symbol} graduated on ${coin.graduatedOn.chain.short} 🎓 Liquidity locked forever on @${SASA_X}`
+    : `$${coin.symbol} is racing on every chain at once 🏁 ${Math.round(coin.progress * 100)}% to graduation on @${SASA_X}`;
   const canNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   return (
