@@ -27,6 +27,7 @@
 import { createPublicClient, defineChain, getAddress, http, isAddress, recoverMessageAddress } from "viem";
 import { forumRoute } from "../../edge/forum-api.js";
 import { socialRoute } from "../../edge/social-api.js";
+import { admins } from "../../edge/forum-core.js";
 import { aiRoute } from "../../edge/ai-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -358,6 +359,7 @@ export async function onRequest(ctx) {
   }
   if (method === "OPTIONS") return new Response(null, { status: 204 });
 
+  let who = null; // for the admin-only error detail below
   try {
     // Profile pictures travel as a data URL (a 256px WebP is ~10-40 KB); everything else stays small.
     const limit = parts[0] === "social" && parts[1] === "avatar" ? 400_000 : 8192;
@@ -367,6 +369,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "session" && parts.length === 1 && method === "POST") return await session(env, request, body);
 
     const me = await readToken(env.SESSION_SECRET, request.headers.get("authorization"));
+    who = me;
     if (!me) return fail(401, "Please sign in again.");
 
     if (parts[0] === "alerts") {
@@ -391,6 +394,10 @@ export async function onRequest(ctx) {
     return fail(404, "Not found.");
   } catch (e) {
     console.error("api error", e && e.message);
+    // Admins (FORUM_ADMINS) see what actually failed, so problems can be fixed fast.
+    if (who && admins(env).includes(String(who).toLowerCase())) {
+      return fail(500, `Admin view: ${String((e && e.message) || e).slice(0, 180)}`);
+    }
     return fail(500, "Something went wrong. Try again in a moment.");
   }
 }

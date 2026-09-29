@@ -8,6 +8,7 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { Avatar, FollowButton } from "@/components/social";
 import { CopyBadge, CopyButton } from "@/components/copy";
+import { TraderBubbles } from "@/components/traderbubbles";
 import { Skeleton, timeAgo, usd } from "@/components/coins";
 import { coinHref, db, type Trade } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
@@ -74,6 +75,7 @@ function Traders() {
 
 function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
   const [period, setPeriod] = useState<Period>("w");
+  const [view, setView] = useState<"bubbles" | "list">("bubbles");
   const [rows, setRows] = useState<TraderStats[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -88,7 +90,8 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
     <>
       <h1 className="font-display font-semibold text-[1.75rem] sm:text-[2.25rem] tracking-tight mt-6">Top traders</h1>
       <p className="text-ink-2 mt-1">Ranked by profit from sells. A small minimum volume keeps one lucky trade off the top.</p>
-      <div className="flex gap-1 p-1 rounded-2xl bg-paper border border-line w-max mt-4" role="group" aria-label="Period">
+      <div className="flex items-center justify-between gap-2 flex-wrap mt-4">
+      <div className="flex gap-1 p-1 rounded-2xl bg-paper border border-line w-max" role="group" aria-label="Period">
         {(
           [
             ["d", "Today"],
@@ -107,11 +110,32 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
           </button>
         ))}
       </div>
+      <div className="flex gap-1 p-1 rounded-2xl bg-paper border border-line w-max" role="group" aria-label="View">
+        {(
+          [
+            ["bubbles", "🫧 Bubbles"],
+            ["list", "List"],
+          ] as const
+        ).map(([k, l]) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={view === k}
+            onClick={() => setView(k)}
+            className={"h-9 px-3.5 rounded-xl text-[0.8125rem] font-semibold " + (view === k ? "bg-surface text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2")}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      </div>
       {error && <p className="text-danger text-[0.875rem] mt-4">{error}</p>}
       {rows === null && !error ? (
         <Skeleton className="h-64 w-full mt-4" />
       ) : rows && rows.length === 0 ? (
         <p className="text-ink-2 mt-6">No one qualifies yet for this period. Trade and you could be first.</p>
+      ) : view === "bubbles" && rows ? (
+        <TraderBubbles rows={rows} profiles={profiles} ethUsd={ethUsd} />
       ) : (
         <ol className="mt-4 bg-surface border border-line rounded-2xl divide-y divide-line">
           {(rows ?? []).map((r, i) => {
