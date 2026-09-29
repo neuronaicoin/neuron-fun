@@ -12,6 +12,8 @@ import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
 import { BalancePill, MoneyHost } from "./portfolio";
 import { SocialSync } from "./social";
+import { RefCapture } from "./refcapture";
+import { useMyTotal } from "@/lib/points";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -210,16 +212,20 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   );
 }
 
+// `from`: the screen width a link first shows in the top bar, so it never
+// overflows on tablets (md), small laptops (lg) or wide screens (xl).
 const NAV = [
-  { href: "/explore/", label: "Explore" },
-  { href: "/terminal/", label: "Terminal" },
-  { href: "/create/", label: "Create a coin" },
-  { href: "/me/", label: "Your coins" },
-  { href: "/traders/", label: "Traders" },
-  { href: "/copy/", label: "Copy" },
-  { href: "/forum/", label: "Forum" },
-  { href: "/stats/", label: "Stats" },
-];
+  { href: "/explore/", label: "Explore", from: "md" },
+  { href: "/terminal/", label: "Terminal", from: "md" },
+  { href: "/create/", label: "Create a coin", from: "md" },
+  { href: "/me/", label: "Your coins", from: "md" },
+  { href: "/traders/", label: "Traders", from: "lg" },
+  { href: "/copy/", label: "Copy", from: "lg" },
+  { href: "/points/", label: "⚡ Points", from: "lg" },
+  { href: "/forum/", label: "Forum", from: "xl" },
+  { href: "/stats/", label: "Stats", from: "xl" },
+] as const;
+const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline" } as const;
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -235,15 +241,19 @@ export function Header() {
           <LogoMark />
           <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
         </Link>
-        <nav aria-label="Main" className="hidden md:flex items-center gap-4 lg:gap-6 xl:gap-7 text-[0.875rem] lg:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
+        <nav aria-label="Main" className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 text-[0.8125rem] lg:text-[0.875rem] xl:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
             n.href === "/forum/" ? (
               // The forum is server-rendered HTML, not part of the app: a normal link.
-              <a key={n.href} href={n.href} className="text-ink hover:text-emerald">
+              <a key={n.href} href={n.href} className={"text-ink hover:text-emerald " + SHOW_FROM[n.from]}>
                 {n.label}
               </a>
             ) : (
-              <Link key={n.href} href={n.href} className={isActive(pathname, n.href) ? "text-emerald" : "text-ink hover:text-emerald"}>
+              <Link
+                key={n.href}
+                href={n.href}
+                className={(isActive(pathname, n.href) ? "text-emerald " : "text-ink hover:text-emerald ") + SHOW_FROM[n.from]}
+              >
                 {n.label}
               </Link>
             )
@@ -253,6 +263,8 @@ export function Header() {
           <AlertsSync />
           <MoneyHost />
           <SocialSync />
+          <RefCapture />
+          <PointsPill />
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />
@@ -267,7 +279,7 @@ export function BottomNav() {
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       <div className="grid grid-cols-4">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
@@ -348,5 +360,22 @@ export function Footer() {
         </nav>
       </div>
     </footer>
+  );
+}
+
+/** ⚡ your points on very wide screens; elsewhere the "⚡ Points" link (and the You page on phones) leads there. */
+function PointsPill() {
+  const { address } = useWallet();
+  const total = useMyTotal(address);
+  if (!address || total === null) return null;
+  return (
+    <Link
+      href="/points/"
+      title="Your points"
+      className="hidden 2xl:flex h-11 items-center gap-1.5 px-3 rounded-2xl border border-line bg-surface font-bold text-[0.875rem] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] hover:border-emerald/60"
+    >
+      <span aria-hidden="true">⚡</span>
+      <span className="font-mono tabular-nums">{total.toLocaleString("en-US")}</span>
+    </Link>
   );
 }

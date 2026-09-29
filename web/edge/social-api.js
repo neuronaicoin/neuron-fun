@@ -7,6 +7,7 @@
 //   POST /api/social/copy-list     {}                                      → { copying, results }
 //   POST /api/social/signals       {}                                      → { signals, coins }
 //   POST /api/social/signal        { id, action: "apply"|"reject", tx? }   → { ok }
+//   POST /api/social/referral      { ref }                                 → { ok, referrer? , reason? }
 import { admins, q, sec } from "./forum-core.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -199,6 +200,40 @@ export async function socialRoute(ctx, me, parts, method, body) {
     });
     if (!done || !done.length) return fail(409, "This signal was already handled or has expired.");
     return json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------- invites
+
+  // POST /api/social/referral { ref }  (ref: a username or a wallet address)
+  // Links a new user to whoever invited them. Set once; only for people who
+  // haven't traded yet; never yourself.
+  if (p[0] === "referral" && p.length === 1 && method === "POST") {
+    const raw = typeof body.ref === "string" ? body.ref.trim().toLowerCase().replace(/^@/, "") : "";
+    if (!raw || raw.length > 42) return json({ ok: false, reason: "bad-ref" });
+    let referrer = null;
+    if (/^0x[0-9a-f]{40}$/.test(raw)) {
+      referrer = raw;
+    } else if (/^[a-z0-9_]{2,20}$/.test(raw)) {
+      const r = await sec(env, `profiles?username=eq.${q(raw)}&select=address&limit=1`);
+      referrer = r && r[0] ? r[0].address.toLowerCase() : null;
+    }
+    if (!referrer) return json({ ok: false, reason: "unknown-ref" });
+    if (referrer === me) return json({ ok: false, reason: "self" });
+    const already = await sec(env, `referrals?referee=eq.${q(me)}&select=referrer&limit=1`);
+    if (already && already.length) return json({ ok: false, reason: "already", referrer: already[0].referrer });
+    // Only new users: nobody who traded before today can be claimed by a link.
+    const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+    const old = await sec(env, `trades?trader=eq.${q(me)}&ts=lt.${q(since)}&select=tx_hash&limit=1`);
+    if (old && old.length) return json({ ok: false, reason: "not-new" });
+    // Two accounts can't invite each other.
+    const back = await sec(env, `referrals?referee=eq.${q(referrer)}&referrer=eq.${q(me)}&select=referee&limit=1`);
+    if (back && back.length) return json({ ok: false, reason: "loop" });
+    await sec(env, "referrals?on_conflict=referee", {
+      method: "POST",
+      body: { referee: me, referrer },
+      prefer: "resolution=ignore-duplicates",
+    });
+    return json({ ok: true, referrer });
   }
 
   return fail(404, "Not found.");

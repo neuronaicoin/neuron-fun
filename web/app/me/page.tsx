@@ -89,6 +89,7 @@ export default function MePage() {
           ["/traders/", "🏆 Top traders", false],
           ["/traders/?tab=following", "👥 Following feed", false],
           ["/copy/", "🪞 Copy signals", false],
+          ["/points/", "⚡ Points & invites", false],
           ["/forum/", "💬 Forum", true],
           [`/u/${address.toLowerCase()}/`, "🙂 Public profile", true],
         ].map(([href, label, plain]) =>
