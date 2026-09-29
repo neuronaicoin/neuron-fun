@@ -1,5 +1,6 @@
 "use client";
 
+import { HolderMap } from "@/components/holdermap";
 import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
 import Link from "next/link";
@@ -9,7 +10,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, type Hex } from "viem
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, StarButton, timeAgo } from "@/components/coins";
-import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
+import { PriceChart, TradesFeed } from "@/components/market";
 import { LiveStats } from "@/components/livestats";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
@@ -171,12 +172,7 @@ function CoinPage() {
             <TradesFeed coinId={coin.id} ethUsd={ethUsd} />
           </div>
 
-          {chartCurve && (
-            <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display font-semibold text-[1.125rem] mb-3">Top holders on {chartCurve.chain.short}</h2>
-              <TopHolders curve={chartCurve} />
-            </div>
-          )}
+          <HolderMap coin={coin} />
 
           <CoinComments coin={coin} />
 

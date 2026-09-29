@@ -115,8 +115,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         </div>
       </section>
 
-      <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2">
-        <Link href="/traders/" className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
+      <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2 overflow-x-auto no-scrollbar">
+        <Link href="/swipe/" className="h-10 px-4 shrink-0 rounded-xl bg-emerald text-on-accent font-bold text-[0.875rem] flex items-center">🔥 Swipe</Link>
+        <Link href="/traders/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
         <a href="/forum/" className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>
       </nav>
 
@@ -124,7 +125,15 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
-              <h2 className="font-display font-semibold text-[1.625rem] sm:text-[2rem] tracking-tight">Coins</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="font-display font-semibold text-[1.625rem] sm:text-[2rem] tracking-tight">Coins</h2>
+                <Link
+                  href="/swipe/"
+                  className="hidden lg:inline-flex h-9 px-3.5 rounded-xl bg-emerald-soft text-emerald font-bold text-[0.8125rem] items-center gap-1.5 hover:bg-emerald hover:text-on-accent"
+                >
+                  🔥 Swipe to discover
+                </Link>
+              </div>
               <p className="font-mono text-[0.75rem] text-ink-3 tracking-wider mt-1">{coins ? `${list.length} SHOWN` : "LOADING"}</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
