@@ -5,7 +5,7 @@
  * few taps. They run on-chain (SasaOrders) and the rewards service fills
  * them; the contract never fills outside the window set here.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { maxUint256, parseEther, type Address } from "viem";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
@@ -17,7 +17,7 @@ import { clientFor, db, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtTokens, friendlyError } from "@/lib/format";
 import { call } from "@/lib/tx";
 
-const TP = [50, 100, 200, 500] as const;
+const TP = [25, 50, 100, 200, 500] as const;
 const SL = [10, 20, 30, 50] as const;
 const DIP = [10, 20, 30, 50] as const;
 const DIP_USD = [10, 25, 50, 100] as const;
@@ -80,9 +80,22 @@ async function lastPrice(c: CurveInfo): Promise<number | null> {
 
 export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const { address, send } = useWallet();
-  const curves = useMemo(() => coin.curves.filter((c) => c.chain.orders && c.state !== "closed"), [coin]);
+  // The coin object is replaced every few seconds by the page's refresh; key
+  // everything on what actually matters so nothing reloads (or flickers) for it.
+  const curvesKey = coin.curves
+    .filter((c) => c.chain.orders && c.state !== "closed")
+    .map((c) => `${c.chain.key}:${c.curve}:${c.state}`)
+    .join("|");
+  const coinRef = useRef(coin);
+  coinRef.current = coin;
+  const curves = useMemo(
+    () => coinRef.current.curves.filter((c) => c.chain.orders && c.state !== "closed"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [curvesKey]
+  );
   const [chainKey, setChainKey] = useState<string>(curves[0]?.chain.key ?? "");
   const cur = curves.find((c) => c.chain.key === chainKey) ?? curves[0];
+  const curKey = cur ? `${cur.chain.key}:${cur.curve}:${cur.state}` : "";
 
   const [held, setHeld] = useState<bigint | null>(null);
   const [allowance, setAllowance] = useState<bigint>(0n);
@@ -114,12 +127,18 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
     setAllowance(allow);
     setCash(native);
     setValue(await valueOf(cur, bal).catch(() => null));
-  }, [cur, address]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curKey, address]);
 
+  // Fresh numbers when the chain or wallet changes, then every 30 seconds.
   useEffect(() => {
     setHeld(null);
     setValue(null);
     void load().catch(() => {});
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void load().catch(() => {});
+    }, 30_000);
+    return () => clearInterval(t);
   }, [load]);
 
   useEffect(() => {
@@ -131,7 +150,8 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
     return () => {
       alive = false;
     };
-  }, [cur, tpAmount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curKey, tpAmount]);
 
   useEffect(() => {
     if (!cur || dipWei === 0n) return;
@@ -143,7 +163,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, dipWei.toString()]);
+  }, [curKey, dipWei.toString()]);
 
   // Open orders on this coin, on every chain that has them.
   const loadOrders = useCallback(async () => {
@@ -184,8 +204,10 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
   }, [address, curves]);
 
   useEffect(() => {
-    void loadOrders().catch(() => setOrders([]));
-    const t = setInterval(() => void loadOrders().catch(() => {}), 20_000);
+    void loadOrders().catch(() => setOrders((o) => o ?? []));
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void loadOrders().catch(() => {});
+    }, 30_000);
     return () => clearInterval(t);
   }, [loadOrders]);
 
@@ -501,7 +523,7 @@ function Chips({
 }) {
   const active = { up: "border-up text-up", danger: "border-danger text-danger", accent: "border-emerald text-emerald" }[tone];
   return (
-    <div className={"grid grid-cols-4 gap-1.5 " + (small ? "mt-2" : "")} role="group">
+    <div className={"grid gap-1.5 " + (values.length === 5 ? "grid-cols-5 " : "grid-cols-4 ") + (small ? "mt-2" : "")} role="group">
       {values.map((v) => (
         <button
           key={v}
@@ -509,7 +531,7 @@ function Chips({
           aria-pressed={value === v}
           onClick={() => onPick(v)}
           className={
-            (small ? "h-8 text-[0.75rem] " : "h-9 text-[0.8125rem] ") +
+            (small ? "h-8 text-[0.75rem] " : values.length === 5 ? "h-9 text-[0.75rem] sm:text-[0.8125rem] " : "h-9 text-[0.8125rem] ") +
             "rounded-xl border-[1.5px] bg-surface font-mono font-bold " +
             (value === v ? active : "border-line text-ink-2")
           }

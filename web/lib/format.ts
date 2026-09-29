@@ -32,6 +32,9 @@ export function friendlyError(e: unknown): string {
   if (/SlippageExceeded|slippage/i.test(msg)) return "The price moved while you were confirming. Please try again.";
   if (/ParentNotListed/i.test(msg)) return "That family coin is not available right now. Pick another one.";
   if (/LaunchFeeNotCovered/i.test(msg)) return "The amount sent does not cover the creation fee.";
+  // The chain's node didn't answer (busy, rate-limited, or a flaky connection).
+  if (/RPC Request failed|HTTP request failed|request timed out|Too Many Requests|\b429\b|rate limit/i.test(msg))
+    return "The network didn't answer in time. Check your balance first (it may have gone through), then try again in a few seconds.";
   // Beta safety locks (v3). Selectors too, for errors that arrive undecoded.
   let raw = msg;
   try {
