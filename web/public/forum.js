@@ -162,10 +162,15 @@
   }
 
   var me = null; // { canPost, reason, mod, admin, likes }
+  var meFailed = false; // the last check didn't come back (network, timeout, server)
   function loadMe() {
     if (!session || !data.board) return Promise.resolve(null);
     var qs = "board=" + encodeURIComponent(data.board) + (data.thread ? "&thread=" + data.thread : "");
-    return api("me?" + qs).then(function (j) { me = j; return j; }).catch(function (e) { if (!session) toast(e.message); return null; });
+    // Never wait forever: slow networks (phones) get an answer within 15 seconds.
+    var timeout = new Promise(function (_, reject) { setTimeout(function () { reject(new Error("timeout")); }, 15000); });
+    return Promise.race([api("me?" + qs), timeout])
+      .then(function (j) { me = j; meFailed = false; return j; })
+      .catch(function (e) { meFailed = true; if (!session) toast(e.message); return null; });
   }
 
   // ---------------------------------------------------------------- gates
@@ -184,6 +189,8 @@
   function openCompose() {
     var inner;
     if (!session) inner = gateLogin("start a thread");
+    else if (!data.board) inner = '<p class="hint">Open a coin\'s board to start a thread there.</p>';
+    else if (!me && meFailed) inner = '<p class="hint err">We couldn\'t check your account just now.</p><button class="btn" style="width:100%;margin-top:.75rem" id="cRetry" type="button">Try again</button>';
     else if (!me) inner = '<p class="hint">Checking…</p>';
     else if (!me.canPost) inner = gateHold();
     else inner =
@@ -200,7 +207,10 @@
     document.addEventListener("keydown", onKey);
     $(".scrim", layer).onclick = function (e) { if (e.target.classList.contains("scrim")) close(); };
     $(".x", layer).onclick = close;
-    if (session && !me) { loadMe().then(function () { close(); openCompose(); }); return; }
+    var retry = $("#cRetry", layer);
+    if (retry) { retry.onclick = function () { meFailed = false; close(); openCompose(); }; return; }
+    // Check once, then show the real form (or the retry button if it failed).
+    if (session && data.board && !me && !meFailed) { loadMe().then(function () { close(); openCompose(); }); return; }
     var ti = $("#ctitle", layer), bo = $("#cbody", layer), btn = $("#cPost", layer), hint = $("#chint", layer);
     if (!ti) return;
     var check = function () {

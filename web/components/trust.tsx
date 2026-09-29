@@ -124,7 +124,7 @@ async function readChecks(coin: Coin): Promise<Check[]> {
 const DOT: Record<Level, string> = { good: "bg-up", warn: "bg-warn-ink", bad: "bg-danger", info: "bg-ink-3" };
 
 /** Plain-language safety checks. Facts only; never a promise that a coin is safe. */
-export function TrustCard({ coin, collapsible = false }: { coin: Coin; collapsible?: boolean }) {
+export function TrustCard({ coin, collapsible = true }: { coin: Coin; collapsible?: boolean }) {
   const [checks, setChecks] = useState<Check[] | null>(null);
   // Collapsible (phones): closed until tapped; the verdict stays visible either way.
   const [open, setOpen] = useState(!collapsible);

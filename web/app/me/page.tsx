@@ -26,6 +26,7 @@ export default function MePage() {
   const [data, setData] = useState<Data | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [list, setList] = useState<"followers" | "following" | null>(null);
+  const [allTrades, setAllTrades] = useState(false);
   const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
@@ -187,7 +188,14 @@ export default function MePage() {
       <section className="mt-8">
         <h2 className="font-display font-semibold text-[1.25rem]">Your trades</h2>
         <div className="mt-3 bg-surface border border-line rounded-3xl p-4 sm:p-5">
-          <TradesFeed trader={address} names={names} ethUsd={ethUsd} limit={30} />
+          <TradesFeed trader={address} names={names} ethUsd={ethUsd} limit={allTrades ? 30 : 5} />
+          <button
+            type="button"
+            onClick={() => setAllTrades((v) => !v)}
+            className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+          >
+            {allTrades ? "Show fewer" : "See more"}
+          </button>
         </div>
       </section>
 

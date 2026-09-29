@@ -27,7 +27,7 @@ export const linksToDraft = (l: CoinLinks | null): LinkDraft => ({
   website: l?.website?.replace(/^https:\/\//, "") ?? "",
 });
 
-const box = "flex items-center h-12 rounded-2xl border bg-paper focus-within:border-emerald overflow-hidden";
+const box = "flex items-center h-11 sm:h-12 rounded-xl sm:rounded-2xl border bg-paper focus-within:border-emerald overflow-hidden";
 
 /** The three optional inputs (Create page and the editor). */
 export function LinkFields({ value, onChange }: { value: LinkDraft; onChange: (d: LinkDraft) => void }) {
@@ -43,10 +43,11 @@ export function LinkFields({ value, onChange }: { value: LinkDraft; onChange: (d
     <label className="grid gap-1 min-w-0">
       <span className="sr-only">{label}</span>
       <span className={box + " " + (bad[key] ? "border-danger" : "border-line")}>
-        <span className="pl-3.5 pr-1.5 text-ink-2 shrink-0" aria-hidden="true">
+        <span className="pl-2.5 sm:pl-3.5 pr-1 sm:pr-1.5 text-ink-2 shrink-0" aria-hidden="true">
           {icon}
         </span>
-        <span className="text-ink-3 text-[0.875rem] shrink-0">{prefix}</span>
+        {/* The prefix only fits on wider screens; on phones the icon says it all. */}
+        <span className="hidden sm:inline text-ink-3 text-[0.875rem] shrink-0">{prefix}</span>
         <input
           value={value[key]}
           onChange={(e) => onChange({ ...value, [key]: e.target.value })}
@@ -65,17 +66,17 @@ export function LinkFields({ value, onChange }: { value: LinkDraft; onChange: (d
           inputMode="url"
           maxLength={key === "website" ? 120 : 60}
           aria-invalid={bad[key]}
-          className="flex-1 min-w-0 h-full bg-transparent pr-3 text-ink text-[1rem] placeholder:text-ink-3/60 outline-none"
+          className="flex-1 min-w-0 w-full h-full bg-transparent pr-2 sm:pr-3 text-ink text-[1rem] placeholder:text-ink-3/60 outline-none"
         />
       </span>
-      {bad[key] && <span className="text-[0.75rem] text-danger">{error}</span>}
+      {bad[key] && <span className="text-[0.6875rem] sm:text-[0.75rem] text-danger leading-tight">{error}</span>}
     </label>
   );
   return (
-    <div className="grid gap-2 sm:grid-cols-3 sm:gap-2.5">
-      {field("x", <XIcon />, "x.com/", "handle", "X profile", "Letters, numbers and _ only")}
-      {field("telegram", <TgIcon />, "t.me/", "group", "Telegram", "Use your group's t.me name")}
-      {field("website", <WebIcon />, "https://", "yoursite.com", "Website", "Enter a normal web address")}
+    <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 items-start">
+      {field("x", <XIcon />, "x.com/", "handle", "X profile", "Letters, numbers, _")}
+      {field("telegram", <TgIcon />, "t.me/", "group", "Telegram", "Use t.me/name")}
+      {field("website", <WebIcon />, "https://", "site.com", "Website", "Not a web address")}
     </div>
   );
 }

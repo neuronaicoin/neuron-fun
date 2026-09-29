@@ -83,6 +83,8 @@ export function PriceChart({
         rightPriceScale: { borderVisible: false },
         // Slim candles from the start, even when a coin has only a few.
         timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, barSpacing: 7, minBarSpacing: 2, rightOffset: 4 },
+        // Browsers can report a locale the chart's date formatter rejects; fall back to English.
+        localization: { locale: safeLocale() },
         crosshair: { mode: 1 },
       });
       const candles = chart.addSeries(CandlestickSeries, {
@@ -119,10 +121,15 @@ export function PriceChart({
           vol.setData(
             rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
           );
-          if (first && chart) {
-            // Many candles: show them all. Few: keep them slim and pinned to the right.
+          if (first && chart && bars.length) {
+            // Many candles: show them all. Few: put them in the middle of the chart
+            // (not squeezed against the right edge); people can still drag and zoom.
             if (bars.length > 90) chart.timeScale().fitContent();
-            else chart.timeScale().scrollToRealTime();
+            else {
+              const width = Math.max(60, bars.length * 2);
+              const mid = (bars.length - 1) / 2;
+              chart.timeScale().setVisibleLogicalRange({ from: mid - width / 2, to: mid + width / 2 });
+            }
             first = false;
           }
         } catch {
@@ -436,4 +443,17 @@ export function CoinStats({ coin, ethUsd }: { coin: Coin; ethUsd: number | null 
       ))}
     </div>
   );
+}
+
+function safeLocale(): string {
+  try {
+    const l = typeof navigator !== "undefined" ? navigator.language : "";
+    if (l && Intl.DateTimeFormat.supportedLocalesOf([l]).length) {
+      new Date().toLocaleString(l);
+      return l;
+    }
+  } catch {
+    /* fall through */
+  }
+  return "en-US";
 }

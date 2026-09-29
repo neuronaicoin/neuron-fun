@@ -216,9 +216,9 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 // overflows on tablets (md), small laptops (lg) or wide screens (xl).
 const NAV = [
   { href: "/explore/", label: "Explore", from: "md" },
-  { href: "/terminal/", label: "Terminal", from: "md" },
+  { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/create/", label: "Create a coin", from: "md" },
-  { href: "/me/", label: "Your coins", from: "md" },
+  { href: "/me/", label: "Your coins", from: "lg" },
   { href: "/traders/", label: "Traders", from: "lg" },
   { href: "/copy/", label: "Copy", from: "lg" },
   { href: "/points/", label: "⚡ Points", from: "lg" },
@@ -258,6 +258,7 @@ export function Header() {
               </Link>
             )
           )}
+          <HeaderMore />
         </nav>
         <div className="flex items-center gap-1.5 sm:gap-2">
           <AlertsSync />
@@ -274,11 +275,82 @@ export function Header() {
   );
 }
 
+// Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
+// `tablet`: only listed on tablets (phones already have these in the bottom bar).
+const MORE = [
+  { href: "/terminal/", label: "Terminal", icon: "📈", note: "Live trading", tablet: true },
+  { href: "/me/", label: "Your coins", icon: "👤", note: "Portfolio and profile", tablet: true },
+  { href: "/traders/", label: "Top traders", icon: "🏆", note: "Follow the best" },
+  { href: "/copy/", label: "Copy trading", icon: "🪞", note: "Signals from traders you copy" },
+  { href: "/points/", label: "Points", icon: "⚡", note: "Quests, invites, leaderboard" },
+  { href: "/swipe/", label: "Swipe", icon: "🔥", note: "Discover coins fast" },
+  { href: "/forum/", label: "Forum", icon: "💬", note: "Every coin's community", plain: true },
+  { href: "/stats/", label: "Stats", icon: "📊", note: "Volume, fees, graduations" },
+  { href: "/how-it-works/", label: "How it works", icon: "🧭", note: "sasa in 2 minutes" },
+] as const;
+
+function MoreSheet({ onClose }: { onClose: () => void }) {
+  const pathname = usePathname() || "/";
+  const { address } = useWallet();
+  const points = useMyTotal(address);
+  return (
+    <Sheet title="More" onClose={onClose}>
+      <div className="grid grid-cols-2 gap-2">
+        {MORE.map((m) => {
+          const active = isActive(pathname, m.href);
+          const cls =
+            ("tablet" in m ? "hidden md:flex " : "flex ") +
+            "rounded-2xl border p-3 flex-col gap-1 min-h-[5.5rem] " +
+            (active ? "border-emerald bg-emerald-soft" : "border-line bg-paper hover:border-emerald/60");
+          const inner = (
+            <>
+              <span className="text-[1.375rem] leading-none" aria-hidden="true">
+                {m.icon}
+              </span>
+              <span className="font-semibold text-[0.9375rem]">
+                {m.label}
+                {m.href === "/points/" && points !== null && <span className="ml-1.5 font-mono text-[0.8125rem] text-emerald">{points.toLocaleString("en-US")}</span>}
+              </span>
+              <span className="text-[0.6875rem] text-ink-3 leading-snug">{m.note}</span>
+            </>
+          );
+          // The forum is served outside the app, so it needs a full page load.
+          return "plain" in m ? (
+            <a key={m.href} href={m.href} className={cls} onClick={onClose}>
+              {inner}
+            </a>
+          ) : (
+            <Link key={m.href} href={m.href} className={cls} onClick={onClose}>
+              {inner}
+            </Link>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
+
+/** "More" for tablets, where the top bar only fits the main links. */
+function HeaderMore() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="hidden md:inline lg:hidden text-ink hover:text-emerald" aria-haspopup="dialog">
+        More ▾
+      </button>
+      {open && <MoreSheet onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export function BottomNav() {
   const pathname = usePathname() || "/";
+  const [more, setMore] = useState(false);
+  const moreActive = MORE.some((m) => !("tablet" in m) && isActive(pathname, m.href));
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
-      <div className="grid grid-cols-4">
+      {more && <MoreSheet onClose={() => setMore(false)} />}
+      <div className="grid grid-cols-5">
         {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
@@ -292,6 +364,19 @@ export function BottomNav() {
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMore(true)}
+          aria-haspopup="dialog"
+          className={"flex flex-col items-center gap-1 py-1 text-[0.75rem] font-semibold " + (moreActive ? "text-emerald" : "text-ink-3")}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="19" cy="12" r="2" />
+          </svg>
+          More
+        </button>
       </div>
     </nav>
   );
