@@ -1,5 +1,6 @@
 "use client";
 
+import { CoinLinksRow } from "@/components/coinlinks";
 import Link from "next/link";
 import { ScrollRow } from "@/components/scrollrow";
 import { LockBadge } from "@/components/lock";
@@ -325,6 +326,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
               <LockBadge coinId={coin.id} />
             </div>
+            <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-1.5" />
           </div>
           <div className="flex gap-1.5 shrink-0">
             <ShareButton coin={coin} />

@@ -7,7 +7,9 @@
 //   POST /api/social/copy-list     {}                                      → { copying, results }
 //   POST /api/social/signals       {}                                      → { signals, coins }
 //   POST /api/social/signal        { id, action: "apply"|"reject", tx? }   → { ok }
+//   POST /api/social/links         { coinId, x, telegram, website }        → { ok, links }
 //   POST /api/social/referral      { ref }                                 → { ok, referrer? , reason? }
+import { cleanTelegram, cleanWebsite, cleanX } from "../lib/links.js";
 import { admins, q, sec } from "./forum-core.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -200,6 +202,29 @@ export async function socialRoute(ctx, me, parts, method, body) {
     });
     if (!done || !done.length) return fail(409, "This signal was already handled or has expired.");
     return json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------- coin links
+
+  // POST /api/social/links { coinId, x, telegram, website }
+  // A coin's creator sets its X, Telegram and website (any may be empty).
+  if (p[0] === "links" && p.length === 1 && method === "POST") {
+    const coinId = typeof body.coinId === "string" ? body.coinId.trim().toLowerCase() : "";
+    const m = /^(0x[0-9a-f]{40}):0x[0-9a-f]{64}$/.exec(coinId);
+    if (!m) return fail(400, "That isn't a sasa coin.");
+    if (m[1] !== me) return fail(403, "Only the coin's creator can change its links.");
+    const x = cleanX(body.x);
+    const tg = cleanTelegram(body.telegram);
+    const web = cleanWebsite(body.website);
+    if (!x.ok) return fail(400, "That X handle doesn't look right. Use letters, numbers and _ only.");
+    if (!tg.ok) return fail(400, "That Telegram link doesn't look right. Use t.me/yourgroup.");
+    if (!web.ok) return fail(400, "That website doesn't look right. Use a normal https:// address.");
+    await sec(env, "coin_links?on_conflict=coin_id", {
+      method: "POST",
+      body: { coin_id: coinId, x: x.value, telegram: tg.value, website: web.value, updated_at: new Date().toISOString() },
+      prefer: "resolution=merge-duplicates",
+    });
+    return json({ ok: true, links: { x: x.value, telegram: tg.value, website: web.value } });
   }
 
   // ---------------------------------------------------------------- invites

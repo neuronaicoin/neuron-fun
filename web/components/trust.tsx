@@ -124,8 +124,10 @@ async function readChecks(coin: Coin): Promise<Check[]> {
 const DOT: Record<Level, string> = { good: "bg-up", warn: "bg-warn-ink", bad: "bg-danger", info: "bg-ink-3" };
 
 /** Plain-language safety checks. Facts only; never a promise that a coin is safe. */
-export function TrustCard({ coin }: { coin: Coin }) {
+export function TrustCard({ coin, collapsible = false }: { coin: Coin; collapsible?: boolean }) {
   const [checks, setChecks] = useState<Check[] | null>(null);
+  // Collapsible (phones): closed until tapped; the verdict stays visible either way.
+  const [open, setOpen] = useState(!collapsible);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -156,7 +158,33 @@ export function TrustCard({ coin }: { coin: Coin }) {
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display font-bold text-[1.125rem]">Safety check</h2>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls={`trust-${coin.id}`}
+            className="flex items-center gap-2 font-display font-bold text-[1.125rem] text-left min-w-0"
+          >
+            Safety check
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className={"shrink-0 text-ink-3 transition-transform " + (open ? "rotate-180" : "")}
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        ) : (
+          <h2 className="font-display font-bold text-[1.125rem]">Safety check</h2>
+        )}
         {worst && (
           <span
             className={
@@ -169,6 +197,13 @@ export function TrustCard({ coin }: { coin: Coin }) {
           </span>
         )}
       </div>
+      {collapsible && !open && (
+        <button type="button" onClick={() => setOpen(true)} className="mt-1 text-[0.8125rem] text-ink-3">
+          Tap to see what we checked
+        </button>
+      )}
+      {open && (
+      <div id={`trust-${coin.id}`}>
       {failed && !checks && <p className="text-[0.875rem] text-ink-3 mt-3">Could not load the checks right now.</p>}
       {!checks && !failed && <Skeleton className="h-40 mt-4" />}
       {checks && (
@@ -187,6 +222,8 @@ export function TrustCard({ coin }: { coin: Coin }) {
       <p className="text-[0.6875rem] text-ink-3 mt-4 leading-relaxed">
         Automatic checks from on-chain data. They can&apos;t tell you whether a coin will go up; meme coins are always risky.
       </p>
+      </div>
+      )}
     </div>
   );
 }

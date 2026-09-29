@@ -1,5 +1,6 @@
 "use client";
 
+import { CoinLinksRow } from "@/components/coinlinks";
 import { HolderMap } from "@/components/holdermap";
 import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
@@ -70,6 +71,16 @@ function CoinPage() {
   }, [load]);
   const party = useGraduationParty(coin?.id ?? "", !!coin?.graduatedOn);
   const [partyDone, setPartyDone] = useState(false);
+  const [allTrades, setAllTrades] = useState(false);
+  // Computers show the safety check next to the buy box; phones show it folded under the race.
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
 
   if (!valid || notFound) {
     return (
@@ -113,6 +124,7 @@ function CoinPage() {
               <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
             ))}
           </div>
+          <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-2" />
         </div>
         <div className="flex gap-1.5 shrink-0">
           <ShareButton coin={coin} />
@@ -167,9 +179,19 @@ function CoinPage() {
             </div>
           </div>
 
+          {/* Phones: the safety check sits here, folded, so the chart comes first. */}
+          {!wide && <TrustCard coin={coin} collapsible />}
+
           <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
             <h2 className="font-display font-semibold text-[1.125rem] mb-2">Trades</h2>
-            <TradesFeed coinId={coin.id} ethUsd={ethUsd} />
+            <TradesFeed coinId={coin.id} ethUsd={ethUsd} limit={allTrades ? 25 : 7} />
+            <button
+              type="button"
+              onClick={() => setAllTrades((v) => !v)}
+              className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+            >
+              {allTrades ? "Show fewer" : "Show more trades"}
+            </button>
           </div>
 
           <HolderMap coin={coin} />
@@ -190,12 +212,13 @@ function CoinPage() {
             ))}
           </div>
         </div>
-        <div className="order-1 lg:order-2 lg:sticky lg:top-20">
+        {/* On phones this holds only the bottom buy bar's spacer, so it goes last. */}
+        <div className="order-3 lg:order-2 lg:sticky lg:top-20">
           <div className="hidden lg:block">
             <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={load} />
           </div>
           <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={load} />
-          <div className="mt-3"><TrustCard coin={coin} /></div>
+          {wide && <div className="mt-3"><TrustCard coin={coin} /></div>}
         </div>
       </div>
     </div>

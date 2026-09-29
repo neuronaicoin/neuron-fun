@@ -1,8 +1,11 @@
 "use client";
 
+import { toast } from "@/components/alerts";
+import { EMPTY_DRAFT, LinkFields, draftProblems, draftToLinks, type LinkDraft } from "@/components/coinlinks";
+import { saveLinks } from "@/lib/coinlinks";
 import { AiLaunch } from "@/components/ailaunch";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toHex, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
 import { useMoney } from "@/lib/portfolio";
@@ -39,7 +42,11 @@ function costFor(terms: Terms, tokens: bigint): bigint {
 }
 
 export default function CreatePage() {
-  const { address, send } = useWallet();
+  const { address, send, signMessage } = useWallet();
+  // Optional X / Telegram / website, saved once the coin is live.
+  const [links, setLinks] = useState<LinkDraft>(EMPTY_DRAFT);
+  const linkBad = draftProblems(links);
+  const linksSaved = useRef(false);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [logo, setLogo] = useState("");
@@ -113,6 +120,8 @@ export default function CreatePage() {
         ? "The ticker needs at least 2 letters or numbers."
         : logo !== "" && !isImageUrl(logo)
           ? "That picture could not be used."
+          : linkBad.x || linkBad.telegram || linkBad.website
+            ? "One of your links doesn't look right. Fix it or leave it empty."
           : chosen.length === 0
             ? "Pick at least one chain."
             : pausedChain
@@ -122,6 +131,19 @@ export default function CreatePage() {
                 : "";
   const allDone = chosen.length > 0 && chosen.every((c) => runs[c.key]?.status === "done");
   const anyDone = chosen.some((c) => runs[c.key]?.status === "done");
+
+  // Save the links as soon as the coin exists (its id is known before launch).
+  useEffect(() => {
+    if (!anyDone || !launchKey || !address || linksSaved.current) return;
+    const l = draftToLinks(links);
+    if (!l.x && !l.telegram && !l.website) return;
+    linksSaved.current = true;
+    saveLinks(signMessage, `${address.toLowerCase()}:${launchKey}`, l).catch(() => {
+      linksSaved.current = false;
+      toast("Your coin is live, but its links didn't save. Add them from the coin page.");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyDone, launchKey, address]);
 
   async function launch() {
     if (!address || problem) return;
@@ -299,6 +321,16 @@ export default function CreatePage() {
           <Field label="Description" hint="optional">
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={280} placeholder="What's the idea? Tell your future holders a little about it." className={input + " h-auto py-3 resize-none"} />
           </Field>
+
+          <div className="grid gap-2">
+            <span className="flex items-baseline justify-between text-[0.9375rem] font-bold text-ink">
+              <span>
+                Links <span className="text-ink-3 font-normal">optional</span>
+              </span>
+              <span className="text-[0.75rem] text-ink-3 font-normal">you can add them later too</span>
+            </span>
+            <LinkFields value={links} onChange={setLinks} />
+          </div>
 
           <div>
             <div className="flex items-baseline justify-between">
