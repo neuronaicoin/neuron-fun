@@ -11,7 +11,7 @@
 //
 // Env: SITE_URL (default https://sasapad.fun), COPY_EVERY_MS (default 5000)
 
-import { NATIVE_BY_CHAIN, gasPrices, money } from "./alerts.mjs";
+import { gasPrices, money, usdPerE18 } from "./alerts.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MIN_SUGGEST_USD = 1;
@@ -66,7 +66,7 @@ export async function makeSignals(pool, site) {
   let made = 0;
 
   for (const t of trades) {
-    const px = prices ? prices[NATIVE_BY_CHAIN[t.chain_id] ?? "ETH"] : null;
+    const px = usdPerE18(t.chain_id, prices);
     const traderUsd = px ? (Number(t.native) / 1e18) * px : null;
     const who = t.username ? `@${t.username}` : `${t.trader.slice(0, 6)}…${t.trader.slice(-4)}`;
 

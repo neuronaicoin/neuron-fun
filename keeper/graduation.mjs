@@ -16,7 +16,8 @@
 // Env:
 //   PRIVATE_KEY       operator key (the curve factories' operator on every chain)
 //   CHAINS            JSON array: [{ "name", "chainId", "rpc", "factory", "startBlock", "native" }]
-//                     native is the price symbol of the chain's gas coin: ETH, BNB or USD
+//                     native is the price symbol of the chain's money: ETH, BNB, or USD for
+//                     USDC chains (sasa v5), which also set "decimals": 6
 //                     factory: one address, or a list (live factory first, earlier
 //                     ones after it); coins from every listed factory are handled
 //   TARGET_USD        graduation target, in dollars, across all chains (default 20000)
@@ -31,6 +32,7 @@ import {
   createWalletClient,
   defineChain,
   formatEther,
+  formatUnits,
   getAddress,
   http,
   keccak256,
@@ -253,7 +255,8 @@ async function main() {
       const curves = [];
       for (const k of coin.curves) {
         const s = await readCurve(k.chain.pub, k.curve);
-        const usd = Number(formatEther(s.realNative)) * prices[k.chain.native];
+        // USDC chains (sasa v5): "native": "USD", "decimals": 6.
+        const usd = Number(formatUnits(s.realNative, k.chain.decimals ?? 18)) * prices[k.chain.native];
         curves.push({ ...k, ...s, usd });
       }
       const d = decide(curves, TARGET_USD);

@@ -23,6 +23,38 @@ const SUPPLY = 1e9;
 const HOUR = 3600_000;
 export const NATIVE_BY_CHAIN = { 56: "BNB", 97: "BNB" }; // everything else is priced in ETH
 
+// Chains whose coins trade against USDC (sasa v5, `"quote": "USDC"` in CHAINS):
+// their amounts are 6-decimal USDC, worth $1 each.
+const USD_CHAIN_IDS = new Set(
+  (() => {
+    try {
+      return JSON.parse(process.env.CHAINS || "[]").filter((c) => c.quote === "USDC").map((c) => Number(c.chainId));
+    } catch {
+      return [];
+    }
+  })()
+);
+export const isUsdChain = (chainId) => USD_CHAIN_IDS.has(Number(chainId));
+export const allChainsUsd = () => {
+  try {
+    const cs = JSON.parse(process.env.CHAINS || "[]");
+    return cs.length > 0 && cs.every((c) => c.quote === "USDC");
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Dollars per 1e18 raw units of a chain's money, the unit every amount is
+ * stored in. ETH chains: the ETH price. USDC chains (6 decimals): 1e12.
+ * Null when a needed price isn't known yet.
+ */
+export function usdPerE18(chainId, prices) {
+  if (isUsdChain(chainId)) return 1e12;
+  const p = prices ? prices[NATIVE_BY_CHAIN[chainId] ?? "ETH"] : null;
+  return p || null;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ formatting (same as the site)
@@ -85,7 +117,7 @@ function coinFacts(curves, graduated, prices, target) {
   let best = null;
   let openUsd = 0;
   for (const k of curves) {
-    const px = prices[NATIVE_BY_CHAIN[k.chain_id] ?? "ETH"];
+    const px = usdPerE18(k.chain_id, prices);
     if (!px) return null;
     const vn = Number(k.virtual_native);
     const vt = Number(k.virtual_token);
@@ -307,7 +339,7 @@ async function followAlerts(pool, site, log) {
     followCursor = rows[rows.length - 1].ts;
     const prices = await gasPrices();
     for (const r of rows) {
-      const px = prices ? prices[NATIVE_BY_CHAIN[r.chain_id] ?? "ETH"] : null;
+      const px = usdPerE18(r.chain_id, prices);
       const usd = px ? (r.native / 1e18) * px : null;
       const who = r.username ? `@${r.username}` : `${r.trader.slice(0, 6)}…${r.trader.slice(-4)}`;
       const title = `${who} bought ${usd !== null ? money(usd) + " of " : ""}$${r.symbol}`;

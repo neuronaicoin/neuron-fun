@@ -18,12 +18,15 @@
 // Env:
 //   DATABASE_URL          Postgres (same as the indexer)
 //   REWARDS_PRIVATE_KEY   the rewards wallet's key (only here)
-//   CHAINS                JSON: [{ name, chainId, rpc, splitter, disperse, orders?, native? }]
+//   CHAINS                JSON: [{ name, chainId, rpc, splitter, disperse, orders?, native?, token? }]
+//                         token: the USDC address on USDC chains (sasa v5); rewards are then
+//                         paid in USDC and counted as dollars. Without it, in the chain's coin.
 //                         orders: the SasaOrders contract; its auto orders get filled here too
 //   PAYOUT_HOUR_UTC       hour to pay (default 0)
 //   MIN_PAYOUT_USD        smaller amounts wait for the next day (default 0.5)
 //   DAILY_CAP_USD         most paid per chain per day (default 500)
-//   GAS_RESERVE_WEI       kept in the wallet for gas (default 0.002 ETH)
+//   GAS_RESERVE_WEI       kept in the wallet for gas when paying in the chain's coin (default 0.002 ETH)
+//   MIN_GAS_WEI           least gas coin needed to pay USDC rewards (default 0.00002 ETH)
 //   MIN_CLAIM_WEI         collect a coin's fees once they reach this (default 0.0001 ETH)
 //   PROTOCOL_BPS, REFERRAL_BPS, COPY_BPS, REFERRAL_MONTHS   (defaults 7000, 2000, 1000, 12)
 //   FALLBACK_PRICE_USD    price to use if the live price can't be fetched (optional)
@@ -53,7 +56,11 @@ const PAYOUT_HOUR = Number(env("PAYOUT_HOUR_UTC", "0"));
 const MIN_PAYOUT_USD = Number(env("MIN_PAYOUT_USD", "0.5"));
 const DAILY_CAP_USD = Number(env("DAILY_CAP_USD", "500"));
 const GAS_RESERVE = BigInt(env("GAS_RESERVE_WEI", "2000000000000000"));
+// USDC chains pay rewards in USDC; the wallet only needs a little of the chain's coin for gas.
+const MIN_GAS = BigInt(env("MIN_GAS_WEI", "20000000000000"));
 const MIN_CLAIM = BigInt(env("MIN_CLAIM_WEI", "100000000000000"));
+// On USDC chains the same threshold in dollars (6 decimals): collect from $0.01.
+const MIN_CLAIM_USDC = BigInt(Math.round(Number(env("MIN_CLAIM_USD", "0.01")) * 1e6));
 const BATCH = 100;
 
 const curveAbi = parseAbi([
@@ -62,8 +69,14 @@ const curveAbi = parseAbi([
   "function claimProtocolFees() returns (uint256)",
 ]);
 const splitterAbi = parseAbi(["function distribute() returns (uint256, uint256)", "function rewards() view returns (address)"]);
+const erc20Abi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address, address) view returns (uint256)",
+  "function approve(address, uint256) returns (bool)",
+]);
 const disperseAbi = parseAbi([
   "function disperseEth(address launch, address[] recipients, uint256[] amounts, uint256 round) payable returns (uint256)",
+  "function disperseToken(address launch, address asset, address[] recipients, uint256[] amounts, uint256 round) returns (uint256)",
   "event Paid(address indexed launch, address indexed asset, address indexed to, uint256 amount)",
   "event Unpaid(address indexed launch, address indexed to, uint256 amount)",
 ]);
@@ -80,6 +93,7 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => {
   return {
     ...c,
     splitter: getAddress(c.splitter),
+    token: c.token ? getAddress(c.token) : null,
     disperse: getAddress(c.disperse),
     orders: c.orders ? getAddress(c.orders) : null,
     pub: createPublicClient({ chain, transport: http(c.rpc) }),
@@ -163,12 +177,12 @@ async function sendSaved(c, request, record) {
   return hash;
 }
 
-async function simpleTx(c, to, abi, functionName) {
+async function simpleTx(c, to, abi, functionName, args = []) {
   if (DRY) {
     log(`[dry] ${c.name}: ${functionName} on ${to}`);
     return;
   }
-  const hash = await sendSaved(c, { to, data: (await import("viem")).encodeFunctionData({ abi, functionName }) });
+  const hash = await sendSaved(c, { to, data: (await import("viem")).encodeFunctionData({ abi, functionName, args }) });
   const r = await c.pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
   if (r.status !== "success") throw new Error(`${functionName} reverted (${hash})`);
 }
@@ -240,14 +254,16 @@ async function collectFees(c) {
         c.pub.readContract({ address: addr, abi: curveAbi, functionName: "protocolFeeRecipient" }),
         c.pub.readContract({ address: addr, abi: curveAbi, functionName: "protocolFees" }),
       ]);
-      if (getAddress(recipient) !== c.splitter || fees < MIN_CLAIM) continue;
+      if (getAddress(recipient) !== c.splitter || fees < (c.token ? MIN_CLAIM_USDC : MIN_CLAIM)) continue;
       await simpleTx(c, addr, curveAbi, "claimProtocolFees");
       claimed++;
     } catch (e) {
       log(`${c.name}: claim ${curve}: ${e.shortMessage ?? e.message}`);
     }
   }
-  const held = await c.pub.getBalance({ address: c.splitter });
+  const held = c.token
+    ? await c.pub.readContract({ address: c.token, abi: erc20Abi, functionName: "balanceOf", args: [c.splitter] })
+    : await c.pub.getBalance({ address: c.splitter });
   if (held > 0n) await simpleTx(c, c.splitter, splitterAbi, "distribute");
   if (claimed || held) log(`${c.name}: collected fees from ${claimed} coin(s), split ${held} wei`);
 }
@@ -257,18 +273,34 @@ async function payChain(c) {
   const done = await pool.query("select 1 from reward_payouts where chain_id = $1 and day = $2 and status <> 'failed' limit 1", [c.chainId, today]);
   if (done.rowCount) return;
 
-  const price = await usdPrice(c.native ?? "ETH");
-  if (!price) {
-    log(`${c.name}: no ${c.native ?? "ETH"} price right now, paying later`);
-    return;
+  // USDC chains: amounts are 6-decimal dollars. Otherwise the chain's coin at its price.
+  let minWei, capWei;
+  if (c.token) {
+    minWei = BigInt(Math.round(MIN_PAYOUT_USD * 1e6));
+    capWei = BigInt(Math.round(DAILY_CAP_USD * 1e6));
+  } else {
+    const price = await usdPrice(c.native ?? "ETH");
+    if (!price) {
+      log(`${c.name}: no ${c.native ?? "ETH"} price right now, paying later`);
+      return;
+    }
+    minWei = usdToWei(MIN_PAYOUT_USD, price);
+    capWei = usdToWei(DAILY_CAP_USD, price);
   }
-  const minWei = usdToWei(MIN_PAYOUT_USD, price);
-  const capWei = usdToWei(DAILY_CAP_USD, price);
 
   await collectFees(c);
 
-  const balance = await c.pub.getBalance({ address: account.address });
-  let budget = balance > GAS_RESERVE ? balance - GAS_RESERVE : 0n;
+  const gas = await c.pub.getBalance({ address: account.address });
+  let budget;
+  if (c.token) {
+    if (gas < MIN_GAS) {
+      log(`${c.name}: the rewards wallet needs a little ${c.native ?? "ETH"} for gas; paying later`);
+      return;
+    }
+    budget = await c.pub.readContract({ address: c.token, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
+  } else {
+    budget = gas > GAS_RESERVE ? gas - GAS_RESERVE : 0n;
+  }
   if (budget > capWei) budget = capWei;
 
   const { rows } = await pool.query(
@@ -300,12 +332,22 @@ async function payChain(c) {
       continue;
     }
     const { encodeFunctionData } = await import("viem");
-    const data = encodeFunctionData({
-      abi: disperseAbi,
-      functionName: "disperseEth",
-      args: [c.splitter, part.map((p) => p.owner), part.map((p) => p.amount), round],
-    });
-    const hash = await sendSaved(c, { to: c.disperse, data, value: sum }, async (h, raw) => {
+    if (c.token) {
+      // The batch payer pulls the USDC: approve exactly this batch first.
+      await simpleTx(c, c.token, erc20Abi, "approve", [c.disperse, sum]);
+    }
+    const data = c.token
+      ? encodeFunctionData({
+          abi: disperseAbi,
+          functionName: "disperseToken",
+          args: [c.splitter, c.token, part.map((p) => p.owner), part.map((p) => p.amount), round],
+        })
+      : encodeFunctionData({
+          abi: disperseAbi,
+          functionName: "disperseEth",
+          args: [c.splitter, part.map((p) => p.owner), part.map((p) => p.amount), round],
+        });
+    const hash = await sendSaved(c, c.token ? { to: c.disperse, data } : { to: c.disperse, data, value: sum }, async (h, raw) => {
       // Saved before sending: this is what makes a crash unable to pay twice.
       const db = await pool.connect();
       try {

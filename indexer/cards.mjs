@@ -9,6 +9,7 @@
 //   TARGET_USD             graduation target used by the site (default 5)
 //   CARD_EVERY_MS          how often to look for cards to refresh (default 60000)
 
+import { usdPerE18 } from "./alerts.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,24 +38,33 @@ export function money(v) {
   return `$${v.toFixed(v < 10 ? 2 : 0)}`;
 }
 
-/** Numbers a card needs, from one coin_list row. */
+/**
+ * Numbers a card needs, from one coin_list row. `ethUsd` prices ETH chains;
+ * USDC chains (sasa v5) are counted in dollars directly.
+ */
 export function cardFacts(row, ethUsd, targetUsd) {
-  const curves = (row.curves ?? []).map((k) => ({
-    chainId: k.chain_id,
-    state: k.state,
-    realEth: Number(k.real_native) / 1e18,
-    price: Number(k.virtual_native) / Number(k.virtual_token),
-  }));
+  const curves = (row.curves ?? []).map((k) => {
+    // Dollars per 1e18 raw units of this chain's money.
+    const px = usdPerE18(k.chain_id, ethUsd ? { ETH: ethUsd } : null);
+    return {
+      chainId: k.chain_id,
+      state: k.state,
+      px,
+      usd: px ? (Number(k.real_native) / 1e18) * px : null,
+      price: Number(k.virtual_native) / Number(k.virtual_token),
+    };
+  });
   const graduated = row.graduated_chain !== null && row.graduated_chain !== undefined;
   const open = curves.filter((c) => c.state === 0);
-  const totalUsd = ethUsd ? open.reduce((s, c) => s + c.realEth * ethUsd, 0) : null;
-  const caps = curves.filter((c) => c.state !== 1).map((c) => c.price * 1e9 * (ethUsd ?? 0));
+  const known = curves.every((c) => c.px);
+  const totalUsd = known ? open.reduce((s, c) => s + c.usd, 0) : null;
+  const caps = curves.filter((c) => c.state !== 1 && c.px).map((c) => c.price * 1e9 * c.px);
   return {
     name: row.name,
     symbol: row.symbol,
     logo: row.logo,
-    chains: curves.map((c) => ({ ...(CHAIN[c.chainId] ?? { name: `Chain ${c.chainId}`, color: "#8f7f73" }), state: c.state, usd: ethUsd ? c.realEth * ethUsd : 0 })),
-    marketCap: ethUsd && caps.length ? Math.max(...caps) : null,
+    chains: curves.map((c) => ({ ...(CHAIN[c.chainId] ?? { name: `Chain ${c.chainId}`, color: "#8f7f73" }), state: c.state, usd: c.usd ?? 0 })),
+    marketCap: caps.length ? Math.max(...caps) : null,
     progress: graduated ? 1 : totalUsd === null ? 0 : Math.min(1, totalUsd / targetUsd),
     graduated,
     winner: graduated ? CHAIN[row.graduated_chain]?.name ?? "" : "",
