@@ -1,0 +1,73 @@
+name: deploy-usd
+
+# sasa dollar edition (v5): every coin trades against USDC.
+# New chains later (BNB, Arc, ...): add a line under "case" with the chain's
+# RPC, and its USDC / Uniswap v4 addresses (USDC, POOL_MANAGER, POSITION_MANAGER).
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Where to deploy"
+        type: choice
+        options:
+          - robinhood-testnet
+          - base-sepolia
+      cap_usd:
+        description: "Beta cap: most USDC all coins on this chain may hold together, in dollars (0 = no cap)"
+        type: string
+        default: "5000"
+      broadcast:
+        description: "Actually send transactions (leave unticked for a free dry run)"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Deploy the dollar edition
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          NETWORK: ${{ inputs.network }}
+          BROADCAST: ${{ inputs.broadcast }}
+          CAP_USD: ${{ inputs.cap_usd }}
+          REWARDS_VAR: ${{ vars.REWARDS }}
+          GUARDIAN_VAR: ${{ vars.GUARDIAN }}
+          SAFE_VAR: ${{ vars.SAFE }}
+          # Testnet terms: coins graduate with faucet money ($100 of test USDC a day).
+          VIRTUAL_USD: "100000000"
+          MIN_GRADUATION: "10000000"
+        run: |
+          KEY="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"
+          if [ -z "$KEY" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
+          case "$KEY" in 0x*) ;; *) KEY="0x$KEY" ;; esac
+          echo "::add-mask::$KEY"
+          export PRIVATE_KEY="$KEY"
+          if [ -z "$REWARDS_VAR" ]; then echo "Add the repo variable REWARDS (the rewards wallet's address) first"; exit 1; fi
+          export REWARDS="$REWARDS_VAR"
+          if [ -n "$GUARDIAN_VAR" ]; then export GUARDIAN="$GUARDIAN_VAR"; fi
+          if [ -n "$SAFE_VAR" ]; then export SAFE="$SAFE_VAR"; fi
+          CAP="${CAP_USD:-0}"
+          case "$CAP" in *[!0-9]*) echo "cap_usd must be a whole number of dollars"; exit 1 ;; esac
+          export USD_CAP="$((CAP * 1000000))"
+          case "$NETWORK" in
+            # Testnets: no USDC set, so the script deploys TestUSDC with a free faucet.
+            robinhood-testnet) RPC="https://rpc.testnet.chain.robinhood.com/rpc" ;;
+            base-sepolia)      RPC="https://sepolia.base.org" ;;
+            *) echo "unknown network $NETWORK"; exit 1 ;;
+          esac
+          if [ "$BROADCAST" = "true" ]; then
+            forge script script/DeployUsd.s.sol --rpc-url "$RPC" --broadcast --slow -vvv
+          else
+            forge script script/DeployUsd.s.sol --rpc-url "$RPC" -vvv
+          fi
