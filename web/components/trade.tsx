@@ -101,6 +101,8 @@ export function QuickTrade({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
+  // Bumped after every trade so the "You get" quote re-prices at the new price.
+  const [priced, setPriced] = useState(0);
   const [done, setDone] = useState<{ chainKey: string; hash: string } | null>(null);
   const [profit, setProfit] = useState<ProfitInfo | null>(null);
   const safety = useSafety();
@@ -245,7 +247,7 @@ export function QuickTrade({
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [side, amount, chosen?.curve, chosen?.state, address]);
+  }, [side, amount, chosen?.curve, chosen?.state, address, priced]);
 
   if (!open.length && !sellable.length) {
     return (
@@ -299,9 +301,10 @@ export function QuickTrade({
       const calls: Call[] = [];
       let proceeds: bigint | null = null;
       if (side === "buy") {
-        // The quote on screen is fresh (it follows every change); only fetch if it isn't there yet.
+        // Always price the trade again right now: on a young coin one earlier
+        // trade moves the price more than the 5% slippage allows, and the quote
+        // on screen may be from before it (that made every 2nd buy revert).
         const out =
-          quote ??
           (pool
             ? ((
                 await pub.simulateContract({
@@ -327,9 +330,8 @@ export function QuickTrade({
         );
       } else {
         const [out, allowance] = await Promise.all([
-          quote !== null
-            ? Promise.resolve(quote)
-            : pool
+          // Fresh price at send time (see the buy side).
+          pool
           ? pub.simulateContract({
                 account: address,
                 address: spender,
@@ -355,6 +357,7 @@ export function QuickTrade({
       }
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
+      setPriced((n) => n + 1);
       onDone?.({ hash, side, chainKey: chosen.chain.key });
       // Tell the chart and trade list right away; read the new curve price for an instant update.
       const signal = (nativePerToken: number | null) =>
