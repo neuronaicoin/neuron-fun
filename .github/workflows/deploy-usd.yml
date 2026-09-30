@@ -13,6 +13,7 @@ on:
         options:
           - robinhood-testnet
           - base-sepolia
+          - arbitrum-sepolia
       cap_usd:
         description: "Beta cap: most USDC all coins on this chain may hold together, in dollars (0 = no cap)"
         type: string
@@ -64,6 +65,7 @@ jobs:
             # Testnets: no USDC set, so the script deploys TestUSDC with a free faucet.
             robinhood-testnet) RPC="https://rpc.testnet.chain.robinhood.com/rpc" ;;
             base-sepolia)      RPC="https://sepolia.base.org" ;;
+            arbitrum-sepolia)  RPC="https://sepolia-rollup.arbitrum.io/rpc" ;;
             *) echo "unknown network $NETWORK"; exit 1 ;;
           esac
           if [ "$BROADCAST" = "true" ]; then
