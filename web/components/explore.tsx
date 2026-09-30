@@ -13,9 +13,11 @@ import { useSparks } from "@/lib/spark";
 import { compactUsd } from "@/lib/format";
 import { EXT_NETWORKS, fetchExtCoins, fetchExtCount, type ExtCoin, type ExtSort } from "@/lib/extcoins";
 import { ExtTile } from "@/components/exttile";
+import { MERGED_SORTS, rankMerged } from "@/lib/rank";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
-const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
+// Trending is ranked by 24h volume for everyone (see lib/rank.ts).
+const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
 
 const SORTS: { id: SortKey; label: string }[] = [
   { id: "trending", label: "🔥 Trending" },
@@ -235,12 +237,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
           <div className="mt-5 grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {!coins && !error && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="aspect-[3/4]" />)}
-            {list.map((c) => (
-              <CoinTile key={c.id} coin={c} ethUsd={ethUsd} spark={sparks.get(c.id)} />
-            ))}
-            {(ext ?? []).map((c) => (
-              <ExtTile key={`${c.network}:${c.address}`} coin={c} />
-            ))}
+            {/* One fair list: our coins and other DEXs' ranked by the same measure. */}
+            {(MERGED_SORTS.has(sort) ? rankMerged(list, ext ?? [], sort, ethUsd) : list.map((c) => ({ kind: "ours" as const, coin: c }))).map((r) =>
+              r.kind === "ours" ? (
+                <CoinTile key={r.coin.id} coin={r.coin} ethUsd={ethUsd} spark={sparks.get(r.coin.id)} />
+              ) : (
+                <ExtTile key={`${r.coin.network}:${r.coin.address}`} coin={r.coin} />
+              )
+            )}
           </div>
           {coins && hasMore && (
             <div className="mt-6 flex justify-center">

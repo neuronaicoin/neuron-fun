@@ -45,7 +45,7 @@ export const EXT_NETWORKS: { id: string; label: string; color: string }[] = [
 ];
 export const extNetwork = (id: string) => EXT_NETWORKS.find((n) => n.id === id);
 
-export type ExtSort = "trending" | "gainers" | "losers" | "new";
+export type ExtSort = "trending" | "gainers" | "losers" | "new" | "volume";
 
 const n = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 
@@ -98,6 +98,8 @@ export async function fetchExtCoins(sort: ExtSort, network: string | null, searc
         ? q.order("change_24h", { ascending: false, nullsFirst: false })
         : sort === "losers"
           ? q.order("change_24h", { ascending: true, nullsFirst: false })
+          : sort === "volume"
+            ? q.order("vol_24h", { ascending: false, nullsFirst: false })
           : q.order("trending_rank", { ascending: true, nullsFirst: false }).order("vol_24h", { ascending: false });
   const { data, error } = await q.limit(limit);
   if (error) throw error;

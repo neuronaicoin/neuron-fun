@@ -32,10 +32,11 @@ import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
 import { extNetwork, fetchExtCoin, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
 import { ExtCoinView } from "@/components/extcoin";
+import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 
 // The list shows at most this many coins per tab (ours first, then other DEXs).
 const LIST_MAX = 20;
-const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
+const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
 // Coins from other DEXs are selected as "x:<network>:<address>".
 const extKey = (c: { network: string; address: string }) => `x:${c.network}:${c.address}`;
 import { fetchPrices } from "@/lib/price";
@@ -296,9 +297,12 @@ function Markets(props: {
   full?: boolean;
 }) {
   const { ethUsd, selected, onChoose, sort, setSort, query, setQuery, full = false } = props;
-  // At most LIST_MAX per tab: ours first, then other DEXs' coins fill the rest.
-  const coins = props.coins ? props.coins.slice(0, LIST_MAX) : null;
-  const ext = coins && props.ext ? props.ext.slice(0, Math.max(0, LIST_MAX - coins.length)) : [];
+  // At most LIST_MAX per tab, our coins and other DEXs' ranked by the same
+  // measure (volume, change, age): nobody gets a head start.
+  const ranked: Ranked[] | null = props.coins
+    ? (MERGED_SORTS.has(sort) ? rankMerged(props.coins, props.ext ?? [], sort, ethUsd) : props.coins.map((c) => ({ kind: "ours" as const, coin: c }))).slice(0, LIST_MAX)
+    : null;
+  const coins = ranked ? ranked.filter((r): r is Extract<Ranked, { kind: "ours" }> => r.kind === "ours").map((r) => r.coin) : null;
   const sparks = useSparks(useMemo(() => (coins ?? []).map((c) => c.id), [coins]));
   return (
     <div className="rounded-3xl border border-line bg-surface overflow-hidden">
@@ -316,8 +320,11 @@ function Markets(props: {
       </div>
       <ul className={(full ? "" : "max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto ") + "divide-y divide-line"}>
         {!coins && [0, 1, 2, 3, 4].map((i) => <li key={i} className="p-3"><Skeleton className="h-10" /></li>)}
-        {coins?.length === 0 && ext.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
-        {coins?.map((c) => (
+        {ranked?.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
+        {ranked?.map((r) => {
+          if (r.kind === "ext") return <ExtRow key={extKey(r.coin)} c={r.coin} selected={selected} onChoose={onChoose} />;
+          const c = r.coin;
+          return (
           <li key={c.id}>
             <button
               type="button"
@@ -343,12 +350,18 @@ function Markets(props: {
               </span>
             </button>
           </li>
-        ))}
-        {coins &&
-          ext.map((c) => {
-            const key = extKey(c);
-            const net = extNetwork(c.network);
-            return (
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** A coin from another DEX in the Terminal list. */
+function ExtRow({ c, selected, onChoose }: { c: ExtCoin; selected: string; onChoose: (id: string) => void }) {
+  const key = extKey(c);
+  const net = extNetwork(c.network);
+  return (
               <li key={key}>
                 <button
                   type="button"
@@ -375,10 +388,6 @@ function Markets(props: {
                   </span>
                 </button>
               </li>
-            );
-          })}
-      </ul>
-    </div>
   );
 }
 
