@@ -234,6 +234,13 @@ function isActive(pathname: string, href: string) {
 
 export function Header() {
   const pathname = usePathname() || "/";
+  // Download the chart library while the browser is idle: the first chart opens faster.
+  useEffect(() => {
+    const warm = () => void import("lightweight-charts").catch(() => {});
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(warm);
+    else setTimeout(warm, 2000);
+  }, []);
   return (
     <header className="sticky top-0 z-40 bg-paper/90 backdrop-blur border-b border-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">

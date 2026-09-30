@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { IChartApi, IPriceLine, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { burst, onTrade } from "@/lib/live";
 import { chainById, explorerAddress, explorerTx } from "@/lib/config";
-import { fetchCandles, fetchTopHolders, fetchTrades, type Coin, type CurveInfo, type Trade } from "@/lib/data";
+import { fetchCandles, fetchTopHolders, fetchTrades, type Candle, type Coin, type CurveInfo, type Trade } from "@/lib/data";
 import { fmtTokens, shortAddr } from "@/lib/format";
 import { ChainChip, timeAgo, usd } from "./coins";
 
@@ -35,6 +35,9 @@ const SCALE_MODE = { normal: 0, log: 1, percent: 2 } as const;
  * Market-value candles for one curve (price x 1B supply, in dollars when a
  * price is available, otherwise in the chain's coin).
  */
+// Charts opened before draw instantly from memory, then refresh (per coin and range).
+const CANDLE_CACHE = new Map<string, Candle[]>();
+
 export function PriceChart({
   curve,
   coin,
@@ -75,6 +78,9 @@ export function PriceChart({
     let timer: ReturnType<typeof setInterval> | null = null;
     let stopSignal: (() => void) | null = null;
     let stopBurst: (() => void) | null = null;
+    // Ask for the candles right away, while the chart library loads (not after).
+    const cacheKey = `${coin?.id ?? `${curve.chain.chain.id}:${curve.curve}`}:${range}`;
+    const firstRows = fetchCandles(curve.chain.chain.id, curve.curve, range, coin?.id).catch(() => null);
     (async () => {
       // The chart library is only downloaded on pages that show a chart.
       const { createChart, CandlestickSeries, HistogramSeries } = await import("lightweight-charts");
@@ -112,10 +118,7 @@ export function PriceChart({
 
       let first = true;
       let lastBar: { time: UTCTimestamp; open: number; high: number; low: number; close: number } | null = null;
-      const load = async () => {
-        try {
-          const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range, coin?.id);
-          if (!alive) return;
+      const apply = (rows: Candle[]) => {
           const k = 1e9 * (ethUsd ?? 1);
           setEmpty(rows.length === 0);
           const bars = rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }));
@@ -135,11 +138,21 @@ export function PriceChart({
             }
             first = false;
           }
+      };
+      const load = async (pending?: Promise<Candle[] | null>) => {
+        try {
+          const rows = pending ? await pending : await fetchCandles(curve.chain.chain.id, curve.curve, range, coin?.id);
+          if (!alive || !rows) return;
+          CANDLE_CACHE.set(cacheKey, rows);
+          apply(rows);
         } catch {
           /* next refresh */
         }
       };
-      await load();
+      // Seen this chart before: draw it at once, then bring it up to date.
+      const cached = CANDLE_CACHE.get(cacheKey);
+      if (cached) apply(cached);
+      await load(firstRows);
       timer = setInterval(load, 6_000);
 
       // A trade on this curve: move the last candle now, then fetch the real data.

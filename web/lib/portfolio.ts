@@ -113,6 +113,60 @@ export function refreshPortfolio(fresh = false): Promise<void> {
   return inflight;
 }
 
+/**
+ * Reads only the cash balances (a couple of quick chain reads, no database) and
+ * updates the shown cash and total. Used right after a trade, before the full
+ * reload (holdings, P&L) arrives.
+ */
+export async function refreshCash(): Promise<void> {
+  const address = state.address;
+  const p = state.portfolio;
+  if (!address || !p) return;
+  try {
+    const cash = await Promise.all(uniqueChains().map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) })));
+    const cur = state.portfolio;
+    if (!cur || state.address !== address) return;
+    const cashByChain = cash.map(({ chain, wei }) => {
+      const old = cur.cashByChain.find((x) => x.chain.chain.id === chain.chain.id);
+      const perWei = old && old.wei > 0n ? old.usd / Number(old.wei) : USD_PER_WEI(chain, cur);
+      return { chain, wei, usd: Number(wei) * perWei };
+    });
+    const cashUsd = cashByChain.reduce((a, c) => a + c.usd, 0);
+    set({ portfolio: { ...cur, cashByChain, cashUsd, totalUsd: cur.coinsUsd + cashUsd }, version: state.version + 1 });
+  } catch {
+    /* the full reload will fix it */
+  }
+}
+
+// USD value of one unit of a chain's cash (USDC has 6 decimals, ETH 18).
+function USD_PER_WEI(_chain: NeuronChain, p: Portfolio): number {
+  if (USD_MODE) return 1e-6;
+  return (p.ethUsd ?? 0) / 1e18;
+}
+
+/**
+ * Moves the shown cash (and total) by `deltaUsd` right away, before the chain
+ * confirms. Returns an undo for when the trade fails. The next real load
+ * replaces it either way.
+ */
+export function optimisticCash(deltaUsd: number): () => void {
+  const p = state.portfolio;
+  if (!p || !Number.isFinite(deltaUsd) || deltaUsd === 0) return () => {};
+  const bump = (d: number) => {
+    const cur = state.portfolio;
+    if (!cur) return;
+    const cashUsd = Math.max(0, cur.cashUsd + d);
+    set({ portfolio: { ...cur, cashUsd, totalUsd: cur.totalUsd + (cashUsd - cur.cashUsd) }, version: state.version + 1 });
+  };
+  bump(deltaUsd);
+  let undone = false;
+  return () => {
+    if (undone) return;
+    undone = true;
+    bump(-deltaUsd);
+  };
+}
+
 function uniqueChains(): NeuronChain[] {
   const seen = new Set<number>();
   return CHAINS.filter((c) => !seen.has(c.chain.id) && seen.add(c.chain.id));

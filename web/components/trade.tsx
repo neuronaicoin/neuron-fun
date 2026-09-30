@@ -17,7 +17,7 @@ import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
-import { openMoney, refreshPortfolio } from "@/lib/portfolio";
+import { openMoney, optimisticCash, refreshCash, refreshPortfolio } from "@/lib/portfolio";
 import { routerOf, setOf } from "@/lib/contracts";
 import { AutoOrders } from "./autoorders";
 import { overCap, refreshSafety, useSafety } from "@/lib/safety";
@@ -294,6 +294,7 @@ export function QuickTrade({
     if (!address || !chosen || amount === 0n) return;
     setError(""); setErrorDetail("");
     setDone(null);
+    let undoCash: (() => void) | null = null;
     try {
       // Curve before graduation, locked pool (through the router) after.
       const pool = inPool(chosen);
@@ -306,8 +307,9 @@ export function QuickTrade({
         // Always price the trade again right now: on a young coin one earlier
         // trade moves the price more than the 5% slippage allows, and the quote
         // on screen may be from before it (that made every 2nd buy revert).
-        const out =
-          (pool
+        // Price and allowance in parallel: one wait instead of two.
+        const [out, allowance] = await Promise.all([
+          pool
             ? ((
                 await pub.simulateContract({
                   account: address,
@@ -320,10 +322,11 @@ export function QuickTrade({
                   ],
                 })
               ).result as bigint)
-            : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint));
+            : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint),
+          pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
+        ]);
         const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
         // Pay with USDC: approve exactly this buy (email users get it bundled, gasless).
-        const allowance = (await pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] })) as bigint;
         if (allowance < amount) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, amount]));
         calls.push(
           pool
@@ -357,6 +360,11 @@ export function QuickTrade({
             : call(spender, curveAbi, "sell", [amount, minOut, address])
         );
       }
+      // The balance at the top moves the moment the trade is sent; the real
+      // numbers replace it as soon as the chain confirms (undone if it fails).
+      undoCash = USD_MODE
+        ? optimisticCash(side === "buy" ? -Number(amount) / 1e6 : proceeds !== null ? Number(proceeds) / 1e6 : 0)
+        : null;
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
       setPriced((n) => n + 1);
@@ -375,6 +383,7 @@ export function QuickTrade({
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
       // Cash updates at once (read from the chain); holdings follow the indexer a moment later.
+      void refreshCash();
       void refreshPortfolio(true);
       setTimeout(() => void refreshPortfolio(true), 2_500);
       onTraded();
@@ -395,6 +404,8 @@ export function QuickTrade({
         }, 4_000);
         return;
       }
+      // It didn't go through: put the balance back.
+      undoCash?.();
       // Keep the real reason where we can find it (Console) and one tap away on screen.
       console.error("[sasa] trade failed", e);
       const raw = e as { shortMessage?: string; details?: string; message?: string };
