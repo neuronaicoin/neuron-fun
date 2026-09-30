@@ -28,6 +28,7 @@ import { safetyLoop } from "./safety.mjs";
 import { copyLoop } from "./copy.mjs";
 import { sparkLoop } from "./spark.mjs";
 import { pointsLoop } from "./points.mjs";
+import { marketsLoop } from "./markets.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -378,6 +379,7 @@ async function main() {
     copyLoop(pool, log),
     sparkLoop(pool, log),
     pointsLoop(pool, log),
+    marketsLoop(pool, log),
   ]);
 }
 
