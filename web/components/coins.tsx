@@ -63,6 +63,17 @@ export function ProgressBar({ coin, big = false }: { coin: Coin; big?: boolean }
 export function ChainRace({ coin }: { coin: Coin }) {
   const total = coin.curves.reduce((s, c) => s + (c.usd ?? 0), 0);
   const leader = [...coin.curves].filter((c) => c.state === "trading").sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0];
+  // After graduation the race is over: say who won, simply (no closed chains to decode).
+  const winner = coin.curves.find((c) => c.state === "graduated");
+  if (winner)
+    return (
+      <p className="flex items-center gap-2 text-[0.875rem]">
+        <span aria-hidden="true">🎉</span>
+        <span>
+          Graduated on <b>{winner.chain.short}</b>. Liquidity is locked forever.
+        </span>
+      </p>
+    );
   return (
     <ul className="grid gap-3">
       {coin.curves.map((c) => (

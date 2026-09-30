@@ -169,7 +169,12 @@ export function QuickTrade({
   // Cheapest chain where the wallet can pay; otherwise just the cheapest.
   const best = useMemo(() => {
     if (side === "sell") {
-      return [...sellable].sort((a, b) => Number((bals[b.chain.key]?.tok ?? 0n) - (bals[a.chain.key]?.tok ?? 0n)))[0];
+      // Most coins held first; with none anywhere, the live chain (not a closed one).
+      return [...sellable].sort(
+        (a, b) =>
+          Number((bals[b.chain.key]?.tok ?? 0n) - (bals[a.chain.key]?.tok ?? 0n)) ||
+          Number(a.state === "closed") - Number(b.state === "closed")
+      )[0];
     }
     const sorted = [...open].sort((a, b) => nativePerToken(a) - nativePerToken(b));
     // Chains that are paused or full go last.
@@ -260,7 +265,10 @@ export function QuickTrade({
   }
 
   const notEnough = side === "buy" ? !!bal && bal.eth < buyWei + reserve : sellWei === 0n;
-  const closedHere = chosen?.state === "closed";
+  // Only people who still hold coins on a chain that lost the race need to know
+  // about it (and that they can always sell). Everyone else never sees chains.
+  const closedHere = side === "sell" && chosen?.state === "closed" && (bals[chosen.chain.key]?.tok ?? 0n) > 0n;
+  const winner = coin.curves.find((c) => c.state !== "closed");
   const lock = side === "buy" ? lockOf(chosen) : null;
   // Another chain of this coin where the buy would go through.
   const elsewhere = lock ? open.find((c) => c.chain.key !== chosen?.chain.key && !lockOf(c)) : undefined;
@@ -600,7 +608,7 @@ export function QuickTrade({
 
       {closedHere && (
         <p className="mt-3 text-[0.8125rem] text-warn-ink bg-warn-bg rounded-xl p-3">
-          Buying stopped on {chosen?.chain.short}. You can always sell here and get your money back.
+          ${coin.symbol} graduated{winner ? ` on ${winner.chain.short}` : ""} 🎉 You still have some from before on {chosen?.chain.short}: sell them anytime for USDC.
         </p>
       )}
 
