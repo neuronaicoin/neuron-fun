@@ -73,7 +73,8 @@ contract DeployUsd is Script {
         address usdcEnv = vm.envOr("USDC", address(0));
         require(rewards != address(0) && rewards != deployer, "REWARDS must be its own wallet");
         if (safe != address(0)) require(safe.code.length > 0, "SAFE has no contract on this chain");
-        bool testnet = block.chainid == 46630 || block.chainid == 84532 || block.chainid == 421614 || block.chainid == 31337;
+        bool testnet = block.chainid == 46630 || block.chainid == 84532 || block.chainid == 421614 || block.chainid == 5042002
+            || block.chainid == 31337;
         if (usdcEnv == address(0)) require(testnet, "set USDC (the chain's real USDC) on mainnets");
         else require(usdcEnv.code.length > 0, "USDC has no contract on this chain");
 
@@ -159,6 +160,10 @@ contract DeployUsd is Script {
         } else if (block.chainid == 421614) {
             // Arbitrum Sepolia (Uniswap's official v4 testnet deployment).
             v = V4(0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317, 0xAc631556d3d4019C95769033B5E719dD77124BAc, PERMIT2_CANONICAL);
+        } else if (block.chainid == 5042002) {
+            // Arc testnet (Circle; gas is USDC). The PositionManager is checked
+            // against the PoolManager below before anything is deployed.
+            v = V4(0x1d70945634F618eefdF9EDaAdB59B9A183CEF929, 0x6049c9a0e26405C0985f9E3685C87d0aE917f82B, PERMIT2_CANONICAL);
         }
         // New chains (BNB, Arc, ...): pass these in.
         v.poolManager = vm.envOr("POOL_MANAGER", v.poolManager);
