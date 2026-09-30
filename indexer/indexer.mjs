@@ -78,6 +78,24 @@ const orderExecutedEvent = parseAbiItem(
 const poolTradeEvent = parseAbiItem(
   "event PoolTrade(address indexed token, address indexed trader, bool indexed isBuy, uint256 nativeAmount, uint256 tokenAmount, uint160 sqrtPriceX96After)"
 );
+// Dollar-edition routers trade against USDC (router.usdc()); ETH routers have
+// no such function (the quote is the chain's coin, address 0). Cached per router.
+const QUOTE_CACHE = new Map();
+async function quoteTokenOf(pub, router, usdChain) {
+  const key = router.toLowerCase();
+  if (QUOTE_CACHE.has(key)) return QUOTE_CACHE.get(key);
+  try {
+    const q = await pub.readContract({ address: router, abi: parseAbi(["function usdc() view returns (address)"]), functionName: "usdc" });
+    QUOTE_CACHE.set(key, q);
+    return q;
+  } catch {
+    // ETH routers have no usdc(): remember that. On a dollar chain it was a
+    // network hiccup: don't remember, ask again next time.
+    if (!usdChain) QUOTE_CACHE.set(key, null);
+    return null;
+  }
+}
+
 const Q96 = 2 ** 96;
 const curveReadAbi = parseAbi([
   "function initialVirtualNative() view returns (uint256)",
@@ -259,9 +277,19 @@ async function indexRange(c, from, to) {
       for (const l of logs) {
         const a = l.args;
         const k = known.byToken.get(lc(a.token));
-        // Pool price is tokens per native coin (currency1/currency0); store native per token.
+        // Pool price is currency1 per currency0. ETH (address 0) is always
+        // currency0; USDC can be either, depending on the two addresses.
         const sp = Number(a.sqrtPriceX96After) / Q96;
-        const nativePerToken = sp > 0 ? 1 / (sp * sp) : 0;
+        const usdChain = c.quote === "USDC";
+        const quote = await quoteTokenOf(pub, l.address, usdChain);
+        let nativePerToken;
+        if (usdChain && quote === null) {
+          // Couldn't ask the router which coin it quotes in: use this trade's own price.
+          nativePerToken = a.tokenAmount > 0n ? Number(a.nativeAmount) / Number(a.tokenAmount) : 0;
+        } else {
+          const quoteIsCurrency1 = quote !== null && BigInt(quote) > BigInt(a.token);
+          nativePerToken = sp > 0 ? (quoteIsCurrency1 ? sp * sp : 1 / (sp * sp)) : 0;
+        }
         // The 1% pool fee: taken from the native coin on buys, from the tokens on sells.
         const fee = a.isBuy ? (a.nativeAmount * 1n) / 100n : a.nativeAmount / 99n;
         const ins = await db.query(
