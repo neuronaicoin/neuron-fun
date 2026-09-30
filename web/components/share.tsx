@@ -1,5 +1,6 @@
 "use client";
 
+import { IS_TESTNET } from "@/lib/config";
 import { useState } from "react";
 import { Sheet } from "./chrome";
 import { SUPABASE_URL } from "@/lib/config";
@@ -22,7 +23,9 @@ export const SHARED_X_EVENT = "sasa:shared-x";
  * Every post mentions @sasapadfun, so each share also shows people where it came from.
  */
 export function postOnX(text: string, url?: string) {
-  const t = /@sasapadfun/i.test(text) ? text : `${text}\n\nvia @${SASA_X}`;
+  // While we're on testnet, every post says so: nobody should think this is live money.
+  const honest = IS_TESTNET && !/testnet/i.test(text) ? `${text}\n\n🧪 On testnet now (free test USDC) · mainnet soon` : text;
+  const t = /@sasapadfun/i.test(honest) ? honest : `${honest}\n\nvia @${SASA_X}`;
   const q = new URLSearchParams({ text: t });
   if (url) q.set("url", url);
   openX(`https://x.com/intent/post?${q.toString()}`);

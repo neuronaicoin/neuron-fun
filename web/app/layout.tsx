@@ -27,14 +27,14 @@ export const metadata: Metadata = {
     url: SITE,
     siteName: "sasa",
     type: "website",
-    images: [{ url: "/og.png", width: 1600, height: 900, alt: "sasa — Launch once. Live on every chain." }],
+    images: [{ url: "/og-2.png", width: 1200, height: 630, alt: "sasa — Trade any coin. Launch your own. Testnet live, mainnet soon." }],
   },
   twitter: {
     card: "summary_large_image",
     site: "@sasapadfun",
     title: "sasa — Launch once. Live on every chain.",
     description: "The multi-chain launchpad. Testnet live, mainnet coming soon.",
-    images: ["/og.png"],
+    images: ["/og-2.png"],
   },
 };
 

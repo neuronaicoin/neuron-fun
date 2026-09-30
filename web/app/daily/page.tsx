@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { EXT_NETWORKS, fetchExtCoins, type ExtCoin } from "@/lib/extcoins";
 import { postOnX } from "@/components/share";
 import { toast } from "@/components/alerts";
+import { IS_TESTNET } from "@/lib/config";
 
 const MIN_VOL = 25_000; // skip thin coins: a daily post should show real movers
 
@@ -29,7 +30,7 @@ export default function DailyPage() {
   const chain = CHAIN_NAME[net];
   const tags = (list ?? []).map((c) => c.xHandle).filter(Boolean).slice(0, 3) as string[];
   const text = list?.length
-    ? `🔥 Top gainers on ${chain} today\n\n${list.map((c, i) => `${i + 1}. $${c.symbol} ${pct(c.change24h ?? 0)}`).join("\n")}\n\nTrade them in USDC in one tap on sasa 👇${tags.length ? `\n\n${tags.map((t) => "@" + t).join(" ")}` : ""}`
+    ? `🔥 Top gainers on ${chain} today\n\n${list.map((c, i) => `${i + 1}. $${c.symbol} ${pct(c.change24h ?? 0)}`).join("\n")}\n\n${IS_TESTNET ? "Soon on sasa: trade them in USDC in one tap 👀" : "Trade them in USDC in one tap on sasa 👇"}${tags.length ? `\n\n${tags.map((t) => "@" + t).join(" ")}` : ""}`
     : "";
 
   // The image: same list, drawn in sasa's colors (1200 x 675, X's preferred size).
@@ -78,7 +79,7 @@ export default function DailyPage() {
     });
     g.fillStyle = "#cdbbae";
     g.font = "500 24px 'Instrument Sans', system-ui, sans-serif";
-    g.fillText("Trade any coin in USDC, in one tap", 70, H - 50);
+    g.fillText(IS_TESTNET ? "Testnet live · mainnet soon" : "Trade any coin in USDC, in one tap", 70, H - 50);
     g.fillStyle = "#ff6b1a";
     g.font = "700 26px Sora, system-ui, sans-serif";
     const site = "sasapad.fun";
