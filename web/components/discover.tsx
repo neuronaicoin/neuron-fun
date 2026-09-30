@@ -16,12 +16,9 @@ export function coinMarketCapUsd(coin: Coin, ethUsd: number | null): number | nu
   return caps.length ? Math.max(...caps) : null;
 }
 
-export function compactUsd(n: number | null): string {
-  if (n === null) return "—";
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
-  return `$${n.toFixed(n < 10 ? 2 : 0)}`;
-}
+// One formatter for every market cap on the site (see lib/format.ts).
+import { compactUsd } from "@/lib/format";
+export { compactUsd };
 
 /** Deterministic artwork for coins without a picture. */
 function hue(s: string) {

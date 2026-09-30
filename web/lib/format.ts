@@ -57,3 +57,20 @@ export function friendlyError(e: unknown): string {
   if (/CapReached|0x55f8a908/i.test(raw)) return "This chain is at its beta capacity right now. Try a smaller amount or another chain. Selling is open.";
   return msg.split("\n")[0].slice(0, 180);
 }
+
+/**
+ * Short money amounts: $950, $155.5K, $1.65M, $1.1B, $2.4T. Trailing zeros are
+ * dropped ($12M, not $12.00M), so a market cap never runs long.
+ */
+export function compactUsd(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  const v = Math.abs(n);
+  const trim = (x: string) => x.replace(/\.?0+$/, "");
+  if (v >= 1e12) return `${sign}$${trim((v / 1e12).toFixed(2))}T`;
+  if (v >= 1e9) return `${sign}$${trim((v / 1e9).toFixed(2))}B`;
+  // 999,950 would round to "1000.0K": show it as $1M instead.
+  if (v >= 999_950) return `${sign}$${trim((v / 1e6).toFixed(2))}M`;
+  if (v >= 1e3) return `${sign}$${trim((v / 1e3).toFixed(1))}K`;
+  return `${sign}$${v < 10 ? v.toFixed(2) : Math.round(v).toString()}`;
+}
