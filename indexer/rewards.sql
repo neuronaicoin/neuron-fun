@@ -3,7 +3,7 @@
 --
 --  referrals      who invited whom (set once, never changed)
 --  reward_ledger  every reward earned, one row per trade it came from
---                   referral: 20% of sasa's fee share on an invited friend's trades, for 12 months
+--                   referral: 25% of sasa's fee share on an invited friend's trades, for 12 months
 --                   copy:     10% of sasa's fee share on trades copied from a trader
 --  reward_payouts every daily payment transaction
 --  rewards_state  an off switch for payouts (admin page)

@@ -1,7 +1,7 @@
 // sasa rewards service (runs on Railway, separate from the indexer).
 //
 // Every few minutes it adds new rewards to the ledger:
-//   referral  20% of sasa's fee share on an invited friend's trades, for 12 months
+//   referral  25% of sasa's fee share on an invited friend's trades, for 12 months
 //   copy      10% of sasa's fee share on trades copied from a trader
 // Once a day (PAYOUT_HOUR_UTC) it pays everyone who is owed at least the
 // minimum, per chain, from the rewards wallet, in one batch transaction:
@@ -28,7 +28,7 @@
 //   GAS_RESERVE_WEI       kept in the wallet for gas when paying in the chain's coin (default 0.002 ETH)
 //   MIN_GAS_WEI           least gas coin needed to pay USDC rewards (default 0.00002 ETH)
 //   MIN_CLAIM_WEI         collect a coin's fees once they reach this (default 0.0001 ETH)
-//   PROTOCOL_BPS, REFERRAL_BPS, COPY_BPS, REFERRAL_MONTHS   (defaults 7000, 2000, 1000, 12)
+//   PROTOCOL_BPS, REFERRAL_BPS, COPY_BPS, REFERRAL_MONTHS   (defaults 7000, 2500, 1000, 12)
 //   FALLBACK_PRICE_USD    price to use if the live price can't be fetched (optional)
 
 import pg from "pg";
@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DRY = env("DRY_RUN", "0") === "1";
 const PROTOCOL_BPS = BigInt(env("PROTOCOL_BPS", "7000"));
-const REFERRAL_BPS = BigInt(env("REFERRAL_BPS", "2000"));
+const REFERRAL_BPS = BigInt(env("REFERRAL_BPS", "2500"));
 const COPY_BPS = BigInt(env("COPY_BPS", "1000"));
 const REFERRAL_MONTHS = Number(env("REFERRAL_MONTHS", "12"));
 const PAYOUT_HOUR = Number(env("PAYOUT_HOUR_UTC", "0"));

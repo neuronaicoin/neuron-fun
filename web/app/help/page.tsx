@@ -10,7 +10,7 @@ const FAQ: { q: string; a: string }[] = [
   { q: "My trade says it failed but my balance changed.", a: "Sometimes the network confirms slowly. Refresh the page after a few seconds; your balance and trades will show the real result." },
   { q: "What does “graduation” mean?", a: "When a coin raises its target across all chains, it moves to a trading pool with liquidity locked forever. The chain that raised the most wins; the others close and holders there can always sell." },
   { q: "What is a creator lock?", a: "A creator can lock their own coins for 1 or 24 hours at launch. Nobody can lift it early. Locked coins get a “Dev locked” badge." },
-  { q: "How do invite rewards work?", a: "Share your invite link from the Points page. Friends start with 100 points, and you earn points plus a share of sasa’s fees from their trades, paid daily." },
+  { q: "How do invite rewards work?", a: "Share your invite link from the Points page. Friends start with 100 points, and you earn points plus 25% of sasa’s fees from their trades for a year, paid daily." },
   { q: "Do I pay network fees?", a: "Signed in with email: no, sasa pays them. With your own wallet (like MetaMask) you need a little of the chain’s coin for fees." },
 ];
 

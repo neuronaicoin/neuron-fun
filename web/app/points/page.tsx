@@ -189,7 +189,7 @@ export default function PointsPage() {
             <h2 className="font-display font-bold text-[1.125rem]">Invite friends, earn together</h2>
             <p className="text-[0.875rem] text-ink-2 mt-1">
               Your friends start with <b className="text-ink">100 points</b>. You get <b className="text-ink">20% of the points</b> they earn, plus{" "}
-              <b className="text-ink">20% of sasa&apos;s fees</b> from their trades for a year, paid daily into your cash.
+              <b className="text-ink">25% of sasa&apos;s fees</b> from their trades for a year, paid daily into your cash.
             </p>
             {address ? (
               <>
