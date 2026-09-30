@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { encodeAbiParameters, formatEther, keccak256, maxUint256, numberToHex, type Address, type Hex } from "viem";
-import { useWallet } from "./wallet";
+import { SENT_UNCONFIRMED, useWallet } from "./wallet";
+import { toast } from "./alerts";
 import { ConnectButton } from "./chrome";
 import { curveAbi, routerAbi, tokenAbi, usdcAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, USD_MODE, explorerTx } from "@/lib/config";
@@ -376,6 +377,16 @@ export function QuickTrade({
         checkProfit(soldTokens, got, chosen.chain.short).catch(() => {});
       }
     } catch (e) {
+      // Sent, but the node never confirmed it back: most likely it went through.
+      if (String((e as Error)?.message ?? "").includes(SENT_UNCONFIRMED)) {
+        toast("Sent. It'll show up in a moment.");
+        setTimeout(() => {
+          loadBalances().catch(() => {});
+          void refreshPortfolio();
+          onTraded();
+        }, 4_000);
+        return;
+      }
       setError(friendlyError(e));
       // A pause or a full chain may be why: show it on the button right away.
       void refreshSafety().catch(() => {});

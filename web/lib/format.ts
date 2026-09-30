@@ -37,6 +37,7 @@ export function friendlyError(e: unknown): string {
   const err = e as { shortMessage?: string; message?: string; code?: number; cause?: { code?: number } };
   if (err?.code === 4001 || err?.cause?.code === 4001) return "You cancelled it in your wallet.";
   const msg = err?.shortMessage || err?.message || "Something went wrong.";
+  if (msg.includes("SENT_UNCONFIRMED")) return "Sent. The network is slow to confirm it; your balance will update in a moment.";
   if (/insufficient funds/i.test(msg)) return "Not enough ETH in your wallet for this, including the network fee.";
   if (/SlippageExceeded|slippage/i.test(msg)) return "The price moved while you were confirming. Please try again.";
   if (/ParentNotListed/i.test(msg)) return "That family coin is not available right now. Pick another one.";

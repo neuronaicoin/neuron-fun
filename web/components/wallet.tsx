@@ -13,6 +13,9 @@ import type { SmartWalletClient } from "@alchemy/wallet-apis";
 // Email / Google login: its code loads after the page is up, never before.
 const PrivyBridge = dynamic(() => import("./privy-bridge"), { ssr: false });
 
+/** Thrown when a bundle was sent but the network never confirmed it back to us. */
+export const SENT_UNCONFIRMED = "SENT_UNCONFIRMED";
+
 export type Eip1193 = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
   on?: (event: string, fn: (...a: unknown[]) => void) => void;
@@ -339,8 +342,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
         });
         onStep?.("Almost done…");
-        // Blocks come every ~0.1-2 s on our chains: ask often.
-        const status = await client.waitForCallsStatus({ id: sent.id, timeout: 90_000, pollingInterval: 400 });
+        // Blocks come every ~0.1-2 s on our chains: ask often. The status check can
+        // hit a flaky node after the bundle already landed, so a network hiccup is
+        // retried, and if it never answers we report "sent" rather than "failed".
+        let status: Awaited<ReturnType<typeof client.waitForCallsStatus>> | null = null;
+        for (let attempt = 0; attempt < 4 && !status; attempt++) {
+          try {
+            status = await client.waitForCallsStatus({ id: sent.id, timeout: 90_000, pollingInterval: 400 });
+          } catch (e) {
+            const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "");
+            if (!/RPC|HTTP|timed? ?out|fetch|network|429/i.test(m)) throw e;
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+        if (!status) throw new Error(SENT_UNCONFIRMED);
         const receipts = status.receipts ?? [];
         if (status.status !== "success" || receipts.some((r) => r.status !== "success")) {
           throw new Error("The network rejected the transaction.");
