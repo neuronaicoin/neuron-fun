@@ -128,13 +128,13 @@ export function PriceChart({
             rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.volume * (ethUsd ?? 1), color: r.close >= r.open ? "rgba(31,157,116,0.35)" : "rgba(194,85,58,0.35)" }))
           );
           if (first && chart && bars.length) {
-            // Many candles: show them all. Few: put them in the middle of the chart
-            // (not squeezed against the right edge); people can still drag and zoom.
+            // Many candles: show them all. Few: keep a normal candle width with the
+            // newest at the right edge (as on every trading chart), not stretched
+            // across the screen or floating in the middle.
             if (bars.length > 90) chart.timeScale().fitContent();
             else {
-              const width = Math.max(60, bars.length * 2);
-              const mid = (bars.length - 1) / 2;
-              chart.timeScale().setVisibleLogicalRange({ from: mid - width / 2, to: mid + width / 2 });
+              const width = Math.max(60, bars.length + 10);
+              chart.timeScale().setVisibleLogicalRange({ from: bars.length - width, to: bars.length + 3 });
             }
             first = false;
           }
@@ -341,8 +341,16 @@ function chipClass(on: boolean) {
 }
 
 function fmtMoney(v: number, unit: string) {
+  // Chart axis and trade values: short, like the rest of the site ($1.65M, $1.1B).
+  const a = Math.abs(v);
   const s =
-    v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(2)}K` : v >= 1 ? v.toFixed(2) : v.toPrecision(3);
+    a >= 1e12 ? `${(v / 1e12).toFixed(2)}T`
+    : a >= 1e9 ? `${(v / 1e9).toFixed(2)}B`
+    : a >= 1e6 ? `${(v / 1e6).toFixed(2)}M`
+    : a >= 1e3 ? `${(v / 1e3).toFixed(2)}K`
+    : a >= 1 ? v.toFixed(2)
+    : a === 0 ? "0"
+    : v.toPrecision(3);
   return unit === "$" ? `$${s}` : `${s} ${unit}`;
 }
 

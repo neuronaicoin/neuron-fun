@@ -22,6 +22,31 @@ const NOT_MEME = new Set(
   ["WETH", "ETH", "WBNB", "BNB", "USDC", "USDT", "DAI", "USDE", "USDS", "FDUSD", "USDG", "WBTC", "CBBTC", "BTCB", "TBTC", "CBETH", "WSTETH", "STETH", "RETH", "EURC", "USD1", "PYUSD", "FRAX", "LUSD", "GHO", "USDBC"].map((s) => s.toUpperCase())
 );
 
+/**
+ * Not a meme coin: wrapped gas coins and majors, stablecoins, staked ETH. The
+ * list shows coins people trade for fun, not the plumbing. Exported for tests.
+ */
+export function notMeme(symbol, name) {
+  const s = String(symbol ?? "").toUpperCase();
+  const n = String(name ?? "");
+  return (
+    NOT_MEME.has(s) ||
+    /USD/.test(s) || // stablecoins: RLUSD, crvUSD, USDT0, sUSDe, BUSD…
+    /^W(ETH|BTC|BNB|SOL|AVAX|POL|MATIC|S)$/.test(s) ||
+    /^(ST|WST|WE|EZ|R|CB|S|M|OS)ETH$/.test(s) ||
+    /\bwrapped\b/i.test(n) ||
+    /\bstable ?coin\b/i.test(n)
+  );
+}
+
+// No meme coin is worth a trillion dollars: bigger values are broken data
+// (a token with an absurd supply), shown as unknown. Exported for tests.
+export const MAX_SANE_USD = 1e12;
+export function sane(v) {
+  const x = num(v);
+  return x !== null && x > 0 && x < MAX_SANE_USD ? x : null;
+}
+
 const DEFAULT_NETWORKS = [
   { id: "base", chainId: 8453 },
   { id: "bsc", chainId: 56 },
@@ -63,7 +88,9 @@ export function rowsFromPools(json, network, chainId, trendingOffset = null) {
     if (!/^0x[0-9a-f]{40}$/.test(address)) return; // EVM tokens only (for now)
     const t = tokens.get(baseId) ?? {};
     const symbol = String(t.symbol ?? a.name?.split("/")[0] ?? "").trim();
-    if (!symbol || NOT_MEME.has(symbol.toUpperCase())) return;
+    if (!symbol || notMeme(symbol, t.name)) return;
+    // Broken data (absurd market value) means a broken or fake token: skip it.
+    if ((num(a.fdv_usd) ?? 0) >= MAX_SANE_USD * 10 || (num(a.market_cap_usd) ?? 0) >= MAX_SANE_USD * 10) return;
     const tx = a.transactions?.h24 ?? {};
     out.push({
       network,
@@ -75,8 +102,8 @@ export function rowsFromPools(json, network, chainId, trendingOffset = null) {
       symbol: symbol.slice(0, 24),
       image: typeof t.image_url === "string" && /^https:\/\//.test(t.image_url) ? t.image_url : null,
       price_usd: num(a.base_token_price_usd),
-      fdv_usd: num(a.fdv_usd),
-      mcap_usd: num(a.market_cap_usd),
+      fdv_usd: sane(a.fdv_usd),
+      mcap_usd: sane(a.market_cap_usd),
       liq_usd: num(a.reserve_in_usd),
       vol_24h: num(a.volume_usd?.h24),
       change_1h: num(a.price_change_percentage?.h1),
@@ -192,7 +219,8 @@ export function rowsFromDexscreener(pairs, network, chainId) {
     const address = String(p?.baseToken?.address ?? "").toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(address)) continue;
     const symbol = String(p?.baseToken?.symbol ?? "").trim();
-    if (!symbol || NOT_MEME.has(symbol.toUpperCase())) continue;
+    if (!symbol || notMeme(symbol, p?.baseToken?.name)) continue;
+    if ((num(p?.fdv) ?? 0) >= MAX_SANE_USD * 10 || (num(p?.marketCap) ?? 0) >= MAX_SANE_USD * 10) continue;
     const liq = num(p?.liquidity?.usd);
     const cur = best.get(address);
     if (cur && (cur.liq_usd ?? 0) >= (liq ?? 0)) continue;
@@ -207,8 +235,8 @@ export function rowsFromDexscreener(pairs, network, chainId) {
       symbol: symbol.slice(0, 24),
       image: typeof img === "string" && /^https:\/\//.test(img) ? img : null,
       price_usd: num(p?.priceUsd),
-      fdv_usd: num(p?.fdv),
-      mcap_usd: num(p?.marketCap),
+      fdv_usd: sane(p?.fdv),
+      mcap_usd: sane(p?.marketCap),
       liq_usd: liq,
       vol_24h: num(p?.volume?.h24),
       change_1h: num(p?.priceChange?.h1),

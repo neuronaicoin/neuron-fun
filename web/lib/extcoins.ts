@@ -50,9 +50,10 @@ export type ExtSort = "trending" | "gainers" | "losers" | "new" | "volume";
 const n = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 
 // Some DEX data reports 0 when a value is unknown: treat it as unknown.
+// …and anything over $1T is broken data, not a meme coin: unknown too.
 const pos = (v: unknown) => {
   const x = n(v);
-  return x !== null && x > 0 ? x : null;
+  return x !== null && x > 0 && x < 1e12 ? x : null;
 };
 
 function toExt(r: Record<string, unknown>): ExtCoin {
