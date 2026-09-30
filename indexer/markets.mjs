@@ -153,12 +153,12 @@ export function checkFromGoplus(g) {
 
 async function save(pool, rows) {
   if (!rows.length) return;
-  const cols = ["network", "chain_id", "address", "pool", "dex", "name", "symbol", "image", "price_usd", "fdv_usd", "mcap_usd", "liq_usd", "vol_24h", "change_1h", "change_24h", "buys_24h", "sells_24h", "pool_created", "trending_rank"];
+  const cols = ["network", "chain_id", "address", "pool", "dex", "name", "symbol", "image", "price_usd", "fdv_usd", "mcap_usd", "liq_usd", "vol_24h", "change_1h", "change_24h", "buys_24h", "sells_24h", "pool_created", "trending_rank", "x_handle"];
   const values = [];
   const params = [];
   rows.forEach((r, i) => {
     values.push(`(${cols.map((_, j) => `$${i * cols.length + j + 1}`).join(",")},now())`);
-    for (const c of cols) params.push(r[c]);
+    for (const c of cols) params.push(r[c] ?? null);
   });
   await pool.query(
     `insert into ext_tokens (${cols.join(",")},seen_at) values ${values.join(",")}
@@ -169,7 +169,8 @@ async function save(pool, rows) {
        vol_24h = excluded.vol_24h, change_1h = excluded.change_1h, change_24h = excluded.change_24h,
        buys_24h = excluded.buys_24h, sells_24h = excluded.sells_24h,
        pool_created = coalesce(excluded.pool_created, ext_tokens.pool_created),
-       trending_rank = coalesce(excluded.trending_rank, ext_tokens.trending_rank), seen_at = now()`,
+       trending_rank = coalesce(excluded.trending_rank, ext_tokens.trending_rank),
+       x_handle = coalesce(excluded.x_handle, ext_tokens.x_handle), seen_at = now()`,
     params
   );
 }
@@ -216,9 +217,20 @@ export function rowsFromDexscreener(pairs, network, chainId) {
       sells_24h: Number.isFinite(Number(p?.txns?.h24?.sells)) ? Number(p.txns.h24.sells) : null,
       pool_created: Number.isFinite(Number(p?.pairCreatedAt)) && Number(p.pairCreatedAt) > 0 ? new Date(Number(p.pairCreatedAt)).toISOString() : null,
       trending_rank: null,
+      x_handle: xHandle(p?.info?.socials),
     });
   }
   return [...best.values()];
+}
+
+/** A project's X handle from DexScreener socials (x.com/<handle> or twitter.com/<handle>). */
+export function xHandle(socials) {
+  for (const s of Array.isArray(socials) ? socials : []) {
+    if (!/^(twitter|x)$/i.test(String(s?.type ?? ""))) continue;
+    const m = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})(?:[/?#]|$)/.exec(String(s?.url ?? ""));
+    if (m && !/^(i|home|intent|search|share|hashtag)$/i.test(m[1])) return m[1];
+  }
+  return null;
 }
 
 /**

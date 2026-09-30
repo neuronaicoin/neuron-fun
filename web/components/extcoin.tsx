@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { toast } from "@/components/alerts";
+import { postOnX } from "@/components/share";
+import { extHref } from "@/lib/extcoins";
 
 const EXPLORER: Record<string, string> = {
   base: "https://basescan.org/token/",
@@ -61,6 +63,19 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                     className="font-mono text-[0.75rem] text-ink-3 hover:text-ink"
                   >
                     {coin.address.slice(0, 6)}…{coin.address.slice(-4)} ⧉
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      postOnX(
+                        `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas.${coin.xHandle ? `\n\n@${coin.xHandle}` : ""}`,
+                        `https://sasapad.fun${extHref(coin)}`
+                      )
+                    }
+                    className="h-7 px-2.5 rounded-lg border border-line text-[0.75rem] font-semibold hover:border-emerald/60 flex items-center gap-1"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.9 2H22l-6.8 7.8L23 22h-6.2l-4.8-6.3L6.4 22H3.3l7.3-8.3L1 2h6.3l4.4 5.8L18.9 2Z" /></svg>
+                    Share
                   </button>
                   {EXPLORER[coin.network] && (
                     <a href={EXPLORER[coin.network] + coin.address} target="_blank" rel="noopener noreferrer" className="text-[0.75rem] text-emerald font-semibold">Explorer ↗</a>

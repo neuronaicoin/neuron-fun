@@ -31,6 +31,8 @@ export type ExtCoin = {
   sellTax: number | null;
   mintable: boolean | null;
   top10: number | null;
+  /** The project's X account, when it lists one (tagged when people share). */
+  xHandle: string | null;
 };
 
 /** The chains All coins covers, in the order the filter shows them. */
@@ -79,6 +81,7 @@ function toExt(r: Record<string, unknown>): ExtCoin {
     sellTax: n(r.gp_sell_tax),
     mintable: typeof r.gp_mintable === "boolean" ? r.gp_mintable : null,
     top10: n(r.gp_top10),
+    xHandle: typeof r.x_handle === "string" && /^[A-Za-z0-9_]{1,15}$/.test(r.x_handle) ? r.x_handle : null,
   };
 }
 
