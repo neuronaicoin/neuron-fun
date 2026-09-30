@@ -24,7 +24,7 @@ type Row = {
 const COPY = {
   creator: { title: "Creator earnings", text: "0.3% of every trade goes to the creator." },
   buyback: { title: "Buyback & burn", text: "0.3% of every trade buys this coin back and burns it. Anyone can run a buyback." },
-  holders: { title: "Rewards for holders", text: "0.3% of every trade is paid out to holders in ETH, in proportion to what they hold." },
+  holders: { title: "Rewards for holders", text: "0.3% of every trade is paid out to holders in USDC, in proportion to what they hold." },
 } as const;
 
 /**

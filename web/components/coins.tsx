@@ -1,5 +1,6 @@
 "use client";
 
+import { USD_MODE } from "@/lib/config";
 import { toggleWatch, useWatchlist } from "@/lib/watchlist";
 
 import Link from "next/link";
@@ -83,7 +84,9 @@ function RaceRow({ c, share, leading }: { c: CurveInfo; share: number; leading: 
           )}
         </span>
         <span className="font-mono text-ink-2">
-          {usd(c.usd, 2)} <span className="text-ink-3">· {fmtEth(c.realNative, 5)}</span>
+          {usd(c.usd, 2)}
+          {/* Dollar edition: the amount already is dollars; don't say it twice. */}
+          {!USD_MODE && <span className="text-ink-3"> · {fmtEth(c.realNative, 5)}</span>}
         </span>
       </div>
       <div className="mt-1.5 h-1.5 rounded-full bg-line/60 overflow-hidden">

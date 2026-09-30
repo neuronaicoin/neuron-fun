@@ -286,7 +286,7 @@ export default function StatsPage() {
       </Panel>
 
       <p className="mt-5 text-[0.75rem] text-ink-3">
-        Figures come from sasa&apos;s own index of on-chain events and refresh every 30 seconds. Dollar values use the current ETH price.
+        Figures come from sasa&apos;s own index of on-chain events and refresh every 30 seconds. All amounts are in dollars (USDC).
       </p>
     </div>
   );

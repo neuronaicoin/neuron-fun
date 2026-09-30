@@ -11,6 +11,7 @@ import { useWallet, WALLETCONNECT_ID, type Eip1193, type WalletOption } from "./
 import { toast } from "./alerts";
 import { CHAINS, type NeuronChain } from "@/lib/config";
 import { clientFor } from "@/lib/data";
+import { cashOf } from "@/lib/portfolio";
 import { friendlyError } from "@/lib/format";
 import {
   NATIVE,
@@ -704,7 +705,7 @@ export function WithdrawSheet({ onClose }: { onClose: () => void }) {
     if (!address) return;
     let alive = true;
     Promise.all(
-      sasaChains.map(async ({ conf }) => [conf.chain.id, await clientFor(conf).getBalance({ address: address as Address }).catch(() => 0n)] as const)
+      sasaChains.map(async ({ conf }) => [conf.chain.id, await cashOf(conf, address as Address)] as const)
     ).then((rows) => {
       if (!alive) return;
       const b = Object.fromEntries(rows) as Record<number, bigint>;

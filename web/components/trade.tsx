@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { encodeAbiParameters, formatEther, keccak256, maxUint256, numberToHex, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
-import { curveAbi, routerAbi, tokenAbi } from "@/lib/abis";
-import { SLIPPAGE_BPS, explorerTx } from "@/lib/config";
+import { curveAbi, routerAbi, tokenAbi, usdcAbi } from "@/lib/abis";
+import { SLIPPAGE_BPS, USD_MODE, explorerTx } from "@/lib/config";
 import { call, type Call } from "@/lib/tx";
 import { signalTrade } from "@/lib/live";
 import { fetchTrades } from "@/lib/data";
@@ -32,12 +32,19 @@ const QUOTE_ACCOUNT: Address = "0x000000000000000000000000000000000000c0de";
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
 
 /** Storage slot of allowance(owner, spender) in the coin token (OpenZeppelin ERC20, slot 1). */
+/** Storage slot of `owner`'s balance in an OpenZeppelin ERC20 (TestUSDC, the coins). */
+function balanceSlot(owner: Address): Hex {
+  return keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 0n]));
+}
+
 function allowanceSlot(owner: Address, spender: Address): Hex {
   const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 1n]));
   return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
 }
 
 function ethFromUsd(usdAmount: number, ethUsd: number): bigint {
+  // Dollar edition: amounts are USDC (6 decimals), so $1 = 1,000,000 units.
+  if (USD_MODE) return BigInt(Math.floor(usdAmount * 1e6 + 1e-6));
   const eth = usdAmount / ethUsd;
   return BigInt(Math.floor(eth * 1e9)) * 1_000_000_000n;
 }
@@ -75,7 +82,8 @@ export function QuickTrade({
 }) {
   const { address, embedded, send } = useWallet();
   // Email users pay no network fees, so nothing needs to be kept back.
-  const reserve = embedded ? 0n : GAS_RESERVE;
+  // Gas is paid in the chain's coin, never out of the USDC cash.
+  const reserve = embedded || USD_MODE ? 0n : GAS_RESERVE;
   const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
   const sellable = coin.curves;
   const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
@@ -112,8 +120,12 @@ export function QuickTrade({
     const entries = await Promise.all(
       sellable.map(async (c) => {
         const pub = clientFor(c.chain);
+        // `eth` is the cash a buy can spend: USDC in the dollar edition.
         const [eth, tok] = await Promise.all([
-          pub.getBalance({ address }).catch(() => 0n),
+          (USD_MODE
+            ? (pub.readContract({ address: c.chain.usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>)
+            : pub.getBalance({ address })
+          ).catch(() => 0n),
           pub.readContract({ address: c.token, abi: tokenAbi, functionName: "balanceOf", args: [address] }).catch(() => 0n),
         ]);
         return [c.chain.key, { eth, tok: tok as bigint }] as const;
@@ -185,14 +197,22 @@ export function QuickTrade({
           // Quote by simulating the router trade, with enough balance or allowance pretended.
           const router = await routerOf(chosen);
           if (side === "buy") {
+            // Pretend the quote account holds and approved the USDC (TestUSDC storage layout).
             const sim = await pub.simulateContract({
               account: QUOTE_ACCOUNT,
               address: router,
               abi: routerAbi,
               functionName: "buy",
-              args: [chosen.token, 0n, QUOTE_ACCOUNT, deadline()],
-              value: amount,
-              stateOverride: [{ address: QUOTE_ACCOUNT, balance: amount + 10n ** 18n }],
+              args: [chosen.token, amount, 0n, QUOTE_ACCOUNT, deadline()],
+              stateOverride: [
+                {
+                  address: chosen.chain.usdc,
+                  stateDiff: [
+                    { slot: balanceSlot(QUOTE_ACCOUNT), value: numberToHex(amount, { size: 32 }) },
+                    { slot: allowanceSlot(QUOTE_ACCOUNT, router), value: numberToHex(maxUint256, { size: 32 }) },
+                  ],
+                },
+              ],
             });
             setQuote(sim.result as bigint);
           } else if (address) {
@@ -281,13 +301,27 @@ export function QuickTrade({
         const out =
           quote ??
           (pool
-            ? ((await pub.simulateContract({ account: address, address: spender, abi: routerAbi, functionName: "buy", args: [chosen.token, 0n, address, deadline()], value: amount })).result as bigint)
+            ? ((
+                await pub.simulateContract({
+                  account: address,
+                  address: spender,
+                  abi: routerAbi,
+                  functionName: "buy",
+                  args: [chosen.token, amount, 0n, address, deadline()],
+                  stateOverride: [
+                    { address: chosen.chain.usdc, stateDiff: [{ slot: allowanceSlot(address, spender), value: numberToHex(maxUint256, { size: 32 }) }] },
+                  ],
+                })
+              ).result as bigint)
             : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint));
         const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
+        // Pay with USDC: approve exactly this buy (email users get it bundled, gasless).
+        const allowance = (await pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] })) as bigint;
+        if (allowance < amount) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, amount]));
         calls.push(
           pool
-            ? call(spender, routerAbi, "buy", [chosen.token, minOut, address, deadline()], amount)
-            : call(spender, curveAbi, "buy", [minOut, address], amount)
+            ? call(spender, routerAbi, "buy", [chosen.token, amount, minOut, address, deadline()])
+            : call(spender, curveAbi, "buy", [amount, minOut, address])
         );
       } else {
         const [out, allowance] = await Promise.all([
@@ -581,6 +615,25 @@ export function QuickTrade({
 /** First visit with an empty wallet: how to get free test ETH. Disappears once ETH arrives. */
 export function FundingGuide({ address, chains, gasless }: { address: string; chains: CurveInfo["chain"][]; gasless: boolean }) {
   const [copied, setCopied] = useState(false);
+  // Dollar edition: one tap gets free test USDC (no faucet sites, no copying).
+  if (USD_MODE) {
+    return (
+      <div className="mt-4 rounded-2xl border border-emerald/40 bg-emerald-soft p-4">
+        <p className="font-semibold text-[0.9375rem]">Your wallet is ready. Grab free test dollars to start.</p>
+        <p className="text-[0.8125rem] text-ink-2 mt-1">$100 of test USDC a day on each chain. It has no real value.</p>
+        <button
+          type="button"
+          onClick={() => openMoney({ kind: "deposit" })}
+          className="mt-3 w-full h-12 rounded-xl bg-emerald text-on-accent font-bold"
+        >
+          Get $100 free
+        </button>
+        {!gasless && (
+          <p className="text-[0.6875rem] text-ink-3 mt-2">Using your own wallet? You also need a little test ETH for network fees.</p>
+        )}
+      </div>
+    );
+  }
   const withFaucet = chains.filter((c, i, a) => c.faucet && a.findIndex((x) => x.key === c.key) === i);
   return (
     <div className="mt-4 rounded-2xl border border-emerald/40 bg-emerald-soft p-4">

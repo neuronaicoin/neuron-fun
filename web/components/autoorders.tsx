@@ -11,7 +11,9 @@ import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
 import { toast } from "./alerts";
 import { usd } from "./coins";
-import { curveAbi, ordersAbi, tokenAbi } from "@/lib/abis";
+import { curveAbi, ordersAbi, tokenAbi, usdcAbi } from "@/lib/abis";
+import { USD_MODE } from "@/lib/config";
+import { cashOf } from "@/lib/portfolio";
 import { routerOf } from "@/lib/contracts";
 import { clientFor, db, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtTokens, friendlyError } from "@/lib/format";
@@ -110,7 +112,8 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
-  const dipWei = ethUsd ? parseEther(String((dip.usd / ethUsd).toFixed(12))) : 0n;
+  // Dollar edition: USDC has 6 decimals.
+  const dipWei = USD_MODE ? BigInt(dip.usd) * 1_000_000n : ethUsd ? parseEther(String((dip.usd / ethUsd).toFixed(12))) : 0n;
   const tpAmount = held !== null ? (held * BigInt(tp.share)) / 100n : 0n;
   const eth = (w: bigint | null) => (w === null ? "…" : ethUsd ? usd((Number(w) / 1e18) * ethUsd, 2) : `${(Number(w) / 1e18).toFixed(6)} ETH`);
 
@@ -121,7 +124,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
     const [bal, allow, native] = await Promise.all([
       pub.readContract({ address: cur.token, abi: tokenAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>,
       pub.readContract({ address: cur.token, abi: tokenAbi, functionName: "allowance", args: [address, cur.chain.orders] }) as Promise<bigint>,
-      pub.getBalance({ address }),
+      cashOf(cur.chain, address),
     ]);
     setHeld(bal);
     setAllowance(allow);
@@ -254,7 +257,10 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
         const t = await tokensFor(cur, dipWei);
         if (!t) throw new Error("Couldn't price this coin right now. Try again in a moment.");
         const want = (t * 10_000n) / BigInt(Math.round((100 - dip.pct) * 100));
-        calls.push(call(cur.chain.orders, ordersAbi, "placeBuy", [cur.curve, router, want, MAX, 0n], dipWei));
+        // The dip money is set aside in USDC: approve the orders contract for it.
+        const allow = (await clientFor(cur.chain).readContract({ address: cur.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address!, cur.chain.orders] })) as bigint;
+        if (allow < dipWei) calls.push(call(cur.chain.usdc, usdcAbi, "approve", [cur.chain.orders, dipWei]));
+        calls.push(call(cur.chain.orders, ordersAbi, "placeBuy", [cur.curve, router, dipWei, want, MAX, 0n]));
       }
       if (!calls.length) return;
       await send(cur.chain.chain, calls, setBusy);

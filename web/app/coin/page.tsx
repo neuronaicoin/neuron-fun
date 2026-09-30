@@ -176,7 +176,7 @@ function CoinPage() {
                   ))}
                 </div>
               )}
-              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
+              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
             </div>
           )}
 

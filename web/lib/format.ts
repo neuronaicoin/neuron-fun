@@ -1,8 +1,17 @@
 import { formatEther, formatUnits } from "viem";
+import { USD_MODE } from "./config";
 
-/** ETH amount for people: a few significant digits, never scientific. */
+/**
+ * Money amount for people. Dollar edition: USDC (6 decimals) shown as dollars.
+ * Otherwise ETH with a few significant digits, never scientific.
+ */
 export function fmtEth(wei: bigint | null | undefined, digits = 4): string {
   if (wei === null || wei === undefined) return "—";
+  if (USD_MODE) {
+    const d = Number(wei) / 1e6;
+    if (d > 0 && d < 0.01) return "<$0.01";
+    return `$${d.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   if (wei === 0n) return "0 ETH";
   const n = Number(formatEther(wei));
   if (n < 10 ** -digits) return `<${(10 ** -digits).toFixed(digits)} ETH`;

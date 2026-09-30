@@ -7,7 +7,8 @@
  */
 import { useSyncExternalStore } from "react";
 import type { Address } from "viem";
-import { CHAINS, type NeuronChain } from "./config";
+import { CHAINS, USD_MODE, type NeuronChain } from "./config";
+import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
 
 export const CASH_SYMBOL = "ETH";
@@ -117,7 +118,8 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
   const chains = uniqueChains();
   const [pf, cash, trades] = await Promise.all([
     fetchPortfolio(address),
-    Promise.all(chains.map(async (c) => ({ chain: c, wei: await clientFor(c).getBalance({ address: address as Address }).catch(() => 0n) }))),
+    // Cash: USDC in the dollar edition (the chain's coin otherwise).
+    Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
   ]);
   const prices = pf.prices ?? {};
@@ -225,4 +227,11 @@ export function capText(v: number): string {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
   return `$${v.toFixed(v < 10 ? 2 : 0)}`;
+}
+
+/** Spendable cash on one chain: its USDC (dollar edition), else its native coin. Raw units. */
+export async function cashOf(c: NeuronChain, address: Address): Promise<bigint> {
+  const pub = clientFor(c);
+  if (USD_MODE) return (pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>).catch(() => 0n);
+  return pub.getBalance({ address }).catch(() => 0n);
 }

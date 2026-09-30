@@ -7,12 +7,12 @@ import { saveLinks } from "@/lib/coinlinks";
 import { AiLaunch } from "@/components/ailaunch";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toHex, type Address, type Hex } from "viem";
+import { encodeAbiParameters, keccak256, maxUint256, numberToHex, toHex, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
 import { useMoney } from "@/lib/portfolio";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
-import { factoryAbi } from "@/lib/abis";
+import { factoryAbi, usdcAbi } from "@/lib/abis";
 import { overCap, useSafety } from "@/lib/safety";
 import { CHAINS, SLIPPAGE_BPS, TARGET_USD, explorerTx, type NeuronChain } from "@/lib/config";
 import { clientFor, coinHref, isImageUrl } from "@/lib/data";
@@ -26,11 +26,17 @@ type Run = { status: "working" | "done" | "failed"; note?: string; hash?: string
 const SUPPLY = 1_000_000_000n * 10n ** 18n;
 const DEV_OPTIONS = [0, 1, 2, 5, 10];
 
+/** Storage slot of `owner`'s allowance for `spender` in TestUSDC (OpenZeppelin ERC20 layout). */
+function usdcAllowanceSlot(owner: Address, spender: Address) {
+  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 1n]));
+  return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
+}
+
 /** Where the creator's 0.3% of every trade goes. Fixed at launch. */
 const FEE_MODES = [
   { id: 0, key: "creator", title: "To you", text: "Your 0.3% of every trade builds up for you to collect." },
   { id: 1, key: "buyback", title: "Buyback & burn", text: "Your share buys the coin back and burns it, so the supply keeps shrinking." },
-  { id: 2, key: "holders", title: "To holders", text: "Your share is paid out to everyone holding the coin, in ETH." },
+  { id: 2, key: "holders", title: "To holders", text: "Your share is paid out to everyone holding the coin, in USDC." },
 ] as const;
 
 /** Native coin needed to buy `tokens` from a fresh curve, fee included. */
@@ -155,24 +161,34 @@ export default function CreatePage() {
       if (runs[c.key]?.status === "done") continue;
       const set = (r: Run) => setRuns((p) => ({ ...p, [c.key]: r }));
       try {
+        // The creator's first buy, in USDC (0 = none). Paid by approving the factory.
         const value = devCost(c);
-        const args = [name.trim(), cleanSymbol, logo, description.trim(), key, 0n, feeMode] as const;
+        const args = [name.trim(), cleanSymbol, logo, description.trim(), key, value, 0n, feeMode] as const;
         const pub = clientFor(c);
         set({ status: "working", note: "Checking…" });
+        // Simulate as if the factory were already approved (the approve goes in the same bundle).
+        const override = [
+          {
+            address: c.usdc,
+            stateDiff: [{ slot: usdcAllowanceSlot(address, c.factory), value: numberToHex(maxUint256, { size: 32 }) }],
+          },
+        ];
         const sim =
           lock > 0
-            ? await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launchLocked", args: [...args, BigInt(lock)], value })
-            : await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, value });
+            ? await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launchLocked", args: [...args, BigInt(lock)], stateOverride: override })
+            : await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, stateOverride: override });
         const minOut = value > 0n ? (sim.result[2] * (10_000n - SLIPPAGE_BPS)) / 10_000n : 0n;
-        const hash = await send(
-          c.chain,
-          [
-            lock > 0
-              ? call(c.factory, factoryAbi, "launchLocked", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode, BigInt(lock)], value)
-              : call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], minOut, feeMode], value),
-          ],
-          (note) => set({ status: "working", note })
+        const calls = [];
+        if (value > 0n) {
+          const allowance = (await pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "allowance", args: [address, c.factory] })) as bigint;
+          if (allowance < value) calls.push(call(c.usdc, usdcAbi, "approve", [c.factory, value]));
+        }
+        calls.push(
+          lock > 0
+            ? call(c.factory, factoryAbi, "launchLocked", [args[0], args[1], args[2], args[3], args[4], value, minOut, feeMode, BigInt(lock)])
+            : call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], value, minOut, feeMode])
         );
+        const hash = await send(c.chain, calls, (note) => set({ status: "working", note }));
         set({ status: "done", hash });
       } catch (e) {
         set({ status: "failed", note: friendlyError(e) });

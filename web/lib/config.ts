@@ -10,7 +10,8 @@ export const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 export const WALLETCONNECT_PROJECT_ID = "d5a8ab4f1bb470db701a5396d283b28a";
 
 /** Dollar total, across all chains, at which a coin graduates. Must match the keeper. */
-export const TARGET_USD = 5;
+// Dollar edition testnet: $20 across all chains (each chain needs at least $10 to be the winner).
+export const TARGET_USD = 20;
 
 /** Slippage tolerated on buys and sells, in basis points. */
 export const SLIPPAGE_BPS = 500n;
@@ -24,7 +25,7 @@ export type NeuronChain = {
   factory: Address;
   startBlock: bigint;
   /** Price symbol of the gas coin (for dollar totals). */
-  priceSymbol: "ETH" | "BNB" | "USD";
+  priceSymbol: "ETH" | "BNB" | "USD" | "USDC";
   /** Uniswap v4 PoolManager: holds graduated liquidity, so it is not a "holder". */
   poolManager: Address;
   /** Router for trading graduated coins in their locked pools. */
@@ -39,6 +40,8 @@ export type NeuronChain = {
   faucet?: string;
   /** Auto orders (take profit, stop loss, buy the dip) on this chain. */
   orders?: Address;
+  /** The USDC every coin on this chain trades against (sasa v5; TestUSDC on testnets). */
+  usdc: Address;
   /** Multisig that owns this chain's factory (mainnet). Empty on testnet. */
   safe?: Address;
   /**
@@ -76,26 +79,16 @@ export const CHAINS: NeuronChain[] = [
     short: "Robinhood",
     color: "#12B886",
     chain: robinhoodTestnet,
-    // v4 (optional creator lock), Sep 28, 2026.
-    factory: "0xda5a4EA92862e1b254E42E55Da8C10E4e0501746",
+    // v5, the dollar edition: coins trade against USDC. Sep 30, 2026.
+    factory: "0x443696e65CAfD60a56F86E71ffb01377e06B0B9e",
     startBlock: 123588465n,
-    priceSymbol: "ETH",
+    priceSymbol: "USDC",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-    router: "0xC61580cCAE3BC86854EEB062F61f9139c4e358ae",
-    migrator: "0x7b4f96D9229A65F1CF61e487082d1b086E9d4833",
-    orders: "0x3ece9F6A1057332B25c94825060Ed9FF7765061b",
-    legacy: [
-      {
-        factory: "0xd80c3007DF26872aF0a2Cc2aA6412fD25A6c2c76",
-        router: "0x824aF6707F0f472Ea486E5adaABC1aE8b12C51E8",
-        migrator: "0xaA92cCcFa811EAEEB2972351E8b6B4F674692467",
-      },
-      {
-        factory: "0x4c4C12f8f4151c18AAcE0208D4F60AF813266991",
-        router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
-        migrator: "0x2da5FC41bb0b0a2fbfB2F43073394cD66DB6e29D",
-      },
-    ],
+    router: "0x0D60A942712ca116aE7b52Df9E45Bad67f6c2aD7",
+    migrator: "0x73CB6B02DF8Dd5bacB856EF6CFf2E9Dc24b7b650",
+    orders: "0x768be4E1c9AD544a78Ddc07ad88ecA5D96BF4a52",
+    usdc: "0x65DF225CC2150ACC635EeA117aD4fb2E69b2384D",
+    legacy: [],
     gasPolicy: "6d52f227-a36c-4671-bca1-3b088153a180",
     alchemyNetwork: "robinhood-testnet",
     faucet: "https://faucet.testnet.chain.robinhood.com",
@@ -106,31 +99,29 @@ export const CHAINS: NeuronChain[] = [
     short: "Base",
     color: "#3B6FF5",
     chain: baseSepolia,
-    // v4 (optional creator lock), Sep 28, 2026.
-    factory: "0x0bE77729d6682ee64Ca6327AcA34e5FC555C6AC4",
-    startBlock: 47265800n,
-    priceSymbol: "ETH",
+    // v5, the dollar edition: coins trade against USDC. Sep 30, 2026.
+    factory: "0x0e78b5a53ed3463256F7bc975d25d4aA71F91E47",
+    startBlock: 47491287n,
+    priceSymbol: "USDC",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
-    router: "0x2A3BfE65e2afbb160665c63F8fB0B0d31b1d52a2",
-    migrator: "0xD69E2a9Ff6914920625DfFc90AaF6A41C9A95685",
-    orders: "0x6F43BfA2bC5d93D3067302f718A0fBAAc7B38a1d",
-    legacy: [
-      {
-        factory: "0x60DE0f3712AA0af22acc92e36a25a58d7Ac791D0",
-        router: "0x4c283e95627FA53beD6bA03dA2d1C6866e14c9f1",
-        migrator: "0xd9E69Af53576d320bd2c4dCf863240027156Fe92",
-      },
-      {
-        factory: "0x9C93b18cA739844B53AF59E0d2E9E4B6CF84D165",
-        router: "0x46947120FCc8D804C1188814A1BE9178A06DA6b9",
-        migrator: "0xFeFC59c4CE3Df167bb1CEa6739501d7240FF5383",
-      },
-    ],
+    router: "0x5186Cd794D41240cCa74e7041Af6345F16104d52",
+    migrator: "0x20AEB787287393A522b9275F35e7f5Aa93173493",
+    orders: "0x0fd5143302C7fb4B107E7Cbf5B4393fE41704A01",
+    usdc: "0x679F33e62DDe3da82442CD49D978A233A099C186",
+    legacy: [],
     gasPolicy: "4832ceec-26ce-4fc0-bd12-76f8b9bb99fe",
     alchemyNetwork: "base-sepolia",
     faucet: "https://www.alchemy.com/faucets/base-sepolia",
   },
 ];
+
+/**
+ * sasa v5: every chain's coins trade against USDC (6 decimals). Site-wide, the
+ * "ethUsd" number that prices amounts means "dollars per 1e18 raw units of the
+ * money coins trade against"; for USDC that is 1e12, so the existing
+ * `amount / 1e18 * ethUsd` maths gives dollars unchanged.
+ */
+export const USD_MODE = true;
 
 export const chainById = (id: number) => CHAINS.find((c) => c.chain.id === id);
 export const explorerAddress = (c: NeuronChain, a: string) => `${c.chain.blockExplorers!.default.url}/address/${a}`;

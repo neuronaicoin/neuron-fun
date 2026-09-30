@@ -23,8 +23,8 @@ export function TestnetBanner() {
   if (!IS_TESTNET) return null;
   return (
     <div className="bg-paper border-b border-line text-ink-3 text-center text-[0.75rem] leading-snug px-4 py-1.5"><span className="inline-block w-1.5 h-1.5 rounded-full bg-warn-ink mr-2 align-middle" aria-hidden="true" />
-      <span className="sm:hidden">Testnet · free test ETH, no real value</span>
-      <span className="hidden sm:inline">Test version. It uses free test ETH, so nothing here has real value.</span>
+      <span className="sm:hidden">Testnet · free test dollars, no real value</span>
+      <span className="hidden sm:inline">Test version. It uses free test dollars (USDC), so nothing here has real value.</span>
     </div>
   );
 }

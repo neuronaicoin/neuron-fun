@@ -4,6 +4,7 @@ import { fetchLock, timeLeft } from "@/lib/lock";
 import { useEffect, useState } from "react";
 import { db, type Coin, type CurveInfo } from "@/lib/data";
 import { Skeleton } from "./coins";
+import { USD_MODE } from "@/lib/config";
 
 type Level = "good" | "warn" | "bad" | "info";
 type Check = { level: Level; title: string; detail: string };
@@ -74,7 +75,7 @@ async function readChecks(coin: Coin): Promise<Check[]> {
   checks.push(
     sold === 0
       ? { level: "good", title: "Creator hasn't sold", detail: "No sells from the creator's wallet on any chain." }
-      : { level: "warn", title: `Creator sold ${(sold / 1e18).toFixed(4)} ETH worth`, detail: "Not a problem by itself, but worth knowing." }
+      : { level: "warn", title: USD_MODE ? `Creator sold $${(sold / 1e6).toFixed(2)} worth` : `Creator sold ${(sold / 1e18).toFixed(4)} ETH worth`, detail: "Not a problem by itself, but worth knowing." }
   );
 
   // Concentration among the top 10 wallets (worst chain).

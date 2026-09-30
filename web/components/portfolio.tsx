@@ -4,6 +4,8 @@
  * Header balance ("$120.16 | ＋"), the Portfolio sheet (cash, coins, profit
  * and loss, quick sell) and the host that shows Deposit / Withdraw / Sell.
  */
+import { UsdDepositSheet, UsdWithdrawSheet } from "./usdmoney";
+import { USD_MODE } from "@/lib/config";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Sheet } from "./chrome";
@@ -100,8 +102,9 @@ export function MoneyHost() {
     }
   }, [address]);
   if (!address || !sheet) return null;
-  if (sheet.kind === "deposit") return <DepositSheet onClose={closeMoney} />;
-  if (sheet.kind === "withdraw") return <WithdrawSheet onClose={closeMoney} />;
+  // Dollar edition: USDC in and out (the ETH sheets stay for chains without USDC).
+  if (sheet.kind === "deposit") return USD_MODE ? <UsdDepositSheet onClose={closeMoney} /> : <DepositSheet onClose={closeMoney} />;
+  if (sheet.kind === "withdraw") return USD_MODE ? <UsdWithdrawSheet onClose={closeMoney} /> : <WithdrawSheet onClose={closeMoney} />;
   if (sheet.kind === "sell") return <SellSheet coin={sheet.coin} pct={sheet.pct} />;
   return <PortfolioSheet />;
 }
