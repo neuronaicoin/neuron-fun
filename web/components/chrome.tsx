@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { CHAINS, IS_TESTNET } from "@/lib/config";
@@ -235,7 +235,7 @@ function isActive(pathname: string, href: string) {
 export function Header() {
   const pathname = usePathname() || "/";
   return (
-    <header className="relative md:sticky md:top-0 z-40 bg-paper/90 md:backdrop-blur border-b border-line">
+    <header className="sticky top-0 z-40 bg-paper/90 backdrop-blur border-b border-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
         <Link href="/explore/" className="flex items-center gap-2.5 text-ink shrink-0">
           <LogoMark />
@@ -287,6 +287,7 @@ const MORE = [
   { href: "/forum/", label: "Forum", icon: "💬", note: "Every coin's community", plain: true },
   { href: "/stats/", label: "Stats", icon: "📊", note: "Volume, fees, graduations" },
   { href: "/how-it-works/", label: "How it works", icon: "🧭", note: "sasa in 2 minutes" },
+  { href: "/help/", label: "Help", icon: "💁", note: "Answers, or write to us" },
 ] as const;
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
@@ -346,9 +347,27 @@ function HeaderMore() {
 export function BottomNav() {
   const pathname = usePathname() || "/";
   const [more, setMore] = useState(false);
+  // Bars that sit above this menu (You page's Deposit / Withdraw) use its real height.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const set = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) document.documentElement.style.setProperty("--money-bar-bottom", `${Math.ceil(h)}px`);
+      else document.documentElement.style.removeProperty("--money-bar-bottom");
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--money-bar-bottom");
+    };
+  }, []);
   const moreActive = MORE.some((m) => !("tablet" in m) && isActive(pathname, m.href));
   return (
-    <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
+    <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-5">
         {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
@@ -440,6 +459,7 @@ export function Footer() {
           <a href="/forum/" className="text-emerald">Forum</a>
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <Link href="/learn/" className="text-emerald">Learn</Link>
+          <Link href="/help/" className="text-emerald">Help</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
         </nav>

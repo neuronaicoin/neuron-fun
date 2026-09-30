@@ -254,8 +254,14 @@ export async function fetchTrades(filter: { coinId?: string; trader?: string; li
 
 export type Candle = { t: number; open: number; high: number; low: number; close: number; volume: number };
 
-export async function fetchCandles(chainId: number, curve: string, bucketSeconds: number): Promise<Candle[]> {
-  const { data, error } = await db.rpc("candles", { p_chain_id: chainId, p_curve: curve, p_bucket: bucketSeconds, p_limit: 500 });
+/**
+ * Candles for one chain's curve, or (with `coinId`) for the whole coin across
+ * every chain: the dollar edition shows one chart per coin.
+ */
+export async function fetchCandles(chainId: number, curve: string, bucketSeconds: number, coinId?: string): Promise<Candle[]> {
+  const { data, error } = coinId
+    ? await db.rpc("candles_coin", { p_coin_id: coinId.toLowerCase(), p_bucket: bucketSeconds, p_limit: 500 })
+    : await db.rpc("candles", { p_chain_id: chainId, p_curve: curve, p_bucket: bucketSeconds, p_limit: 500 });
   if (error) throw error;
   return ((data ?? []) as Record<string, unknown>[])
     .map((r) => ({

@@ -25,13 +25,24 @@ export function postOnX(text: string, url?: string) {
   const t = /@sasapadfun/i.test(text) ? text : `${text}\n\nvia @${SASA_X}`;
   const q = new URLSearchParams({ text: t });
   if (url) q.set("url", url);
-  window.open(`https://x.com/intent/post?${q.toString()}`, "_blank", "noopener,noreferrer");
+  openX(`https://x.com/intent/post?${q.toString()}`);
   window.dispatchEvent(new Event(SHARED_X_EVENT));
 }
 
 /** Opens X's "follow @sasapadfun" screen. */
 export function followOnX() {
-  window.open(`https://x.com/intent/follow?screen_name=${SASA_X}`, "_blank", "noopener,noreferrer");
+  openX(`https://x.com/intent/follow?screen_name=${SASA_X}`);
+}
+
+/**
+ * Phones: open the link in this tab, so the X app takes it over (already
+ * signed in, post pre-filled). A new browser tab would ask to log in to X.
+ * Computers: a new tab.
+ */
+function openX(url: string) {
+  const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  if (phone) window.location.href = url;
+  else window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function ShareButton({ coin }: { coin: Coin }) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
 import { HolderMap } from "@/components/holdermap";
 import { LockBadge } from "@/components/lock";
@@ -162,7 +163,7 @@ function CoinPage() {
         <div className="order-2 lg:order-1 grid gap-6 min-w-0">
           {chartCurve && (
             <div className="bg-surface border border-line rounded-2xl p-4 sm:p-5">
-              {coin.curves.length > 1 && (
+              {!USD_MODE && coin.curves.length > 1 && (
                 <div className="flex flex-wrap gap-2 mb-4">
                   {coin.curves.map((c) => (
                     <button
@@ -176,7 +177,7 @@ function CoinPage() {
                   ))}
                 </div>
               )}
-              <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
+              <PriceChart curve={chartCurve} coin={USD_MODE ? coin : undefined} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
             </div>
           )}
 

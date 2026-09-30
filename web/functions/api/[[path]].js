@@ -29,6 +29,7 @@ import { forumRoute } from "../../edge/forum-api.js";
 import { socialRoute } from "../../edge/social-api.js";
 import { admins } from "../../edge/forum-core.js";
 import { aiRoute } from "../../edge/ai-api.js";
+import { adminHelp, submitHelp } from "../../edge/help-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SESSION_DAYS = 30;
@@ -370,7 +371,10 @@ export async function onRequest(ctx) {
 
     const me = await readToken(env.SESSION_SECRET, request.headers.get("authorization"));
     who = me;
+    // The help form works signed out too.
+    if (parts[0] === "help" && parts.length === 1 && method === "POST") return await submitHelp(env, request, body, me);
     if (!me) return fail(401, "Please sign in again.");
+    if (parts[0] === "help") return await adminHelp(env, me, parts, method, body, url);
 
     if (parts[0] === "alerts") {
       if (parts.length === 1 && method === "GET") return await listAlerts(env, me);

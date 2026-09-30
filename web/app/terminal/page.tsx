@@ -1,5 +1,6 @@
 "use client";
 
+import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
 import Link from "next/link";
 import { ScrollRow } from "@/components/scrollrow";
@@ -341,7 +342,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
 
       {chartCurve && (
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
-          {coin.curves.length > 1 && (
+          {!USD_MODE && coin.curves.length > 1 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {coin.curves.map((c) => (
                 <button
@@ -355,7 +356,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               ))}
             </div>
           )}
-          <PriceChart curve={chartCurve} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
+          <PriceChart curve={chartCurve} coin={USD_MODE ? coin : undefined} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
         </div>
       )}
 

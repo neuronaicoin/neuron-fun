@@ -155,6 +155,17 @@ async function api<T>(path: string, init: { method?: string; body?: unknown } = 
   return j;
 }
 
+/** A signed-in GET from /api/<path> (signs in first if needed). */
+export async function authedGet<T>(sign: SignFn, path: string): Promise<T> {
+  await ensureSession(sign);
+  return api<T>(path);
+}
+
+/** The signed-in session token, if any (lets public forms say who is writing). */
+export function sessionToken(): string | null {
+  return session?.token ?? null;
+}
+
 /** A signed-in POST to /api/<path> (signs in first if needed). */
 export async function authedPost<T>(sign: SignFn, path: string, body: unknown): Promise<T> {
   await ensureSession(sign);

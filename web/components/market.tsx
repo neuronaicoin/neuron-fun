@@ -37,11 +37,14 @@ const SCALE_MODE = { normal: 0, log: 1, percent: 2 } as const;
  */
 export function PriceChart({
   curve,
+  coin,
   ethUsd,
   alertLines = [],
   markers = [],
 }: {
   curve: CurveInfo;
+  /** One chart for the whole coin: trades from every chain together. */
+  coin?: Coin;
   ethUsd: number | null;
   alertLines?: number[];
   /** Buys by people you follow and big buys, shown under the candles. */
@@ -111,7 +114,7 @@ export function PriceChart({
       let lastBar: { time: UTCTimestamp; open: number; high: number; low: number; close: number } | null = null;
       const load = async () => {
         try {
-          const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range);
+          const rows = await fetchCandles(curve.chain.chain.id, curve.curve, range, coin?.id);
           if (!alive) return;
           const k = 1e9 * (ethUsd ?? 1);
           setEmpty(rows.length === 0);
@@ -141,7 +144,10 @@ export function PriceChart({
 
       // A trade on this curve: move the last candle now, then fetch the real data.
       stopSignal = onTrade((sig) => {
-        if (!alive || sig.chainId !== curve.chain.chain.id || sig.curve.toLowerCase() !== curve.curve.toLowerCase()) return;
+        const ours = coin
+          ? coin.curves.some((c) => c.chain.chain.id === sig.chainId && c.curve.toLowerCase() === sig.curve.toLowerCase())
+          : sig.chainId === curve.chain.chain.id && sig.curve.toLowerCase() === curve.curve.toLowerCase();
+        if (!alive || !ours) return;
         if (sig.nativePerToken !== null) {
           const price = sig.nativePerToken * 1e9 * (ethUsd ?? 1);
           const bucket = (Math.floor(Date.now() / 1000 / range) * range) as UTCTimestamp;
@@ -181,7 +187,7 @@ export function PriceChart({
       volRef.current = null;
       candlesRef.current = null;
     };
-  }, [curve.chain.chain.id, curve.curve, range, ethUsd, unit]);
+  }, [curve.chain.chain.id, curve.curve, range, ethUsd, unit, coin?.id]);
 
   // Scale mode, auto-fit and the volume bars follow the toggles without rebuilding the chart.
   useEffect(() => {
@@ -274,7 +280,7 @@ export function PriceChart({
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="hidden sm:inline text-[0.8125rem] font-semibold text-ink-2">Market value on {curve.chain.short}</span>
+        <span className="hidden sm:inline text-[0.8125rem] font-semibold text-ink-2">{coin ? "Market value" : `Market value on ${curve.chain.short}`}</span>
         <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Candle size">
           {RANGES.map((r) => (
             <button

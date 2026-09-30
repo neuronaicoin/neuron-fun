@@ -101,6 +101,8 @@ export function QuickTrade({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
+  // The chain picker is hidden until asked for (most people never need it).
+  const [showChains, setShowChains] = useState(false);
   // Bumped after every trade so the "You get" quote re-prices at the new price.
   const [priced, setPriced] = useState(0);
   const [done, setDone] = useState<{ chainKey: string; hash: string } | null>(null);
@@ -372,7 +374,9 @@ export function QuickTrade({
           .catch(() => signal(null));
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
-      void refreshPortfolio();
+      // Cash updates at once (read from the chain); holdings follow the indexer a moment later.
+      void refreshPortfolio(true);
+      setTimeout(() => void refreshPortfolio(true), 2_500);
       onTraded();
       // A sell that made 5% or more gets a card to share.
       if (side === "sell" && proceeds !== null) {
@@ -518,7 +522,23 @@ export function QuickTrade({
         </>
       )}
 
-      {(side === "buy" ? open : sellable).length > 1 && chosen && (
+      {/* Chains stay out of sight: the best one is picked; a tap on "change" shows the choice. */}
+      {(side === "buy" ? open : sellable).length > 1 && chosen && !showChains && (
+        <div className="mt-3 flex items-center justify-between text-[0.75rem] text-ink-3">
+          <span>
+            {side === "buy" ? (
+              <span className="text-up font-semibold">Best price picked{gap !== null && gap > 0 && picked === null ? ` · up to ${gap}% cheaper` : ""}</span>
+            ) : (
+              <span>Sells where you hold it</span>
+            )}
+            <span> · {chosen.chain.short}</span>
+          </span>
+          <button type="button" onClick={() => setShowChains(true)} className="font-semibold text-ink-2 underline underline-offset-2">
+            change
+          </button>
+        </div>
+      )}
+      {(side === "buy" ? open : sellable).length > 1 && chosen && showChains && (
         <div className="mt-4">
           <div className="flex items-center justify-between text-[0.75rem] text-ink-3">
             <span>{side === "buy" ? "Buying on" : "Selling on"}</span>

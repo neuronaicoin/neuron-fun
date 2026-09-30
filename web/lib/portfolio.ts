@@ -92,10 +92,14 @@ export function setMoneyAddress(address: string | null) {
   }
 }
 
-export function refreshPortfolio(): Promise<void> {
+/**
+ * Reloads cash and holdings. `fresh`: the caller just changed them (a trade), so
+ * a load that started before must not count; run another one after it.
+ */
+export function refreshPortfolio(fresh = false): Promise<void> {
   const address = state.address;
   if (!address) return Promise.resolve();
-  if (inflight) return inflight;
+  if (inflight) return fresh ? inflight.then(() => refreshPortfolio()) : inflight;
   set({ loading: true });
   inflight = loadPortfolio(address)
     .then((p) => {

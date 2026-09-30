@@ -13,12 +13,13 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
 import { safetyAbi } from "@/lib/abis";
-import { CHAINS, explorerAddress, type NeuronChain } from "@/lib/config";
+import { CHAINS, USD_MODE, explorerAddress, type NeuronChain } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError, shortAddr } from "@/lib/format";
 import { fetchPrices } from "@/lib/price";
 import { readSafety, refreshSafety, type Safety } from "@/lib/safety";
 import { call } from "@/lib/tx";
+import { HelpInbox } from "@/components/helpinbox";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -122,6 +123,8 @@ export default function AdminPage() {
     const v = Number(raw);
     const p = priceOf(c);
     if (!Number.isFinite(v) || v < 0 || p === null) return null;
+    // Dollar edition: the cap is in USDC units (6 decimals).
+    if (USD_MODE) return BigInt(Math.floor(v)) * 1_000_000n;
     return BigInt(Math.floor((v / p) * 1e9)) * 1_000_000_000n;
   }
 
@@ -339,7 +342,9 @@ export default function AdminPage() {
                     {newCap !== null
                       ? newCap === 0n
                         ? "0 removes the cap."
-                        : `= ${(Number(newCap) / 1e18).toFixed(4)} ${native(c)} at today's price.`
+                        : USD_MODE
+                          ? `= $${(Number(newCap) / 1e6).toLocaleString("en-US")} of USDC.`
+                          : `= ${(Number(newCap) / 1e18).toFixed(4)} ${native(c)} at today's price.`
                       : "In dollars, turned into " + native(c) + " at today's price. 0 removes the cap."}
                   </p>
                 </div>
@@ -356,6 +361,7 @@ export default function AdminPage() {
       </p>
 
       {safeTx && <SafeSheet tx={safeTx} onClose={() => setSafeTx(null)} />}
+      {address && <HelpInbox />}
     </div>
   );
 }
