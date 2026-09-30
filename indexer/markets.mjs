@@ -31,6 +31,7 @@ const DEFAULT_NETWORKS = [
 // The free API allows ~30 calls a minute per IP, and cloud IPs are shared:
 // stay far below it, and wait out a limit once instead of skipping.
 const GAP = Number(process.env.MARKETS_GAP_MS ?? "6500");
+const PAGES = 3;
 
 async function gt(path, retry = true) {
   // Never wait forever on a slow API: that would stop the whole loop.
@@ -168,9 +169,86 @@ async function save(pool, rows) {
        vol_24h = excluded.vol_24h, change_1h = excluded.change_1h, change_24h = excluded.change_24h,
        buys_24h = excluded.buys_24h, sells_24h = excluded.sells_24h,
        pool_created = coalesce(excluded.pool_created, ext_tokens.pool_created),
-       trending_rank = excluded.trending_rank, seen_at = now()`,
+       trending_rank = coalesce(excluded.trending_rank, ext_tokens.trending_rank), seen_at = now()`,
     params
   );
+}
+
+// DexScreener chain ids for our networks (GeckoTerminal id -> DexScreener id).
+const DS_CHAIN = { base: "base", bsc: "bsc", eth: "ethereum", robinhood: "robinhood", arc: "arc" };
+const DS = "https://api.dexscreener.com";
+
+async function ds(path) {
+  const r = await fetch(`${DS}${path}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+  if (!r.ok) throw new Error(`DexScreener ${r.status} for ${path}`);
+  return r.json();
+}
+
+/** DexScreener pairs of one chain -> our rows (each token's most liquid pair). Exported for tests. */
+export function rowsFromDexscreener(pairs, network, chainId) {
+  const best = new Map();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    const address = String(p?.baseToken?.address ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(address)) continue;
+    const symbol = String(p?.baseToken?.symbol ?? "").trim();
+    if (!symbol || NOT_MEME.has(symbol.toUpperCase())) continue;
+    const liq = num(p?.liquidity?.usd);
+    const cur = best.get(address);
+    if (cur && (cur.liq_usd ?? 0) >= (liq ?? 0)) continue;
+    const img = p?.info?.imageUrl;
+    best.set(address, {
+      network,
+      chain_id: chainId,
+      address,
+      pool: String(p?.pairAddress ?? "").toLowerCase() || null,
+      dex: p?.dexId ?? null,
+      name: String(p?.baseToken?.name ?? symbol).slice(0, 80),
+      symbol: symbol.slice(0, 24),
+      image: typeof img === "string" && /^https:\/\//.test(img) ? img : null,
+      price_usd: num(p?.priceUsd),
+      fdv_usd: num(p?.fdv),
+      mcap_usd: num(p?.marketCap),
+      liq_usd: liq,
+      vol_24h: num(p?.volume?.h24),
+      change_1h: num(p?.priceChange?.h1),
+      change_24h: num(p?.priceChange?.h24),
+      buys_24h: Number.isFinite(Number(p?.txns?.h24?.buys)) ? Number(p.txns.h24.buys) : null,
+      sells_24h: Number.isFinite(Number(p?.txns?.h24?.sells)) ? Number(p.txns.h24.sells) : null,
+      pool_created: Number.isFinite(Number(p?.pairCreatedAt)) && Number(p.pairCreatedAt) > 0 ? new Date(Number(p.pairCreatedAt)).toISOString() : null,
+      trending_rank: null,
+    });
+  }
+  return [...best.values()];
+}
+
+/**
+ * Second source: coins DexScreener users are looking at right now (newest
+ * profiles and boosted tokens), on our chains, with full market data.
+ */
+async function fromDexscreener(pool, networks, log) {
+  const lists = await Promise.all(["/token-profiles/latest/v1", "/token-boosts/latest/v1", "/token-boosts/top/v1"].map((p) => ds(p).catch(() => [])));
+  const want = new Map(); // dsChain -> Set(address)
+  for (const list of lists)
+    for (const t of Array.isArray(list) ? list : []) {
+      const chain = String(t?.chainId ?? "");
+      const addr = String(t?.tokenAddress ?? "").toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(addr)) continue;
+      if (!want.has(chain)) want.set(chain, new Set());
+      want.get(chain).add(addr);
+    }
+  let total = 0;
+  for (const n of networks) {
+    const dsChain = DS_CHAIN[n.id];
+    const addrs = [...(want.get(dsChain) ?? [])].slice(0, 90);
+    for (let i = 0; i < addrs.length; i += 30) {
+      const pairs = await ds(`/tokens/v1/${dsChain}/${addrs.slice(i, i + 30).join(",")}`).catch(() => []);
+      const rows = rowsFromDexscreener(pairs, n.id, n.chainId);
+      await save(pool, rows);
+      total += rows.length;
+      await sleep(400);
+    }
+  }
+  return total;
 }
 
 /** DexScreener pairs -> { tokenAddress: imageUrl }. Exported for tests. */
@@ -227,11 +305,14 @@ export async function marketsLoop(pool, log) {
     for (const n of networks) {
       try {
         const got = [];
-        // Trending first (sets the rank), then newest and busiest pools.
-        const t = await gt(`/networks/${n.id}/trending_pools?include=base_token&page=1`);
-        got.push(...rowsFromPools(t, n.id, n.chainId, 0));
+        // One page of each list per round (20 pools a page), pages 1-3 in turn:
+        // ~60 trending + ~60 busiest coins per chain, without extra calls.
+        const page = ((round - 1) % PAGES) + 1;
+        const offset = (page - 1) * 20;
+        const t = await gt(`/networks/${n.id}/trending_pools?include=base_token&page=${page}`);
+        got.push(...rowsFromPools(t, n.id, n.chainId, offset));
         await sleep(GAP);
-        const top = await gt(`/networks/${n.id}/pools?include=base_token&page=1&sort=h24_volume_usd_desc`);
+        const top = await gt(`/networks/${n.id}/pools?include=base_token&page=${page}&sort=h24_volume_usd_desc`);
         got.push(...rowsFromPools(top, n.id, n.chainId));
         await sleep(GAP);
         // Brand-new pools rarely pass the volume bar yet: every third round is enough.
@@ -241,8 +322,8 @@ export async function marketsLoop(pool, log) {
           await sleep(GAP);
         }
         const rows = busiest(got);
-        // Tokens not trending any more lose their rank.
-        await pool.query("update ext_tokens set trending_rank = null where network = $1 and trending_rank is not null", [n.id]);
+        // Ranks on this page are replaced by the fresh ones (other pages keep theirs).
+        await pool.query("update ext_tokens set trending_rank = null where network = $1 and trending_rank between $2 and $3", [n.id, offset + 1, offset + 20]);
         await save(pool, rows);
         if (round <= 3 || round % 30 === 0) log(`markets ${n.id}: ${rows.length} coins updated`);
 
@@ -271,6 +352,13 @@ export async function marketsLoop(pool, log) {
         log(`markets ${n.id}: ${e.message}`);
         await sleep(5000);
       }
+    }
+    // Second source (its own, higher limits): what DexScreener users watch now.
+    try {
+      const got = await fromDexscreener(pool, networks, log);
+      if (round <= 3 || round % 30 === 0) log(`markets: ${got} coins from DexScreener`);
+    } catch (e) {
+      log(`markets: DexScreener ${e.message}`);
     }
     // Missing pictures: ask DexScreener (projects often upload theirs there first).
     await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
