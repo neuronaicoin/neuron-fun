@@ -47,6 +47,12 @@ export type ExtSort = "trending" | "gainers" | "losers" | "new";
 
 const n = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 
+// Some DEX data reports 0 when a value is unknown: treat it as unknown.
+const pos = (v: unknown) => {
+  const x = n(v);
+  return x !== null && x > 0 ? x : null;
+};
+
 function toExt(r: Record<string, unknown>): ExtCoin {
   return {
     network: String(r.network),
@@ -59,7 +65,7 @@ function toExt(r: Record<string, unknown>): ExtCoin {
     image: typeof r.image === "string" && r.image.startsWith("https://") ? r.image : null,
     priceUsd: n(r.price_usd),
     // Market cap when it's known, otherwise the fully diluted value.
-    mcapUsd: n(r.mcap_usd) ?? n(r.fdv_usd),
+    mcapUsd: pos(r.mcap_usd) ?? pos(r.fdv_usd),
     liqUsd: n(r.liq_usd),
     vol24h: n(r.vol_24h),
     change1h: n(r.change_1h),

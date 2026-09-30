@@ -36,7 +36,8 @@ function linkify(text: string) {
   );
 }
 
-export function CoinComments({ coin, bare = false }: { coin: Coin; bare?: boolean }) {
+export function CoinComments({ coin, bare = false, max }: { coin: Coin; bare?: boolean; max?: number }) {
+  const [showAll, setShowAll] = useState(false);
   const { address, signMessage } = useWallet();
   const { signedIn } = useAlerts();
   const [thread, setThread] = useState<{ id: number; title: string } | null | undefined>(undefined);
@@ -118,7 +119,10 @@ export function CoinComments({ coin, bare = false }: { coin: Coin; bare?: boolea
   }
 
   const threadUrl = thread ? `${forumBoardUrl(coin)}${thread.id}-${slugify(thread.title, 70) || "thread"}/` : forumBoardUrl(coin);
-  const visible = (comments ?? []).filter((c) => !c.hidden);
+  const allVisible = (comments ?? []).filter((c) => !c.hidden);
+  // Terminal shows the newest few; the rest are one tap away.
+  const visible = max && !showAll ? allVisible.slice(0, max) : allVisible;
+  const hiddenCount = allVisible.length - visible.length;
 
   return (
     <section className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"} aria-labelledby="comments-h">
@@ -195,6 +199,15 @@ export function CoinComments({ coin, bare = false }: { coin: Coin; bare?: boolea
             );
           })}
         </ul>
+      )}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+        >
+          Show all {allVisible.length} comments
+        </button>
       )}
     </section>
   );

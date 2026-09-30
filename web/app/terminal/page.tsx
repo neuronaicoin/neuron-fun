@@ -30,6 +30,14 @@ import { CoinComments } from "@/components/comments";
 import { tokenAbi } from "@/lib/abis";
 import { explorerAddress } from "@/lib/config";
 import { clientFor, coinHref, fetchCoin, fetchTrades, nativePerToken, type Coin, type SortKey } from "@/lib/data";
+import { extNetwork, fetchExtCoin, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { ExtCoinView } from "@/components/extcoin";
+
+// The list shows at most this many coins per tab (ours first, then other DEXs).
+const LIST_MAX = 20;
+const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
+// Coins from other DEXs are selected as "x:<network>:<address>".
+const extKey = (c: { network: string; address: string }) => `x:${c.network}:${c.address}`;
 import { fetchPrices } from "@/lib/price";
 import { shortAddr } from "@/lib/format";
 
@@ -53,6 +61,29 @@ function Terminal() {
   const { coins } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [coin, setCoin] = useState<Coin | null>(null);
+  const [ext, setExt] = useState<ExtCoin[] | null>(null);
+  const [extCoin, setExtCoin] = useState<ExtCoin | null>(null);
+  const isExt = selected.startsWith("x:");
+
+  // Other DEXs' coins for this tab, refreshed every minute.
+  const extSort = EXT_SORT[sort];
+  useEffect(() => {
+    if (!extSort) {
+      setExt([]);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      fetchExtCoins(extSort, null, search, LIST_MAX)
+        .then((l) => alive && setExt(l))
+        .catch(() => alive && setExt((e) => e ?? []));
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [extSort, search]);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
@@ -69,6 +100,15 @@ function Terminal() {
 
   const loadCoin = useCallback(async () => {
     if (!selected) return;
+    if (selected.startsWith("x:")) {
+      const [, network, address] = selected.split(":");
+      if (!extNetwork(network ?? "") || !/^0x[0-9a-f]{40}$/.test(address ?? "")) return;
+      try {
+        const c = await fetchExtCoin(network, address);
+        if (c) setExtCoin(c);
+      } catch {}
+      return;
+    }
     try {
       const { coin, prices } = await fetchCoin(selected);
       if (prices?.ETH) setEthUsd(prices.ETH);
@@ -80,10 +120,12 @@ function Terminal() {
 
   useEffect(() => {
     setCoin(null);
+    setExtCoin(null);
     loadCoin();
-    const t = setInterval(loadCoin, 6_000);
+    // Our coins change with every trade; other DEXs' data refreshes every minute.
+    const t = setInterval(loadCoin, selected.startsWith("x:") ? 60_000 : 6_000);
     return () => clearInterval(t);
-  }, [loadCoin]);
+  }, [loadCoin, selected]);
 
   const choose = (id: string) => {
     setSelected(id);
@@ -101,6 +143,7 @@ function Terminal() {
         <div className="lg:hidden">
           <Markets
             coins={coins}
+            ext={ext}
             ethUsd={ethUsd}
             selected={selected}
             onChoose={choose}
@@ -135,6 +178,7 @@ function Terminal() {
         <Sheet title="Coins" onClose={() => setMarketsOpen(false)}>
           <Markets
             coins={coins}
+            ext={ext}
             ethUsd={ethUsd}
             selected={selected}
             onChoose={(id) => {
@@ -153,6 +197,7 @@ function Terminal() {
         <aside className="hidden lg:block lg:sticky lg:top-[76px]">
           <Markets
             coins={coins}
+            ext={ext}
             ethUsd={ethUsd}
             selected={selected}
             onChoose={choose}
@@ -163,6 +208,12 @@ function Terminal() {
           />
         </aside>
 
+        {isExt ? (
+          <section className="min-w-0 lg:col-span-2">
+            {extCoin ? <ExtCoinView coin={extCoin} backLink={false} /> : <Skeleton className="h-[640px]" />}
+          </section>
+        ) : (
+        <>
         <section className="min-w-0">
           {coin ? <Center coin={coin} ethUsd={ethUsd} /> : <Skeleton className="h-[640px]" />}
         </section>
@@ -186,8 +237,10 @@ function Terminal() {
             <Skeleton className="h-[480px]" />
           )}
         </aside>
+        </>
+        )}
       </div>
-      {coin && phoneView === "coin" && <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />}
+      {coin && !isExt && phoneView === "coin" && <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={loadCoin} />}
     </div>
   );
 }
@@ -231,6 +284,7 @@ function MarketTabs({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) =>
 
 function Markets(props: {
   coins: Coin[] | null;
+  ext: ExtCoin[] | null;
   ethUsd: number | null;
   selected: string;
   onChoose: (id: string) => void;
@@ -241,7 +295,10 @@ function Markets(props: {
   /** Phones: no height cap, the page scrolls. */
   full?: boolean;
 }) {
-  const { coins, ethUsd, selected, onChoose, sort, setSort, query, setQuery, full = false } = props;
+  const { ethUsd, selected, onChoose, sort, setSort, query, setQuery, full = false } = props;
+  // At most LIST_MAX per tab: ours first, then other DEXs' coins fill the rest.
+  const coins = props.coins ? props.coins.slice(0, LIST_MAX) : null;
+  const ext = coins && props.ext ? props.ext.slice(0, Math.max(0, LIST_MAX - coins.length)) : [];
   const sparks = useSparks(useMemo(() => (coins ?? []).map((c) => c.id), [coins]));
   return (
     <div className="rounded-3xl border border-line bg-surface overflow-hidden">
@@ -259,7 +316,7 @@ function Markets(props: {
       </div>
       <ul className={(full ? "" : "max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto ") + "divide-y divide-line"}>
         {!coins && [0, 1, 2, 3, 4].map((i) => <li key={i} className="p-3"><Skeleton className="h-10" /></li>)}
-        {coins?.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
+        {coins?.length === 0 && ext.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
         {coins?.map((c) => (
           <li key={c.id}>
             <button
@@ -287,6 +344,39 @@ function Markets(props: {
             </button>
           </li>
         ))}
+        {coins &&
+          ext.map((c) => {
+            const key = extKey(c);
+            const net = extNetwork(c.network);
+            return (
+              <li key={key}>
+                <button
+                  type="button"
+                  onClick={() => onChoose(key)}
+                  className={"w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-paper " + (key === selected ? "bg-paper" : "")}
+                >
+                  <CoinAvatar logo={c.image ?? ""} symbol={c.symbol} size={36} />
+                  <span className="min-w-0 flex-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-[0.875rem] truncate">{c.name}</span>
+                      <span className="block text-[0.75rem] text-ink-3 truncate mt-0.5">
+                        ${c.symbol}
+                        {net && (
+                          <span className="ml-1.5 inline-block align-middle w-2 h-2 rounded-full" style={{ background: net.color }} aria-label={net.label} />
+                        )}{" "}
+                        {net?.label}
+                      </span>
+                    </span>
+                    <span className="text-right shrink-0">
+                      <span className="block font-mono font-bold tabular-nums text-[0.875rem]">{compactUsd(c.mcapUsd)}</span>
+                      {/* DEX data is in percent; the badge takes a fraction. */}
+                      <ChangeBadge value={c.change24h === null ? null : c.change24h / 100} className="block text-[0.75rem] font-semibold mt-0.5" />
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
       </ul>
     </div>
   );
@@ -297,6 +387,7 @@ type CenterTab = "trades" | "comments" | "holders" | "position" | "about";
 function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   const [chartChain, setChartChain] = useState("");
   const [tab, setTab] = useState<CenterTab>("trades");
+  const [allTrades, setAllTrades] = useState(false);
   const chartCurve =
     coin.curves.find((c) => c.chain.key === chartChain) ??
     coin.graduatedOn ??
@@ -376,10 +467,21 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
           ))}
         </div>
         <div className="p-4 sm:p-5">
-          {tab === "trades" && <TradesFeed coinId={coin.id} ethUsd={ethUsd} limit={30} />}
+          {tab === "trades" && (
+            <>
+              <TradesFeed coinId={coin.id} ethUsd={ethUsd} limit={allTrades ? 30 : 5} />
+              <button
+                type="button"
+                onClick={() => setAllTrades((v) => !v)}
+                className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+              >
+                {allTrades ? "Show fewer" : "Show more trades"}
+              </button>
+            </>
+          )}
           {tab === "holders" && chartCurve && <TopHolders curve={chartCurve} />}
           {tab === "position" && <Position coin={coin} ethUsd={ethUsd} />}
-          {tab === "comments" && <CoinComments coin={coin} bare />}
+          {tab === "comments" && <CoinComments coin={coin} bare max={3} />}
           {tab === "about" && (
             <div className="grid gap-3 text-[0.875rem] text-ink-2">
               {coin.description ? <p className="leading-relaxed">{coin.description}</p> : <p className="text-ink-3">No description.</p>}
