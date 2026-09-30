@@ -14,6 +14,7 @@
 
 const GT = "https://api.geckoterminal.com/api/v2";
 const GOPLUS = "https://api.gopluslabs.io/api/v1/token_security";
+const DEXSCREENER = "https://api.dexscreener.com/latest/dex/tokens";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Base tokens that aren't memecoins (wrapped gas coins, stablecoins, majors).
@@ -172,6 +173,41 @@ async function save(pool, rows) {
   );
 }
 
+/** DexScreener pairs -> { tokenAddress: imageUrl }. Exported for tests. */
+export function imagesFromDexscreener(json) {
+  const out = {};
+  for (const p of json?.pairs ?? []) {
+    const addr = String(p?.baseToken?.address ?? "").toLowerCase();
+    const img = p?.info?.imageUrl;
+    if (/^0x[0-9a-f]{40}$/.test(addr) && typeof img === "string" && /^https:\/\//.test(img) && !out[addr]) out[addr] = img;
+  }
+  return out;
+}
+
+async function fillImages(pool, log) {
+  // Up to 30 addresses per call; each coin is asked at most once a day.
+  const { rows } = await pool.query(
+    `select network, address from ext_tokens
+      where image is null and seen_at > now() - interval '1 day'
+        and (ds_checked_at is null or ds_checked_at < now() - interval '1 day')
+      order by vol_24h desc nulls last limit 30`
+  );
+  if (!rows.length) return;
+  const r = await fetch(`${DEXSCREENER}/${rows.map((x) => x.address).join(",")}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  const found = imagesFromDexscreener(await r.json());
+  let n = 0;
+  for (const x of rows) {
+    const img = found[x.address] ?? null;
+    if (img) n++;
+    await pool.query("update ext_tokens set ds_checked_at = now(), image = coalesce(image, $3) where network = $1 and address = $2", [x.network, x.address, img]);
+  }
+  if (n) log(`markets: ${n} pictures from DexScreener`);
+}
+
 export async function marketsLoop(pool, log) {
   if (process.env.MARKETS_OFF === "1") return;
   const every = Number(process.env.MARKETS_EVERY_MS ?? "120000");
@@ -236,8 +272,10 @@ export async function marketsLoop(pool, log) {
         await sleep(5000);
       }
     }
-    // Forget coins nobody has traded for a week.
-    await pool.query("delete from ext_tokens where seen_at < now() - interval '7 days'").catch(() => {});
+    // Missing pictures: ask DexScreener (projects often upload theirs there first).
+    await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
+    // Coins stay searchable for 30 days after their last trade, then go.
+    await pool.query("delete from ext_tokens where seen_at < now() - interval '30 days'").catch(() => {});
     await sleep(Math.max(5_000, every - (Date.now() - started)));
   }
 }

@@ -77,9 +77,10 @@ function toExt(r: Record<string, unknown>): ExtCoin {
 }
 
 export async function fetchExtCoins(sort: ExtSort, network: string | null, search = "", limit = 48): Promise<ExtCoin[]> {
-  let q = db.from("ext_coins").select("*");
-  if (network) q = q.eq("network", network);
   const s = search.replace(/[%,()]/g, "").trim();
+  // Lists show coins trading right now; a search looks through the last 30 days.
+  let q = db.from(s ? "ext_coins_all" : "ext_coins").select("*");
+  if (network) q = q.eq("network", network);
   if (s) q = /^0x[0-9a-fA-F]{40}$/.test(s) ? q.eq("address", s.toLowerCase()) : q.or(`symbol.ilike.%${s}%,name.ilike.%${s}%`);
   q =
     sort === "new"
@@ -95,7 +96,7 @@ export async function fetchExtCoins(sort: ExtSort, network: string | null, searc
 }
 
 export async function fetchExtCoin(network: string, address: string): Promise<ExtCoin | null> {
-  const { data, error } = await db.from("ext_coins").select("*").eq("network", network).eq("address", address.toLowerCase()).maybeSingle();
+  const { data, error } = await db.from("ext_coins_all").select("*").eq("network", network).eq("address", address.toLowerCase()).maybeSingle();
   if (error) throw error;
   return data ? toExt(data as Record<string, unknown>) : null;
 }
@@ -110,4 +111,10 @@ export function price(v: number | null): string {
   // Small prices: keep 3 significant digits, never scientific notation.
   const d = Math.min(12, Math.max(2, -Math.floor(Math.log10(v)) + 2));
   return `$${v.toFixed(d)}`;
+}
+
+/** How many coins from other DEXs can be traded right now. */
+export async function fetchExtCount(): Promise<number | null> {
+  const { count, error } = await db.from("ext_coins").select("address", { count: "exact", head: true });
+  return error ? null : count ?? null;
 }

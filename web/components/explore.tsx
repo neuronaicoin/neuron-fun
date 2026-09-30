@@ -10,6 +10,12 @@ import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 import { ScrollRow } from "@/components/scrollrow";
 import { useSparks } from "@/lib/spark";
+import { compactUsd } from "@/lib/format";
+import { EXT_NETWORKS, fetchExtCoins, fetchExtCount, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { ExtTile } from "@/components/exttile";
+
+// Sorts that also apply to coins from other DEXs (the rest are about our curves).
+const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
 
 const SORTS: { id: SortKey; label: string }[] = [
   { id: "trending", label: "🔥 Trending" },
@@ -29,6 +35,33 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [total, setTotal] = useState<number | null>(null);
+  // Coins from every other DEX on the same chains, shown after ours.
+  const [ext, setExt] = useState<ExtCoin[] | null>(null);
+  const [extTotal, setExtTotal] = useState<number | null>(null);
+  useEffect(() => {
+    fetchExtCount().then(setExtTotal);
+  }, []);
+  const extSort = EXT_SORT[sort];
+  useEffect(() => {
+    if (!extSort) {
+      setExt([]);
+      return;
+    }
+    let alive = true;
+    setExt(null);
+    const load = () =>
+      fetchExtCoins(extSort, chain === "all" ? null : chain, search)
+        .then((l) => alive && setExt(l))
+        .catch(() => alive && setExt((e) => e ?? []));
+    void load();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [extSort, chain, search]);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
@@ -78,9 +111,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
               <p className="hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl">
                 Buyers on every chain push your coin to graduation together. The chain with the most money wins.
               </p>
-              <div className="mt-3 sm:mt-6 grid grid-cols-3 gap-3 max-w-md">
+              <div className="mt-3 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? usd(liveUsd, 0) : "…"}</div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : "…"}</div>
                   <div className="text-[0.75rem] text-ink-3">racing now</div>
                 </div>
                 <div>
@@ -89,7 +122,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 </div>
                 <div>
                   <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{total ?? "…"}</div>
-                  <div className="text-[0.75rem] text-ink-3">coins</div>
+                  <div className="text-[0.75rem] text-ink-3">launched here</div>
+                </div>
+                {/* Kept apart from our launchpad's numbers so neither is inflated. */}
+                <div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{extTotal ?? "…"}</div>
+                  <div className="text-[0.75rem] text-ink-3">to trade</div>
                 </div>
               </div>
             </div>
@@ -167,18 +205,18 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             ))}
           </ScrollRow>
           <div
-            className="mt-2.5 grid grid-flow-col auto-cols-fr gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit"
+            className="mt-2.5 flex gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit overflow-x-auto [scrollbar-width:none]"
             role="group"
             aria-label="Chain"
           >
-            {[{ key: "all", short: "All chains", color: "" }, ...CHAINS].map((c) => (
+            {[{ key: "all", short: "All chains", color: "" }, ...EXT_NETWORKS.map((n) => ({ key: n.id, short: n.label, color: n.color }))].map((c) => (
               <button
                 key={c.key}
                 type="button"
                 aria-pressed={chain === c.key}
                 onClick={() => setChain(c.key)}
                 className={
-                  "h-9 sm:w-[9.75rem] px-3 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center gap-2 " +
+                  "shrink-0 h-9 px-3 sm:px-4 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center gap-2 " +
                   (chain === c.key ? "bg-ink text-paper shadow-sm" : "text-ink-2 hover:text-ink")
                 }
               >
@@ -200,6 +238,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             {list.map((c) => (
               <CoinTile key={c.id} coin={c} ethUsd={ethUsd} spark={sparks.get(c.id)} />
             ))}
+            {(ext ?? []).map((c) => (
+              <ExtTile key={`${c.network}:${c.address}`} coin={c} />
+            ))}
           </div>
           {coins && hasMore && (
             <div className="mt-6 flex justify-center">
@@ -213,7 +254,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
               </button>
             </div>
           )}
-          {coins && list.length === 0 && (
+          {coins && list.length === 0 && ext !== null && ext.length === 0 && (
             <div className="mt-5 text-center py-12 border border-dashed border-line rounded-2xl">
               <p className="text-ink-2">{search ? "Nothing matches that search." : sort === "graduated" ? "No graduates yet." : sort === "bonding" ? "No coins on their bonding curve right now." : "No coins here yet. Start one."}</p>
               <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
