@@ -32,7 +32,8 @@ const DEFAULT_NETWORKS = [
 const GAP = Number(process.env.MARKETS_GAP_MS ?? "6500");
 
 async function gt(path, retry = true) {
-  const r = await fetch(`${GT}${path}`, { headers: { accept: "application/json" } });
+  // Never wait forever on a slow API: that would stop the whole loop.
+  const r = await fetch(`${GT}${path}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
   if (r.status === 429) {
     if (!retry) throw new Error("GeckoTerminal rate limit");
     await sleep(30_000);
@@ -121,7 +122,10 @@ async function discover(log) {
 }
 
 async function goplus(chainId, addresses) {
-  const r = await fetch(`${GOPLUS}/${chainId}?contract_addresses=${addresses.join(",")}`, { headers: { accept: "application/json" } });
+  const r = await fetch(`${GOPLUS}/${chainId}?contract_addresses=${addresses.join(",")}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
   if (!r.ok) throw new Error(`GoPlus ${r.status}`);
   const j = await r.json();
   if (j?.code !== 1 || !j.result) return null; // chain not covered, or no answer
@@ -204,6 +208,7 @@ export async function marketsLoop(pool, log) {
         // Tokens not trending any more lose their rank.
         await pool.query("update ext_tokens set trending_rank = null where network = $1 and trending_rank is not null", [n.id]);
         await save(pool, rows);
+        if (round <= 3 || round % 30 === 0) log(`markets ${n.id}: ${rows.length} coins updated`);
 
         // GoPlus: tokens never checked (or checked over a day ago), 20 at a time.
         const { rows: todo } = await pool.query(
