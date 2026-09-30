@@ -164,7 +164,19 @@ export function PriceChart({
       stopSignal?.();
       stopBurst?.();
       if (timer) clearInterval(timer);
-      chart?.remove();
+      // Let any paint the chart already scheduled finish, then dispose it
+      // (removing it mid-frame throws "Object is disposed").
+      const c = chart;
+      if (c) {
+        try {
+          c.applyOptions({ autoSize: false });
+        } catch {}
+        requestAnimationFrame(() => {
+          try {
+            c.remove();
+          } catch {}
+        });
+      }
       chartRef.current = null;
       volRef.current = null;
       candlesRef.current = null;

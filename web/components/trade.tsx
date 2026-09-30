@@ -100,6 +100,7 @@ export function QuickTrade({
   const [quote, setQuote] = useState<bigint | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [errorDetail, setErrorDetail] = useState("");
   const [done, setDone] = useState<{ chainKey: string; hash: string } | null>(null);
   const [profit, setProfit] = useState<ProfitInfo | null>(null);
   const safety = useSafety();
@@ -287,7 +288,7 @@ export function QuickTrade({
 
   async function submit() {
     if (!address || !chosen || amount === 0n) return;
-    setError("");
+    setError(""); setErrorDetail("");
     setDone(null);
     try {
       // Curve before graduation, locked pool (through the router) after.
@@ -387,6 +388,10 @@ export function QuickTrade({
         }, 4_000);
         return;
       }
+      // Keep the real reason where we can find it (Console) and one tap away on screen.
+      console.error("[sasa] trade failed", e);
+      const raw = e as { shortMessage?: string; details?: string; message?: string };
+      setErrorDetail([raw?.shortMessage, raw?.details].filter(Boolean).join(" · ") || String(raw?.message ?? e).slice(0, 400));
       setError(friendlyError(e));
       // A pause or a full chain may be why: show it on the button right away.
       void refreshSafety().catch(() => {});
@@ -414,7 +419,7 @@ export function QuickTrade({
           role="tab"
           aria-selected={!auto && side === s}
           disabled={s === "buy" && !open.length}
-          onClick={() => { setAuto(false); setSide(s); setPicked(null); setError(""); setDone(null); }}
+          onClick={() => { setAuto(false); setSide(s); setPicked(null); setError(""); setErrorDetail(""); setDone(null); }}
           className={"h-11 rounded-xl text-[0.9375rem] font-bold disabled:opacity-30 " + (!auto && side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
         >
           {s === "buy" ? "Buy" : "Sell"}
@@ -425,7 +430,7 @@ export function QuickTrade({
           type="button"
           role="tab"
           aria-selected={auto}
-          onClick={() => { setAuto(true); setError(""); setDone(null); }}
+          onClick={() => { setAuto(true); setError(""); setErrorDetail(""); setDone(null); }}
           className={"h-11 rounded-xl text-[0.9375rem] font-bold flex items-center justify-center gap-1 " + (auto ? "bg-surface text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2")}
         >
           Auto
@@ -606,7 +611,17 @@ export function QuickTrade({
           from any chain or exchange.
         </p>
       )}
-      {error && <p className="mt-3 text-[0.8125rem] text-danger" role="alert">{error}</p>}
+      {error && (
+        <div className="mt-3" role="alert">
+          <p className="text-[0.8125rem] text-danger">{error}</p>
+          {errorDetail && (
+            <details className="mt-1 text-[0.6875rem] text-ink-3">
+              <summary className="cursor-pointer select-none">Technical details</summary>
+              <p className="mt-1 font-mono break-all">{errorDetail}</p>
+            </details>
+          )}
+        </div>
+      )}
       {done && doneChain && (
         <p className="mt-3 text-[0.8125rem] text-up">
           Done.{" "}
