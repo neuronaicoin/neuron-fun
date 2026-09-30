@@ -1,7 +1,7 @@
 // All coins: keeps a list of the busiest coins on every DEX of our chains.
 //
-// Every ~90 s, per network: GeckoTerminal trending, new and top-volume pools
-// (3 calls; the free API allows 30 a minute). Each pool's base token is saved
+// Every ~2 min, per network: GeckoTerminal trending and top-volume pools, and
+// new pools every third round (about 5 calls a minute; the free API allows 30). Each pool's base token is saved
 // with its price, volume, liquidity and changes. New tokens get a GoPlus check
 // (can it be sold, taxes, can the owner mint). The site reads the ext_coins
 // view, which only shows active, sellable coins.
@@ -9,7 +9,8 @@
 // Env: MARKETS_NETWORKS  JSON [{ id, chainId }] (GeckoTerminal ids). Default:
 //      Base, BNB Chain, Ethereum, plus Robinhood Chain and Arc when GeckoTerminal
 //      lists them (found by name at start-up).
-//      MARKETS_EVERY_MS  default 90000.  MARKETS_OFF=1 turns it off.
+//      MARKETS_EVERY_MS  default 120000. MARKETS_GAP_MS pause between calls (6500).
+//      MARKETS_OFF=1 turns it off.
 
 const GT = "https://api.geckoterminal.com/api/v2";
 const GOPLUS = "https://api.gopluslabs.io/api/v1/token_security";
@@ -26,9 +27,17 @@ const DEFAULT_NETWORKS = [
   { id: "eth", chainId: 1 },
 ];
 
-async function gt(path) {
+// The free API allows ~30 calls a minute per IP, and cloud IPs are shared:
+// stay far below it, and wait out a limit once instead of skipping.
+const GAP = Number(process.env.MARKETS_GAP_MS ?? "6500");
+
+async function gt(path, retry = true) {
   const r = await fetch(`${GT}${path}`, { headers: { accept: "application/json" } });
-  if (r.status === 429) throw new Error("GeckoTerminal rate limit");
+  if (r.status === 429) {
+    if (!retry) throw new Error("GeckoTerminal rate limit");
+    await sleep(30_000);
+    return gt(path, false);
+  }
   if (!r.ok) throw new Error(`GeckoTerminal ${r.status} for ${path}`);
   return r.json();
 }
@@ -105,7 +114,7 @@ async function discover(log) {
       const name = String(n?.attributes?.name ?? "");
       for (const w of want) if (w.re.test(name) && !found.some((f) => f.chainId === w.chainId) && !/test/i.test(name)) found.push({ id: n.id, chainId: w.chainId, name });
     }
-    await sleep(2500);
+    await sleep(GAP);
   }
   for (const f of found) log(`markets: found ${f.name} as "${f.id}"`);
   return found;
@@ -161,7 +170,8 @@ async function save(pool, rows) {
 
 export async function marketsLoop(pool, log) {
   if (process.env.MARKETS_OFF === "1") return;
-  const every = Number(process.env.MARKETS_EVERY_MS ?? "90000");
+  const every = Number(process.env.MARKETS_EVERY_MS ?? "120000");
+  let round = 0;
   let networks = DEFAULT_NETWORKS;
   try {
     if (process.env.MARKETS_NETWORKS) networks = JSON.parse(process.env.MARKETS_NETWORKS);
@@ -173,19 +183,23 @@ export async function marketsLoop(pool, log) {
 
   for (;;) {
     const started = Date.now();
+    round++;
     for (const n of networks) {
       try {
         const got = [];
         // Trending first (sets the rank), then newest and busiest pools.
         const t = await gt(`/networks/${n.id}/trending_pools?include=base_token&page=1`);
         got.push(...rowsFromPools(t, n.id, n.chainId, 0));
-        await sleep(2200);
-        const nw = await gt(`/networks/${n.id}/new_pools?include=base_token&page=1`);
-        got.push(...rowsFromPools(nw, n.id, n.chainId));
-        await sleep(2200);
+        await sleep(GAP);
         const top = await gt(`/networks/${n.id}/pools?include=base_token&page=1&sort=h24_volume_usd_desc`);
         got.push(...rowsFromPools(top, n.id, n.chainId));
-        await sleep(2200);
+        await sleep(GAP);
+        // Brand-new pools rarely pass the volume bar yet: every third round is enough.
+        if (round % 3 === 1) {
+          const nw = await gt(`/networks/${n.id}/new_pools?include=base_token&page=1`);
+          got.push(...rowsFromPools(nw, n.id, n.chainId));
+          await sleep(GAP);
+        }
         const rows = busiest(got);
         // Tokens not trending any more lose their rank.
         await pool.query("update ext_tokens set trending_rank = null where network = $1 and trending_rank is not null", [n.id]);
