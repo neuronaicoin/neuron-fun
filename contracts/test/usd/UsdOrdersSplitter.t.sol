@@ -237,7 +237,9 @@ contract UsdOrdersTest is Test {
         uint256 hi = lo + (v * bound(span, 0, 300)) / 100;
         uint256 id = _placeSell(amt, lo, hi);
         uint256 d = bound(down, 0, token.balanceOf(whale));
-        if (d > 1 ether) _whaleSell(d);
+        // USDC has 6 decimals: a sell worth less than $0.000001 is refused by the
+        // curve (ZeroAmount), exactly like any dust sell; skip those.
+        if (d > 0 && curve.quoteSell(d) > 0) _whaleSell(d);
         try orders.execute(id) returns (uint256 out) {
             assertGe(out, lo);
             assertLe(out, hi);
