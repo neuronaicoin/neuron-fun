@@ -1,0 +1,79 @@
+{
+ "cursor": {
+  "46630": "127266990",
+  "84532": "47556915"
+ },
+ "coins": {
+  "0xf74de685049175e2683e05ecdce0425d0133e3cabf56099a81b2586f421211c3": {
+   "coin": "0xd3FE543eA404484Ca0dE1cC9014615ed60ce3F4B",
+   "eids": [
+    40245,
+    40451
+   ],
+   "name": "Smoke Test",
+   "chains": {
+    "40451": {
+     "curve": "0xb1aDE300a19743cE2829E00820c3fC194149E6c1",
+     "block": 127233139,
+     "done": false
+    }
+   }
+  },
+  "0xbbcc120c362ee02dd1162669864e70ab309244c64a62de0acc0c6e63de40f89f": {
+   "coin": "0x90dB50eebfeA6C75504640529486Bab8436c417B",
+   "eids": [
+    40245,
+    40451
+   ],
+   "name": "Smoke Test",
+   "chains": {
+    "40451": {
+     "curve": "0x660e95c6AdA3D37f2172C823828E00d03386D4a8",
+     "block": 127236222,
+     "done": false
+    }
+   }
+  },
+  "0x7d563e9899dbb904b0719785c1e40cd59a431ed53546943770b57a05741c54c6": {
+   "coin": "0xF477E3Ac9Ad764Caff8A4334F3407e79809E80dF",
+   "eids": [
+    40245,
+    40451
+   ],
+   "name": "Smoke Test",
+   "chains": {
+    "40245": {
+     "curve": "0xc3198a3084eD724eB0dF956a123A5093C72De83f",
+     "block": 47554000,
+     "done": false
+    },
+    "40451": {
+     "curve": "0x7B17c71ab299d6D88b56DE60fD58d001c534A15f",
+     "block": 127239490,
+     "done": false
+    }
+   }
+  },
+  "0x9344db2b9224c195328b6e9255d94b10845c4ae91361a7eee46990ab419fa569": {
+   "coin": "0x3F6f13bdA70e270C3a116Db8F7fDf2BC690fEa5F",
+   "eids": [
+    40245,
+    40451
+   ],
+   "name": "Smoke Test",
+   "chains": {
+    "40245": {
+     "curve": "0x36a975BaE8daFF8674ADCe6A781ab428b25360eA",
+     "block": 47554288,
+     "done": false
+    },
+    "40451": {
+     "curve": "0x9e266BdA9Cc598eb98c7135A2f388cFe19abcf05",
+     "block": 127242222,
+     "done": false
+    }
+   },
+   "finished": true
+  }
+ }
+}
