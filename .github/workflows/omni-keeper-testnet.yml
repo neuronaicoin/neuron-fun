@@ -1,0 +1,62 @@
+name: omni-keeper-testnet
+
+# sasa v6 keeper on the testnets: every 5 minutes it moves every v6 coin one step
+# forward (freeze -> decide -> collect money -> open pool -> move holders).
+# Each step is safe to repeat; the contracts check everything themselves.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show what it would do (send nothing)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: omni-keeper-testnet
+  cancel-in-progress: false
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        working-directory: keeper
+        run: npm install --no-audit --no-fund
+
+      - name: One pass
+        working-directory: keeper
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          DEPLOYMENTS: ../contracts/deployments/omni
+          RPC_46630: https://rpc.testnet.chain.robinhood.com/rpc
+          RPC_84532: https://sepolia.base.org
+          STATE_FILE: omni-state.json
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: node omni.mjs
+
+      - name: Save progress
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        run: |
+          if [ -n "$(git status --porcelain keeper/omni-state.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add keeper/omni-state.json
+            git commit -m "omni keeper progress" --quiet
+            git pull --rebase --quiet
+            git push --quiet
+          else
+            echo "No change."
+          fi
