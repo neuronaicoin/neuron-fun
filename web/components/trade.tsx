@@ -8,7 +8,7 @@ import { SENT_UNCONFIRMED, useWallet } from "./wallet";
 import { toast } from "./alerts";
 import { ConnectButton } from "./chrome";
 import { curveAbi, routerAbi, tokenAbi, usdcAbi } from "@/lib/abis";
-import { SLIPPAGE_BPS, USD_MODE, explorerTx } from "@/lib/config";
+import { SLIPPAGE_BPS, USD_MODE, explorerTx, COIN_SLOTS } from "@/lib/config";
 import { call, type Call } from "@/lib/tx";
 import { signalTrade } from "@/lib/live";
 import { fetchTrades } from "@/lib/data";
@@ -36,12 +36,14 @@ const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
 
 /** Storage slot of allowance(owner, spender) in the coin token (OpenZeppelin ERC20, slot 1). */
 /** Storage slot of `owner`'s balance in an OpenZeppelin ERC20 (TestUSDC, the coins). */
-function balanceSlot(owner: Address): Hex {
-  return keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 0n]));
+/** Storage slot of `owner`'s balance; `base` is the token's balances mapping slot. */
+function balanceSlot(owner: Address, base: number): Hex {
+  return keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, BigInt(base)]));
 }
 
-function allowanceSlot(owner: Address, spender: Address): Hex {
-  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 1n]));
+/** Storage slot of `owner`'s allowance for `spender`; `base` is the allowances mapping slot. */
+function allowanceSlot(owner: Address, spender: Address, base: number): Hex {
+  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, BigInt(base)]));
   return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
 }
 
@@ -222,8 +224,8 @@ export function QuickTrade({
                 {
                   address: chosen.chain.usdc,
                   stateDiff: [
-                    { slot: balanceSlot(QUOTE_ACCOUNT), value: numberToHex(amount, { size: 32 }) },
-                    { slot: allowanceSlot(QUOTE_ACCOUNT, router), value: numberToHex(maxUint256, { size: 32 }) },
+                    { slot: balanceSlot(QUOTE_ACCOUNT, chosen.chain.usdcSlots.balance), value: numberToHex(amount, { size: 32 }) },
+                    { slot: allowanceSlot(QUOTE_ACCOUNT, router, chosen.chain.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) },
                   ],
                 },
               ],
@@ -237,7 +239,7 @@ export function QuickTrade({
               functionName: "sell",
               args: [chosen.token, amount, 0n, address, deadline()],
               stateOverride: [
-                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, router), value: numberToHex(maxUint256, { size: 32 }) }] },
+                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, router, COIN_SLOTS.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
               ],
             });
             setQuote(sim.result as bigint);
@@ -330,7 +332,7 @@ export function QuickTrade({
                   functionName: "buy",
                   args: [chosen.token, amount, 0n, address, deadline()],
                   stateOverride: [
-                    { address: chosen.chain.usdc, stateDiff: [{ slot: allowanceSlot(address, spender), value: numberToHex(maxUint256, { size: 32 }) }] },
+                    { address: chosen.chain.usdc, stateDiff: [{ slot: allowanceSlot(address, spender, chosen.chain.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
                   ],
                 })
               ).result as bigint)
@@ -356,7 +358,7 @@ export function QuickTrade({
                 functionName: "sell",
                 args: [chosen.token, amount, 0n, address, deadline()],
                 stateOverride: [
-                  { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, spender), value: numberToHex(maxUint256, { size: 32 }) }] },
+                  { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, spender, COIN_SLOTS.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
                 ],
               }).then((r) => r.result as bigint)
           : (pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteSell", args: [amount] }) as Promise<bigint>),

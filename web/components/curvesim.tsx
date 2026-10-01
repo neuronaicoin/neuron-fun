@@ -13,7 +13,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CHAINS, TARGET_USD } from "@/lib/config";
-import { factoryAbi } from "@/lib/abis";
+import { omniFactoryAbi } from "@/lib/abis";
 import { clientFor } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { compactUsd } from "@/lib/format";
@@ -37,16 +37,21 @@ async function loadTerms(): Promise<CurveTerms | null> {
   if (cached) return cached;
   const c = CHAINS[0];
   const [r, prices] = await Promise.all([
-    clientFor(c).readContract({ address: c.factory, abi: factoryAbi, functionName: "config" }) as Promise<readonly [bigint, bigint, bigint, bigint, number, number, bigint]>,
+    clientFor(c).readContract({ address: c.factory, abi: omniFactoryAbi, functionName: "config" }) as Promise<readonly [bigint, bigint, bigint, number, number, number]>,
     fetchPrices(),
   ]);
   const unit = prices?.ETH;
   if (!unit) return null;
+  // v6 reference curve (all chains together). What can be sold: the tokens bought when
+  // 120% of the target comes in (each chain's sale cap is that, scaled to its share).
+  const v0 = Number(r[0]) / 1e18;
+  const t0 = Number(r[1]) / 1e18;
+  const target = Number(r[2]) / 1e18;
   const t: CurveTerms = {
-    v0Usd: (Number(r[0]) / 1e18) * unit,
-    t0: Number(r[1]) / 1e18,
-    forSale: Number(r[2]) / 1e18,
-    feeBps: Number(r[4]),
+    v0Usd: v0 * unit,
+    t0,
+    forSale: t0 - (v0 * t0) / (v0 + target * 1.2),
+    feeBps: Number(r[3]),
   };
   if (!(t.v0Usd > 0 && t.t0 > t.forSale && t.forSale > 0)) return null;
   cached = t;

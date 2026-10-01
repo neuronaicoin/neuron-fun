@@ -13,7 +13,7 @@ import { useWallet } from "@/components/wallet";
 import { useMoney } from "@/lib/portfolio";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
-import { factoryAbi, usdcAbi } from "@/lib/abis";
+import { omniFactoryAbi, usdcAbi } from "@/lib/abis";
 import { overCap, useSafety } from "@/lib/safety";
 import { CHAINS, SLIPPAGE_BPS, TARGET_USD, explorerTx, type NeuronChain } from "@/lib/config";
 import { clientFor, coinHref, isImageUrl } from "@/lib/data";
@@ -27,9 +27,9 @@ type Run = { status: "working" | "done" | "failed"; note?: string; hash?: string
 const SUPPLY = 1_000_000_000n * 10n ** 18n;
 const DEV_OPTIONS = [0, 1, 2, 5, 10];
 
-/** Storage slot of `owner`'s allowance for `spender` in TestUSDC (OpenZeppelin ERC20 layout). */
-function usdcAllowanceSlot(owner: Address, spender: Address) {
-  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, 1n]));
+/** Storage slot of `owner`'s allowance for `spender` in the chain's dollar token (`base` = allowances slot). */
+function usdcAllowanceSlot(owner: Address, spender: Address, base: number) {
+  const inner = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [owner, BigInt(base)]));
   return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
 }
 
@@ -37,7 +37,6 @@ function usdcAllowanceSlot(owner: Address, spender: Address) {
 const FEE_MODES = [
   { id: 0, key: "creator", title: "To you", text: "Your 0.3% of every trade builds up for you to collect." },
   { id: 1, key: "buyback", title: "Buyback & burn", text: "Your share buys the coin back and burns it, so the supply keeps shrinking." },
-  { id: 2, key: "holders", title: "To holders", text: "Your share is paid out to everyone holding the coin, in USDC." },
 ] as const;
 
 /** Native coin needed to buy `tokens` from a fresh curve, fee included. */
@@ -66,7 +65,7 @@ export default function CreatePage() {
   // Or a dollar amount (typed, or 10% of your cash), split evenly across the chosen chains.
   const [devUsd, setDevUsd] = useState("");
   const { portfolio } = useMoney();
-  const [feeMode, setFeeMode] = useState<0 | 1 | 2>(0);
+  const [feeMode, setFeeMode] = useState<0 | 1>(0);
   // Optional creator lock (seconds): your coins can't be sold or moved until it ends.
   const [lock, setLock] = useState<0 | 3600 | 86400>(0);
   // "Create your coin with AI": the same page with the AI helper on top (?ai=1).
@@ -94,8 +93,9 @@ export default function CreatePage() {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
     Promise.all(
       CHAINS.map(async (c) => {
-        const r = (await clientFor(c).readContract({ address: c.factory, abi: factoryAbi, functionName: "config" })) as readonly [bigint, bigint, bigint, bigint, number, number, bigint];
-        return [c.key, { v0: r[0], t0: r[1], feeBps: BigInt(r[4]) }] as const;
+        // v6: the reference curve for all chains together (each chain gets 1/N of it).
+        const r = (await clientFor(c).readContract({ address: c.factory, abi: omniFactoryAbi, functionName: "config" })) as readonly [bigint, bigint, bigint, number, number, number];
+        return [c.key, { v0: r[0], t0: r[1], feeBps: BigInt(r[3]) }] as const;
       })
     )
       .then((e) => setTerms(Object.fromEntries(e)))
@@ -109,7 +109,11 @@ export default function CreatePage() {
   const custom = devUsd.trim() !== "" && Number.isFinite(customUsd) && customUsd > 0 && ethUsd !== null;
   const devCost = (c: NeuronChain) => {
     if (custom && chosen.length) return BigInt(Math.floor((customUsd / chosen.length / (ethUsd as number)) * 1e18));
-    return terms[c.key] ? costFor(terms[c.key], devTokens) : 0n;
+    // v6: each of the N chains runs 1/N of the reference curve, so the creator's share of
+    // the supply is bought as 1/N of it on each chain, on that chain's 1/N curve.
+    const t = terms[c.key];
+    const n = BigInt(Math.max(1, chosen.length));
+    return t ? costFor({ ...t, v0: t.v0 / n, t0: t.t0 / n }, devTokens / n) : 0n;
   };
   const totalDevEth = chosen.reduce((s, c) => s + Number(devCost(c)) / 1e18, 0);
   const startMc = useMemo(() => {
@@ -137,6 +141,11 @@ export default function CreatePage() {
               : fullChain
                 ? `${fullChain.short} is at its beta capacity, so your first buy there can't go through. Lower it, or untick ${fullChain.short}.`
                 : "";
+  // v6 coin id (what the site and links use): keccak(creator, launch key), as OmniFactory.coinIdOf.
+  const coinKey =
+    launchKey && address
+      ? keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [address as Address, launchKey as Hex]))
+      : null;
   const allDone = chosen.length > 0 && chosen.every((c) => runs[c.key]?.status === "done");
   const anyDone = chosen.some((c) => runs[c.key]?.status === "done");
 
@@ -146,12 +155,12 @@ export default function CreatePage() {
     const l = draftToLinks(links);
     if (!l.x && !l.telegram && !l.website) return;
     linksSaved.current = true;
-    saveLinks(signMessage, `${address.toLowerCase()}:${launchKey}`, l).catch(() => {
+    saveLinks(signMessage, `${address.toLowerCase()}:${coinKey}`, l).catch(() => {
       linksSaved.current = false;
       toast("Your coin is live, but its links didn't save. Add them from the coin page.");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anyDone, launchKey, address]);
+  }, [anyDone, launchKey, address, coinKey]);
 
   async function launch() {
     if (!address || problem) return;
@@ -162,33 +171,40 @@ export default function CreatePage() {
       if (runs[c.key]?.status === "done") continue;
       const set = (r: Run) => setRuns((p) => ({ ...p, [c.key]: r }));
       try {
-        // The creator's first buy, in USDC (0 = none). Paid by approving the factory.
+        // v6: the same launch on every chain picked (same key, same chain list), so the coin
+        // gets the same address everywhere. The creator's first buy is in USDC (0 = none),
+        // paid by approving the factory. No front-running is possible: the curve is created
+        // in the same transaction, so the first buy needs no slippage limit.
         const value = devCost(c);
-        const args = [name.trim(), cleanSymbol, logo, description.trim(), key, value, 0n, feeMode] as const;
+        const eids = [...chosen].map((x) => x.eid).sort((a, b) => a - b);
+        const l = {
+          name: name.trim(),
+          symbol: cleanSymbol,
+          logo,
+          description: description.trim(),
+          launchKey: key,
+          eids,
+          lockSeconds: BigInt(lock),
+          feeMode,
+          devBuy: value,
+          minDevTokens: 0n,
+        } as const;
         const pub = clientFor(c);
         set({ status: "working", note: "Checking…" });
         // Simulate as if the factory were already approved (the approve goes in the same bundle).
         const override = [
           {
             address: c.usdc,
-            stateDiff: [{ slot: usdcAllowanceSlot(address, c.factory), value: numberToHex(maxUint256, { size: 32 }) }],
+            stateDiff: [{ slot: usdcAllowanceSlot(address, c.factory, c.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) }],
           },
         ];
-        const sim =
-          lock > 0
-            ? await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launchLocked", args: [...args, BigInt(lock)], stateOverride: override })
-            : await pub.simulateContract({ account: address, address: c.factory, abi: factoryAbi, functionName: "launch", args, stateOverride: override });
-        const minOut = value > 0n ? (sim.result[2] * (10_000n - SLIPPAGE_BPS)) / 10_000n : 0n;
+        await pub.simulateContract({ account: address, address: c.factory, abi: omniFactoryAbi, functionName: "launch", args: [l], stateOverride: override });
         const calls = [];
         if (value > 0n) {
           const allowance = (await pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "allowance", args: [address, c.factory] })) as bigint;
           if (allowance < value) calls.push(call(c.usdc, usdcAbi, "approve", [c.factory, value]));
         }
-        calls.push(
-          lock > 0
-            ? call(c.factory, factoryAbi, "launchLocked", [args[0], args[1], args[2], args[3], args[4], value, minOut, feeMode, BigInt(lock)])
-            : call(c.factory, factoryAbi, "launch", [args[0], args[1], args[2], args[3], args[4], value, minOut, feeMode])
-        );
+        calls.push(call(c.factory, omniFactoryAbi, "launch", [l]));
         const hash = await send(c.chain, calls, (note) => set({ status: "working", note }));
         set({ status: "done", hash });
       } catch (e) {
@@ -213,7 +229,7 @@ export default function CreatePage() {
           onClick={() =>
             postOnX(
               `I just launched $${cleanSymbol} on @sasapadfun 🚀 Live on ${chosen.map((c) => c.short).join(" + ")} at once. Be early 👇`,
-              coinShareUrl(`${address.toLowerCase()}:${launchKey}`)
+              coinShareUrl(`${address.toLowerCase()}:${coinKey}`)
             )
           }
           className="mt-8 w-full h-13 rounded-2xl bg-ink text-mist font-bold flex items-center justify-center gap-2"
@@ -224,7 +240,7 @@ export default function CreatePage() {
           Share your coin on X
         </button>
         <p className="text-[0.75rem] text-ink-3 mt-2">First share earns you 100 points. Coins that get shared get buyers.</p>
-        <Link href={coinHref({ creator: address, launchKey })} className="mt-4 h-13 rounded-2xl bg-emerald text-on-accent font-bold flex items-center justify-center">
+        <Link href={coinHref({ creator: address, launchKey: coinKey ?? launchKey })} className="mt-4 h-13 rounded-2xl bg-emerald text-on-accent font-bold flex items-center justify-center">
           Go to your coin
         </Link>
       </div>
@@ -575,7 +591,7 @@ export default function CreatePage() {
               ["Chains", chosen.map((c) => c.short).join(" · ") || "—"],
               ["Starting market cap", startMc ? usd(startMc, 0) : "—"],
               ["Graduates at", `${usd(TARGET_USD)} across all chains`],
-              ["Trade fee", `1% · 0.3% ${feeMode === 0 ? "goes to you" : feeMode === 1 ? "buys back & burns" : "goes to holders"}`],
+              ["Trade fee", `1% · 0.3% ${feeMode === 0 ? "goes to you" : "buys back & burns"}`],
               ["Supply", "1,000,000,000"],
               ["Liquidity", "Locked forever at graduation"],
             ].map(([k, v]) => (

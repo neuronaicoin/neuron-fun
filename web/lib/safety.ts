@@ -29,9 +29,10 @@ export async function readSafety(chain: NeuronChain): Promise<Safety> {
     r("nativeCap") as Promise<bigint>,
     r("totalNative") as Promise<bigint>,
     r("owner") as Promise<Address>,
-    r("pendingOwner") as Promise<Address>,
+    // v6 OmniFactory has no two-step ownership or curve counter: treat them as empty.
+    (r("pendingOwner") as Promise<Address>).catch(() => "0x0000000000000000000000000000000000000000" as Address),
     r("guardian") as Promise<Address>,
-    r("curveCount") as Promise<bigint>,
+    (r("curveCount") as Promise<bigint>).catch(() => 0n),
   ]);
   return {
     chainKey: chain.key,

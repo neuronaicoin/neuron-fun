@@ -1,5 +1,7 @@
 "use client";
 
+import { parseAbi } from "viem";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Address } from "viem";
 import { call, type Call } from "@/lib/tx";
@@ -32,6 +34,8 @@ const COPY = {
  * collect for the creator, share with holders, or run a buyback. Holders see
  * and claim their own rewards here.
  */
+const migratorV6BuybackAbi = parseAbi(["function buybackFunds(bytes32 coin) view returns (uint256)"]);
+
 export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void }) {
   const { address, send: sendCalls } = useWallet();
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -58,7 +62,13 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
             .catch(() => null);
           if (mode === "buyback") {
             buybackFund = (await pub
-              .readContract({ address: migrator, abi: migratorAbi, functionName: "buybackFunds", args: [c.token] })
+              .readContract({
+                address: migrator,
+                // v6 keeps buyback money per coin id (the coin's launch key here); v5 per token.
+                abi: (coin.omni ? migratorV6BuybackAbi : migratorAbi) as typeof migratorAbi,
+                functionName: "buybackFunds",
+                args: [(coin.omni ? coin.launchKey : c.token) as Address],
+              })
               .catch(() => null)) as bigint | null;
           }
         }

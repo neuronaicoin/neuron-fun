@@ -23,6 +23,14 @@ export type NeuronChain = {
   color: string;
   chain: Chain;
   factory: Address;
+  /** LayerZero endpoint id (v6 omnichain coins list the chains they launch on by eid). */
+  eid: number;
+  /**
+   * Storage slots of the dollar token's balance and allowance mappings, used to simulate a
+   * trade before the approve is sent. Testnet TestUsdOft (an OFT): 5 / 6. Mainnet must use
+   * the real token's layout (Circle USDC: 9 / 10).
+   */
+  usdcSlots: { balance: number; allowance: number };
   startBlock: bigint;
   /** Price symbol of the gas coin (for dollar totals). */
   priceSymbol: "ETH" | "BNB" | "USD" | "USDC";
@@ -79,15 +87,18 @@ export const CHAINS: NeuronChain[] = [
     short: "Robinhood",
     color: "#12B886",
     chain: robinhoodTestnet,
-    // v5, the dollar edition: coins trade against USDC. Sep 30, 2026.
-    factory: "0x443696e65CAfD60a56F86E71ffb01377e06B0B9e",
-    startBlock: 123588465n,
+    // v6, omnichain coins: one coin, the same address on every chain. Oct 1, 2026.
+    // (v5 dollar edition was factory 0x443696e6…, router 0x0D60A942…, USDC 0x65DF225C….)
+    factory: "0xE0cdEd0C777FA52Ffa1C2495d916DcdC9b2dbE1d",
+    eid: 40451,
+    startBlock: 127150000n,
     priceSymbol: "USDC",
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-    router: "0x0D60A942712ca116aE7b52Df9E45Bad67f6c2aD7",
-    migrator: "0x73CB6B02DF8Dd5bacB856EF6CFf2E9Dc24b7b650",
-    orders: "0x768be4E1c9AD544a78Ddc07ad88ecA5D96BF4a52",
-    usdc: "0x65DF225CC2150ACC635EeA117aD4fb2E69b2384D",
+    router: "0x1bd54DB7E565DE3B76b4d74CdeF101d0D28e50C8",
+    migrator: "0xC93e5764DE826fe3eA5B758342027fB309922B24",
+    // Auto orders for v6 coins come in a later update.
+    usdc: "0x3b4762Cd69CBC3e128781F44d6E6A1E882Dd5721",
+    usdcSlots: { balance: 5, allowance: 6 },
     legacy: [],
     gasPolicy: "6d52f227-a36c-4671-bca1-3b088153a180",
     alchemyNetwork: "robinhood-testnet",
@@ -99,15 +110,16 @@ export const CHAINS: NeuronChain[] = [
     short: "Base",
     color: "#3B6FF5",
     chain: baseSepolia,
-    // v5, the dollar edition: coins trade against USDC. Sep 30, 2026.
-    factory: "0x0e78b5a53ed3463256F7bc975d25d4aA71F91E47",
-    startBlock: 47491287n,
+    // v6, omnichain coins. Oct 1, 2026. (v5: factory 0x0e78b5a5…, router 0x5186Cd79…, USDC 0x679F33e6….)
+    factory: "0xE0cdEd0C777FA52Ffa1C2495d916DcdC9b2dbE1d",
+    eid: 40245,
+    startBlock: 47550152n,
     priceSymbol: "USDC",
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
-    router: "0x5186Cd794D41240cCa74e7041Af6345F16104d52",
-    migrator: "0x20AEB787287393A522b9275F35e7f5Aa93173493",
-    orders: "0x0fd5143302C7fb4B107E7Cbf5B4393fE41704A01",
-    usdc: "0x679F33e62DDe3da82442CD49D978A233A099C186",
+    router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
+    migrator: "0x1e98de896584aE8C7966314E6A82ec2c434BC18D",
+    usdc: "0x57A149c274d5065279F7926EF3D6b00214A8A07F",
+    usdcSlots: { balance: 5, allowance: 6 },
     legacy: [],
     gasPolicy: "4832ceec-26ce-4fc0-bd12-76f8b9bb99fe",
     alchemyNetwork: "base-sepolia",
@@ -134,3 +146,6 @@ export const ALCHEMY_KEY = "alch_8v9VILwONIJvenP--84Pt";
 
 /** Web push (price alerts). Public half of the VAPID key pair; the private half lives on Railway only. */
 export const VAPID_PUBLIC_KEY = "BL0G7RxxAC6NJKoWlGEz2CpdhQYVlcqigiWxzu461f2ymQVeg0DRei5bkZwvMkAqZZYnvFKOIEcvRxe7A8QnDrg";
+
+/** Storage slots of every v6 coin (LaunchCoin, an OFT): balances 5, allowances 6. */
+export const COIN_SLOTS = { balance: 5, allowance: 6 } as const;

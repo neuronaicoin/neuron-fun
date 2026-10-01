@@ -37,6 +37,16 @@ export const safetyAbi = parseAbi([
   "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
 ]);
 
+/** v6 OmniFactory: one coin, the same address on every chain picked (one launch per chain). */
+export const omniFactoryAbi = parseAbi([
+  "struct Launch { string name; string symbol; string logo; string description; bytes32 launchKey; uint32[] eids; uint256 lockSeconds; uint8 feeMode; uint256 devBuy; uint256 minDevTokens; }",
+  "function launch(Launch l) returns (address coin, address curve)",
+  "function coinAddress(address creator, bytes32 launchKey) view returns (address)",
+  "function launchesOpen() view returns (bool)",
+  // Reference curve for all chains together; each chain's curve is 1/N of it (N = chains picked).
+  "function config() view returns (uint256 virtualNative, uint256 virtualToken, uint256 target, uint16 feeBps, uint16 creatorShareBps, uint16 moveFeeBps)",
+]);
+
 export const curveAbi = parseAbi([
   "function state() view returns (uint8)",
   "function realNative() view returns (uint256)",
