@@ -25,6 +25,10 @@ on:
         options:
           - deploy
           - wire
+      top_up:
+        description: "deploy only: ETH the factory wallet sends to the deployer after its 2 factory transactions (0 = none)"
+        type: string
+        default: "0"
       broadcast:
         description: "Actually send transactions (leave unticked for a free dry run)"
         type: boolean
@@ -88,6 +92,7 @@ jobs:
           RAW_FKEY: ${{ secrets.OMNI_FACTORY_KEY }}
           REWARDS_VAR: ${{ vars.REWARDS }}
           STEP: ${{ inputs.step }}
+          TOP_UP: ${{ inputs.top_up }}
           BROADCAST: ${{ inputs.broadcast }}
         run: |
           norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
@@ -101,6 +106,7 @@ jobs:
             FKEY=$(norm "$RAW_FKEY"); echo "::add-mask::$FKEY"
             if [ "$FKEY" = "0x" ]; then echo "OMNI_FACTORY_KEY secret is missing (a new, never-used wallet)"; exit 1; fi
             export OMNI_FACTORY_KEY="$FKEY"
+            if [ -n "$TOP_UP" ] && [ "$TOP_UP" != "0" ]; then export FUND_DEPLOYER=$(cast to-wei "$TOP_UP"); echo "top-up: $TOP_UP ETH"; fi
             forge script script/omni/DeployOmni.s.sol $FLAGS
           else
             OTHERS=""
