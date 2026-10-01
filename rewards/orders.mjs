@@ -69,7 +69,9 @@ async function ready(c, o, lastSim) {
     return simulate(c, o);
   }
   if (o.isBuy) {
-    const left = await c.pub.readContract({ address: o.curve, abi: curveAbi, functionName: "tokensForSale" });
+    // v5 curves say how much is left; v6 curves don't (their quote covers it). Frozen
+    // v6 curves (state 1) take no buys, like closed v5 curves.
+    const left = await c.pub.readContract({ address: o.curve, abi: curveAbi, functionName: "tokensForSale" }).catch(() => null);
     if (left === 0n) return false;
     const out = await c.pub.readContract({ address: o.curve, abi: curveAbi, functionName: "quoteBuy", args: [o.amount] });
     if (out < o.minOut || out > o.maxOut) return false;

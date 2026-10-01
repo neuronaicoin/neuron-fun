@@ -383,6 +383,8 @@ export function QuickTrade({
       setDone({ chainKey: chosen.chain.key, hash });
       setPriced((n) => n + 1);
       onDone?.({ hash, side, chainKey: chosen.chain.key });
+      // Sold everything: go back to Buy, so the panel doesn't sit on an empty Sell tab.
+      if (side === "sell" && sellPct === 100 && open.length) setSide("buy");
       // Tell the chart and trade list right away; read the new curve price for an instant update.
       const signal = (nativePerToken: number | null) =>
         signalTrade({ chainId: chosen.chain.chain.id, curve: chosen.curve, coinId: coin.id, nativePerToken });
