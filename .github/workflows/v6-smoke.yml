@@ -42,7 +42,8 @@ jobs:
           # LayerZero executor option: gas for the receiving side (type 3, lzReceive).
           opt() { printf '0x000301001101%032x' "$1"; }
           FEE=300000000000000   # 0.0003 ETH sent per message; the unused part is refunded
-          tx() { local rpc=$1; shift; echo "   -> $1 $2"; out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) || { echo "FAILED: $*"; echo "$out"; exit 1; }; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; }
+          # Send a transaction; public testnet RPCs sometimes lag one nonce behind, so retry those.
+          tx() { local rpc=$1; shift; echo "   -> $1 $2"; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) && break; if echo "$out" | grep -qiE "underpriced|nonce too low|already known|nonce"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out"; exit 1; fi; done; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; }
           wait_for() { # description, rpc, call..., expected
             local desc=$1 rpc=$2; shift 2; local exp="${@: -1}"; set -- "${@:1:$(($#-1))}"
             for i in $(seq 1 80); do
@@ -66,6 +67,7 @@ jobs:
             echo "  $1: test dollars $bal"
             if [ "$bal" -lt "$2" ]; then tx $rpc $USD "faucet(address)" $ME; fi
             tx $rpc $USD "approve(address,uint256)" $FAC $2
+            sleep 3
             tx $rpc $FAC "launch((string,string,string,string,bytes32,uint32[],uint256,uint8,uint256,uint256))" \
               "(\"Smoke Test\",\"SMOKE\",\"\",\"v6 smoke test\",$KEY,$EIDS,0,0,$2,0)"
           done
@@ -96,6 +98,7 @@ jobs:
           echo "   ✅ pool open"
           ROUTER=$(j $A router); USD=$(j $A usd)
           tx $RH $USD "approve(address,uint256)" $ROUTER 1000000
+          sleep 3
           before=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
           tx $RH $ROUTER "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME $(( $(date +%s) + 600 ))
           after=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
