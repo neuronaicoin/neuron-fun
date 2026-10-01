@@ -65,7 +65,7 @@ contract UsdCurveV6Test is Test {
         uint256 v = V0 / N;
         uint256 t = T0 / N;
         curve = factory.deploy(
-            UsdCurveV6.Params(usdc, coin, bytes32("kedi"), hub, migrator, consolidator, creator, proto, v, t, saleCapFor(v, t), 100, 3_000, UsdCurveV6.FeeMode.Creator)
+            UsdCurveV6.Params(usdc, coin, bytes32("kedi"), address(factory), hub, migrator, consolidator, creator, proto, v, t, saleCapFor(v, t), 100, 3_000, UsdCurveV6.FeeMode.Creator)
         );
         coin.setController(address(curve));
         coin.renounceOwnership();
@@ -223,7 +223,7 @@ contract UsdCurveV6Test is Test {
         uint256 v = V0 / N;
         uint256 t = T0 / N;
         c = factory.deploy(
-            UsdCurveV6.Params(usdc, k, bytes32("b"), hub, mig, cons, creator, proto, v, t, saleCapFor(v, t), 100, 3_000, UsdCurveV6.FeeMode.Buyback)
+            UsdCurveV6.Params(usdc, k, bytes32("b"), address(factory), hub, mig, cons, creator, proto, v, t, saleCapFor(v, t), 100, 3_000, UsdCurveV6.FeeMode.Buyback)
         );
         k.setController(address(c));
         vm.prank(alice);

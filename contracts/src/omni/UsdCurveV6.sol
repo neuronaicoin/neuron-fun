@@ -114,6 +114,8 @@ contract UsdCurveV6 is ReentrancyGuard {
         IERC20 quote;
         LaunchCoin coin;
         bytes32 coinId;
+        /// @notice The OmniFactory (beta locks); the curve may be created by its helper.
+        address factory;
         address hub;
         address migrator;
         address consolidator;
@@ -153,7 +155,7 @@ contract UsdCurveV6 is ReentrancyGuard {
 
     constructor(Params memory p) {
         if (
-            address(p.quote) == address(0) || address(p.coin) == address(0) || p.hub == address(0)
+            address(p.quote) == address(0) || address(p.coin) == address(0) || p.hub == address(0) || p.factory == address(0)
                 || p.migrator == address(0) || p.consolidator == address(0) || p.creator == address(0)
                 || p.protocolFeeRecipient == address(0) || p.virtualNative == 0 || p.saleCap == 0
                 || p.virtualToken <= p.saleCap || p.feeBps > 1_000 || p.creatorShareBps > BPS
@@ -161,7 +163,7 @@ contract UsdCurveV6 is ReentrancyGuard {
         quote = p.quote;
         coin = p.coin;
         coinId = p.coinId;
-        factory = ICurveFactoryV6(msg.sender);
+        factory = ICurveFactoryV6(p.factory);
         hub = p.hub;
         migrator = p.migrator;
         consolidator = p.consolidator;

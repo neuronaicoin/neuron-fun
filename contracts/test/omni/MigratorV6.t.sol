@@ -99,8 +99,8 @@ contract MigratorV6Test is Test {
         uint256 v = V0 / 2;
         uint256 t = T0 / 2;
         uint256 cap = t - (v * t) / (v + (TARGET * 12) / 10);
-        curveA = f.deploy(UsdCurveV6.Params(usdcA, coinA, ID, address(hubA), address(0x1), address(consA), address(0xC4EA), address(0x9407), v, t, cap, 100, 3_000, UsdCurveV6.FeeMode.Creator));
-        curveB = f.deploy(UsdCurveV6.Params(usdcB, coinB, ID, address(hubB), address(migB), address(0x2), address(0xC4EA), address(0x9407), v, t, cap, 100, 3_000, UsdCurveV6.FeeMode.Creator));
+        curveA = f.deploy(UsdCurveV6.Params(usdcA, coinA, ID, address(f), address(hubA), address(0x1), address(consA), address(0xC4EA), address(0x9407), v, t, cap, 100, 3_000, UsdCurveV6.FeeMode.Creator));
+        curveB = f.deploy(UsdCurveV6.Params(usdcB, coinB, ID, address(f), address(hubB), address(migB), address(0x2), address(0xC4EA), address(0x9407), v, t, cap, 100, 3_000, UsdCurveV6.FeeMode.Creator));
         coinA.setController(address(curveA));
         coinB.setController(address(curveB));
         uint32[] memory eids = new uint32[](2);

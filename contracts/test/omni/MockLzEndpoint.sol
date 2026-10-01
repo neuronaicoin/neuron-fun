@@ -4,6 +4,10 @@ pragma solidity 0.8.26;
 import {MessagingParams, MessagingFee, MessagingReceipt, Origin} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
+interface IComposer {
+    function lzCompose(address from, bytes32 guid, bytes calldata message, address executor, bytes calldata extra) external payable;
+}
+
 interface IReceiver {
     function lzReceive(Origin calldata o, bytes32 guid, bytes calldata m, address ex, bytes calldata extra) external payable;
 }
@@ -77,6 +81,29 @@ contract MockLzEndpoint {
         r.guid = keccak256(abi.encode(eid, msg.sender, packets.length));
         r.nonce = ++nonce;
         r.fee = MessagingFee(msg.value, 0);
+    }
+
+    struct Compose {
+        address from;
+        address to;
+        bytes32 guid;
+        bytes message;
+    }
+
+    Compose[] public composes;
+
+    function sendCompose(address to, bytes32 guid, uint16, bytes calldata message) external {
+        composes.push(Compose(msg.sender, to, guid, message));
+    }
+
+    function composeCount() external view returns (uint256) {
+        return composes.length;
+    }
+
+    /// @dev Runs the last queued compose call (as the executor would).
+    function deliverLastCompose() external {
+        Compose memory c = composes[composes.length - 1];
+        IComposer(c.to).lzCompose(c.from, c.guid, c.message, address(this), "");
     }
 
     function packetCount() external view returns (uint256) {

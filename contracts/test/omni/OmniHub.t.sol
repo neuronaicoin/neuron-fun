@@ -45,7 +45,7 @@ contract OmniHubTest is Test {
         uint256 r = (TARGET * 12) / 10;
         c.curve = c.factory.deploy(
             UsdCurveV6.Params(
-                c.usdc, c.coin, bytes32("kedi"), address(c.hub), mig, cons, address(0xC4EA), address(0x9407), v, t, t - (v * t) / (v + r), 100, 3_000,
+                c.usdc, c.coin, bytes32("kedi"), address(c.factory), address(c.hub), mig, cons, address(0xC4EA), address(0x9407), v, t, t - (v * t) / (v + r), 100, 3_000,
                 UsdCurveV6.FeeMode.Creator
             )
         );

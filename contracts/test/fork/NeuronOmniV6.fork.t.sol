@@ -93,7 +93,7 @@ contract OmniV6ForkTest is Test {
         FactoryStub f = new FactoryStub();
         uint256 cap = T0 - (V0 * T0) / (V0 + (TARGET * 12) / 10);
         curve = f.deploy(
-            UsdCurveV6.Params(IERC20(address(usdc)), coin, ID, address(hub), address(migrator), makeAddr("cons"), creator, protocol, V0, T0, cap, 100, 3_000, mode)
+            UsdCurveV6.Params(IERC20(address(usdc)), coin, ID, address(f), address(hub), address(migrator), makeAddr("cons"), creator, protocol, V0, T0, cap, 100, 3_000, mode)
         );
         coin.setController(address(curve));
         uint32[] memory eids = new uint32[](1);

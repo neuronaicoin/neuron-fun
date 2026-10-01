@@ -8,6 +8,7 @@ import {LaunchCoin} from "../../src/omni/LaunchCoin.sol";
 import {UsdCurveV6} from "../../src/omni/UsdCurveV6.sol";
 import {OmniHub} from "../../src/omni/OmniHub.sol";
 import {OmniFactory} from "../../src/omni/OmniFactory.sol";
+import {OmniCoinDeployer, OmniCurveDeployer} from "../../src/omni/OmniDeployers.sol";
 import {MockLzEndpoint} from "./MockLzEndpoint.sol";
 import {USDC6, SinkStub} from "./UsdCurveV6.t.sol";
 
@@ -30,11 +31,21 @@ contract OmniFactoryTest is Test {
         ep = new MockLzEndpoint(A);
         hub = new OmniHub(address(ep), address(this), A, A);
         usdc = new USDC6();
+        address sink1 = address(new SinkStub());
+        address sink2 = address(new SinkStub());
+        // The factory goes right after its two helpers, which are told its address up front.
+        address fAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
+        OmniCoinDeployer cd = new OmniCoinDeployer(fAt);
+        OmniCurveDeployer vd = new OmniCurveDeployer(fAt);
         f = new OmniFactory(
             address(this), ILayerZeroEndpointV2(address(ep)), A, IERC20(address(usdc)), address(hub),
-            address(new SinkStub()), address(new SinkStub()), address(0x7E), address(0x9407),
-            OmniFactory.Config(4_500e6, 1_073_000_000 ether, 10_000e6, 100, 3_000, 10)
+            sink1, sink2, address(0x7E), address(0x9407),
+            OmniFactory.Config(4_500e6, 1_073_000_000 ether, 10_000e6, 100, 3_000, 10),
+            2,
+            cd,
+            vd
         );
+        assertEq(address(f), fAt);
         hub.setFactory(address(f));
         f.setRoute(B, OmniFactory.Route(address(0x5E), address(0x4E), abi.encode(uint32(10_000), address(0xE1)), _uln(2)));
         f.setLaunchesOpen(true);

@@ -9,7 +9,7 @@ import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {LaunchCoin} from "./LaunchCoin.sol";
 import {UsdCurveV6} from "./UsdCurveV6.sol";
-import {Create3} from "./Create3.sol";
+import {OmniCoinDeployer, OmniCurveDeployer} from "./OmniDeployers.sol";
 
 interface IOmniHubRegister {
     function register(bytes32 coin, address curve, uint32[] calldata eids, uint256 target) external;
@@ -31,6 +31,9 @@ interface IOmniHubRegister {
  *     and registered with this chain's OmniHub under the coin's id.
  *  4. Optionally the creator buys first.
  *
+  * The coin and curve bytecode live in two helper contracts (OmniDeployers) so this
+ * contract stays under the 24 KB limit.
+ *
  * The owner (sasa's Safe) only sets things for FUTURE launches (curve settings, routes
  * to other chains) and the v5 beta locks (pause buys, total cap). It has no power over
  * coins already launched.
@@ -41,7 +44,9 @@ contract OmniFactory is Ownable, ReentrancyGuard {
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint32 internal constant CONFIG_TYPE_EXECUTOR = 1;
     uint32 internal constant CONFIG_TYPE_ULN = 2;
-    uint256 public constant MIN_DVNS = 2;
+    /// @notice Verifiers every route must require. 2+ on mainnet; a testnet may only have
+    /// LayerZero's own verifier, so its factory is deployed with 1. Fixed at deployment.
+    uint8 public immutable minDvns;
 
     struct Config {
         uint256 virtualNative; // reference curve (all chains together), USDC
@@ -84,6 +89,8 @@ contract OmniFactory is Ownable, ReentrancyGuard {
     }
 
     ILayerZeroEndpointV2 public immutable endpoint;
+    OmniCoinDeployer public immutable coinDeployer;
+    OmniCurveDeployer public immutable curveDeployer;
     uint32 public immutable localEid;
     IERC20 public immutable usdc;
 
@@ -140,8 +147,16 @@ contract OmniFactory is Ownable, ReentrancyGuard {
         address consolidator_,
         address treasury_,
         address protocolFeeRecipient_,
-        Config memory config_
+        Config memory config_,
+        uint8 minDvns_,
+        OmniCoinDeployer coinDeployer_,
+        OmniCurveDeployer curveDeployer_
     ) Ownable(owner_) {
+        if (coinDeployer_.factory() != address(this) || curveDeployer_.factory() != address(this)) revert BadConfig();
+        coinDeployer = coinDeployer_;
+        curveDeployer = curveDeployer_;
+        if (minDvns_ == 0) revert BadConfig();
+        minDvns = minDvns_;
         if (
             address(endpoint_) == address(0) || address(usdc_) == address(0) || hub_ == address(0) || migrator_ == address(0)
                 || consolidator_ == address(0) || treasury_ == address(0) || protocolFeeRecipient_ == address(0)
@@ -165,7 +180,7 @@ contract OmniFactory is Ownable, ReentrancyGuard {
 
     /// @notice The coin's address, the same on every chain.
     function coinAddress(address creator, bytes32 launchKey) public view returns (address) {
-        return Create3.predict(coinIdOf(creator, launchKey), address(this));
+        return coinDeployer.predict(coinIdOf(creator, launchKey));
     }
 
     function routeOf(uint32 eid) external view returns (Route memory) {
@@ -195,21 +210,18 @@ contract OmniFactory is Ownable, ReentrancyGuard {
         if (!here) revert BadChains();
 
         bytes32 coinId = coinIdOf(msg.sender, l.launchKey);
-        coin = Create3.deploy(
+        coin = coinDeployer.deploy(
             coinId,
-            abi.encodePacked(
-                type(LaunchCoin).creationCode,
-                abi.encode(l.name, l.symbol, address(endpoint), config.moveFeeBps, treasury, msg.sender, l.lockSeconds, address(this))
-            )
+            abi.encode(l.name, l.symbol, address(endpoint), config.moveFeeBps, treasury, msg.sender, l.lockSeconds, address(this))
         );
         _wire(LaunchCoin(coin), l.eids);
 
-        curve = address(
-            new UsdCurveV6(
+        curve = curveDeployer.deploy(
                 UsdCurveV6.Params({
                     quote: usdc,
                     coin: LaunchCoin(coin),
                     coinId: coinId,
+                    factory: address(this),
                     hub: hub,
                     migrator: migrator,
                     consolidator: consolidator,
@@ -222,7 +234,6 @@ contract OmniFactory is Ownable, ReentrancyGuard {
                     creatorShareBps: config.creatorShareBps,
                     feeMode: l.feeMode
                 })
-            )
         );
         isCurve[curve] = true;
         LaunchCoin(coin).setController(curve);
@@ -297,11 +308,11 @@ contract OmniFactory is Ownable, ReentrancyGuard {
 
     // ------------------------------------------------------------ admin (future launches only)
 
-    /// @notice Route to another chain, used by coins launched from now on. At least 2 required verifiers.
+    /// @notice Route to another chain, used by coins launched from now on. At least `minDvns` required verifiers.
     function setRoute(uint32 eid, Route calldata r) external onlyOwner {
         if (eid == localEid || r.sendLib == address(0) || r.receiveLib == address(0)) revert BadConfig();
         UlnConfig memory u = abi.decode(r.ulnConfig, (UlnConfig));
-        if (u.requiredDVNCount < MIN_DVNS || u.requiredDVNs.length != u.requiredDVNCount) revert TooFewVerifiers();
+        if (u.requiredDVNCount < minDvns || u.requiredDVNs.length != u.requiredDVNCount) revert TooFewVerifiers();
         routes[eid] = r;
         emit RouteSet(eid);
     }
