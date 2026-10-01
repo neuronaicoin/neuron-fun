@@ -42,14 +42,14 @@ contract MockLzEndpoint {
     mapping(address oapp => mapping(uint32 eid => address)) public receiveLib;
     mapping(address oapp => uint256) public configCalls;
 
-    function setSendLibrary(address oapp, uint32 eid, address lib) external {
+    function setSendLibrary(address oapp, uint32 dst, address lib) external {
         require(delegates[oapp] == msg.sender || oapp == msg.sender, "not delegate");
-        sendLib[oapp][eid] = lib;
+        sendLib[oapp][dst] = lib;
     }
 
-    function setReceiveLibrary(address oapp, uint32 eid, address lib, uint256) external {
+    function setReceiveLibrary(address oapp, uint32 dst, address lib, uint256) external {
         require(delegates[oapp] == msg.sender || oapp == msg.sender, "not delegate");
-        receiveLib[oapp][eid] = lib;
+        receiveLib[oapp][dst] = lib;
     }
 
     struct Param {

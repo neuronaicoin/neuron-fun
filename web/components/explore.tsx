@@ -150,15 +150,10 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
               aria-hidden="true"
             />
             <div className="relative">
-              <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
-              <h1 className="font-display font-semibold text-[1.5rem] sm:text-[3.625rem] leading-[1.05] tracking-tight sm:mt-3">
-                <span className="whitespace-nowrap">No wallet.</span> <span className="whitespace-nowrap">No gas.</span>
-                <br />
-                <span className="whitespace-nowrap">No bridge.</span> <span className="whitespace-nowrap text-emerald">Just buy.</span>
-              </h1>
-              <p className="hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl">
-                Buyers on every chain push your coin to graduation together. The chain with the most money wins.
+              <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">
+                CREATE <span aria-hidden="true">→</span> MULTI-CHAIN 🔥 <span aria-hidden="true">→</span> BONDING <span aria-hidden="true">→</span> GRADUATE 🚀
               </p>
+              <HeroMessages />
               <div className="mt-3 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
                 <div>
                   <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : <StatSkeleton />}</div>
@@ -185,7 +180,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald/10 blur-3xl pointer-events-none" aria-hidden="true" />
             <div className="relative">
               <h2 className="font-display font-semibold text-[1.75rem] sm:text-[2.25rem] leading-tight">
-                Create on <span className="text-emerald">{CHAINS.length} chains</span> at once
+                Create on <span className="text-emerald">multiple chains</span> at once
               </h2>
               <div className="flex flex-wrap gap-2 mt-4">
                 {CHAINS.map((c) => (
@@ -281,7 +276,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             ))}
           </div>
 
-          <div className="mt-2.5 grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-5">
+          <div className="mt-2.5 grid gap-2.5 sm:flex sm:flex-wrap">
             <FilterRow label="Volume 24h" values={VOLUME_FILTERS} value={minVol} onChange={setMinVol} />
             <FilterRow label="Liquidity" values={LIQUIDITY_FILTERS} value={minLiq} onChange={setMinLiq} />
           </div>
@@ -362,27 +357,100 @@ function StatSkeleton() {
   return <span className="shimmer block h-[1.25rem] sm:h-[1.625rem] w-14 rounded-md my-[0.25rem]" aria-hidden="true" />;
 }
 
-/** One row of equal-size chips: a label and a few minimum values. */
+/** A filter in the same box style as the chain picker above it: label first, then the minimums. */
 function FilterRow({ label, values, value, onChange }: { label: string; values: readonly number[]; value: number; onChange: (v: number) => void }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="w-[4.75rem] shrink-0 text-[0.75rem] text-ink-3">{label}</span>
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar min-w-0" role="group" aria-label={`Minimum ${label.toLowerCase()}`}>
-        {values.map((v) => (
+    <div
+      className="flex items-center gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit overflow-x-auto [scrollbar-width:none]"
+      role="group"
+      aria-label={`Minimum ${label.toLowerCase()}`}
+    >
+      <span className="shrink-0 h-6 pl-2.5 pr-3 mr-0.5 border-r border-line text-[0.8125rem] font-bold text-ink whitespace-nowrap flex items-center">
+        {label}
+      </span>
+      {values.map((v) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={value === v}
+          onClick={() => onChange(v)}
+          className={
+            "shrink-0 h-9 px-3 sm:px-4 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center " +
+            (value === v ? "bg-ink text-paper shadow-sm" : "text-ink-2 hover:text-ink")
+          }
+        >
+          {filterLabel(v)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The hero's headline and line under it: one of sasa's real features, changing every
+ * 25 seconds (the dots jump to one). Every line here must be true on the live site.
+ * Each headline is two short lines (the second in the accent colour), so the card
+ * keeps its height as they change.
+ */
+const HERO_MESSAGES: { a: string[]; b: string[]; sub: string }[] = [
+  { a: ["No wallet.", "No gas."], b: ["No bridge.", "Just buy."], sub: "Sign in with email, add USDC from any chain and buy any coin in one tap." },
+  { a: ["One sentence."], b: ["Your coin,", "made by AI."], sub: "Describe an idea. Get a name, ticker, logo and story in seconds, ready to launch." },
+  { a: ["Launch once."], b: ["Live on", "every chain."], sub: "Buyers on every chain push your coin to graduation together. The chain with the most money wins." },
+  { a: ["Spot a top trader?"], b: ["Copy in", "one tap."], sub: "Follow the best traders and get their buys as signals you can copy or skip." },
+  { a: ["Set your exit."], b: ["It sells", "itself."], sub: "Take profit, stop loss and buy-the-dip orders fill on their own, even while you sleep." },
+  { a: ["Every hot coin."], b: ["One place", "to trade them."], sub: "Coins from sasa and other DEXs, ranked by real volume. No head start for anyone." },
+  { a: ["Invite a friend."], b: ["Share", "their fees."], sub: "Friends start with 100 points. You earn a share of sasa's fees on their trades for a year." },
+];
+const HERO_EVERY_MS = 25_000;
+
+function HeroMessages() {
+  const [i, setI] = useState(0);
+  const [tick, setTick] = useState(0); // restarts the timer when someone picks a dot
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") setI((n) => (n + 1) % HERO_MESSAGES.length);
+    }, HERO_EVERY_MS);
+    return () => clearInterval(t);
+  }, [tick]);
+  const m = HERO_MESSAGES[i];
+  // The last phrase of the second line takes the accent colour ("Just buy.").
+  const words = (parts: string[], accentLast = false) =>
+    parts.map((w, k) => (
+      <span key={k} className={"whitespace-nowrap" + (accentLast && k === parts.length - 1 ? " text-emerald" : "")}>
+        {k > 0 ? " " : ""}
+        {w}
+      </span>
+    ));
+  return (
+    <>
+      <h1
+        key={i}
+        className="hero-swap font-display font-semibold text-[1.5rem] sm:text-[2.75rem] lg:text-[clamp(2.5rem,4.1vw,3.625rem)] leading-[1.05] tracking-tight sm:mt-3 min-h-[2.1em]"
+      >
+        {words(m.a)}
+        <br />
+        {words(m.b, true)}
+      </h1>
+      <p key={`s${i}`} className="hero-swap hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl min-h-[3.4em]">
+        {m.sub}
+      </p>
+      <div className="flex gap-1.5 mt-2 sm:mt-3" role="group" aria-label="More about sasa">
+        {HERO_MESSAGES.map((_, k) => (
           <button
-            key={v}
+            key={k}
             type="button"
-            aria-pressed={value === v}
-            onClick={() => onChange(v)}
-            className={
-              "h-8 min-w-[3.75rem] px-2.5 shrink-0 rounded-lg border text-[0.75rem] font-semibold whitespace-nowrap " +
-              (value === v ? "bg-ink text-paper border-ink" : "bg-paper border-line text-ink-2 hover:text-ink hover:border-emerald/50")
-            }
+            aria-label={`Show message ${k + 1}`}
+            aria-pressed={k === i}
+            onClick={() => {
+              setI(k);
+              setTick((t) => t + 1);
+            }}
+            className="h-5 flex items-center group"
           >
-            {filterLabel(v)}
+            <span className={"block h-1.5 rounded-full transition-all " + (k === i ? "w-5 bg-emerald" : "w-1.5 bg-line group-hover:bg-ink-3")} />
           </button>
         ))}
       </div>
-    </div>
+    </>
   );
 }

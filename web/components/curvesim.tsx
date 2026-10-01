@@ -11,7 +11,7 @@
  * The curve settings are read from the live factory, so the numbers follow the
  * contracts (testnet today, mainnet later) without editing this file.
  */
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CHAINS, TARGET_USD } from "@/lib/config";
 import { factoryAbi } from "@/lib/abis";
 import { clientFor } from "@/lib/data";
@@ -61,7 +61,31 @@ function tokensText(n: number): string {
 }
 const money = (n: number) => (n >= 1000 ? compactUsd(n) : `$${n.toFixed(2)}`);
 
-export function CurveSim({ title = "See what your buy does", className = "" }: { title?: string; className?: string }) {
+export function CurveSim({
+  title = "See what your buy does",
+  className = "",
+  collapsible = false,
+}: {
+  title?: string;
+  className?: string;
+  /** Starts closed; a tap on the header opens it, a second tap or a tap anywhere else closes it. */
+  collapsible?: boolean;
+}) {
+  const [open, setOpen] = useState(!collapsible);
+  const box = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!collapsible || !open) return;
+    const away = (e: PointerEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [collapsible, open]);
   const [terms, setTerms] = useState<CurveTerms>(cached ?? FALLBACK);
   // Slider positions, 0-1000.
   const [raisedPos, setRaisedPos] = useState(200);
@@ -151,13 +175,43 @@ export function CurveSim({ title = "See what your buy does", className = "" }: {
   ] as const;
 
   return (
-    <section className={"rounded-3xl border border-line bg-surface p-4 sm:p-5 " + className} aria-labelledby={`${id}-t`}>
-      <h2 id={`${id}-t`} className="font-display font-bold text-[1.125rem] sm:text-[1.25rem] text-ink">
-        {title}
-      </h2>
-      <p className="text-[0.8125rem] text-ink-2 mt-1 leading-snug">
-        Pick how far the coin is along its curve and how much you buy. Same formula as the contract.
-      </p>
+    <section ref={box} className={"rounded-3xl border border-line bg-surface p-4 sm:p-5 " + className} aria-labelledby={`${id}-t`}>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={`${id}-body`}
+          className="w-full flex items-center gap-3 text-left -m-1 p-1 rounded-2xl"
+        >
+          <span className="min-w-0 flex-1">
+            <span id={`${id}-t`} className="block font-display font-bold text-[1.125rem] sm:text-[1.25rem] text-ink">
+              {title}
+            </span>
+            <span className="block text-[0.8125rem] text-ink-2 mt-1 leading-snug">
+              Pick how far the coin is along its curve and how much you buy.
+            </span>
+          </span>
+          <span
+            aria-hidden="true"
+            className={"w-8 h-8 shrink-0 rounded-xl border border-line flex items-center justify-center text-ink-2 transition-transform " + (open ? "rotate-180" : "")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </span>
+        </button>
+      ) : (
+        <>
+          <h2 id={`${id}-t`} className="font-display font-bold text-[1.125rem] sm:text-[1.25rem] text-ink">
+            {title}
+          </h2>
+          <p className="text-[0.8125rem] text-ink-2 mt-1 leading-snug">
+            Pick how far the coin is along its curve and how much you buy. Same formula as the contract.
+          </p>
+        </>
+      )}
+      <div id={`${id}-body`} hidden={!open}>
 
       <div className="mt-4">
         <div className="flex items-baseline justify-between text-[0.8125rem] text-ink-3">
@@ -263,6 +317,7 @@ export function CurveSim({ title = "See what your buy does", className = "" }: {
         Graduates at {money(TARGET_USD)} raised across all chains (shown here as if every buy is on one chain). The {terms.feeBps / 100}% fee is included. Early
         buys get more coins per USDC because the price rises with every buy. An estimate: trades before yours change the result.
       </p>
+      </div>
     </section>
   );
 }
