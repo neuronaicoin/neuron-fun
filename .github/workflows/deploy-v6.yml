@@ -74,7 +74,7 @@ jobs:
             eval "val=\$$v"; if [ -z "$val" ] || [ "$val" = "null" ]; then echo "missing LayerZero $v"; exit 1; fi; echo "$v=$val"
           done
           # Check on-chain that the endpoint really is this chain's.
-          GOT=$(cast call "$ENDPOINT" "eid()(uint32)" --rpc-url "$RPC")
+          GOT=$(cast call "$ENDPOINT" "eid()(uint32)" --rpc-url "$RPC" | awk '{print $1}')
           if [ "$GOT" != "$EID" ]; then echo "endpoint says eid $GOT, expected $EID"; exit 1; fi
           {
             echo "CHAIN_ID=$CHAIN_ID"; echo "RPC=$RPC"; echo "POOL_MANAGER=$PM"; echo "POSITION_MANAGER=$POSM"
