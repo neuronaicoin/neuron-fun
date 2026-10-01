@@ -34,27 +34,72 @@ export function LearnFooter() {
   );
 }
 
+/**
+ * Inline links in article text: [words](/path/) for pages on sasa (internal
+ * links) and [words](https://...) for sources. Everything else is plain text.
+ */
+export function Rich({ text }: { text: string }) {
+  const parts: React.ReactNode[] = [];
+  const re = /\[([^\]]+)\]\(((?:\/|https:\/\/)[^)\s]+)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const [, label, href] = m;
+    parts.push(
+      href.startsWith("/") ? (
+        <Link key={m.index} href={href} className="text-emerald font-semibold underline underline-offset-2 decoration-emerald/40 hover:decoration-emerald">
+          {label}
+        </Link>
+      ) : (
+        <a key={m.index} href={href} target="_blank" rel="noopener" className="text-emerald font-semibold underline underline-offset-2 decoration-emerald/40">
+          {label}
+        </a>
+      )
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
+/** "In short": the answer first, for readers in a hurry and for search and AI engines. */
+export function Takeaways({ items }: { items: string[] }) {
+  return (
+    <aside className="rounded-3xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="in-short">
+      <h2 id="in-short" className="font-display font-bold text-[1.125rem]">In short</h2>
+      <ul className="mt-3 grid gap-2 text-[1rem] leading-relaxed text-ink-2 pl-5 list-disc marker:text-emerald">
+        {items.map((t) => (
+          <li key={t}>
+            <Rich text={t} />
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
 export function ArticleBody({ blocks }: { blocks: Block[] }) {
   return (
     <div className="grid gap-5 text-[1.0625rem] leading-[1.75] text-ink-2">
       {blocks.map((b, i) => {
         if ("h2" in b) return <h2 key={i} className="font-display font-bold text-[1.5rem] text-ink mt-6 leading-snug">{b.h2}</h2>;
-        if ("p" in b) return <p key={i}>{b.p}</p>;
+        if ("p" in b) return <p key={i}><Rich text={b.p} /></p>;
         if ("ul" in b)
           return (
             <ul key={i} className="grid gap-2 pl-5 list-disc marker:text-emerald">
-              {b.ul.map((x, j) => <li key={j}>{x}</li>)}
+              {b.ul.map((x, j) => <li key={j}><Rich text={x} /></li>)}
             </ul>
           );
         if ("ol" in b)
           return (
             <ol key={i} className="grid gap-2 pl-5 list-decimal marker:text-emerald marker:font-semibold">
-              {b.ol.map((x, j) => <li key={j}>{x}</li>)}
+              {b.ol.map((x, j) => <li key={j}><Rich text={x} /></li>)}
             </ol>
           );
         return (
           <aside key={i} className="rounded-2xl border border-emerald/40 bg-emerald-soft px-5 py-4 text-ink">
-            {b.tip}
+            <Rich text={b.tip} />
           </aside>
         );
       })}

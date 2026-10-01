@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ARTICLES, SITE_URL, articleBySlug } from "@/lib/articles";
-import { ArticleBody, JsonLd, LearnFooter, LearnHeader } from "@/components/learn";
+import { ArticleBody, JsonLd, LearnFooter, LearnHeader, Rich, Takeaways } from "@/components/learn";
 
 export const dynamicParams = false;
 
@@ -18,15 +18,21 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${a.title} | sasa`,
     description: a.description,
     alternates: { canonical: url },
-    openGraph: { title: a.title, description: a.description, url, type: "article", publishedTime: a.date, modifiedTime: a.updated, images: ["/og.png"] },
-    twitter: { card: "summary_large_image", title: a.title, description: a.description, images: ["/og.png"] },
+    openGraph: { title: a.title, description: a.description, url, type: "article", publishedTime: a.date, modifiedTime: a.updated, images: ["/og-2.png"] },
+    twitter: { card: "summary_large_image", title: a.title, description: a.description, images: ["/og-2.png"] },
   };
 }
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const a = articleBySlug((await params).slug);
   if (!a) notFound();
-  const others = ARTICLES.filter((x) => x.slug !== a.slug);
+  // Related reading: most shared topics first, then newest. Four is plenty.
+  const tags = new Set(a.tags ?? []);
+  const others = ARTICLES.filter((x) => x.slug !== a.slug)
+    .map((x) => ({ x, score: (x.tags ?? []).filter((t) => tags.has(t)).length }))
+    .sort((p, q) => q.score - p.score || q.x.date.localeCompare(p.x.date))
+    .slice(0, 4)
+    .map((p) => p.x);
   const url = `${SITE_URL}/learn/${a.slug}/`;
   return (
     <div className="min-h-dvh flex flex-col bg-mist">
@@ -40,6 +46,11 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
           <p className="text-[0.875rem] text-ink-3 mt-4 font-mono">
             {a.readMin} min read · Updated {new Date(a.updated).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
           </p>
+          {a.takeaways && a.takeaways.length > 0 && (
+            <div className="mt-8">
+              <Takeaways items={a.takeaways} />
+            </div>
+          )}
           <div className="mt-8">
             <ArticleBody blocks={a.body} />
           </div>
@@ -53,7 +64,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
                     {f.q}
                     <span className="text-ink-3 group-open:rotate-45 transition-transform" aria-hidden="true">+</span>
                   </summary>
-                  <p className="text-ink-2 mt-3 leading-relaxed">{f.a}</p>
+                  <p className="text-ink-2 mt-3 leading-relaxed"><Rich text={f.a} /></p>
                 </details>
               ))}
             </div>
@@ -94,13 +105,15 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
               datePublished: a.date,
               dateModified: a.updated,
               mainEntityOfPage: url,
-              image: `${SITE_URL}/og.png`,
+              image: `${SITE_URL}/og-2.png`,
+              keywords: (a.tags ?? []).join(", "),
+              inLanguage: "en",
               author: { "@type": "Organization", name: "sasa", url: SITE_URL },
               publisher: { "@type": "Organization", name: "sasa", url: SITE_URL, logo: { "@type": "ImageObject", url: `${SITE_URL}/sasa-icon-192.png` } },
             },
             {
               "@type": "FAQPage",
-              mainEntity: a.faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+              mainEntity: a.faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") } })),
             },
             {
               "@type": "BreadcrumbList",
