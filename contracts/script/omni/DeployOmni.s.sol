@@ -80,10 +80,39 @@ contract DeployOmni is Script {
         });
 
         Out memory o;
-        uint64 nonce = vm.getNonce(deployer);
-        // Order below: usd, hub, bridge, migrator(+hook), router, consolidator
-        address migratorAt = vm.computeCreateAddress(deployer, nonce + 3);
+        // Order (the factory wallet's first two transactions are the only ones that matter):
+        //   deployer n   : curve deployer           (cheap)
+        //   factory  0,1 : coin deployer, factory  (same addresses on every chain)
+        //   factory  2   : optional top-up of the deployer (FUND_DEPLOYER, wei) from what is left
+        //   deployer n+1..: usd, hub, bridge, migrator, router, bindRouter, consolidator, setKeeper, setFactory
+        uint64 n = vm.getNonce(deployer);
+        address usdAt = vm.computeCreateAddress(deployer, n + 1);
+        address hubAt = vm.computeCreateAddress(deployer, n + 2);
+        address bridgeAt = vm.computeCreateAddress(deployer, n + 3);
+        address migratorAt = vm.computeCreateAddress(deployer, n + 4);
+        address consolidatorAt = vm.computeCreateAddress(deployer, n + 7);
         bytes32 salt = _mineHookSalt(poolManager, migratorAt);
+        uint256 fund = vm.envOr("FUND_DEPLOYER", uint256(0));
+
+        vm.startBroadcast(key);
+        OmniCurveDeployer curveDeployer = new OmniCurveDeployer(factoryAt);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(fkey);
+        OmniCoinDeployer coinDeployer = new OmniCoinDeployer(factoryAt);
+        OmniFactory factory = new OmniFactory(
+            deployer, ILayerZeroEndpointV2(endpoint), localEid, IERC20(usdAt), hubAt, migratorAt, consolidatorAt, treasury,
+            rewards, cfg, minDvns, coinDeployer, curveDeployer
+        );
+        if (fund > 0) {
+            // A plain call (not transfer): the deployer may be an EIP-7702 account with code.
+            (bool ok,) = deployer.call{value: fund}("");
+            require(ok, "top-up failed");
+        }
+        vm.stopBroadcast();
+        require(address(coinDeployer) == coinDeployerAt, "coin deployer address moved");
+        require(address(factory) == factoryAt, "factory address moved");
+        o.factory = address(factory);
 
         vm.startBroadcast(key);
         o.usd = address(new TestUsdOft(endpoint, deployer));
@@ -93,30 +122,18 @@ contract DeployOmni is Script {
             IPoolManager(poolManager), IPositionManager(positionManager), IAllowanceTransfer(PERMIT2), IERC20(o.usd),
             IHubLocal(o.hub), o.bridge, rewards, 3_000, salt
         );
-        require(address(migrator) == migratorAt, "migrator address moved");
         o.migrator = address(migrator);
         o.router = address(new UsdPoolRouter(IPoolManager(poolManager), IUsdGraduatedPools(o.migrator)));
         migrator.bindRouter(IV6BuybackRouter(o.router));
         o.consolidator = address(new ConsolidatorV6(IERC20(o.usd), IHubLocal(o.hub), IUsdcBridge(o.bridge)));
         OmniHub(payable(o.hub)).setKeeper(keeper);
-        OmniCurveDeployer curveDeployer = new OmniCurveDeployer(factoryAt);
-        vm.stopBroadcast();
-
-        // The two transactions of the factory wallet (nonce 0 and 1).
-        vm.startBroadcast(fkey);
-        OmniCoinDeployer coinDeployer = new OmniCoinDeployer(factoryAt);
-        OmniFactory factory = new OmniFactory(
-            deployer, ILayerZeroEndpointV2(endpoint), localEid, IERC20(o.usd), o.hub, o.migrator, o.consolidator, treasury,
-            rewards, cfg, minDvns, coinDeployer, curveDeployer
-        );
-        vm.stopBroadcast();
-        require(address(coinDeployer) == coinDeployerAt, "coin deployer address moved");
-        require(address(factory) == factoryAt, "factory address moved");
-        o.factory = address(factory);
-
-        vm.startBroadcast(key);
         OmniHub(payable(o.hub)).setFactory(o.factory);
         vm.stopBroadcast();
+        // The factory was built with these addresses before they existed: check every one.
+        require(o.usd == usdAt && o.hub == hubAt && o.bridge == bridgeAt, "address moved (usd/hub/bridge)");
+        require(o.migrator == migratorAt && o.consolidator == consolidatorAt, "address moved (migrator/consolidator)");
+        require(address(factory.usdc()) == o.usd && factory.hub() == o.hub && factory.migrator() == o.migrator, "factory wiring");
+        require(factory.consolidator() == o.consolidator, "factory wiring (consolidator)");
 
         string memory j = "omni";
         vm.serializeUint(j, "chainId", block.chainid);
@@ -126,7 +143,7 @@ contract DeployOmni is Script {
         vm.serializeAddress(j, "hub", o.hub);
         vm.serializeAddress(j, "bridge", o.bridge);
         vm.serializeAddress(j, "migrator", o.migrator);
-        vm.serializeAddress(j, "hook", address(migrator.hook()));
+        vm.serializeAddress(j, "hook", address(MigratorV6(o.migrator).hook()));
         vm.serializeAddress(j, "router", o.router);
         vm.serializeAddress(j, "consolidator", o.consolidator);
         vm.serializeUint(j, "startBlock", block.number);
