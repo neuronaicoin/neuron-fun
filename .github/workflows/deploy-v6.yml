@@ -1,0 +1,126 @@
+name: deploy-v6
+
+# sasa v6 (omnichain coins) on testnets. Two steps, each run once per chain:
+#   1. step = deploy  on robinhood-testnet, then on base-sepolia
+#   2. step = wire    on robinhood-testnet, then on base-sepolia (connects the chains)
+# LayerZero addresses are read from LayerZero's official list at run time and checked
+# on-chain. Each deploy saves its addresses to contracts/deployments/omni/<chainid>.json
+# and commits that file, so the wire step (and the site) can read them.
+#
+# Needs: secret DEPLOYER_PRIVATE_KEY (as today), secret OMNI_FACTORY_KEY (a NEW wallet,
+# never used, with a little test ETH on every chain), variable REWARDS (as today).
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Chain"
+        type: choice
+        options:
+          - robinhood-testnet
+          - base-sepolia
+      step:
+        description: "deploy (first, on every chain) or wire (after all chains are deployed)"
+        type: choice
+        options:
+          - deploy
+          - wire
+      broadcast:
+        description: "Actually send transactions (leave unticked for a free dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  v6:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Chain settings and LayerZero addresses
+        env:
+          NETWORK: ${{ inputs.network }}
+        run: |
+          case "$NETWORK" in
+            robinhood-testnet) CHAIN_ID=46630; RPC="https://rpc.testnet.chain.robinhood.com/rpc"
+              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x58daec3116aae6D93017bAAea7749052E8a04fA7 ;;
+            base-sepolia) CHAIN_ID=84532; RPC="https://sepolia.base.org"
+              PM=0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408; POSM=0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80 ;;
+            *) echo "unknown network $NETWORK"; exit 1 ;;
+          esac
+          # The coordinator (where graduations are decided) lives on Base Sepolia.
+          COORD_EID=40245
+          curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lz.json
+          CHAIN=$(jq -c --argjson id "$CHAIN_ID" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|endswith("-testnet")))][0].value' /tmp/lz.json)
+          if [ "$CHAIN" = "null" ] || [ -z "$CHAIN" ]; then echo "LayerZero has no testnet entry for chain $CHAIN_ID"; exit 1; fi
+          V2=$(echo "$CHAIN" | jq -c '[.deployments[] | select(.version == 2)][0]')
+          EID=$(echo "$V2" | jq -r '.eid')
+          ENDPOINT=$(echo "$V2" | jq -r '.endpointV2.address')
+          SEND_LIB=$(echo "$V2" | jq -r '.sendUln302.address')
+          RECEIVE_LIB=$(echo "$V2" | jq -r '.receiveUln302.address')
+          EXECUTOR=$(echo "$V2" | jq -r '.executor.address')
+          # Verifiers: LayerZero Labs' own (the one every testnet has). Mainnet adds more.
+          DVNS=$(echo "$CHAIN" | jq -r '[.dvns | to_entries[] | select(.value.id == "layerzero-labs" and (.value.deprecated|not) and (.value.lzReadCompatible|not)) | .key] | sort | join(",")')
+          for v in EID ENDPOINT SEND_LIB RECEIVE_LIB EXECUTOR DVNS; do
+            eval "val=\$$v"; if [ -z "$val" ] || [ "$val" = "null" ]; then echo "missing LayerZero $v"; exit 1; fi; echo "$v=$val"
+          done
+          # Check on-chain that the endpoint really is this chain's.
+          GOT=$(cast call "$ENDPOINT" "eid()(uint32)" --rpc-url "$RPC")
+          if [ "$GOT" != "$EID" ]; then echo "endpoint says eid $GOT, expected $EID"; exit 1; fi
+          {
+            echo "CHAIN_ID=$CHAIN_ID"; echo "RPC=$RPC"; echo "POOL_MANAGER=$PM"; echo "POSITION_MANAGER=$POSM"
+            echo "COORD_EID=$COORD_EID"; echo "LOCAL_EID=$EID"; echo "LZ_ENDPOINT=$ENDPOINT"
+            echo "SEND_LIB=$SEND_LIB"; echo "RECEIVE_LIB=$RECEIVE_LIB"; echo "EXECUTOR=$EXECUTOR"; echo "DVNS=$DVNS"
+          } >> "$GITHUB_ENV"
+
+      - name: Run
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          RAW_FKEY: ${{ secrets.OMNI_FACTORY_KEY }}
+          REWARDS_VAR: ${{ vars.REWARDS }}
+          STEP: ${{ inputs.step }}
+          BROADCAST: ${{ inputs.broadcast }}
+        run: |
+          norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
+          KEY=$(norm "$RAW_KEY"); echo "::add-mask::$KEY"; export PRIVATE_KEY="$KEY"
+          if [ "$KEY" = "0x" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
+          if [ -z "$REWARDS_VAR" ]; then echo "Add the repo variable REWARDS first"; exit 1; fi
+          export REWARDS="$REWARDS_VAR" MIN_DVNS=1 CONFIRMATIONS=2
+          FLAGS="--rpc-url $RPC -vv"
+          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          if [ "$STEP" = "deploy" ]; then
+            FKEY=$(norm "$RAW_FKEY"); echo "::add-mask::$FKEY"
+            if [ "$FKEY" = "0x" ]; then echo "OMNI_FACTORY_KEY secret is missing (a new, never-used wallet)"; exit 1; fi
+            export OMNI_FACTORY_KEY="$FKEY"
+            forge script script/omni/DeployOmni.s.sol $FLAGS
+          else
+            OTHERS=""
+            for f in deployments/omni/*.json; do
+              id=$(basename "$f" .json); [ "$id" = "$CHAIN_ID" ] && continue
+              OTHERS="${OTHERS:+$OTHERS,}$id"
+            done
+            if [ ! -f "deployments/omni/$CHAIN_ID.json" ] || [ -z "$OTHERS" ]; then
+              echo "Deploy on every chain first (missing deployments/omni files)"; exit 1
+            fi
+            export REMOTE_CHAIN_IDS="$OTHERS" LOCK_BRIDGE=true OPEN_LAUNCHES=true
+            forge script script/omni/WireOmni.s.sol $FLAGS
+          fi
+
+      - name: Save addresses to the repo
+        if: inputs.step == 'deploy' && inputs.broadcast
+        run: |
+          git config user.name "sasa-deploy"
+          git config user.email "deploy@sasapad.fun"
+          git add deployments/omni/*.json
+          git commit -m "v6 deployed on ${{ inputs.network }}" || echo "nothing to commit"
+          git pull --rebase
+          git push
