@@ -39,11 +39,15 @@ jobs:
           FAC=$(j $A factory)
           [ "$FAC" = "$(j $B factory)" ] || { echo "factory differs between chains"; exit 1; }
           RH_EID=$(j $A eid); BS_EID=$(j $B eid)
+          ZERO=0x0000000000000000000000000000000000000000
           # LayerZero executor option: gas for the receiving side (type 3, lzReceive).
           opt() { printf '0x000301001101%032x' "$1"; }
           FEE=300000000000000   # 0.0003 ETH sent per message; the unused part is refunded
           # Send a transaction; public testnet RPCs sometimes lag one nonce behind, so retry those.
-          tx() { local rpc=$1; shift; echo "   -> $1 $2"; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) && break; if echo "$out" | grep -qiE "underpriced|nonce too low|already known|nonce"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out"; exit 1; fi; done; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; }
+          tx() { local rpc=$1; shift; echo "   -> $1 $2"; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) && break; if echo "$out" | grep -qiE "underpriced|nonce too low|already known|nonce"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out"; exit 1; fi; done; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; sleep 2; }
+          # Read a value; the public RPC may lag a few seconds behind, so retry until it is not empty/zero.
+          read_ok() { local rpc=$1; shift; for i in $(seq 1 20); do v=$(cast call --rpc-url "$rpc" "$@" 2>/dev/null | head -1 | awk '{print $1}' || true); if [ -n "$v" ] && [ "$v" != "$ZERO" ] && [ "$v" != "0x" ]; then echo "$v"; return 0; fi; sleep 3; done; echo ""; }
+          has_code() { for i in $(seq 1 20); do c=$(cast code --rpc-url "$1" "$2" 2>/dev/null || echo 0x); [ ${#c} -gt 10 ] && return 0; sleep 3; done; return 1; }
           wait_for() { # description, rpc, call..., expected
             local desc=$1 rpc=$2; shift 2; local exp="${@: -1}"; set -- "${@:1:$(($#-1))}"
             for i in $(seq 1 80); do
@@ -67,16 +71,16 @@ jobs:
             echo "  $1: test dollars $bal"
             if [ "$bal" -lt "$2" ]; then tx $rpc $USD "faucet(address)" $ME; fi
             tx $rpc $USD "approve(address,uint256)" $FAC $2
-            sleep 3
             tx $rpc $FAC "launch((string,string,string,string,bytes32,uint32[],uint256,uint8,uint256,uint256))" \
               "(\"Smoke Test\",\"SMOKE\",\"\",\"v6 smoke test\",$KEY,$EIDS,0,0,$2,0)"
           done
-          a1=$(cast code --rpc-url $RH $COIN | wc -c); b1=$(cast code --rpc-url $BS $COIN | wc -c)
-          [ $a1 -gt 10 ] && [ $b1 -gt 10 ] || { echo "coin missing on a chain"; exit 1; }
+          has_code $RH $COIN || { echo "coin missing on Robinhood"; exit 1; }
+          has_code $BS $COIN || { echo "coin missing on Base"; exit 1; }
           echo "   ✅ same coin address on both chains: $COIN"
-          CRV_RH=$(cast call --rpc-url $RH $(j $A hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID | head -1)
-          CRV_BS=$(cast call --rpc-url $BS $(j $B hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID | head -1)
-          echo "   money in: Robinhood $(cast call --rpc-url $RH $CRV_RH 'realNative()(uint256)' | awk '{print $1}') / Base $(cast call --rpc-url $BS $CRV_BS 'realNative()(uint256)' | awk '{print $1}') (6 decimals)"
+          CRV_RH=$(read_ok $RH $(j $A hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID)
+          CRV_BS=$(read_ok $BS $(j $B hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID)
+          [ -n "$CRV_RH" ] && [ -n "$CRV_BS" ] || { echo "curve not registered"; exit 1; }
+          echo "   money in: Robinhood $(read_ok $RH $CRV_RH 'realNative()(uint256)') / Base $(read_ok $BS $CRV_BS 'realNative()(uint256)') (6 decimals)"
 
           echo "== 2. Freeze both chains; Robinhood reports to the coordinator on Base over LayerZero"
           tx $RH $(j $A hub) "freeze(bytes32,bytes)" $ID $(opt 300000) --value $FEE
@@ -98,7 +102,6 @@ jobs:
           echo "   ✅ pool open"
           ROUTER=$(j $A router); USD=$(j $A usd)
           tx $RH $USD "approve(address,uint256)" $ROUTER 1000000
-          sleep 3
           before=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
           tx $RH $ROUTER "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME $(( $(date +%s) + 600 ))
           after=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
