@@ -254,7 +254,10 @@ async function collectFees(c) {
         c.pub.readContract({ address: addr, abi: curveAbi, functionName: "protocolFeeRecipient" }),
         c.pub.readContract({ address: addr, abi: curveAbi, functionName: "protocolFees" }),
       ]);
-      if (getAddress(recipient) !== c.splitter || fees < (c.token ? MIN_CLAIM_USDC : MIN_CLAIM)) continue;
+      // v5 coins pay sasa's share into the splitter; v6 coins pay it straight to this
+      // rewards wallet. Either way, claiming only moves it to where it already belongs.
+      const ours = getAddress(recipient) === c.splitter || getAddress(recipient) === account.address;
+      if (!ours || fees < (c.token ? MIN_CLAIM_USDC : MIN_CLAIM)) continue;
       await simpleTx(c, addr, curveAbi, "claimProtocolFees");
       claimed++;
     } catch (e) {
