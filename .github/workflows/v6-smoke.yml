@@ -27,6 +27,7 @@ jobs:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          trap 'echo "❌ FAILED at line $LINENO: $BASH_COMMAND"' ERR
           K="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$K" in 0x*) ;; *) K="0x$K" ;; esac
           echo "::add-mask::$K"
           ME=$(cast wallet address "$K")
@@ -41,7 +42,7 @@ jobs:
           # LayerZero executor option: gas for the receiving side (type 3, lzReceive).
           opt() { printf '0x000301001101%032x' "$1"; }
           FEE=300000000000000   # 0.0003 ETH sent per message; the unused part is refunded
-          tx() { local rpc=$1; shift; out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@"); st=$(echo "$out" | jq -r .status); [ "$st" = "0x1" ] || { echo "FAILED: $*"; echo "$out"; exit 1; }; }
+          tx() { local rpc=$1; shift; echo "   -> $1 $2"; out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) || { echo "FAILED: $*"; echo "$out"; exit 1; }; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; }
           wait_for() { # description, rpc, call..., expected
             local desc=$1 rpc=$2; shift 2; local exp="${@: -1}"; set -- "${@:1:$(($#-1))}"
             for i in $(seq 1 80); do
@@ -51,15 +52,18 @@ jobs:
             done
             echo "   ❌ $desc: still '$got' after 20 min, expected '$exp'"; exit 1
           }
+          echo "me: $ME  factory: $FAC  eids: RH $RH_EID / Base $BS_EID"
           KEY=$(cast keccak "smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           ID=$(cast call --rpc-url $BS $FAC "coinIdOf(address,bytes32)(bytes32)" $ME $KEY)
           COIN=$(cast call --rpc-url $BS $FAC "coinAddress(address,bytes32)(address)" $ME $KEY)
           EIDS="[$( [ $BS_EID -lt $RH_EID ] && echo "$BS_EID,$RH_EID" || echo "$RH_EID,$BS_EID" )]"
+          echo "coin id: $ID  coin: $COIN  chains: $EIDS"
           echo "== 1. Launch the same coin on both chains (creator buys first: \$12 on Robinhood, \$9 on Base)"
           for side in "RH 12000000" "BS 9000000"; do
             set -- $side; rpc=$([ $1 = RH ] && echo $RH || echo $BS); f=$([ $1 = RH ] && echo $A || echo $B)
             USD=$(j $f usd)
             bal=$(cast call --rpc-url $rpc $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+            echo "  $1: test dollars $bal"
             if [ "$bal" -lt "$2" ]; then tx $rpc $USD "faucet(address)" $ME; fi
             tx $rpc $USD "approve(address,uint256)" $FAC $2
             tx $rpc $FAC "launch((string,string,string,string,bytes32,uint32[],uint256,uint8,uint256,uint256))" \
