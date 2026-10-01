@@ -1,5 +1,7 @@
 "use client";
 
+import { GraduatingNotice } from "@/components/coins";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { encodeAbiParameters, formatEther, keccak256, maxUint256, numberToHex, type Address, type Hex } from "viem";
 import { SENT_UNCONFIRMED, useWallet } from "./wallet";
@@ -86,7 +88,8 @@ export function QuickTrade({
   // Gas is paid in the chain's coin, never out of the USDC cash.
   const reserve = embedded || USD_MODE ? 0n : GAS_RESERVE;
   const open = coin.curves.filter((c) => c.state === "trading" || inPool(c));
-  const sellable = coin.curves;
+  // v6: a frozen curve takes no trades for a moment; a moved one is finished (its coins went to the winner).
+  const sellable = coin.curves.filter((c) => c.state !== "frozen" && c.state !== "moved");
   const [side, setSide] = useState<"buy" | "sell">(initialSide ?? (open.length ? "buy" : "sell"));
   // Auto orders (take profit, stop loss, buy the dip) live in their own tab.
   const [auto, setAuto] = useState(false);
@@ -256,6 +259,7 @@ export function QuickTrade({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, amount, chosen?.curve, chosen?.state, address, priced]);
 
+  if (coin.graduating) return <GraduatingNotice />;
   if (!open.length && !sellable.length) {
     return (
       <div className="rounded-3xl border border-line bg-surface p-5 text-[0.9375rem] text-ink-2">

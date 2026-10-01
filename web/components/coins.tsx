@@ -67,29 +67,59 @@ export function ChainRace({ coin }: { coin: Coin }) {
   const winner = coin.curves.find((c) => c.state === "graduated");
   if (winner)
     return (
-      <p className="flex items-center gap-2 text-[0.875rem]">
-        <span aria-hidden="true">🎉</span>
-        <span>
-          Graduated on <b>{winner.chain.short}</b>. Liquidity is locked forever.
-        </span>
-      </p>
+      <div className="grid gap-3">
+        <p className="flex items-center gap-2 text-[0.875rem]">
+          <span aria-hidden="true">🎉</span>
+          <span>
+            Graduated on <b>{winner.chain.short}</b>. Liquidity is locked forever.
+          </span>
+        </p>
+        {coin.omni && coin.curves.some((c) => c.state === "moved") && (
+          <div className="rounded-2xl border border-up/35 bg-up/10 px-3.5 py-3 text-[0.875rem] leading-snug flex gap-2.5">
+            <span aria-hidden="true">✅</span>
+            <span>
+              <b className="block">
+                Held ${coin.symbol} on {coin.curves.filter((c) => c.state === "moved").map((c) => c.chain.short).join(" or ")}?
+              </b>
+              It moved to your same address on {winner.chain.short} automatically. Nothing to do: it is in your balance at the real price.
+            </span>
+          </div>
+        )}
+      </div>
     );
   return (
-    <ul className="grid gap-3">
-      {coin.curves.map((c) => (
-        <RaceRow key={c.chain.key} c={c} share={total > 0 ? (c.usd ?? 0) / total : 0} leading={!coin.graduatedOn && c === leader} />
-      ))}
-    </ul>
+    <div className="grid gap-3">
+      <ul className="grid gap-3">
+        {coin.curves.map((c) => (
+          <RaceRow key={c.chain.key} c={c} share={total > 0 ? (c.usd ?? 0) / total : 0} leading={!coin.graduatedOn && !coin.graduating && c === leader} />
+        ))}
+      </ul>
+      {coin.graduating && <GraduatingNotice />}
+    </div>
+  );
+}
+
+/** v6: the target was reached; the chains are deciding the winner and opening the pool. */
+export function GraduatingNotice({ compact = false }: { compact?: boolean }) {
+  return (
+    <div role="status" className="rounded-2xl border border-emerald/35 bg-emerald/10 px-3.5 py-3 text-[0.875rem] leading-snug flex gap-2.5">
+      <span aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-[2.5px] border-emerald border-r-transparent animate-spin motion-reduce:animate-none" />
+      <span>
+        <b className="block">🎓 Graduating… trading pauses for about 2 minutes</b>
+        {!compact && "Your coins are safe. When the pool opens you can buy and sell again, at the graduation price."}
+      </span>
+    </div>
   );
 }
 
 function RaceRow({ c, share, leading }: { c: CurveInfo; share: number; leading: boolean }) {
-  const label = c.state === "graduated" ? "Winner" : c.state === "closed" ? "Closed" : leading ? "Leading" : "";
+  const label =
+    c.state === "graduated" ? "Winner" : c.state === "closed" ? "Closed" : c.state === "frozen" ? "Counting" : c.state === "moved" ? "Moved" : leading ? "Leading" : "";
   return (
     <li>
       <div className="flex items-center justify-between gap-3 text-[0.875rem]">
         <span className="flex items-center gap-2">
-          <ChainChip chain={c.chain} muted={c.state === "closed"} />
+          <ChainChip chain={c.chain} muted={c.state === "closed" || c.state === "moved"} />
           {label && (
             <span className={"text-[0.75rem] font-semibold " + (c.state === "graduated" || leading ? "text-emerald" : "text-ink-3")}>{label}</span>
           )}

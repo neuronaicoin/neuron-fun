@@ -58,7 +58,7 @@ export function RaceBar({ coin, thick = false }: { coin: Coin; thick?: boolean }
   return (
     <div className={"w-full rounded-full bg-line overflow-hidden flex " + h}>
       {coin.curves
-        .filter((c) => c.state === "trading")
+        .filter((c) => c.state === "trading" || c.state === "frozen")
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))
         .map((c) => {
           const w = Math.min(left, ((c.usd ?? 0) / TARGET_USD) * 100);
@@ -95,8 +95,8 @@ export function CoinTile({ coin, ethUsd, spark }: { coin: Coin; ethUsd: number |
           {coin.curves.map((c) => (
             <span
               key={c.chain.key}
-              className={"h-5 sm:h-6 px-1.5 sm:px-2 rounded-full text-[0.625rem] sm:text-[0.6875rem] font-semibold flex items-center shrink-0 " + (c.state === "closed" ? "bg-black/60 text-white/60" : "text-white")}
-              style={c.state === "closed" ? undefined : { background: c.chain.color }}
+              className={"h-5 sm:h-6 px-1.5 sm:px-2 rounded-full text-[0.625rem] sm:text-[0.6875rem] font-semibold flex items-center shrink-0 " + (c.state === "closed" || c.state === "moved" ? "bg-black/60 text-white/60" : "text-white")}
+              style={c.state === "closed" || c.state === "moved" ? undefined : { background: c.chain.color }}
             >
               {c.chain.short}
             </span>
@@ -105,6 +105,8 @@ export function CoinTile({ coin, ethUsd, spark }: { coin: Coin; ethUsd: number |
         <LockBadge coinId={coin.id} size="sm" onArt className="absolute bottom-2 left-2" />
         {coin.graduatedOn ? (
           <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
+        ) : coin.graduating ? (
+          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 backdrop-blur-sm text-white flex items-center gap-1">🎓 Graduating…</span>
         ) : pct >= 80 ? (
           <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-warn-ink text-on-accent flex items-center">🔥 {pct}%</span>
         ) : null}

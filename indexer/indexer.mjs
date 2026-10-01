@@ -52,6 +52,9 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   // The live factory (new launches, beta locks) is the first one.
   factory: list(c.factory)[0],
   routers: list(c.router),
+  // v6 omnichain coins (optional): the OmniFactory on this chain. Its launches are indexed
+  // as coins too, and its own buys (the creator's first buy) are credited to the creator.
+  omniFactory: c.omniFactory ? getAddress(c.omniFactory) : null,
   // Auto-orders contracts: their fills are credited to the order's owner.
   orders: list(c.orders),
   startBlock: BigInt(c.startBlock ?? 0),
@@ -64,6 +67,7 @@ const pool = new pg.Pool({
 });
 
 let lockWarned = false;
+let omniWarned = false;
 const launchedEvent = parseAbiItem(
   "event Launched(address indexed curve, address indexed token, address indexed creator, bytes32 launchKey, string name, string symbol, uint8 feeMode)"
 );
@@ -71,7 +75,19 @@ const curveEvents = parseAbi([
   "event Trade(address indexed trader, bool indexed isBuy, uint256 nativeAmount, uint256 tokenAmount, uint256 fee, uint256 virtualNative, uint256 virtualToken)",
   "event Closed(bytes32 indexed report)",
   "event Graduated(bytes32 indexed report, uint256 nativeToPool, uint256 tokensToPool, uint256 tokensBurned)",
+  // v6 (omnichain) curves
+  "event Frozen(uint256 realNative, uint256 sold)",
+  "event Reopened()",
+  "event Settled(uint32 winnerEid, bool winner, uint256 moneyOut, uint256 poolTokens)",
 ]);
+// v6 launch. The coin has the same address on every chain; coinId = keccak(creator, launchKey).
+const omniLaunchedEvent = parseAbiItem(
+  "event Launched(bytes32 indexed coinId, address indexed coin, address indexed curve, address creator, uint32[] eids, string name, string symbol, string logo, string description, uint256 lockSeconds, uint8 feeMode)"
+);
+// Curve states: 0 trading, 1 closed (v5: sells only), 2 graduated,
+// 3 frozen (v6: graduation being decided), 4 moved (v6: lost the race, coins moved to the winner).
+const STATE_FROZEN = 3;
+const STATE_MOVED = 4;
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const orderExecutedEvent = parseAbiItem(
   "event Executed(uint256 indexed id, address indexed owner, address indexed curve, bool isBuy, uint256 amountIn, uint256 amountOut)"
@@ -180,6 +196,20 @@ async function indexRange(c, from, to) {
     })
   );
 
+  const omniLaunches = c.omniFactory
+    ? await pub.getLogs({ address: c.omniFactory, event: omniLaunchedEvent, fromBlock: from, toBlock: to })
+    : [];
+  const omniInfo = await Promise.all(
+    omniLaunches.map(async (l) => {
+      const [ivn, ivt, lockedUntil] = await Promise.all([
+        pub.readContract({ address: l.args.curve, abi: curveReadAbi, functionName: "initialVirtualNative" }),
+        pub.readContract({ address: l.args.curve, abi: curveReadAbi, functionName: "initialVirtualToken" }),
+        pub.readContract({ address: l.args.coin, abi: tokenReadAbi, functionName: "lockedUntil" }).catch(() => 0n),
+      ]);
+      return { l, ivn, ivt, lockedUntil };
+    })
+  );
+
   const db = await pool.connect();
   try {
     await db.query("begin");
@@ -216,6 +246,45 @@ async function indexRange(c, from, to) {
       }
     }
 
+    // 1b. v6 omnichain launches.
+    for (const { l, ivn, ivt, lockedUntil } of omniInfo) {
+      const a = l.args;
+      // Same "creator:key" form as v5 ids (key = the v6 coin id), so links keep working.
+      const coinId = `${lc(a.creator)}:${a.coinId}`;
+      const ts = (await blockTimes(pub, [l.blockNumber])).get(String(l.blockNumber));
+      await db.query(
+        `insert into coins (id, creator, launch_key, name, symbol, logo, description, created_at, fee_mode)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (id) do nothing`,
+        [coinId, lc(a.creator), a.coinId, a.name, a.symbol, a.logo, a.description, ts, Number(a.feeMode ?? 0)]
+      );
+      await db.query(
+        `insert into curves (chain_id, curve, token, coin_id, initial_virtual_native, virtual_native, virtual_token, created_block, created_at)
+         values ($1,$2,$3,$4,$5,$5,$6,$7,$8) on conflict (chain_id, curve) do nothing`,
+        [c.chainId, lc(a.curve), lc(a.coin), coinId, ivn.toString(), ivt.toString(), l.blockNumber.toString(), ts]
+      );
+      // Which chains the coin launched on (omni.sql). In a savepoint: indexing goes on without it.
+      await db.query("savepoint omni_row");
+      try {
+        await db.query(
+          `insert into coin_omni (coin_id, coin, eids) values ($1, $2, $3)
+           on conflict (coin_id) do update set eids = excluded.eids`,
+          [coinId, lc(a.coin), a.eids.map(Number)]
+        );
+        if (lockedUntil > 0n) {
+          await db.query(
+            `insert into coin_lock (coin_id, chain_id, until) values ($1, $2, to_timestamp($3))
+             on conflict (coin_id, chain_id) do update set until = excluded.until`,
+            [coinId, c.chainId, Number(lockedUntil)]
+          );
+        }
+        await db.query("release savepoint omni_row");
+      } catch (e) {
+        await db.query("rollback to savepoint omni_row");
+        if (!omniWarned) log("v6 coins: run indexer/omni.sql in Supabase");
+        omniWarned = true;
+      }
+    }
+
     const known = await knownCurves(db, c.chainId);
 
     // 2. Trades and lifecycle events, only from our own curves.
@@ -247,7 +316,7 @@ async function indexRange(c, from, to) {
            on conflict do nothing returning 1`,
           [c.chainId, l.transactionHash, l.logIndex, l.blockNumber.toString(), ts, k.curve, k.coin_id,
            // The opening buy is made by the factory on the creator's behalf: credit the creator.
-           c.factories.some((f) => lc(f) === lc(a.trader)) ? k.creator : traderOf(a.trader, l.transactionHash), a.isBuy,
+           c.factories.some((f) => lc(f) === lc(a.trader)) || (c.omniFactory && lc(c.omniFactory) === lc(a.trader)) ? k.creator : traderOf(a.trader, l.transactionHash), a.isBuy,
            a.nativeAmount.toString(), a.tokenAmount.toString(), a.fee.toString(), price]
         );
         if (ins.rowCount) {
@@ -259,6 +328,16 @@ async function indexRange(c, from, to) {
         }
       } else if (l.eventName === "Closed") {
         await db.query("update curves set state = 1 where chain_id = $1 and curve = $2 and state = 0", [c.chainId, k.curve]);
+      } else if (l.eventName === "Frozen") {
+        await db.query("update curves set state = $3 where chain_id = $1 and curve = $2 and state = 0", [c.chainId, k.curve, STATE_FROZEN]);
+      } else if (l.eventName === "Reopened") {
+        await db.query("update curves set state = 0 where chain_id = $1 and curve = $2 and state = $3", [c.chainId, k.curve, STATE_FROZEN]);
+      } else if (l.eventName === "Settled") {
+        const won = l.args.winner;
+        await db.query("update curves set state = $3, real_native = 0 where chain_id = $1 and curve = $2", [c.chainId, k.curve, won ? 2 : STATE_MOVED]);
+        if (won) {
+          await db.query("update coins set graduated_chain = $2, graduated_at = $3 where id = $1 and graduated_chain is null", [k.coin_id, c.chainId, ts]);
+        }
       } else if (l.eventName === "Graduated") {
         await db.query("update curves set state = 2, real_native = 0 where chain_id = $1 and curve = $2", [c.chainId, k.curve]);
         await db.query(

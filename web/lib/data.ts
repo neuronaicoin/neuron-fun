@@ -27,8 +27,12 @@ export function clientFor(c: NeuronChain): PublicClient {
 
 // ------------------------------------------------------------------ types
 
-export type CurveState = "trading" | "closed" | "graduated";
-const STATES: CurveState[] = ["trading", "closed", "graduated"];
+/**
+ * trading, closed (v5: sells only), graduated, frozen (v6: graduation being decided,
+ * no trades for a minute or two), moved (v6: lost the race; its coins moved to the winner).
+ */
+export type CurveState = "trading" | "closed" | "graduated" | "frozen" | "moved";
+const STATES: CurveState[] = ["trading", "closed", "graduated", "frozen", "moved"];
 
 export type CurveInfo = {
   chain: NeuronChain;
@@ -57,6 +61,10 @@ export type Coin = {
   graduatedOn: CurveInfo | null;
   /** Where the creator's share of fees goes (fixed at launch). */
   feeMode: FeeMode;
+  /** v6: one coin, the same address on every chain it launched on. */
+  omni: boolean;
+  /** v6: reached the target, graduation being decided (trading paused). */
+  graduating: boolean;
   /** Price change over the last 24 hours (0.5 = +50%); null when unknown. */
   change24h: number | null;
   holders: number;
@@ -137,13 +145,17 @@ function toCoin(r: SummaryRow, prices: Record<string, number> | null): Coin {
     });
   }
   const graduatedOn = curves.find((c) => c.state === "graduated") ?? null;
-  const open = curves.filter((c) => c.state === "trading");
+  // Frozen curves still hold their money until graduation is decided.
+  const open = curves.filter((c) => c.state === "trading" || c.state === "frozen");
   const priced = open.every((c) => c.usd !== null);
   const totalUsd = priced ? open.reduce((s, c) => s + (c.usd ?? 0), 0) : null;
   return {
     id: r.id,
     creator: r.creator as Address,
     feeMode: FEE_MODES[r.fee_mode ?? 0] ?? "creator",
+    // v6 coin: one address on every chain (a v5 coin has one token per chain).
+    omni: curves.length > 0 && curves.every((c) => c.token.toLowerCase() === curves[0].token.toLowerCase()) && (curves.length > 1 || r.curves.some((k) => k.state >= 3)),
+    graduating: !graduatedOn && curves.some((c) => c.state === "frozen"),
     change24h: r.change_24h === null || r.change_24h === undefined ? null : Number(r.change_24h),
     launchKey: r.launch_key,
     name: r.name,

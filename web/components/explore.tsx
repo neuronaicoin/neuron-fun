@@ -151,7 +151,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             />
             <div className="relative">
               <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">
-                CREATE <span aria-hidden="true">→</span> MULTI-CHAIN 🔥 <span aria-hidden="true">→</span> BONDING <span aria-hidden="true">→</span> GRADUATE 🚀
+                CREATE <span aria-hidden="true">→</span> MULTI-CHAIN <span className="text-[1.35em] leading-none align-[-0.1em]">🔥</span>{" "}
+                <span aria-hidden="true">→</span> BONDING <span aria-hidden="true">→</span> GRADUATE{" "}
+                <span className="text-[1.35em] leading-none align-[-0.1em]">🚀</span>
               </p>
               <HeroMessages />
               <div className="mt-3 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">

@@ -142,12 +142,13 @@ function CoinPage() {
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2">
             {coin.curves.map((c) => (
-              <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed"} />
+              <ChainChip key={c.chain.key} chain={c.chain} muted={c.state === "closed" || c.state === "moved"} />
             ))}
           </div>
           <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-2" />
           <ContractAddress
             className="mt-2"
+            note={coin.omni && !winner && coin.curves.length > 1 ? `same on ${coin.curves.map((c) => c.chain.short).join(" · ")}` : undefined}
             entries={(winner ? [winner] : caCurves(coin.curves)).map((c) => ({
               key: c.chain.key,
               label: c.chain.short,
@@ -171,7 +172,9 @@ function CoinPage() {
           <h2 className="font-display font-semibold text-[1.375rem] sm:text-[1.625rem] mt-2">Winning chain: {winner.chain.name}</h2>
           <p className="text-[#a9bab3] mt-2 text-[0.9375rem] leading-relaxed">
             ${coin.symbol} now trades in a locked pool on {winner.chain.short}. That is where the coin lives from here on.
-            On the other chains buying has stopped; holders there can take their money back at any time.
+            {coin.omni
+              ? "Coins held on the other chains moved here automatically, to the same address."
+              : "On the other chains buying has stopped; holders there can take their money back at any time."}
           </p>
           <button
             type="button"

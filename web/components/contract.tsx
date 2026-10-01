@@ -40,7 +40,16 @@ export async function copyText(text: string): Promise<boolean> {
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-export function ContractAddress({ entries, className = "" }: { entries: ContractEntry[]; className?: string }) {
+export function ContractAddress({
+  entries,
+  className = "",
+  note,
+}: {
+  entries: ContractEntry[];
+  className?: string;
+  /** Short line after the address, e.g. "same on every chain" for v6 coins. */
+  note?: string;
+}) {
   const list = entries.filter((e) => /^0x[0-9a-fA-F]{40}$/.test(e.address));
   const [i, setI] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -84,16 +93,17 @@ export function ContractAddress({ entries, className = "" }: { entries: Contract
           href={cur.explorer}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-mono text-[0.8125rem] text-ink-2 hover:text-ink truncate min-w-0 select-all"
+          className="font-mono text-[0.8125rem] text-ink-2 hover:text-ink shrink-0 whitespace-nowrap select-all"
           title={cur.address}
         >
           {short(cur.address)}
         </a>
       ) : (
-        <span className="font-mono text-[0.8125rem] text-ink-2 truncate min-w-0 select-all" title={cur.address}>
+        <span className="font-mono text-[0.8125rem] text-ink-2 shrink-0 whitespace-nowrap select-all" title={cur.address}>
           {short(cur.address)}
         </span>
       )}
+      {note && <span className="hidden sm:inline text-[0.6875rem] text-ink-3 whitespace-nowrap shrink-0">{note}</span>}
       <button
         type="button"
         onClick={() => void copy()}
