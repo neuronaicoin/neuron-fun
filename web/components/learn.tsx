@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SasaMark } from "./landing";
 import type { Block } from "@/lib/articles";
+import { CurveSim } from "./curvesim";
 
 const X_URL = "https://x.com/sasapadfun";
 
@@ -97,6 +98,7 @@ export function ArticleBody({ blocks }: { blocks: Block[] }) {
               {b.ol.map((x, j) => <li key={j}><Rich text={x} /></li>)}
             </ol>
           );
+        if ("widget" in b) return <div key={i} className="text-[1rem] leading-normal"><CurveSim /></div>;
         return (
           <aside key={i} className="rounded-2xl border border-emerald/40 bg-emerald-soft px-5 py-4 text-ink">
             <Rich text={b.tip} />

@@ -15,6 +15,7 @@ Status: live on testnet, mainnet coming soon. X: https://x.com/sasapadfun
 ## Guides
 - [How to launch a meme coin on Robinhood Chain](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-robinhood-chain/)
 - [What is a bonding curve?](https://sasapad.fun/learn/what-is-a-bonding-curve/)
+- [Bonding curve simulator](https://sasapad.fun/learn/bonding-curve-simulator/): interactive; shows coins received, price impact and value at graduation for any buy, using the live contract settings.
 - [How to launch a token on multiple chains at once](https://sasapad.fun/learn/multi-chain-token-launch/)
 
 ## Forum

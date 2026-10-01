@@ -1,12 +1,13 @@
 "use client";
 
+import { TraderBadges } from "./badges";
 import { useEffect, useRef, useState } from "react";
 import type { IChartApi, IPriceLine, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { burst, onTrade } from "@/lib/live";
 import { chainById, explorerAddress, explorerTx } from "@/lib/config";
 import { fetchCandles, fetchTopHolders, fetchTrades, type Candle, type Coin, type CurveInfo, type Trade } from "@/lib/data";
 import { fmtTokens, shortAddr } from "@/lib/format";
-import { ChainChip, timeAgo, usd } from "./coins";
+import { ChainChip, SkeletonRows, timeAgo, usd } from "./coins";
 
 const RANGES = [
   { label: "1m", s: 60 },
@@ -390,7 +391,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
     };
   }, [coinId, trader, limit]);
 
-  if (!rows) return <div className="h-40 rounded-2xl bg-line/50 animate-pulse" />;
+  if (!rows) return <SkeletonRows rows={Math.min(limit, 7)} avatar="none" />;
   if (rows.length === 0) return <p className="text-[0.875rem] text-ink-3 py-6 text-center">No trades yet.</p>;
   return (
     <ul className="divide-y divide-mist">
@@ -415,6 +416,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
                   {isBurn(t.trader) ? <span className="font-sans font-semibold text-mint">🔥 Buyback</span> : shortAddr(t.trader)}
                 </a>
               )}
+              {!isBurn(t.trader) && <TraderBadges address={t.trader} max={2} className="ml-1.5" />}
             </span>
             <span className="font-mono text-right">{ethUsd ? usd(eth * ethUsd, 2) : `${eth.toFixed(5)} ETH`}</span>
             <span className="w-16 text-right text-ink-3 shrink-0">
@@ -448,7 +450,7 @@ export function TopHolders({ curve }: { curve: CurveInfo }) {
       clearInterval(t);
     };
   }, [curve.chain.chain.id, curve.token, curve.curve, curve.chain.poolManager]);
-  if (!rows) return <div className="h-32 rounded-2xl bg-line/50 animate-pulse" />;
+  if (!rows) return <SkeletonRows rows={5} avatar="none" />;
   if (rows.length === 0) return <p className="text-[0.875rem] text-ink-3">No holders yet.</p>;
   return (
     <ol className="grid gap-2 text-[0.8125rem]">

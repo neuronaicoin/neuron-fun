@@ -33,6 +33,10 @@ export default function PrivyBridge({ onState, loginRequests }: { onState: (s: P
           landingHeader: "Log in to sasa",
           loginMessage: "No wallet needed. We create one for you.",
           showWalletLoginFirst: false,
+          // Outside wallets connect through sasa's own Connect button, not Privy. Leaving
+          // Coinbase off this list stops Privy loading the Coinbase SDK, whose page check
+          // printed a warning in the browser console on every visit.
+          walletList: ["metamask"],
         },
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },

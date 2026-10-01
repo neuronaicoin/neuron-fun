@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ChainChip, Skeleton, useCoins, usd } from "@/components/coins";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChainChip, SkeletonTile, useCoins, usd } from "@/components/coins";
 import { CoinTile, LiveTicker } from "@/components/discover";
 import { CHAINS, TARGET_USD } from "@/lib/config";
 import { fetchCoinCount, type SortKey } from "@/lib/data";
@@ -29,12 +29,27 @@ const SORTS: { id: SortKey; label: string }[] = [
   { id: "graduated", label: "Graduated" },
 ];
 
+// Minimum 24h volume and liquidity, in USD. Liquidity of a coin still on its
+// curve is the money in its curves; other DEXs report their pool's liquidity.
+const VOLUME_FILTERS = [0, 10_000, 50_000, 100_000, 500_000] as const;
+const LIQUIDITY_FILTERS = [0, 5_000, 25_000, 100_000] as const;
+const filterLabel = (v: number) => (v === 0 ? "Any" : `$${v >= 1000 ? `${v / 1000}K` : v}+`);
+
+// Coins shown at first and added by each "Load more".
+const STEP = 24;
+
 export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const [sort, setSort] = useState<SortKey>("trending");
   const [chain, setChain] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
+  const [minVol, setMinVol] = useState(0);
+  const [minLiq, setMinLiq] = useState(0);
+  const [shown, setShown] = useState(STEP);
+  const [growing, setGrowing] = useState(false);
+  // A new tab, chain, search or filter starts from the top again.
+  useEffect(() => setShown(STEP), [sort, chain, search, minVol, minLiq]);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [total, setTotal] = useState<number | null>(null);
   // Coins from every other DEX on the same chains, shown after ours.
@@ -44,15 +59,23 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     fetchExtCount().then(setExtTotal);
   }, []);
   const extSort = EXT_SORT[sort];
+  // Ask for one step more than shown, so we know whether "Load more" has anything to add.
+  const extLimit = shown + STEP;
+  const firstExt = useRef(true);
+  useEffect(() => {
+    firstExt.current = true;
+  }, [extSort, chain, search, minVol, minLiq]);
   useEffect(() => {
     if (!extSort) {
       setExt([]);
       return;
     }
     let alive = true;
-    setExt(null);
+    // Only a new list blanks the grid; loading more keeps what's on screen.
+    if (firstExt.current) setExt(null);
+    firstExt.current = false;
     const load = () =>
-      fetchExtCoins(extSort, chain === "all" ? null : chain, search)
+      fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq })
         .then((l) => alive && setExt(l))
         .catch(() => alive && setExt((e) => e ?? []));
     void load();
@@ -63,7 +86,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       alive = false;
       clearInterval(t);
     };
-  }, [extSort, chain, search]);
+  }, [extSort, chain, search, extLimit, minVol, minLiq]);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
@@ -77,10 +100,33 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const list = useMemo(() => {
     let l = coins ?? [];
     if (chain !== "all") l = l.filter((c) => c.curves.some((k) => k.chain.key === chain));
+    if (minVol > 0) l = l.filter((c) => (ethUsd ? c.volumeNative24h * ethUsd : 0) >= minVol);
+    if (minLiq > 0) l = l.filter((c) => (c.totalUsd ?? 0) >= minLiq);
     return l;
-  }, [coins, sort, chain]);
+  }, [coins, chain, minVol, minLiq, ethUsd]);
 
-  const sparks = useSparks(useMemo(() => list.map((c) => c.id), [list]));
+  // One fair list: our coins and other DEXs' ranked by the same measure.
+  const ranked = useMemo(
+    () => (MERGED_SORTS.has(sort) ? rankMerged(list, ext ?? [], sort, ethUsd) : list.map((c) => ({ kind: "ours" as const, coin: c }))),
+    [list, ext, sort, ethUsd]
+  );
+  const visible = ranked.slice(0, shown);
+  const extFull = !!extSort && (ext?.length ?? 0) >= extLimit;
+  const canGrow = ranked.length > shown || hasMore || extFull;
+  const filtered = minVol > 0 || minLiq > 0;
+
+  async function grow() {
+    setGrowing(true);
+    try {
+      // Fetch the next page of our coins too when we're about to run out of them.
+      if (hasMore && list.length < shown + STEP) await loadMore();
+      setShown((n) => n + STEP);
+    } finally {
+      setGrowing(false);
+    }
+  }
+
+  const sparks = useSparks(useMemo(() => visible.flatMap((r) => (r.kind === "ours" ? [r.coin.id] : [])), [visible]));
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
   const liveUsd = coins ? racing.reduce((s, c) => s + (c.totalUsd ?? 0), 0) : null;
   const trades24h = coins?.reduce((s, c) => s + c.trades24h, 0) ?? null;
@@ -106,29 +152,29 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             <div className="relative">
               <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
               <h1 className="font-display font-semibold text-[1.5rem] sm:text-[3.625rem] leading-[1.05] tracking-tight sm:mt-3">
-                Launch once.
+                <span className="whitespace-nowrap">No wallet.</span> <span className="whitespace-nowrap">No gas.</span>
                 <br />
-                <span className="text-emerald">Live on every chain.</span>
+                <span className="whitespace-nowrap">No bridge.</span> <span className="whitespace-nowrap text-emerald">Just buy.</span>
               </h1>
               <p className="hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl">
                 Buyers on every chain push your coin to graduation together. The chain with the most money wins.
               </p>
               <div className="mt-3 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : "…"}</div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : <StatSkeleton />}</div>
                   <div className="text-[0.75rem] text-ink-3">racing now</div>
                 </div>
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{trades24h ?? "…"}</div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{trades24h ?? <StatSkeleton />}</div>
                   <div className="text-[0.75rem] text-ink-3">trades 24h</div>
                 </div>
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{total ?? "…"}</div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{total ?? <StatSkeleton />}</div>
                   <div className="text-[0.75rem] text-ink-3">launched here</div>
                 </div>
                 {/* Kept apart from our launchpad's numbers so neither is inflated. */}
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{extTotal ?? "…"}</div>
+                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{extTotal ?? <StatSkeleton />}</div>
                   <div className="text-[0.75rem] text-ink-3">to trade</div>
                 </div>
               </div>
@@ -158,7 +204,8 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2 overflow-x-auto no-scrollbar">
         <Link href="/swipe/" className="h-10 px-4 shrink-0 rounded-xl bg-emerald text-on-accent font-bold text-[0.875rem] flex items-center">🔥 Swipe</Link>
         <Link href="/traders/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
-        <a href="/forum/" className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>
+        <Link href="/points/#invite" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">⚡ Invite &amp; earn</Link>
+        <a href="/forum/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>
       </nav>
 
       <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 sm:py-8 scroll-mt-20">
@@ -173,8 +220,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 >
                   🔥 Swipe to discover
                 </Link>
+                <Link
+                  href="/points/#invite"
+                  className="hidden lg:inline-flex h-9 px-3.5 rounded-xl border border-line bg-paper text-ink font-bold text-[0.8125rem] items-center gap-1.5 hover:border-emerald/60"
+                >
+                  ⚡ Invite &amp; earn
+                </Link>
               </div>
-              <p className="font-mono text-[0.75rem] text-ink-3 tracking-wider mt-1">{coins ? `${list.length} SHOWN` : "LOADING"}</p>
+              <p className="font-mono text-[0.75rem] text-ink-3 tracking-wider mt-1">{coins ? `${visible.length} SHOWN` : "LOADING"}</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
               <input
@@ -228,6 +281,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             ))}
           </div>
 
+          <div className="mt-2.5 grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-5">
+            <FilterRow label="Volume 24h" values={VOLUME_FILTERS} value={minVol} onChange={setMinVol} />
+            <FilterRow label="Liquidity" values={LIQUIDITY_FILTERS} value={minLiq} onChange={setMinLiq} />
+          </div>
+
           {error && (
             <div className="mt-5 p-4 rounded-2xl bg-warn-bg text-warn-ink text-[0.9375rem] flex items-center justify-between gap-4">
               <span>{error}</span>
@@ -236,37 +294,95 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           )}
 
           <div className="mt-5 grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-            {!coins && !error && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="aspect-[3/4]" />)}
-            {/* One fair list: our coins and other DEXs' ranked by the same measure. */}
-            {(MERGED_SORTS.has(sort) ? rankMerged(list, ext ?? [], sort, ethUsd) : list.map((c) => ({ kind: "ours" as const, coin: c }))).map((r) =>
-              r.kind === "ours" ? (
-                <CoinTile key={r.coin.id} coin={r.coin} ethUsd={ethUsd} spark={sparks.get(r.coin.id)} />
-              ) : (
-                <ExtTile key={`${r.coin.network}:${r.coin.address}`} coin={r.coin} />
-              )
-            )}
+            {!coins && !error && [0, 1, 2, 3, 4, 5, 6, 7].map((i) => <SkeletonTile key={i} />)}
+            {coins &&
+              visible.map((r) =>
+                r.kind === "ours" ? (
+                  <CoinTile key={r.coin.id} coin={r.coin} ethUsd={ethUsd} spark={sparks.get(r.coin.id)} />
+                ) : (
+                  <ExtTile key={`${r.coin.network}:${r.coin.address}`} coin={r.coin} />
+                )
+              )}
+            {coins && (growing || (ext === null && !!extSort)) && [0, 1, 2, 3].map((i) => <SkeletonTile key={`more-${i}`} />)}
           </div>
-          {coins && hasMore && (
-            <div className="mt-6 flex justify-center">
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={loadingMore}
-                className="h-11 px-6 rounded-xl border border-line text-ink font-semibold hover:border-emerald disabled:opacity-50"
-              >
-                {loadingMore ? "Loading…" : "Show more"}
-              </button>
+          {coins && visible.length > 0 && (
+            <div className="mt-6 flex flex-col items-center gap-2">
+              {canGrow ? (
+                <button
+                  type="button"
+                  onClick={() => void grow()}
+                  disabled={growing || loadingMore}
+                  className="h-12 px-8 rounded-xl border border-line bg-paper text-ink font-semibold hover:border-emerald disabled:opacity-50"
+                >
+                  {growing || loadingMore ? "Loading…" : "Load more"}
+                </button>
+              ) : null}
+              <p className="text-[0.75rem] text-ink-3">
+                {canGrow ? `Showing ${visible.length}` : `All ${visible.length} shown`}
+              </p>
             </div>
           )}
-          {coins && list.length === 0 && ext !== null && ext.length === 0 && (
+          {coins && ranked.length === 0 && ext !== null && (
             <div className="mt-5 text-center py-12 border border-dashed border-line rounded-2xl">
-              <p className="text-ink-2">{search ? "Nothing matches that search." : sort === "graduated" ? "No graduates yet." : sort === "bonding" ? "No coins on their bonding curve right now." : "No coins here yet. Start one."}</p>
-              <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
+              <p className="text-ink-2">
+                {filtered
+                  ? "No coins match these filters."
+                  : search
+                    ? "Nothing matches that search."
+                    : sort === "graduated"
+                      ? "No graduates yet."
+                      : sort === "bonding"
+                        ? "No coins on their bonding curve right now."
+                        : "No coins here yet. Start one."}
+              </p>
+              {filtered ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMinVol(0);
+                    setMinLiq(0);
+                  }}
+                  className="inline-flex mt-4 h-11 px-6 rounded-xl border border-line bg-paper font-semibold items-center hover:border-emerald"
+                >
+                  Clear filters
+                </button>
+              ) : (
+                <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
+              )}
             </div>
           )}
         </div>
       </section>
     </div>
     </>
+  );
+}
+
+function StatSkeleton() {
+  return <span className="shimmer block h-[1.25rem] sm:h-[1.625rem] w-14 rounded-md my-[0.25rem]" aria-hidden="true" />;
+}
+
+/** One row of equal-size chips: a label and a few minimum values. */
+function FilterRow({ label, values, value, onChange }: { label: string; values: readonly number[]; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="w-[4.75rem] shrink-0 text-[0.75rem] text-ink-3">{label}</span>
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar min-w-0" role="group" aria-label={`Minimum ${label.toLowerCase()}`}>
+        {values.map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={value === v}
+            onClick={() => onChange(v)}
+            className={
+              "h-8 min-w-[3.75rem] px-2.5 shrink-0 rounded-lg border text-[0.75rem] font-semibold whitespace-nowrap " +
+              (value === v ? "bg-ink text-paper border-ink" : "bg-paper border-line text-ink-2 hover:text-ink hover:border-emerald/50")
+            }
+          >
+            {filterLabel(v)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

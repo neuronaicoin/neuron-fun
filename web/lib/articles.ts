@@ -9,7 +9,9 @@ export type Block =
   | { p: string }
   | { ul: string[] }
   | { ol: string[] }
-  | { tip: string };
+  | { tip: string }
+  /** An interactive tool placed in the article. */
+  | { widget: "curve-sim" };
 
 export type Article = {
   slug: string;

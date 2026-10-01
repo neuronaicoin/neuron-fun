@@ -27,6 +27,12 @@ export default function PointsPage() {
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [error, setError] = useState(false);
 
+  // Links like /points/#invite open straight at the invite card.
+  useEffect(() => {
+    if (window.location.hash !== "#invite") return;
+    const t = setTimeout(() => document.getElementById("invite")?.scrollIntoView({ block: "start", behavior: "smooth" }), 250);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     fetchBoard(50)
       .then(setBoard)
@@ -185,7 +191,7 @@ export default function PointsPage() {
         {/* On phones the invite card comes first: it's the one people act on. */}
         <div className="grid gap-4 order-first lg:order-none">
           {/* Invites */}
-          <section className="rounded-3xl border border-line p-4 sm:p-5 bg-gradient-to-br from-emerald-soft to-surface" aria-label="Invite friends">
+          <section id="invite" className="scroll-mt-24 rounded-3xl border border-line p-4 sm:p-5 bg-gradient-to-br from-emerald-soft to-surface" aria-label="Invite friends">
             <h2 className="font-display font-bold text-[1.125rem]">Invite friends, earn together</h2>
             <p className="text-[0.875rem] text-ink-2 mt-1">
               Your friends start with <b className="text-ink">100 points</b>. You get <b className="text-ink">20% of the points</b> they earn, plus{" "}

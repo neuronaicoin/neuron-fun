@@ -5,6 +5,7 @@
  * Comments live in the coin's pinned "comments" thread on its forum board,
  * so search engines also find them on the server-rendered forum page.
  */
+import { TraderBadges } from "./badges";
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "./wallet";
 import { toast } from "./alerts";
@@ -183,6 +184,7 @@ export function CoinComments({ coin, bare = false, max }: { coin: Coin; bare?: b
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-[0.8125rem] flex-wrap">
                     <a href={p ? profileHref(p) : `/u/${c.author}/`} className="font-semibold">{p ? displayName(p) : c.author.slice(0, 6)}</a>
+                    <TraderBadges address={c.author} />
                     {c.author.toLowerCase() === coin.creator.toLowerCase() && (
                       <span className="px-1.5 h-5 rounded-full text-[0.6875rem] font-bold bg-warn-bg text-warn-ink flex items-center">Creator</span>
                     )}

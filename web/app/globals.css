@@ -163,6 +163,7 @@ html.is-landing body { background: #0b0806; }
   font-size: clamp(44px, 9vw, 96px); line-height: 0.98;
 }
 .sasa-main h1 em { font-style: normal; color: var(--o); }
+.sasa-nowrap { white-space: nowrap; }
 .sasa-lead { margin-top: 24px; max-width: 560px; color: var(--mut); font-size: clamp(16px, 2.2vw, 20px); line-height: 1.55; }
 .sasa-actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
 .sasa-btn {

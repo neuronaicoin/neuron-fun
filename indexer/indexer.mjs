@@ -28,6 +28,7 @@ import { safetyLoop } from "./safety.mjs";
 import { copyLoop } from "./copy.mjs";
 import { sparkLoop } from "./spark.mjs";
 import { pointsLoop } from "./points.mjs";
+import { badgesLoop } from "./badges.mjs";
 import { marketsLoop } from "./markets.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
@@ -407,6 +408,7 @@ async function main() {
     copyLoop(pool, log),
     sparkLoop(pool, log),
     pointsLoop(pool, log),
+    badgesLoop(pool, log),
     marketsLoop(pool, log),
   ]);
 }

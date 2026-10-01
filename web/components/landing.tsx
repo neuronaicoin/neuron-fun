@@ -49,9 +49,9 @@ export function Landing() {
           Testnet live · Mainnet coming soon
         </div>
         <h1>
-          Launch once.
+          <span className="sasa-nowrap">No wallet.</span> <span className="sasa-nowrap">No gas.</span>
           <br />
-          <em>Live on every chain.</em>
+          <span className="sasa-nowrap">No bridge.</span> <em className="sasa-nowrap">Just buy.</em>
         </h1>
         <p className="sasa-lead">
           sasa launches your coin on every chain at the same time. Buyers everywhere push it toward one shared finish

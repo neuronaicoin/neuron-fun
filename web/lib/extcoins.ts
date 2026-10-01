@@ -86,11 +86,19 @@ function toExt(r: Record<string, unknown>): ExtCoin {
   };
 }
 
-export async function fetchExtCoins(sort: ExtSort, network: string | null, search = "", limit = 48): Promise<ExtCoin[]> {
+export async function fetchExtCoins(
+  sort: ExtSort,
+  network: string | null,
+  search = "",
+  limit = 48,
+  filters: { minVol?: number; minLiq?: number } = {}
+): Promise<ExtCoin[]> {
   const s = search.replace(/[%,()]/g, "").trim();
   // Lists show coins trading right now; a search looks through the last 30 days.
   let q = db.from(s ? "ext_coins_all" : "ext_coins").select("*");
   if (network) q = q.eq("network", network);
+  if (filters.minVol && filters.minVol > 0) q = q.gte("vol_24h", filters.minVol);
+  if (filters.minLiq && filters.minLiq > 0) q = q.gte("liq_usd", filters.minLiq);
   if (s) q = /^0x[0-9a-fA-F]{40}$/.test(s) ? q.eq("address", s.toLowerCase()) : q.or(`symbol.ilike.%${s}%,name.ilike.%${s}%`);
   q =
     sort === "new"
@@ -102,7 +110,7 @@ export async function fetchExtCoins(sort: ExtSort, network: string | null, searc
           : sort === "volume"
             ? q.order("vol_24h", { ascending: false, nullsFirst: false })
           : q.order("trending_rank", { ascending: true, nullsFirst: false }).order("vol_24h", { ascending: false });
-  const { data, error } = await q.limit(limit);
+  const { data, error } = await q.limit(Math.min(Math.max(1, limit), 500));
   if (error) throw error;
   return ((data ?? []) as Record<string, unknown>[]).map(toExt);
 }

@@ -4,6 +4,7 @@
  * A trader's profile: sasapad.fun/u/<username or address>/.
  * The server (functions/u) serves this page for every /u/… link.
  */
+import { BadgeChips } from "@/components/badges";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/components/wallet";
@@ -116,6 +117,7 @@ export default function ProfilePage() {
           </p>
         </div>
       </div>
+      <BadgeChips address={profile.address} className="mt-3" />
       <div className="flex gap-2 mt-4">
         {mine ? (
           <button type="button" onClick={() => setEditing(true)} className="h-11 px-5 rounded-xl border border-line font-semibold hover:border-emerald">

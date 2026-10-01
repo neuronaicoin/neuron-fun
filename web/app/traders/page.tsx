@@ -1,6 +1,8 @@
 "use client";
 
 /** Top traders (leaderboard) and the Following feed. */
+import { BadgeIcons } from "@/components/badges";
+import { useBadges } from "@/lib/badges";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -9,7 +11,7 @@ import { ConnectButton } from "@/components/chrome";
 import { Avatar, FollowButton } from "@/components/social";
 import { CopyBadge, CopyButton } from "@/components/copy";
 import { TraderBubbles } from "@/components/traderbubbles";
-import { Skeleton, timeAgo, usd } from "@/components/coins";
+import { SkeletonRows, timeAgo, usd } from "@/components/coins";
 import { coinHref, db, type Trade } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import {
@@ -86,6 +88,7 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
       .catch(() => setError("Couldn't load the leaderboard. Try again in a moment."));
   }, [period]);
   const profiles = useProfiles((rows ?? []).map((r) => r.trader));
+  const badges = useBadges((rows ?? []).map((r) => r.trader));
   return (
     <>
       <h1 className="font-display font-semibold text-[1.75rem] sm:text-[2.25rem] tracking-tight mt-6">Top traders</h1>
@@ -131,7 +134,9 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
       </div>
       {error && <p className="text-danger text-[0.875rem] mt-4">{error}</p>}
       {rows === null && !error ? (
-        <Skeleton className="h-64 w-full mt-4" />
+        <div className="mt-4 bg-surface border border-line rounded-2xl px-3 sm:px-4">
+          <SkeletonRows rows={6} />
+        </div>
       ) : rows && rows.length === 0 ? (
         <p className="text-ink-2 mt-6">No one qualifies yet for this period. Trade and you could be first.</p>
       ) : view === "bubbles" && rows ? (
@@ -155,9 +160,12 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
                       {isQuickSeller(r) && <span className="text-[0.75rem] text-ink-3 font-normal" title="Often sells within minutes of buying"> ⚡</span>}
                       {p && p.allowCopy && !p.hideTrades && <CopyBadge className="ml-1.5 align-middle" />}
                     </span>
-                    <span className="block text-[0.75rem] text-ink-3">
-                      {wr !== null ? `${Math.round(wr * 100)}% win · ` : ""}
-                      {r.trades} trades
+                    <span className="flex items-center gap-1.5 text-[0.75rem] text-ink-3 min-w-0">
+                      <BadgeIcons badges={badges.get(r.trader.toLowerCase())} />
+                      <span className="truncate">
+                        {wr !== null ? `${Math.round(wr * 100)}% win · ` : ""}
+                        {r.trades} trades
+                      </span>
                     </span>
                   </span>
                 </a>
@@ -221,7 +229,9 @@ function Following({ ethUsd }: { ethUsd: number | null }) {
         Trades from the {followees.length} {followees.length === 1 ? "person" : "people"} you follow. You get a 🔔 when they buy.
       </p>
       {feed === null ? (
-        <Skeleton className="h-64 w-full mt-4" />
+        <div className="mt-4 bg-surface border border-line rounded-2xl px-3 sm:px-4">
+          <SkeletonRows rows={6} />
+        </div>
       ) : feed.length === 0 ? (
         <p className="text-ink-2 mt-6">
           Nothing yet. <a href="/traders/" className="text-emerald font-semibold">Find traders to follow</a>.

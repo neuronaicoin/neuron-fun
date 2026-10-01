@@ -1,5 +1,6 @@
 "use client";
 
+import { CurveSim } from "@/components/curvesim";
 import { coinShareUrl, postOnX } from "@/components/share";
 import { toast } from "@/components/alerts";
 import { EMPTY_DRAFT, LinkFields, draftProblems, draftToLinks, type LinkDraft } from "@/components/coinlinks";
@@ -584,6 +585,8 @@ export default function CreatePage() {
               </div>
             ))}
           </dl>
+
+          <CurveSim title="What early buyers get" />
 
           <div className="rounded-3xl border border-line bg-surface p-4">
             <p className="font-semibold text-[0.875rem]">Nothing to rug.</p>

@@ -1,10 +1,10 @@
 "use client";
 
+import { ContractAddress } from "./contract";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
-import { toast } from "@/components/alerts";
 import { postOnX } from "@/components/share";
 import { extHref } from "@/lib/extcoins";
 
@@ -59,13 +59,6 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                   <span className="h-6 px-2 rounded-full text-[0.6875rem] font-bold text-white flex items-center" style={{ background: net.color }}>{net.label}</span>
                   <button
                     type="button"
-                    onClick={() => void navigator.clipboard?.writeText(coin.address).then(() => toast("Address copied"), () => {})}
-                    className="font-mono text-[0.75rem] text-ink-3 hover:text-ink"
-                  >
-                    {coin.address.slice(0, 6)}…{coin.address.slice(-4)} ⧉
-                  </button>
-                  <button
-                    type="button"
                     onClick={() =>
                       postOnX(
                         IS_TESTNET
@@ -83,6 +76,10 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                     <a href={EXPLORER[coin.network] + coin.address} target="_blank" rel="noopener noreferrer" className="text-[0.75rem] text-emerald font-semibold">Explorer ↗</a>
                   )}
                 </div>
+                <ContractAddress
+                  className="mt-2"
+                  entries={[{ key: coin.network, label: net.label, color: net.color, address: coin.address, explorer: EXPLORER[coin.network] ? EXPLORER[coin.network] + coin.address : null }]}
+                />
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">

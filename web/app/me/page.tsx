@@ -8,11 +8,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
-import { CoinCard, Skeleton } from "@/components/coins";
+import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
 import { TradesFeed } from "@/components/market";
 import { PositionRow } from "@/components/portfolio";
 import { Avatar, EditProfileSheet } from "@/components/social";
 import { AllowCopyCard } from "@/components/copy";
+import { InviteCard } from "@/components/invite";
 import { FollowListSheet } from "@/components/follows";
 import { coinHref, fetchPortfolio } from "@/lib/data";
 import { money, openMoney, pctText, refreshPortfolio, signed, useMoney, CASH_SYMBOL } from "@/lib/portfolio";
@@ -140,6 +141,11 @@ export default function MePage() {
         )}
       </section>
 
+      {/* Invites and points, one tap away */}
+      <div className="mt-6">
+        <InviteCard address={address} username={profile?.username ?? null} />
+      </div>
+
       {/* Copy trading: let followers copy me */}
       {profile && (
         <div className="mt-6">
@@ -152,7 +158,7 @@ export default function MePage() {
         <h2 className="font-display font-semibold text-[1.25rem]">Your coins</h2>
         <div className="mt-3 rounded-3xl border border-line bg-surface px-4 sm:px-5">
           {!p ? (
-            <Skeleton className="h-24 my-4" />
+            <SkeletonRows rows={3} avatar="square" className="py-2" />
           ) : p.positions.length === 0 ? (
             <p className="py-6 text-ink-2 text-[0.9375rem]">
               Nothing yet. <Link href="/explore/" className="text-emerald font-semibold">Find a coin you like</Link>.
@@ -171,7 +177,7 @@ export default function MePage() {
       <section className="mt-8">
         <h2 className="font-display font-semibold text-[1.25rem]">Coins you created</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {!data && <Skeleton className="h-40" />}
+          {!data && <Skeleton className="h-40 sm:h-44" />}
           {data?.created.map((c) => (
             <CoinCard key={c.id} coin={c} />
           ))}

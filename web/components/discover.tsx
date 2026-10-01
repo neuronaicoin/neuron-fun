@@ -194,7 +194,7 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
     .filter((x) => x.coin && x.chain);
   if (items.length === 0) return null;
   const row = items.map(({ t, coin, chain }) => (
-    <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-2 px-4 shrink-0 text-[0.8125rem]">
+    <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 shrink-0 text-[0.6875rem] sm:text-[0.8125rem]">
       {t.trader.toLowerCase() === "0x000000000000000000000000000000000000dead" ? (
         <span className="text-mint font-semibold">🔥 BURN</span>
       ) : (
@@ -202,14 +202,16 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
       )}
       <span className="font-semibold">${coin!.symbol}</span>
       <span className="font-mono text-ink-2">{ethUsd ? usd((t.nativeAmount / 1e18) * ethUsd, 2) : `${(t.nativeAmount / 1e18).toFixed(4)} ETH`}</span>
-      <ChainChip chain={chain!} />
+      {/* Phones get a coloured dot instead of the chain chip: keeps the strip slim. */}
+      <span className="sm:hidden w-1.5 h-1.5 rounded-full shrink-0" style={{ background: chain!.color }} title={chain!.name} aria-label={chain!.name} />
+      <span className="hidden sm:inline-flex"><ChainChip chain={chain!} /></span>
       <span className="text-ink-3">{timeAgo(t.ts)}</span>
       <span className="text-line">|</span>
     </Link>
   ));
   return (
     <div className="border-b border-line bg-paper overflow-hidden" aria-label="Latest trades">
-      <div className="ticker-track flex w-max py-2">
+      <div className="ticker-track flex w-max py-1 sm:py-2">
         <div className="flex">{row}</div>
         <div className="flex" aria-hidden="true">{row}</div>
       </div>

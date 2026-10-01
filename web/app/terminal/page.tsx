@@ -319,7 +319,19 @@ function Markets(props: {
         </div>
       </div>
       <ul className={(full ? "" : "max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto ") + "divide-y divide-line"}>
-        {!coins && [0, 1, 2, 3, 4].map((i) => <li key={i} className="p-3"><Skeleton className="h-10" /></li>)}
+        {!coins && [0, 1, 2, 3, 4, 5, 6].map((i) => (
+          <li key={i} className="px-3 py-2.5 flex items-center gap-2.5" aria-hidden="true">
+            <span className="shimmer w-9 h-9 rounded-xl shrink-0" />
+            <span className="flex-1 min-w-0 grid gap-1.5">
+              <span className="shimmer h-3.5 w-3/5 rounded-md" />
+              <span className="shimmer h-2.5 w-2/5 rounded-md" />
+            </span>
+            <span className="grid gap-1.5 justify-items-end">
+              <span className="shimmer h-3.5 w-14 rounded-md" />
+              <span className="shimmer h-2.5 w-10 rounded-md" />
+            </span>
+          </li>
+        ))}
         {ranked?.length === 0 && <li className="p-6 text-center text-[0.875rem] text-ink-3">No coins found.</li>}
         {ranked?.map((r) => {
           if (r.kind === "ext") return <ExtRow key={extKey(r.coin)} c={r.coin} selected={selected} onChoose={onChoose} />;

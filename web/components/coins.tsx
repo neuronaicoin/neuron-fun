@@ -158,6 +158,42 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"shimmer rounded-2xl " + className} aria-hidden="true" />;
 }
 
+/** Placeholder shaped like an Explore coin tile (picture, name, MC line, bar). */
+export function SkeletonTile() {
+  return (
+    <div className="rounded-3xl bg-surface border border-line p-2.5 sm:p-3" aria-hidden="true">
+      <div className="shimmer aspect-square rounded-2xl" />
+      <div className="px-1.5 sm:px-2 pt-3 pb-1">
+        <div className="shimmer h-4 sm:h-5 w-3/4 rounded-md" />
+        <div className="shimmer h-3 w-1/3 rounded-md mt-2" />
+        <div className="flex items-end justify-between gap-2 mt-3">
+          <div className="shimmer h-5 sm:h-6 w-2/5 rounded-md" />
+          <div className="shimmer h-5 w-12 rounded-full" />
+        </div>
+        <div className="shimmer h-2 w-full rounded-full mt-3" />
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder rows: a round or square picture, two lines and a value on the right. */
+export function SkeletonRows({ rows = 5, avatar = "round", className = "" }: { rows?: number; avatar?: "round" | "square" | "none"; className?: string }) {
+  return (
+    <ul className={"grid " + className} aria-hidden="true">
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={i} className="flex items-center gap-3 py-2.5">
+          {avatar !== "none" && <span className={"shimmer w-9 h-9 shrink-0 " + (avatar === "round" ? "rounded-full" : "rounded-xl")} />}
+          <span className="flex-1 min-w-0 grid gap-1.5">
+            <span className="shimmer h-3.5 rounded-md" style={{ width: `${55 + ((i * 17) % 30)}%` }} />
+            <span className="shimmer h-2.5 rounded-md" style={{ width: `${30 + ((i * 11) % 20)}%` }} />
+          </span>
+          <span className="shimmer h-4 w-16 rounded-md shrink-0" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function useCoins(sort: SortKey, search: string) {
   const [coins, setCoins] = useState<Coin[] | null>(null);
   const [pages, setPages] = useState(1);

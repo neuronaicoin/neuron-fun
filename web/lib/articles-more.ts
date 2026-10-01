@@ -6,6 +6,46 @@ import type { Article } from "./articles";
 
 export const MORE_ARTICLES: Article[] = [
   {
+    slug: "bonding-curve-simulator",
+    title: "Bonding curve simulator: see what a meme coin buy gets you",
+    description:
+      "Try a free bonding curve simulator: pick how much a meme coin has raised and how much you buy, and see your coins, price impact and value at graduation.",
+    date: "2026-10-01",
+    updated: "2026-10-01",
+    readMin: 3,
+    summary: "Move two sliders and watch the price curve: why early buys get more coins, and what price impact really means.",
+    tags: ["bonding-curve", "graduation", "trading"],
+    takeaways: [
+      "On a bonding curve the price rises with every buy and falls with every sell; nobody sets it by hand.",
+      "The same amount of USDC buys more coins early on the curve than late.",
+      "Price impact grows with the size of your buy compared with the money already in the curve.",
+      "At graduation the coin moves to a locked Uniswap pool at the curve's last price.",
+    ],
+    body: [
+      { p: "A [bonding curve](/learn/what-is-a-bonding-curve/) is the formula that prices a new meme coin before it has a trading pool. The simulator below uses the same formula and the same settings as the sasa contracts, so you can see what a buy does before you make it." },
+      { widget: "curve-sim" },
+      { h2: "How to read it" },
+      { ul: [
+        "Already raised: how much money buyers have put into the curve so far. Move it right to see a coin that is further along.",
+        "Your buy: the amount you spend, fee included. The quick buttons pick a share of what the coin can still take before it graduates.",
+        "You get and share of supply: the coins your buy brings, out of a fixed supply of 1,000,000,000.",
+        "Price impact: how much higher your average price is than the price before your buy. Bigger buys move the price more.",
+        "Your coins at graduation: what those coins would be worth at the curve's final price, if the coin reaches its target.",
+      ] },
+      { h2: "Why early buys get more" },
+      { p: "The curve works on virtual reserves: an amount of money and an amount of coins whose product never shrinks. Each buy adds money and takes coins out, so the next coin costs a little more. That is why the same buy gets fewer coins the further along a coin is, and why the chart bends upward." },
+      { tip: "A coin that is close to its target has less room to rise on the curve. Check the progress bar on the coin page before you buy: [what graduation means](/learn/meme-coin-graduation-explained/)." },
+      { h2: "What the simulator can't tell you" },
+      { p: "It shows the maths, not the future. Other people's trades change the price before and after yours, a coin may never reach its target, and after graduation the price moves freely in the pool. Treat the numbers as an estimate and only spend what you can afford to lose." },
+    ],
+    faq: [
+      { q: "Is the simulator accurate?", a: "It uses the same formula and the same curve settings as the sasa contracts, read live from the chain. The real result also depends on trades that land before yours." },
+      { q: "Does the fee change the result?", a: "Yes. The 1% trading fee is taken on top of the amount that enters the curve, and the simulator includes it." },
+      { q: "What happens when a coin graduates?", a: "The money and part of the supply move into a Uniswap pool at the curve's last price, and that liquidity is locked forever. [Graduation explained](/learn/meme-coin-graduation-explained/)." },
+      { q: "Why does my buy get fewer coins when the coin has raised more?", a: "Because every buy raises the price for the next one. Later buyers pay more per coin." },
+    ],
+  },
+  {
     slug: "how-to-spot-a-meme-coin-rug-pull",
     title: "How to spot a meme coin rug pull: 9 red flags in 60 seconds",
     description:

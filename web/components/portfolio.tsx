@@ -9,7 +9,7 @@ import { USD_MODE } from "@/lib/config";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Sheet } from "./chrome";
-import { CoinAvatar } from "./coins";
+import { CoinAvatar, SkeletonRows } from "./coins";
 import { DepositSheet, WithdrawSheet } from "./money";
 import { QuickTrade } from "./trade";
 import { useWallet } from "./wallet";
@@ -136,9 +136,9 @@ function PortfolioSheet() {
     <Sheet title="Portfolio" onClose={closeMoney}>
       {!p ? (
         <div className="grid gap-3" aria-busy="true">
-          <div className="h-12 w-48 rounded-xl bg-line/50 animate-pulse" />
-          <div className="h-20 rounded-2xl bg-line/50 animate-pulse" />
-          <div className="h-32 rounded-2xl bg-line/50 animate-pulse" />
+          <div className="shimmer h-12 w-48 rounded-xl" />
+          <div className="shimmer h-20 rounded-2xl" />
+          <SkeletonRows rows={3} avatar="square" />
         </div>
       ) : (
         <>

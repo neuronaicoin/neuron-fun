@@ -2,6 +2,7 @@
 
 import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
+import { ContractAddress } from "@/components/contract";
 import { HolderMap } from "@/components/holdermap";
 import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
@@ -11,7 +12,7 @@ import { useSearchParams } from "next/navigation";
 import { formatEther, formatUnits, parseEther, parseUnits, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
-import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, StarButton, timeAgo } from "@/components/coins";
+import { CoinAvatar, ChainChip, ChainRace, ProgressBar, Skeleton, SkeletonRows, StarButton, timeAgo } from "@/components/coins";
 import { PriceChart, TradesFeed } from "@/components/market";
 import { LiveStats } from "@/components/livestats";
 import { QuickTrade } from "@/components/trade";
@@ -94,9 +95,28 @@ function CoinPage() {
   }
   if (!coin) {
     return (
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 grid gap-4">
-        <Skeleton className="h-24" />
-        <Skeleton className="h-80" />
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10" aria-busy="true" aria-label="Loading coin">
+        <Skeleton className="h-4 w-20 rounded-md" />
+        <div className="mt-4 sm:mt-5 flex items-start gap-3 sm:gap-4">
+          <Skeleton className="w-14 h-14 shrink-0" />
+          <div className="flex-1 min-w-0 grid gap-2">
+            <Skeleton className="h-7 sm:h-9 w-1/2 rounded-lg" />
+            <Skeleton className="h-4 w-2/5 rounded-md" />
+            <Skeleton className="h-8 w-56 max-w-full rounded-xl" />
+          </div>
+        </div>
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-16" />)}
+        </div>
+        <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+          <div className="grid gap-4 sm:gap-6 min-w-0">
+            <Skeleton className="h-72 sm:h-96" />
+            <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
+              <SkeletonRows rows={4} avatar="none" />
+            </div>
+          </div>
+          <Skeleton className="hidden lg:block h-[420px]" />
+        </div>
       </div>
     );
   }
@@ -126,6 +146,16 @@ function CoinPage() {
             ))}
           </div>
           <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-2" />
+          <ContractAddress
+            className="mt-2"
+            entries={(winner ? [winner] : caCurves(coin.curves)).map((c) => ({
+              key: c.chain.key,
+              label: c.chain.short,
+              color: c.chain.color,
+              address: c.token,
+              explorer: explorerAddress(c.chain, c.token),
+            }))}
+          />
         </div>
         <div className="flex gap-1.5 shrink-0">
           <ShareButton coin={coin} />
@@ -235,3 +265,8 @@ function CoinPage() {
   );
 }
 
+/** Curves whose address people want first: open ones, richest first (all of them if none is open). */
+function caCurves(curves: CurveInfo[]): CurveInfo[] {
+  const open = curves.filter((c) => c.state !== "closed");
+  return [...(open.length ? open : curves)].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+}
