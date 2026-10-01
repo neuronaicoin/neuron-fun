@@ -39,6 +39,10 @@ const DRY = env("DRY_RUN", "false") === "true";
 const DEPLOYMENTS = env("DEPLOYMENTS", "../contracts/deployments/omni");
 const STATE_FILE = env("STATE_FILE", "./omni-state.json");
 const LZ_FEE = BigInt(env("LZ_FEE_WEI", "300000000000000"));
+// Stop starting new work after this long, save progress and let the next run continue.
+const BUDGET_MS = Number(env("BUDGET_MS", String(9 * 60_000)));
+const STARTED = Date.now();
+const timeLeft = () => Date.now() - STARTED < BUDGET_MS;
 let key = env("PRIVATE_KEY").trim();
 if (!key.startsWith("0x")) key = `0x${key}`;
 const account = privateKeyToAccount(key);
@@ -100,28 +104,33 @@ function loadChains() {
     out.push({
       ...d,
       eid: Number(d.eid),
-      pub: createPublicClient({ chain, transport: http(rpc, { retryCount: 4 }) }),
-      wallet: createWalletClient({ chain, account, transport: http(rpc, { retryCount: 2 }) }),
+      pub: createPublicClient({ chain, transport: http(rpc, { retryCount: 2, timeout: 20_000 }) }),
+      wallet: createWalletClient({ chain, account, transport: http(rpc, { retryCount: 1, timeout: 30_000 }) }),
     });
   }
   return out;
 }
 
-async function scan(pub, args, from, to) {
+// Reads logs in chunks (public RPCs limit the range). onChunk(end) lets the caller save
+// progress; stops early when the run's time budget is spent and returns where it stopped.
+async function scan(pub, args, from, to, onChunk) {
   const out = [];
-  let step = 9_000n;
+  let step = 2_000n;
   let start = from;
   while (start <= to) {
+    if (!timeLeft()) break;
     const end = start + step - 1n > to ? to : start + step - 1n;
     try {
       out.push(...(await pub.getLogs({ ...args, fromBlock: start, toBlock: end })));
+      if (onChunk) onChunk(end);
       start = end + 1n;
+      if (step < 50_000n) step *= 2n;
     } catch (e) {
-      if (step <= 200n) throw e;
-      step /= 3n;
+      if (step <= 100n) throw e;
+      step /= 4n;
     }
   }
-  return out;
+  return { logs: out, next: start };
 }
 
 async function send(c, what, params) {
@@ -148,23 +157,28 @@ async function main() {
   const byEid = new Map(chains.map((c) => [c.eid, c]));
   const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
 
-  // Discover launches (each chain lists the coins launched there).
+  // Discover launches (each chain lists the coins launched there). Progress is kept per
+  // chunk, so a long gap is caught up over a few runs.
   for (const c of chains) {
     const latest = await c.pub.getBlockNumber();
     const from = BigInt(state.cursor[c.chainId] ?? c.startBlock);
-    if (from <= latest) {
-      const logs = await scan(c.pub, { address: c.factory, event: launched }, from, latest);
-      for (const l of logs) {
-        const id = l.args.coinId;
-        const coin = (state.coins[id] ||= { coin: l.args.coin, eids: l.args.eids.map(Number), name: l.args.name, chains: {} });
-        coin.chains[c.eid] = { curve: l.args.curve, block: Number(l.blockNumber), done: false };
-      }
-      state.cursor[c.chainId] = (latest + 1n).toString();
+    if (from > latest) continue;
+    log(`${c.chainId}: scanning launches ${from}..${latest} (${latest - from + 1n} blocks)`);
+    const { logs, next } = await scan(c.pub, { address: c.factory, event: launched }, from, latest);
+    for (const l of logs) {
+      const id = l.args.coinId;
+      const coin = (state.coins[id] ||= { coin: l.args.coin, eids: l.args.eids.map(Number), name: l.args.name, chains: {} });
+      coin.chains[c.eid] = { curve: l.args.curve, block: Number(l.blockNumber), done: false };
     }
+    state.cursor[c.chainId] = next.toString();
+    log(`${c.chainId}: ${logs.length} launches found, next block ${next}`);
   }
+  log(`${Object.keys(state.coins).length} v6 coins known`);
 
   for (const [id, coin] of Object.entries(state.coins)) {
     if (coin.finished) continue;
+    if (!timeLeft()) { log("time budget spent; the next run continues"); break; }
+    log(`coin ${coin.name} ${id.slice(0, 10)}…`);
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
     if (here.length !== coin.eids.length) continue; // not launched (or not configured) on every chain yet
     const reads = await Promise.all(
@@ -235,7 +249,7 @@ async function main() {
       const open = await r.c.pub.readContract({ address: coin.coin, abi: coinAbi, functionName: "bridgeOpen" });
       if (!open) { allMoved = false; continue; }
       const latest = await r.c.pub.getBlockNumber();
-      const logs = await scan(r.c.pub, { address: coin.coin, event: transferEvt }, BigInt(coin.chains[r.e].block), latest);
+      const { logs } = await scan(r.c.pub, { address: coin.coin, event: transferEvt }, BigInt(coin.chains[r.e].block), latest);
       const seen = [...new Set(logs.map((l) => l.args.to).filter((a) => a && a !== zeroAddress))];
       const movable = [];
       for (const h of seen) {
