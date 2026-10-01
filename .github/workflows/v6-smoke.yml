@@ -1,0 +1,111 @@
+name: v6-smoke
+
+# One full v6 graduation on the real testnets, with real LayerZero messages:
+#   launch the same coin on Robinhood testnet + Base Sepolia -> buy on both past the
+#   $20 target -> freeze -> reports to the coordinator (Base) -> on-chain decision ->
+#   money from the losing chain to the winner -> real Uniswap pool opens -> a trade in
+#   the pool -> the losing chain's coins move to the winner, same address.
+# Uses the deployer wallet (DEPLOYER_PRIVATE_KEY) for everything; it is the keeper too.
+# Takes 10-30 minutes (LayerZero needs a few minutes per message on testnets).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run the whole graduation
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          K="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$K" in 0x*) ;; *) K="0x$K" ;; esac
+          echo "::add-mask::$K"
+          ME=$(cast wallet address "$K")
+          RH=https://rpc.testnet.chain.robinhood.com/rpc
+          BS=https://sepolia.base.org
+          A=deployments/omni/46630.json; B=deployments/omni/84532.json
+          for f in $A $B; do [ -f $f ] || { echo "missing $f: deploy + wire first"; exit 1; }; done
+          j() { jq -r ".$2" "$1"; }
+          FAC=$(j $A factory)
+          [ "$FAC" = "$(j $B factory)" ] || { echo "factory differs between chains"; exit 1; }
+          RH_EID=$(j $A eid); BS_EID=$(j $B eid)
+          # LayerZero executor option: gas for the receiving side (type 3, lzReceive).
+          opt() { printf '0x000301001101%032x' "$1"; }
+          FEE=300000000000000   # 0.0003 ETH sent per message; the unused part is refunded
+          tx() { local rpc=$1; shift; out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@"); st=$(echo "$out" | jq -r .status); [ "$st" = "0x1" ] || { echo "FAILED: $*"; echo "$out"; exit 1; }; }
+          wait_for() { # description, rpc, call..., expected
+            local desc=$1 rpc=$2; shift 2; local exp="${@: -1}"; set -- "${@:1:$(($#-1))}"
+            for i in $(seq 1 80); do
+              got=$(cast call --rpc-url "$rpc" "$@" 2>/dev/null | head -1 | awk '{print $1}' || true)
+              if [ "$got" = "$exp" ]; then echo "   ✅ $desc (after $((i*15))s)"; return 0; fi
+              sleep 15
+            done
+            echo "   ❌ $desc: still '$got' after 20 min, expected '$exp'"; exit 1
+          }
+          KEY=$(cast keccak "smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          ID=$(cast call --rpc-url $BS $FAC "coinIdOf(address,bytes32)(bytes32)" $ME $KEY)
+          COIN=$(cast call --rpc-url $BS $FAC "coinAddress(address,bytes32)(address)" $ME $KEY)
+          EIDS="[$( [ $BS_EID -lt $RH_EID ] && echo "$BS_EID,$RH_EID" || echo "$RH_EID,$BS_EID" )]"
+          echo "== 1. Launch the same coin on both chains (creator buys first: \$12 on Robinhood, \$9 on Base)"
+          for side in "RH 12000000" "BS 9000000"; do
+            set -- $side; rpc=$([ $1 = RH ] && echo $RH || echo $BS); f=$([ $1 = RH ] && echo $A || echo $B)
+            USD=$(j $f usd)
+            bal=$(cast call --rpc-url $rpc $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+            if [ "$bal" -lt "$2" ]; then tx $rpc $USD "faucet(address)" $ME; fi
+            tx $rpc $USD "approve(address,uint256)" $FAC $2
+            tx $rpc $FAC "launch((string,string,string,string,bytes32,uint32[],uint256,uint8,uint256,uint256))" \
+              "(\"Smoke Test\",\"SMOKE\",\"\",\"v6 smoke test\",$KEY,$EIDS,0,0,$2,0)"
+          done
+          a1=$(cast code --rpc-url $RH $COIN | wc -c); b1=$(cast code --rpc-url $BS $COIN | wc -c)
+          [ $a1 -gt 10 ] && [ $b1 -gt 10 ] || { echo "coin missing on a chain"; exit 1; }
+          echo "   ✅ same coin address on both chains: $COIN"
+          CRV_RH=$(cast call --rpc-url $RH $(j $A hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID | head -1)
+          CRV_BS=$(cast call --rpc-url $BS $(j $B hub) "localOf(bytes32)(address,uint256,uint64,uint32[])" $ID | head -1)
+          echo "   money in: Robinhood $(cast call --rpc-url $RH $CRV_RH 'realNative()(uint256)' | awk '{print $1}') / Base $(cast call --rpc-url $BS $CRV_BS 'realNative()(uint256)' | awk '{print $1}') (6 decimals)"
+
+          echo "== 2. Freeze both chains; Robinhood reports to the coordinator on Base over LayerZero"
+          tx $RH $(j $A hub) "freeze(bytes32,bytes)" $ID $(opt 300000) --value $FEE
+          tx $BS $(j $B hub) "freeze(bytes32,bytes)" $ID 0x
+          wait_for "both reports in at the coordinator" $BS $(j $B hub) "preview(bytes32)(bool,bool,uint32,uint256,uint256)" $ID "true"
+          cast call --rpc-url $BS $(j $B hub) "preview(bytes32)(bool,bool,uint32,uint256,uint256)" $ID | tr '\n' ' '; echo " <- ready, graduate, winner, total, poolTokens"
+
+          echo "== 3. Decide on-chain (coordinator) and tell both chains"
+          tx $BS $(j $B hub) "finalize(bytes32,uint256,bytes)" $ID $FEE $(opt 900000) --value $FEE
+          wait_for "Robinhood curve settled" $RH $CRV_RH "state()(uint8)" "2"
+          echo "   Robinhood won: $(cast call --rpc-url $RH $CRV_RH 'won()(bool)')  | Base won: $(cast call --rpc-url $BS $CRV_BS 'won()(bool)')"
+
+          echo "== 4. Base's money goes to Robinhood's migrator over LayerZero"
+          tx $BS $(j $B consolidator) "forward(bytes32)" $ID --value $FEE
+          wait_for "all money at the Robinhood migrator" $RH $(j $A migrator) "ready(bytes32)(bool)" $ID "true"
+
+          echo "== 5. Open the locked Uniswap pool at the graduation price"
+          tx $RH $(j $A migrator) "open(bytes32)" $ID
+          echo "   ✅ pool open"
+          ROUTER=$(j $A router); USD=$(j $A usd)
+          tx $RH $USD "approve(address,uint256)" $ROUTER 1000000
+          before=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          tx $RH $ROUTER "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME $(( $(date +%s) + 600 ))
+          after=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          echo "   ✅ bought in the pool: $(echo "($after - $before) / 10^18" | bc) coins for \$1"
+
+          echo "== 6. Coins on Base move to the same address on Robinhood"
+          onB=$(cast call --rpc-url $BS $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          tx $BS $COIN "moveBatch(address[],bytes)" "[$ME]" $(opt 300000) --value $FEE
+          target=$(cast call --rpc-url $BS $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          echo "   left on Base (dust): $target"
+          for i in $(seq 1 80); do
+            now=$(cast call --rpc-url $RH $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+            if [ "$(echo "$now > $after" | bc)" = "1" ]; then echo "   ✅ arrived on Robinhood: $(echo "($now - $after) / 10^18" | bc) coins (sent $(echo "$onB / 10^18" | bc), 0.1% moving fee)"; break; fi
+            [ $i = 80 ] && { echo "   ❌ coins did not arrive"; exit 1; }
+            sleep 15
+          done
+          echo "== ALL DONE: v6 graduated a coin across two real chains. Coin: $COIN"
