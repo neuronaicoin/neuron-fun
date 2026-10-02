@@ -39,3 +39,6 @@ jobs:
 
       - name: Neuron.fun on a fork of Robinhood Chain
         run: forge test --match-path "test/fork/Neuron*" --fork-url robinhood -vvv
+
+      - name: Across bridge on forks of Base and Robinhood (real SpokePools, USDC and USDG)
+        run: forge test --match-path "test/fork/AcrossBridge*" -vvv
