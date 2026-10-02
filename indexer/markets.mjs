@@ -56,7 +56,10 @@ const DEFAULT_NETWORKS = [
 // The free API allows ~30 calls a minute per IP, and cloud IPs are shared:
 // stay far below it, and wait out a limit once instead of skipping.
 const GAP = Number(process.env.MARKETS_GAP_MS ?? "6500");
-const PAGES = 3;
+// Pages walked in turn, one per round (20 pools a page). The busiest-by-volume list goes
+// deepest so every coin with real volume ($100K+ a day) on our chains is found.
+const TREND_PAGES = 5;
+const TOP_PAGES = 10;
 
 async function gt(path, retry = true) {
   // Never wait forever on a slow API: that would stop the whole loop.
@@ -291,6 +294,32 @@ async function fromDexscreener(pool, networks, log) {
   return total;
 }
 
+/** Fresh market data for every coin seen in the last 24 hours, 30 addresses per call. */
+async function refreshKnown(pool, networks) {
+  let total = 0;
+  for (const n of networks) {
+    const dsChain = DS_CHAIN[n.id];
+    if (!dsChain) continue;
+    const { rows } = await pool.query(
+      // Only coins that can still make the list: dead ones stop refreshing and age out.
+      `select address from ext_tokens where network = $1 and seen_at > now() - interval '24 hours'
+         and coalesce(vol_24h, 0) >= 5000
+       order by vol_24h desc nulls last limit 1500`,
+      [n.id]
+    );
+    const addrs = rows.map((r) => r.address);
+    for (let i = 0; i < addrs.length; i += 30) {
+      const pairs = await ds(`/tokens/v1/${dsChain}/${addrs.slice(i, i + 30).join(",")}`).catch(() => []);
+      const got = rowsFromDexscreener(pairs, n.id, n.chainId);
+      // Don't let a refresh wipe a trending rank set by GeckoTerminal.
+      await save(pool, got); // trending_rank is null here, so GeckoTerminal's rank is kept
+      total += got.length;
+      await sleep(250); // ~240 calls a minute at most, under DexScreener's 300
+    }
+  }
+  return total;
+}
+
 /** DexScreener pairs -> { tokenAddress: imageUrl }. Exported for tests. */
 export function imagesFromDexscreener(json) {
   const out = {};
@@ -345,14 +374,15 @@ export async function marketsLoop(pool, log) {
     for (const n of networks) {
       try {
         const got = [];
-        // One page of each list per round (20 pools a page), pages 1-3 in turn:
-        // ~60 trending + ~60 busiest coins per chain, without extra calls.
-        const page = ((round - 1) % PAGES) + 1;
+        // One page of each list per round: ~100 trending + ~200 busiest coins per chain
+        // over a full cycle, without extra calls per round.
+        const page = ((round - 1) % TREND_PAGES) + 1;
         const offset = (page - 1) * 20;
         const t = await gt(`/networks/${n.id}/trending_pools?include=base_token&page=${page}`);
         got.push(...rowsFromPools(t, n.id, n.chainId, offset));
         await sleep(GAP);
-        const top = await gt(`/networks/${n.id}/pools?include=base_token&page=${page}&sort=h24_volume_usd_desc`);
+        const topPage = ((round - 1) % TOP_PAGES) + 1;
+        const top = await gt(`/networks/${n.id}/pools?include=base_token&page=${topPage}&sort=h24_volume_usd_desc`);
         got.push(...rowsFromPools(top, n.id, n.chainId));
         await sleep(GAP);
         // Brand-new pools rarely pass the volume bar yet: every third round is enough.
@@ -399,6 +429,14 @@ export async function marketsLoop(pool, log) {
       if (round <= 3 || round % 30 === 0) log(`markets: ${got} coins from DexScreener`);
     } catch (e) {
       log(`markets: DexScreener ${e.message}`);
+    }
+    // Keep every coin seen in the last day fresh (price, volume, liquidity) from DexScreener,
+    // 30 per call, so a bigger list doesn't mean staler numbers.
+    try {
+      const n = await refreshKnown(pool, networks);
+      if (round <= 3 || round % 30 === 0) log(`markets: refreshed ${n} coins from DexScreener`);
+    } catch (e) {
+      log(`markets: DexScreener refresh ${e.message}`);
     }
     // Missing pictures: ask DexScreener (projects often upload theirs there first).
     await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
