@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Base tokens that aren't memecoins (wrapped gas coins, stablecoins, majors).
 const NOT_MEME = new Set(
-  ["WETH", "ETH", "WBNB", "BNB", "USDC", "USDT", "DAI", "USDE", "USDS", "FDUSD", "USDG", "WBTC", "CBBTC", "BTCB", "TBTC", "CBETH", "WSTETH", "STETH", "RETH", "EURC", "USD1", "PYUSD", "FRAX", "LUSD", "GHO", "USDBC"].map((s) => s.toUpperCase())
+  ["WETH", "ETH", "WBNB", "BNB", "USDC", "USDT", "DAI", "USDE", "USDS", "FDUSD", "USDG", "WBTC", "CBBTC", "BTCB", "TBTC", "CBETH", "WSTETH", "STETH", "RETH", "EURC", "USD1", "PYUSD", "FRAX", "LUSD", "GHO", "USDBC", "XAUT", "PAXG", "XAUM", "KAU", "KAG"].map((s) => s.toUpperCase())
 );
 
 /**
@@ -35,7 +35,8 @@ export function notMeme(symbol, name) {
     /^W(ETH|BTC|BNB|SOL|AVAX|POL|MATIC|S)$/.test(s) ||
     /^(ST|WST|WE|EZ|R|CB|S|M|OS)ETH$/.test(s) ||
     /\bwrapped\b/i.test(n) ||
-    /\bstable ?coin\b/i.test(n)
+    /\bstable ?coin\b/i.test(n) ||
+    /\b(tether gold|pax gold)\b/i.test(n)
   );
 }
 
@@ -438,10 +439,13 @@ export async function marketsLoop(pool, log) {
     } catch (e) {
       log(`markets: DexScreener refresh ${e.message}`);
     }
+    await sleep(3000); // let DexScreener's per-minute window recover after the refresh
     // Missing pictures: ask DexScreener (projects often upload theirs there first).
     await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
     // Coins stay searchable for 30 days after their last trade, then go.
     await pool.query("delete from ext_tokens where seen_at < now() - interval '30 days'").catch(() => {});
+    // Coins added before a symbol joined the not-a-meme list (gold tokens, stables…) go too.
+    await pool.query("delete from ext_tokens where upper(symbol) = any($1)", [[...NOT_MEME]]).catch(() => {});
     await sleep(Math.max(5_000, every - (Date.now() - started)));
   }
 }

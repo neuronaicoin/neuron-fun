@@ -72,7 +72,12 @@ function toExt(r: Record<string, unknown>): ExtCoin {
     liqUsd: n(r.liq_usd),
     vol24h: n(r.vol_24h),
     change1h: n(r.change_1h),
-    change24h: n(r.change_24h),
+    // Over +10,000% in a day means the pool just opened (its first trade set a tiny
+    // start price): a number like +342,459% says nothing, so show none.
+    change24h: (() => {
+      const c = n(r.change_24h);
+      return c !== null && Math.abs(c) > 10_000 ? null : c;
+    })(),
     buys24h: n(r.buys_24h),
     sells24h: n(r.sells_24h),
     poolCreated: (r.pool_created as string) ?? null,

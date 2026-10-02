@@ -121,7 +121,7 @@ textarea {
    before first paint when the host is sasapad.fun, so there is no flash.
    --------------------------------------------------------------------- */
 html:not(.is-landing) .landing-root { display: none; }
-html.is-landing .app-root,
+html.is-landing .app-root { display: none; }
 /* The wrapper is only there to hide the chrome on some pages; otherwise it
    must not box the header in, or the header can't stay stuck to the top. */
 .app-chrome { display: contents; }
