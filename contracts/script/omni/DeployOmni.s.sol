@@ -133,7 +133,7 @@ contract DeployOmni is Script {
             : address(new OftUsdBridge(IOFT(o.usd), endpoint, deployer));
         MigratorV6 migrator = new MigratorV6(
             IPoolManager(poolManager), IPositionManager(positionManager), IAllowanceTransfer(PERMIT2), IERC20(o.usd),
-            IHubLocal(o.hub), o.bridge, rewards, 3_000, salt
+            IHubLocal(o.hub), o.bridge, rewards, treasury, 3_000, salt
         );
         o.migrator = address(migrator);
         o.router = address(new UsdPoolRouter(IPoolManager(poolManager), IUsdGraduatedPools(o.migrator)));

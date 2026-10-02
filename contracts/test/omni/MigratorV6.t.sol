@@ -15,7 +15,10 @@ import {USDC6, FactoryStub} from "./UsdCurveV6.t.sol";
 contract MigratorHarness is MigratorV6Core {
     uint256 public poolUsdc;
     uint256 public poolTokens;
+    address public feeTo;
     constructor(IERC20 u, IHubLocal h, address b) MigratorV6Core(u, h, b) {}
+    function setFeeTo(address a) external { feeTo = a; }
+    function _gradFeeTo() internal view override returns (address) { return feeTo; }
     function _openPool(bytes32, address, uint256 tokens, uint256 money) internal override {
         poolUsdc = money;
         poolTokens = tokens;
@@ -147,6 +150,23 @@ contract MigratorV6Test is Test {
         assertApproxEqRel(u, total, 0.002e18);
         vm.expectRevert(MigratorV6Core.NotReady.selector);
         migB.open(ID);
+    }
+
+    function test_graduationFee_twoPercentToTreasury_priceUnchanged() public {
+        address treasury = address(0x7EA5);
+        MigratorHarness(address(migB)).setFeeTo(treasury);
+        (uint256 total, uint256 pool) = _graduate();
+        consA.forward(ID);
+        migB.open(ID);
+        uint256 u = migB.poolUsdc();
+        uint256 c = migB.poolTokens();
+        uint256 fee = usdcB.balanceOf(treasury);
+        // 2% of what arrived goes to the treasury; the pool gets the rest.
+        assertApproxEqRel(fee, (total * 200) / 10_000, 0.003e18);
+        assertEq(u + fee, (u + fee)); // sanity
+        assertApproxEqRel(u, (total * 9_800) / 10_000, 0.003e18);
+        // The same share of coins is burned, so the pool still opens at P_g.
+        assertApproxEqRel(u * 1e18 / c, total * 1e18 / pool, 1e12);
     }
 
     function test_slowBridge_opensAfter30MinWithWhatArrived_lateMoneyBuysBack() public {

@@ -47,6 +47,7 @@ contract OmniV6ForkTest is Test {
 
     address keeper = makeAddr("keeper");
     address protocol = makeAddr("protocol");
+    address treasury = makeAddr("treasury");
     address creator = makeAddr("creator");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
@@ -111,7 +112,7 @@ contract OmniV6ForkTest is Test {
         }
         migrator = new MigratorV6(
             pm, IPositionManager(positionManager), IAllowanceTransfer(PERMIT2), usdc, IHubLocal(address(hub)),
-            makeAddr("bridge"), protocol, 3_000, hs
+            makeAddr("bridge"), protocol, treasury, 3_000, hs
         );
         router = new UsdPoolRouter(pm, IUsdGraduatedPools(address(migrator)));
         migrator.bindRouter(IV6BuybackRouter(address(router)));
@@ -173,6 +174,7 @@ contract OmniV6ForkTest is Test {
             : 0;
         if (low) assertApproxEqRel(priceX18, (pool * 1e18) / total, 0.001e18, "opening price = P_g");
         assertLe(coin.totalSupply(), 1_000_000_000 ether, "supply cap");
+        assertEq(usdc.balanceOf(treasury), (total * 200) / 10_000, "2% graduation fee to the treasury");
         assertEq(usdc.balanceOf(address(curve)), curve.creatorFees() + curve.protocolFees(), "curve keeps only fees");
 
         vm.startPrank(bob);

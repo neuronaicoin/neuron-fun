@@ -40,6 +40,9 @@ abstract contract MigratorV6Core is ReentrancyGuard {
     uint256 public constant BPS = 10_000;
     uint256 public constant READY_BPS = 9_900;
     uint256 public constant OPEN_WAIT = 30 minutes;
+    /// @notice sasa's graduation fee: 2% of the money going to the pool, sent to the treasury.
+    /// The same share of the pool's coins is burned, so the pool still opens at P_g.
+    uint256 public constant GRAD_FEE_BPS = 200;
 
     IERC20 public immutable usdc;
     IHubLocal public immutable hub;
@@ -69,6 +72,7 @@ abstract contract MigratorV6Core is ReentrancyGuard {
     event HandedOver(bytes32 indexed coin, uint256 money, uint256 poolTokens, uint256 total);
     event Arrived(bytes32 indexed coin, uint256 amount, bool buyback, bool late);
     event PoolOpened(bytes32 indexed coin, uint256 usdcIn, uint256 tokensIn, uint256 tokensBurned);
+    event GraduationFee(bytes32 indexed coin, address indexed to, uint256 amount);
     event BuybackFunded(bytes32 indexed coin, uint256 amount);
 
     error NotTheCurve();
@@ -153,11 +157,27 @@ abstract contract MigratorV6Core is ReentrancyGuard {
         uint256 money = g.received;
         // Same price as decided: coins in proportion to the money that arrived.
         uint256 tokens = g.received >= g.expected ? g.tokens : (g.tokens * money) / g.expected;
-        uint256 burn = g.tokens - tokens;
         _held -= money;
+        // Graduation fee: 2% of the money to the treasury, 2% of the coins burned (price unchanged).
+        uint256 fee = (money * GRAD_FEE_BPS) / BPS;
+        address feeTo = _gradFeeTo();
+        if (feeTo == address(0)) fee = 0;
+        uint256 feeTokens = fee == 0 ? 0 : (tokens * GRAD_FEE_BPS) / BPS;
+        money -= fee;
+        tokens -= feeTokens;
+        uint256 burn = g.tokens - tokens;
+        if (fee > 0) {
+            usdc.safeTransfer(feeTo, fee);
+            emit GraduationFee(coin, feeTo, fee);
+        }
         if (burn > 0) ICoinBurn(g.token).burn(burn);
         emit PoolOpened(coin, money, tokens, burn);
         _openPool(coin, g.token, tokens, money);
+    }
+
+    /// @dev Where the graduation fee goes (address(0): no fee).
+    function _gradFeeTo() internal view virtual returns (address) {
+        return address(0);
     }
 
     /// @dev Creates the locked pool with exactly these amounts (both already held here).

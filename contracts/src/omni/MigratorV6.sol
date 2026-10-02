@@ -61,6 +61,8 @@ contract MigratorV6 is MigratorV6Core {
     IAllowanceTransfer public immutable permit2;
     NeuronGraduationHook public immutable hook;
     address public immutable protocolFeeRecipient;
+    /// @notice Receives the graduation fee (sasa's treasury).
+    address public immutable treasury;
     uint16 public immutable creatorShareBps;
     address private immutable deployer;
 
@@ -100,19 +102,21 @@ contract MigratorV6 is MigratorV6Core {
         IHubLocal hub_,
         address bridge_,
         address protocolFeeRecipient_,
+        address treasury_,
         uint16 creatorShareBps_,
         bytes32 hookSalt
     ) MigratorV6Core(usdc_, hub_, bridge_) {
         if (
             address(poolManager_) == address(0) || address(positionManager_) == address(0)
                 || address(permit2_) == address(0) || address(usdc_) == address(0) || protocolFeeRecipient_ == address(0)
-                || address(hub_) == address(0) || bridge_ == address(0)
+                || address(hub_) == address(0) || bridge_ == address(0) || treasury_ == address(0)
         ) revert ZeroAddress();
         if (creatorShareBps_ > BPS) revert BadShare();
         poolManager = poolManager_;
         positionManager = positionManager_;
         permit2 = permit2_;
         protocolFeeRecipient = protocolFeeRecipient_;
+        treasury = treasury_;
         creatorShareBps = creatorShareBps_;
         deployer = msg.sender;
         hook = new NeuronGraduationHook{salt: hookSalt}(address(poolManager_), address(this));
@@ -143,6 +147,10 @@ contract MigratorV6 is MigratorV6Core {
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(hook))
         });
+    }
+
+    function _gradFeeTo() internal view override returns (address) {
+        return treasury;
     }
 
     function _openPool(bytes32 coinId, address token, uint256 tokenAmount, uint256 quoteAmount) internal override {
