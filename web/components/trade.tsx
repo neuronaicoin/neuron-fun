@@ -48,6 +48,8 @@ function allowanceSlot(owner: Address, spender: Address, base: number): Hex {
   return keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [spender, inner]));
 }
 
+type Leg = { c: CurveInfo; amount: bigint };
+
 function ethFromUsd(usdAmount: number, ethUsd: number): bigint {
   // Dollar edition: amounts are USDC (6 decimals), so $1 = 1,000,000 units.
   if (USD_MODE) return BigInt(Math.floor(usdAmount * 1e6 + 1e-6));
@@ -198,6 +200,39 @@ export function QuickTrade({
   const sellWei = bal ? (bal.tok * BigInt(sellPct)) / 100n : 0n;
   const amount = side === "buy" ? buyWei : sellWei;
 
+  // One tap, every chain: the trade is split into legs, one per chain, done in the background.
+  // Buy: the cheapest chain that has the cash; if no single chain has enough, the cash on each
+  // chain is used, cheapest first. Sell: the chosen share of what is held on every chain.
+  const spendable = (c: CurveInfo) => {
+    const e = bals[c.chain.key]?.eth ?? 0n;
+    return e > reserve ? e - reserve : 0n;
+  };
+  const legs: Leg[] = (() => {
+    if (side === "sell") {
+      return sellable
+        .map((c) => ({ c, amount: ((bals[c.chain.key]?.tok ?? 0n) * BigInt(sellPct)) / 100n }))
+        .filter((l) => l.amount > 0n);
+    }
+    if (!chosen || buyWei === 0n) return [];
+    if (spendable(chosen) >= buyWei) return [{ c: chosen, amount: buyWei }];
+    const order = open.filter((c) => !lockOf(c)).sort((x, y) => nativePerToken(x) - nativePerToken(y));
+    const out: Leg[] = [];
+    let left = buyWei;
+    for (const c of order) {
+      if (left === 0n) break;
+      const take = spendable(c) < left ? spendable(c) : left;
+      if (take > 0n) {
+        out.push({ c, amount: take });
+        left -= take;
+      }
+    }
+    return left === 0n ? out : [{ c: chosen, amount: buyWei }];
+  })();
+  const legKey = legs.map((l) => `${l.c.chain.key}:${l.amount}`).join("|");
+  // What every chain together holds: one Cash and one holding figure, no chain names.
+  const cashAll = open.reduce((t, c) => t + (bals[c.chain.key]?.eth ?? 0n), 0n);
+  const heldAll = sellable.reduce((t, c) => t + (bals[c.chain.key]?.tok ?? 0n), 0n);
+
   // Price gap between the cheapest and dearest open chain, for the hint.
   const gap = useMemo(() => {
     if (open.length < 2) return null;
@@ -208,13 +243,12 @@ export function QuickTrade({
 
   useEffect(() => {
     setQuote(null);
-    if (!chosen || amount === 0n) return;
-    const t = setTimeout(async () => {
-      try {
-        const pub = clientFor(chosen.chain);
-        if (inPool(chosen)) {
+    if (!legs.length) return;
+    const quoteLeg = async (leg: CurveInfo, legAmount: bigint): Promise<bigint | null> => {
+        const pub = clientFor(leg.chain);
+        if (inPool(leg)) {
           // Quote by simulating the router trade, with enough balance or allowance pretended.
-          const router = await routerOf(chosen);
+          const router = await routerOf(leg);
           if (side === "buy") {
             // Pretend the quote account holds and approved the USDC (TestUSDC storage layout).
             const sim = await pub.simulateContract({
@@ -222,47 +256,52 @@ export function QuickTrade({
               address: router,
               abi: routerAbi,
               functionName: "buy",
-              args: [chosen.token, amount, 0n, QUOTE_ACCOUNT, deadline()],
+              args: [leg.token, legAmount, 0n, QUOTE_ACCOUNT, deadline()],
               stateOverride: [
                 {
-                  address: chosen.chain.usdc,
+                  address: leg.chain.usdc,
                   stateDiff: [
-                    { slot: balanceSlot(QUOTE_ACCOUNT, chosen.chain.usdcSlots.balance), value: numberToHex(amount, { size: 32 }) },
-                    { slot: allowanceSlot(QUOTE_ACCOUNT, router, chosen.chain.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) },
+                    { slot: balanceSlot(QUOTE_ACCOUNT, leg.chain.usdcSlots.balance), value: numberToHex(legAmount, { size: 32 }) },
+                    { slot: allowanceSlot(QUOTE_ACCOUNT, router, leg.chain.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) },
                   ],
                 },
               ],
             });
-            setQuote(sim.result as bigint);
+            return sim.result as bigint;
           } else if (address) {
             const sim = await pub.simulateContract({
               account: address,
               address: router,
               abi: routerAbi,
               functionName: "sell",
-              args: [chosen.token, amount, 0n, address, deadline()],
+              args: [leg.token, legAmount, 0n, address, deadline()],
               stateOverride: [
-                { address: chosen.token, stateDiff: [{ slot: allowanceSlot(address, router, COIN_SLOTS.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
+                { address: leg.token, stateDiff: [{ slot: allowanceSlot(address, router, COIN_SLOTS.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
               ],
             });
-            setQuote(sim.result as bigint);
+            return sim.result as bigint;
           }
-          return;
+          return null;
         }
         const q = await pub.readContract({
-          address: chosen.curve,
+          address: leg.curve,
           abi: curveAbi,
           functionName: side === "buy" ? "quoteBuy" : "quoteSell",
-          args: [amount],
+          args: [legAmount],
         });
-        setQuote(q as bigint);
+        return q as bigint;
+    };
+    const t = setTimeout(async () => {
+      try {
+        const qs = await Promise.all(legs.map((l) => quoteLeg(l.c, l.amount)));
+        setQuote(qs.some((q) => q === null) ? null : qs.reduce((a: bigint, q) => a + (q as bigint), 0n));
       } catch {
         setQuote(null);
       }
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [side, amount, chosen?.curve, chosen?.state, address, priced]);
+  }, [side, legKey, address, priced]);
 
   if (coin.graduating) return <GraduatingNotice />;
   if (!open.length && !sellable.length) {
@@ -273,7 +312,10 @@ export function QuickTrade({
     );
   }
 
-  const notEnough = side === "buy" ? !!bal && bal.eth < buyWei + reserve : sellWei === 0n;
+  const notEnough =
+    side === "buy"
+      ? Object.keys(bals).length > 0 && legs.reduce((t, l) => t + l.amount, 0n) >= buyWei && legs.some((l) => spendable(l.c) < l.amount)
+      : legs.length === 0;
   // Only people who still hold coins on a chain that lost the race need to know
   // about it (and that they can always sell). Everyone else never sees chains.
   const closedHere = side === "sell" && chosen?.state === "closed" && (bals[chosen.chain.key]?.tok ?? 0n) > 0n;
@@ -307,8 +349,8 @@ export function QuickTrade({
     });
   }
 
-  async function submit() {
-    if (!address || !chosen || amount === 0n) return;
+  async function runLeg(chosen: CurveInfo, amount: bigint, last: boolean): Promise<boolean> {
+    if (!address || amount === 0n) return false;
     setError(""); setErrorDetail("");
     setDone(null);
     let undoCash: (() => void) | null = null;
@@ -393,7 +435,7 @@ export function QuickTrade({
       setPriced((n) => n + 1);
       onDone?.({ hash, side, chainKey: chosen.chain.key });
       // Sold everything: go back to Buy, so the panel doesn't sit on an empty Sell tab.
-      if (side === "sell" && sellPct === 100 && open.length) setSide("buy");
+      if (last && side === "sell" && sellPct === 100 && open.length) setSide("buy");
       // Tell the chart and trade list right away; read the new curve price for an instant update.
       const signal = (nativePerToken: number | null) =>
         signalTrade({ chainId: chosen.chain.chain.id, curve: chosen.curve, coinId: coin.id, nativePerToken });
@@ -419,6 +461,7 @@ export function QuickTrade({
         const got = proceeds;
         checkProfit(soldTokens, got, chosen.chain.short).catch(() => {});
       }
+      return true;
     } catch (e) {
       // Sent, but the node never confirmed it back: most likely it went through.
       if (String((e as Error)?.message ?? "").includes(SENT_UNCONFIRMED)) {
@@ -428,7 +471,7 @@ export function QuickTrade({
           void refreshPortfolio();
           onTraded();
         }, 4_000);
-        return;
+        return true;
       }
       // It didn't go through: put the balance back.
       undoCash?.();
@@ -439,11 +482,22 @@ export function QuickTrade({
       setError(friendlyError(e));
       // A pause or a full chain may be why: show it on the button right away.
       void refreshSafety().catch(() => {});
+      return false;
     } finally {
       setBusy("");
     }
   }
 
+
+  /** One tap: every leg of the trade, chain by chain, stopping at the first that fails. */
+  async function submit() {
+    if (!address || !legs.length) return;
+    const plan = legs;
+    for (let i = 0; i < plan.length; i++) {
+      const ok = await runLeg(plan[i].c, plan[i].amount, i === plan.length - 1);
+      if (!ok) break;
+    }
+  }
   const doneChain = done ? coin.curves.find((c) => c.chain.key === done.chainKey)?.chain : null;
   const receive =
     quote === null
@@ -502,9 +556,9 @@ export function QuickTrade({
           <label className="block mt-5">
             <span className="flex items-center justify-between gap-2 text-[0.8125rem] font-semibold text-ink-3">
               <span>You pay</span>
-              {address && bal && ethUsd !== null && (
+              {address && Object.keys(bals).length > 0 && ethUsd !== null && (
                 <span className="font-normal">
-                  Cash {usd((Number(bal.eth) / 1e18) * ethUsd, 2)} ·{" "}
+                  Cash {usd((Number(cashAll) / 1e18) * ethUsd, 2)} ·{" "}
                   <button type="button" onClick={(e) => { e.preventDefault(); openMoney({ kind: "deposit" }); }} className="font-bold text-emerald">
                     ＋ Deposit
                   </button>
@@ -550,64 +604,15 @@ export function QuickTrade({
               </button>
             ))}
           </div>
-          {address && bal && (
+          {address && Object.keys(bals).length > 0 && (
             <p className="text-[0.75rem] text-ink-3 mt-2">
-              You hold {fmtTokens(bal.tok)} ${coin.symbol} on {chosen?.chain.short}
-              {ethUsd !== null && chosen && bal.tok > 0n ? ` (≈ ${usd(Number(formatEther(bal.tok)) * nativePerToken(chosen) * ethUsd, 2)})` : ""}
+              You hold {fmtTokens(heldAll)} ${coin.symbol}
             </p>
           )}
         </>
       )}
 
-      {/* Chains stay out of sight: the best one is picked; a tap on "change" shows the choice. */}
-      {(side === "buy" ? open : sellable).length > 1 && chosen && !showChains && (
-        <div className="mt-3 flex items-center justify-between text-[0.75rem] text-ink-3">
-          <span>
-            {side === "buy" ? (
-              <span className="text-up font-semibold">Best price picked{gap !== null && gap > 0 && picked === null ? ` · up to ${gap}% cheaper` : ""}</span>
-            ) : (
-              <span>Sells where you hold it</span>
-            )}
-            <span> · {chosen.chain.short}</span>
-          </span>
-          <button type="button" onClick={() => setShowChains(true)} className="font-semibold text-ink-2 underline underline-offset-2">
-            change
-          </button>
-        </div>
-      )}
-      {(side === "buy" ? open : sellable).length > 1 && chosen && showChains && (
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-[0.75rem] text-ink-3">
-            <span>{side === "buy" ? "Buying on" : "Selling on"}</span>
-            {side === "buy" && gap !== null && gap > 0 && picked === null && (
-              <span className="text-up font-semibold">Best price picked · up to {gap}% cheaper</span>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {(side === "buy" ? open : sellable).map((c) => (
-              <button
-                key={c.chain.key}
-                type="button"
-                onClick={() => setPicked(c.chain.key)}
-                className={"h-8 px-3 rounded-full text-[0.75rem] font-semibold border " + (c.chain.key === chosen.chain.key ? "text-white border-transparent" : "border-line text-ink-2")}
-                style={c.chain.key === chosen.chain.key ? { background: c.chain.color } : undefined}
-              >
-                {c.chain.short}
-                {c.state === "closed"
-                  ? " · closed"
-                  : inPool(c)
-                    ? " · pool"
-                    : side === "buy" && lockOf(c) === "paused"
-                      ? " · paused"
-                      : side === "buy" && lockOf(c) === "full"
-                        ? " · full"
-                        : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* No chain choice anywhere: the trade goes wherever it should, split if needed. */}
       {lock && chosen && (
         <p className="mt-3 text-[0.8125rem] text-warn-ink bg-warn-bg rounded-xl p-3" role="status">
           {lock === "paused"
@@ -617,7 +622,7 @@ export function QuickTrade({
             <>
               {" "}
               <button type="button" onClick={() => setPicked(elsewhere.chain.key)} className="font-bold text-emerald">
-                Buy on {elsewhere.chain.short} instead
+                Buy anyway
               </button>
             </>
           )}
