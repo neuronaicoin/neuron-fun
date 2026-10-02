@@ -43,5 +43,8 @@ jobs:
       - name: v6 on a fork of Base (real USDC, Base's Uniswap v4)
         run: forge test --match-path "test/fork/NeuronOmniV6*" --fork-url base -vvv
 
+      - name: Real dollars' storage slots (Base USDC, Robinhood USDG)
+        run: forge test --match-path "test/fork/DollarSlots*" -vv
+
       - name: Across bridge on forks of Base and Robinhood (real SpokePools, USDC and USDG)
         run: forge test --match-path "test/fork/AcrossBridge*" -vvv
