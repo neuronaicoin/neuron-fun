@@ -25,6 +25,7 @@ Everything below is done one step at a time, together. Contracts first, then the
 10. Railway keeper: DEPLOYMENTS, RPC_4663, RPC_8453, PRIVATE_KEY (keeper wallet)
 10b. Railway neuron-fun (indexer) also: TARGET_USD=10000 (alerts and share cards)
 10c. Cloudflare Pages: environment variable TARGET_USD=10000 (forum pages)
+10e. Alerts (Railway keeper + rewards): TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or RESEND_API_KEY + ALERT_EMAIL
 10d. ETH for gas: keeper wallet and sasa rewards wallet, a few dollars on each chain (rewards pays payouts and runs auto orders)
 11. Supabase SQL: indexer/boost.sql, then indexer/reset-mainnet.sql
 12. Privy: production mode (own Google login keys); Alchemy: confirm gas sponsorship works on Robinhood Chain mainnet, monthly spend cap set; key domain allowlist stays

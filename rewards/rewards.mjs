@@ -31,6 +31,7 @@
 //   PROTOCOL_BPS, REFERRAL_BPS, COPY_BPS, REFERRAL_MONTHS   (defaults 7000, 2500, 1000, 12)
 //   FALLBACK_PRICE_USD    price to use if the live price can't be fetched (optional)
 
+import { alert } from "./alert.mjs";
 import pg from "pg";
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, getAddress, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -298,6 +299,7 @@ async function payChain(c) {
   if (c.token) {
     if (gas < MIN_GAS) {
       log(`${c.name}: the rewards wallet needs a little ${c.native ?? "ETH"} for gas; paying later`);
+      await alert("rewards", `gas-${c.name}`, `the rewards wallet ${account.address} needs ${c.native ?? "ETH"} for gas on ${c.name}; payouts and auto orders wait until it's topped up.`);
       return;
     }
     budget = await c.pub.readContract({ address: c.token, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
@@ -400,18 +402,23 @@ async function main() {
           if (!paused && new Date().getUTCHours() >= PAYOUT_HOUR) await payChain(c);
         } catch (e) {
           log(`${c.name}: ${e.shortMessage ?? e.message}`);
+          await alert("rewards", `chain-${c.name}`, `${c.name}: ${e.shortMessage ?? e.message}`);
         }
       }
     } catch (e) {
       if (/relation "(reward_ledger|rewards_state|referrals|reward_payouts)" does not exist/.test(e.message)) {
         log("run indexer/rewards.sql in Supabase first");
-      } else log(`rewards: ${e.message}`);
+      } else {
+        log(`rewards: ${e.message}`);
+        await alert("rewards", "loop", e.message);
+      }
     }
     await sleep(Number(process.env.LOOP_MS ?? 60_000));
   }
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   log("fatal", e);
+  await alert("rewards", "fatal", `stopped: ${e?.message ?? e}`);
   process.exit(1);
 });

@@ -22,6 +22,7 @@
 //   LZ_FEE_WEI    native sent per LayerZero message; the unused part is refunded (default 0.0003 ETH)
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { alert } from "./alert.mjs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -158,6 +159,13 @@ async function main() {
   const chains = loadChains();
   if (chains.length === 0) throw new Error("no chains configured");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
+  // Gas for the keeper itself: warn early, a stuck keeper stops graduations.
+  for (const c of chains) {
+    const bal = await c.pub.getBalance({ address: account.address }).catch(() => null);
+    if (bal !== null && bal < BigInt(env("MIN_GAS_WEI", "2000000000000000"))) {
+      await alert("keeper", `gas-${c.chainId}`, `keeper wallet ${account.address} is low on ETH on chain ${c.chainId} (${Number(bal) / 1e18} ETH). Top it up.`);
+    }
+  }
   const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
 
   // Discover launches (each chain lists the coins launched there). Progress is kept per
@@ -211,6 +219,12 @@ async function main() {
     const [, target] = await reads[0].c.pub.readContract({ address: reads[0].c.hub, abi: hubAbi, functionName: "localOf", args: [id] });
     const total = reads.reduce((s, r) => s + r.money, 0n);
     const anySettled = reads.some((r) => r.st === SETTLED);
+
+    // A graduation should finish in minutes; frozen for more than 30 minutes means trouble.
+    if (reads.some((r) => r.st === FROZEN)) {
+      coin.frozenSince ??= Date.now();
+      if (Date.now() - coin.frozenSince > 30 * 60_000) await alert("keeper", `stuck-${id}`, `${coin.name} has been graduating for over 30 minutes. Check the keeper log.`);
+    } else delete coin.frozenSince;
 
     // 1. freeze
     if (!anySettled && total >= target) {
@@ -305,9 +319,16 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   if (LOOP_SECONDS > 0) {
     (async () => {
       log(`omni keeper: looping every ${LOOP_SECONDS}s`);
+      let failures = 0;
       for (;;) {
         STARTED = Date.now();
-        await main().catch((e) => log(`pass failed: ${e?.shortMessage ?? e?.message ?? e}`));
+        await main()
+          .then(() => (failures = 0))
+          .catch(async (e) => {
+            failures += 1;
+            log(`pass failed: ${e?.shortMessage ?? e?.message ?? e}`);
+            if (failures >= 3) await alert("keeper", "pass", `${failures} passes in a row failed: ${e?.shortMessage ?? e?.message ?? e}`);
+          });
         await new Promise((r) => setTimeout(r, LOOP_SECONDS * 1000));
       }
     })();
