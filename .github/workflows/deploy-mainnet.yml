@@ -28,7 +28,7 @@ on:
         options: [rewards, deploy, wire, orders, handover, settings]
       cap_usd:
         description: "Money cap per chain during the beta, in dollars (handover step)"
-        default: "5000"
+        default: "15000"
       broadcast:
         description: "Actually send transactions (leave unticked for a free dry run)"
         type: boolean
