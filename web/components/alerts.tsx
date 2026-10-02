@@ -5,6 +5,7 @@
  * coin's name (set / manage alerts) and phone notifications setup.
  */
 import Link from "next/link";
+import { ordersChanged } from "@/lib/myorders";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -92,6 +93,16 @@ function ToastHost() {
     return () => {
       toastSet = null;
     };
+  }, []);
+  // Auto order fills (from the notifications check) pop up here too.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ title: string }>).detail;
+      if (d?.title) setMsg({ text: d.title, key: Date.now() });
+      ordersChanged();
+    };
+    window.addEventListener("sasa-order-filled", on);
+    return () => window.removeEventListener("sasa-order-filled", on);
   }, []);
   useEffect(() => {
     if (!msg) return;

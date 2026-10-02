@@ -18,6 +18,7 @@ import { routerOf } from "@/lib/contracts";
 import { clientFor, db, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtTokens, friendlyError } from "@/lib/format";
 import { call } from "@/lib/tx";
+import { ordersChanged } from "@/lib/myorders";
 
 const TP = [25, 50, 100, 200, 500] as const;
 const SL = [10, 20, 30, 50] as const;
@@ -270,6 +271,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       setDip((x) => ({ ...x, on: false }));
       void load();
       void loadOrders();
+      ordersChanged();
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -285,6 +287,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       await send(c.chain.chain, [call(c.chain.orders, ordersAbi, "cancel", [o.id])], () => {});
       toast(o.isBuy ? "Cancelled. Your money is back in your cash." : "Cancelled");
       void loadOrders();
+      ordersChanged();
       void load();
     } catch (e) {
       toast(friendlyError(e));

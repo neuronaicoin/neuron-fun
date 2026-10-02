@@ -25,6 +25,8 @@ import { ForumCard } from "@/components/forumcard";
 import { CoinComments } from "@/components/comments";
 import { alertLinesFor, useAlerts } from "@/lib/alerts";
 import { useBuyerMarkers } from "@/lib/social";
+import { ORDER_COLOR, ORDER_LABEL, useMyOrders } from "@/lib/myorders";
+import { CoinOrders } from "@/components/myorders";
 import { curveAbi, tokenAbi } from "@/lib/abis";
 import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
@@ -49,6 +51,8 @@ function CoinPage() {
   const [chartChain, setChartChain] = useState("");
   const { alerts } = useAlerts();
   const alertLines = useMemo(() => alertLinesFor(alerts, id), [alerts, id]);
+  const wallet = useWallet();
+  const { orders: myOrders } = useMyOrders(wallet.address);
   const markerCurve = coin
     ? (coin.curves.find((c) => c.chain.key === chartChain) ?? coin.graduatedOn ?? [...coin.curves].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0])?.curve ?? null
     : null;
@@ -210,7 +214,9 @@ function CoinPage() {
                   ))}
                 </div>
               )}
-              <PriceChart curve={chartCurve} coin={USD_MODE ? coin : undefined} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} />
+              <PriceChart curve={chartCurve} coin={USD_MODE ? coin : undefined} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} orderMarks={(myOrders ?? [])
+                .filter((o) => o.chain.chain.id === chartCurve.chain.chain.id && o.curve === chartCurve.curve.toLowerCase())
+                .map((o) => ({ perToken: o.trigger, color: ORDER_COLOR[o.kind], title: ORDER_LABEL[o.kind] }))} />
             </div>
           )}
 
@@ -222,6 +228,10 @@ function CoinPage() {
             </div>
           </div>
 
+          {/* Phones: the user's open orders on this coin, right under the chart. */}
+          <div className="lg:hidden empty:hidden">
+            <CoinOrders coin={coin} />
+          </div>
           {/* Phones: the safety check sits here, folded, so the chart comes first. */}
           {!wide && <TrustCard coin={coin} collapsible />}
 
@@ -259,6 +269,9 @@ function CoinPage() {
         <div className="order-3 lg:order-2 lg:sticky lg:top-20">
           <div className="hidden lg:block">
             <QuickTrade coin={coin} ethUsd={ethUsd} onTraded={load} />
+            <div className="mt-3 empty:hidden">
+              <CoinOrders coin={coin} />
+            </div>
           </div>
           <MobileTradeBar coin={coin} ethUsd={ethUsd} onTraded={load} />
           {wide && <div className="mt-3"><TrustCard coin={coin} /></div>}

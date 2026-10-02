@@ -11,6 +11,7 @@ import { ConnectButton } from "@/components/chrome";
 import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
 import { TradesFeed } from "@/components/market";
 import { PositionRow } from "@/components/portfolio";
+import { AllOrders } from "@/components/myorders";
 import { Avatar, EditProfileSheet } from "@/components/social";
 import { AllowCopyCard } from "@/components/copy";
 import { InviteCard } from "@/components/invite";
@@ -105,6 +106,10 @@ export default function MePage() {
             </Link>
           )
         )}
+      </div>
+
+      <div className="mt-4 empty:hidden">
+        <AllOrders />
       </div>
 
       {/* Money */}

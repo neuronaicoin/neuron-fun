@@ -206,6 +206,10 @@ function wireOnce() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void refreshNotes();
   });
+  // Without push (or on a computer), still notice fills within half a minute while the site is open.
+  setInterval(() => {
+    if (document.visibilityState === "visible") void refreshNotes();
+  }, 30_000);
   // A push arrived while the site is open: show it in the 🔔 at once.
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", (e) => {
@@ -234,6 +238,14 @@ export async function refreshNotes() {
     const j = await api<{ notes: Note[]; unread: number }>("notes");
     const newest = before && before.length ? before[0].id : 0;
     const fresh = before !== null && j.notes.some((n) => n.id > newest && !n.read);
+    // An auto order filled while the site is open: say so right away, on any page.
+    if (before !== null && typeof window !== "undefined") {
+      for (const n of j.notes) {
+        if (n.id > newest && !n.read && n.kind === "order") {
+          window.dispatchEvent(new CustomEvent("sasa-order-filled", { detail: { title: n.title, url: n.url } }));
+        }
+      }
+    }
     set({ notes: j.notes, unread: j.unread, ring: fresh ? state.ring + 1 : state.ring });
     // A notification means an alert may have switched itself off.
     if (fresh) void refreshAlerts();

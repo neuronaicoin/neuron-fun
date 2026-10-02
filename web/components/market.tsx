@@ -44,6 +44,7 @@ export function PriceChart({
   coin,
   ethUsd,
   alertLines = [],
+  orderMarks = [],
   markers = [],
 }: {
   curve: CurveInfo;
@@ -51,6 +52,8 @@ export function PriceChart({
   coin?: Coin;
   ethUsd: number | null;
   alertLines?: number[];
+  /** The user's auto orders on this curve: the price per token (raw, like nativePerToken) where each fills. */
+  orderMarks?: { perToken: number; color: string; title: string }[];
   /** Buys by people you follow and big buys, shown under the candles. */
   markers?: { time: number; label: string; color: string; followed: boolean }[];
 }) {
@@ -245,6 +248,39 @@ export function PriceChart({
       }
     };
   }, [lineKey, range, curve.curve, ethUsd]);
+
+  // Solid lines where the user's take profit / stop loss / dip orders fill.
+  const orderKey = orderMarks.map((o) => `${o.perToken}:${o.color}:${o.title}`).join("|");
+  useEffect(() => {
+    const marks = orderKey
+      ? orderKey.split("|").map((x) => {
+          const [p, color, title] = x.split(":");
+          return { price: Number(p) * 1e9 * (ethUsd ?? 1), color, title };
+        })
+      : [];
+    let lines: IPriceLine[] = [];
+    let series: ISeriesApi<"Candlestick"> | null = null;
+    const draw = () => {
+      series = candlesRef.current;
+      if (!series) return false;
+      lines = marks
+        .filter((m) => Number.isFinite(m.price) && m.price > 0)
+        .map((m) => series!.createPriceLine({ price: m.price, color: m.color, lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: m.title }));
+      return true;
+    };
+    let t: ReturnType<typeof setInterval> | null = null;
+    if (!draw()) t = setInterval(() => draw() && t && clearInterval(t), 200);
+    return () => {
+      if (t) clearInterval(t);
+      if (series && candlesRef.current === series) {
+        for (const l of lines) {
+          try {
+            series.removePriceLine(l);
+          } catch {}
+        }
+      }
+    };
+  }, [orderKey, range, curve.curve, ethUsd]);
 
   // Buyer markers: one per candle (people you follow win over big buys).
   const markerKey = markers.map((m) => `${m.time}:${m.label}:${m.followed ? 1 : 0}`).join("|");
