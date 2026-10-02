@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Collects Neuron.fun trading fees and buys back and burns each launch's Parent.",
   "scripts": {
-    "start": "node keeper.mjs"
+    "start": "node keeper.mjs",
+    "omni": "node omni.mjs"
   },
   "dependencies": {
     "viem": "2.56.8"

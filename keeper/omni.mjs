@@ -41,7 +41,7 @@ const STATE_FILE = env("STATE_FILE", "./omni-state.json");
 const LZ_FEE = BigInt(env("LZ_FEE_WEI", "300000000000000"));
 // Stop starting new work after this long, save progress and let the next run continue.
 const BUDGET_MS = Number(env("BUDGET_MS", String(9 * 60_000)));
-const STARTED = Date.now();
+let STARTED = Date.now();
 const timeLeft = () => Date.now() - STARTED < BUDGET_MS;
 let key = env("PRIVATE_KEY").trim();
 if (!key.startsWith("0x")) key = `0x${key}`;
@@ -280,9 +280,24 @@ async function main() {
   log("pass done");
 }
 
+// LOOP_SECONDS set (e.g. on Railway): run forever, one pass every LOOP_SECONDS; a failed
+// pass is logged and retried next time. Unset (GitHub Actions): one pass, then exit.
+const LOOP_SECONDS = Number(env("LOOP_SECONDS", "0"));
+
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+  if (LOOP_SECONDS > 0) {
+    (async () => {
+      log(`omni keeper: looping every ${LOOP_SECONDS}s`);
+      for (;;) {
+        STARTED = Date.now();
+        await main().catch((e) => log(`pass failed: ${e?.shortMessage ?? e?.message ?? e}`));
+        await new Promise((r) => setTimeout(r, LOOP_SECONDS * 1000));
+      }
+    })();
+  } else {
+    main().catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+  }
 }
