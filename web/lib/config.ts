@@ -31,6 +31,8 @@ export type NeuronChain = {
    * the real token's layout (Circle USDC: 9 / 10).
    */
   usdcSlots: { balance: number; allowance: number };
+  /** Mainnet: Across's SpokePool here. Cash then moves between chains by itself when a buy needs it. */
+  acrossSpoke?: Address;
   startBlock: bigint;
   /** Price symbol of the gas coin (for dollar totals). */
   priceSymbol: "ETH" | "BNB" | "USD" | "USDC";

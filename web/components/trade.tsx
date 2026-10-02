@@ -11,6 +11,7 @@ import { curveAbi, routerAbi, tokenAbi, usdcAbi } from "@/lib/abis";
 import { USD_MODE, explorerTx, COIN_SLOTS } from "@/lib/config";
 import { SLIPPAGE_CHOICES, slippagePct, useSlippage } from "@/lib/slippage";
 import { call, type Call } from "@/lib/tx";
+import { canMove, moveCalls, quoteMove, waitArrival } from "@/lib/cashmove";
 import { signalTrade } from "@/lib/live";
 import { fetchTrades } from "@/lib/data";
 import { IS_TESTNET } from "@/lib/config";
@@ -315,9 +316,24 @@ export function QuickTrade({
     );
   }
 
+  // Cash sitting on another chain that can move here by itself (mainnet, Across).
+  const mover = (() => {
+    if (side !== "buy" || !chosen) return null;
+    // Only when no split across the coin's open chains can pay for it.
+    if (!(legs.length === 1 && spendable(legs[0].c) < legs[0].amount)) return null;
+    const need = buyWei - spendable(chosen);
+    if (need <= 0n) return null;
+    const src = [...new Map(coin.curves.map((c) => [c.chain.key, c.chain])).values()]
+      .filter((ch) => canMove(ch, chosen.chain))
+      .sort((a, b) => Number((bals[b.key]?.eth ?? 0n) - (bals[a.key]?.eth ?? 0n)))[0];
+    if (!src) return null;
+    // A little extra covers Across's fee (at most 2%; usually well under 0.5%).
+    const amount = need + need / 50n + 100_000n;
+    return (bals[src.key]?.eth ?? 0n) >= amount ? { src, amount } : null;
+  })();
   const notEnough =
     side === "buy"
-      ? Object.keys(bals).length > 0 && legs.reduce((t, l) => t + l.amount, 0n) >= buyWei && legs.some((l) => spendable(l.c) < l.amount)
+      ? !mover && Object.keys(bals).length > 0 && legs.reduce((t, l) => t + l.amount, 0n) >= buyWei && legs.some((l) => spendable(l.c) < l.amount)
       : legs.length === 0;
   // Only people who still hold coins on a chain that lost the race need to know
   // about it (and that they can always sell). Everyone else never sees chains.
@@ -495,6 +511,29 @@ export function QuickTrade({
   /** One tap: every leg of the trade, chain by chain, stopping at the first that fails. */
   async function submit() {
     if (!address || !legs.length) return;
+    if (mover && chosen) {
+      // Cash first, from the other chain to this one (same account), then the buy here.
+      const to = chosen.chain;
+      try {
+        setBusy("Getting your cash ready…");
+        const pub = clientFor(to);
+        const before = (await pub.readContract({ address: to.usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] })) as bigint;
+        const out = await quoteMove(mover.src, to, mover.amount);
+        await send(mover.src.chain, moveCalls(mover.src, to, address, mover.amount, out), () => {});
+        const arrived = await waitArrival(to, address, before, out);
+        if (!arrived) {
+          toast("Your cash is on its way. Tap Buy again in a moment.");
+          return;
+        }
+      } catch (e) {
+        toast(friendlyError(e));
+        return;
+      } finally {
+        setBusy("");
+      }
+      await runLeg(chosen, buyWei, true);
+      return;
+    }
     const plan = legs;
     for (let i = 0; i < plan.length; i++) {
       const ok = await runLeg(plan[i].c, plan[i].amount, i === plan.length - 1);
