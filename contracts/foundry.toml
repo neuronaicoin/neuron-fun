@@ -24,6 +24,7 @@ remappings = [
 [rpc_endpoints]
 robinhood = "https://rpc.mainnet.chain.robinhood.com"
 robinhood_testnet = "https://rpc.testnet.chain.robinhood.com"
+base = "https://mainnet.base.org"
 
 [etherscan]
 robinhood = { key = "empty", url = "https://robinhoodchain.blockscout.com/api" }
