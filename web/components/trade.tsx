@@ -134,7 +134,7 @@ export function QuickTrade({
   const loadBalances = useCallback(async () => {
     if (!address) return;
     const entries = await Promise.all(
-      sellable.map(async (c) => {
+      coin.curves.map(async (c) => {
         const pub = clientFor(c.chain);
         // `eth` is the cash a buy can spend: USDC in the dollar edition.
         const [eth, tok] = await Promise.all([
@@ -230,7 +230,10 @@ export function QuickTrade({
   })();
   const legKey = legs.map((l) => `${l.c.chain.key}:${l.amount}`).join("|");
   // What every chain together holds: one Cash and one holding figure, no chain names.
-  const cashAll = open.reduce((t, c) => t + (bals[c.chain.key]?.eth ?? 0n), 0n);
+  // Cash on every chain this coin was on: the same figure as the header.
+  const cashAll = [...new Map(coin.curves.map((c) => [c.chain.key, c])).values()].reduce((t, c) => t + (bals[c.chain.key]?.eth ?? 0n), 0n);
+  // Enough cash in total, just not where this coin trades now (mainnet moves it by itself).
+  const cashElsewhere = side === "buy" && buyWei > 0n && cashAll >= buyWei && legs.reduce((t, l) => t + spendable(l.c), 0n) < buyWei;
   const heldAll = sellable.reduce((t, c) => t + (bals[c.chain.key]?.tok ?? 0n), 0n);
 
   // Price gap between the cheapest and dearest open chain, for the hint.
@@ -668,7 +671,33 @@ export function QuickTrade({
         )}
       </div>
 
-      {address && side === "buy" && notEnough && (
+      {address && side === "buy" && notEnough && cashElsewhere && IS_TESTNET && legs[0] && (
+        <div className="mt-2 rounded-xl bg-paper border border-line p-3 text-center text-[0.8125rem] text-ink-2">
+          <button
+            type="button"
+            disabled={!!busy}
+            onClick={async () => {
+              const c = legs[0].c.chain;
+              try {
+                setBusy("Adding test cash…");
+                await send(c.chain, [call(c.usdc, usdcAbi, "faucet", [address])], () => {});
+                toast("+$100 free test cash ✓");
+                await loadBalances();
+                void refreshPortfolio(true);
+              } catch (e) {
+                toast(friendlyError(e));
+              } finally {
+                setBusy("");
+              }
+            }}
+            className="h-10 px-4 rounded-xl bg-emerald text-on-accent font-bold"
+          >
+            Get $100 free test cash
+          </button>
+          <p className="mt-2 leading-snug">On mainnet your cash moves to wherever the coin trades by itself, in about 2 seconds.</p>
+        </div>
+      )}
+      {address && side === "buy" && notEnough && !(cashElsewhere && IS_TESTNET) && (
         <p className="mt-2 text-center text-[0.875rem] text-ink-2">
           <button type="button" onClick={() => openMoney({ kind: "deposit" })} className="font-bold text-emerald">
             Deposit
