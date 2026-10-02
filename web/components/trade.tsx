@@ -14,7 +14,7 @@ import { call, type Call } from "@/lib/tx";
 import { canMove, moveCalls, quoteMove, waitArrival } from "@/lib/cashmove";
 import { signalTrade } from "@/lib/live";
 import { fetchTrades } from "@/lib/data";
-import { IS_TESTNET } from "@/lib/config";
+import { IS_TESTNET, SASA_TREASURY } from "@/lib/config";
 import type { ProfitInfo } from "@/lib/pnlcard";
 import { ProfitCard } from "./profitcard";
 import { coinShareUrl } from "./share";
@@ -72,6 +72,7 @@ export function QuickTrade({
   initialUsd,
   initialChainId,
   onDone,
+  copyFee = false,
 }: {
   coin: Coin;
   ethUsd: number | null;
@@ -88,6 +89,8 @@ export function QuickTrade({
   initialChainId?: number;
   /** Called once a trade is confirmed. */
   onDone?: (r: { hash: string; side: "buy" | "sell"; chainKey: string }) => void;
+  /** A copied trade: sasa takes 0.2% (mainnet). */
+  copyFee?: boolean;
 }) {
   const { address, embedded, send } = useWallet();
   // Email users pay no network fees, so nothing needs to be kept back.
@@ -382,6 +385,9 @@ export function QuickTrade({
       const calls: Call[] = [];
       let proceeds: bigint | null = null;
       if (side === "buy") {
+        // Copied trades (mainnet): 0.2% of the buy goes to sasa's treasury; the rest buys.
+        const copyCut = copyFee && !IS_TESTNET ? (amount * 20n) / 10_000n : 0n;
+        const buyAmt = amount - copyCut;
         // Always price the trade again right now: on a young coin one earlier
         // trade moves the price more than the 5% slippage allows, and the quote
         // on screen may be from before it (that made every 2nd buy revert).
@@ -394,23 +400,24 @@ export function QuickTrade({
                   address: spender,
                   abi: routerAbi,
                   functionName: "buy",
-                  args: [chosen.token, amount, 0n, address, deadline()],
+                  args: [chosen.token, buyAmt, 0n, address, deadline()],
                   stateOverride: [
                     { address: chosen.chain.usdc, stateDiff: [{ slot: allowanceSlot(address, spender, chosen.chain.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) }] },
                   ],
                 })
               ).result as bigint)
-            : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint),
+            : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [buyAmt] })) as bigint),
           pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
         ]);
         const minOut = (out * (10_000n - slip)) / 10_000n;
         // Pay with USDC: approve exactly this buy (email users get it bundled, gasless).
         // Approve once for good (wallets like MetaMask then need one confirmation per trade, not two).
-        if (allowance < amount) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, maxUint256]));
+        if (copyCut > 0n) calls.push(call(chosen.chain.usdc, usdcAbi, "transfer", [SASA_TREASURY, copyCut]));
+        if (allowance < buyAmt) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, maxUint256]));
         calls.push(
           pool
-            ? call(spender, routerAbi, "buy", [chosen.token, amount, minOut, address, deadline()])
-            : call(spender, curveAbi, "buy", [amount, minOut, address])
+            ? call(spender, routerAbi, "buy", [chosen.token, buyAmt, minOut, address, deadline()])
+            : call(spender, curveAbi, "buy", [buyAmt, minOut, address])
         );
       } else {
         const [out, allowance] = await Promise.all([
@@ -438,6 +445,8 @@ export function QuickTrade({
             ? call(spender, routerAbi, "sell", [chosen.token, amount, minOut, address, deadline()])
             : call(spender, curveAbi, "sell", [amount, minOut, address])
         );
+        // Copied trades (mainnet): 0.2% of what the sale pays (at least minOut arrives first).
+        if (copyFee && !IS_TESTNET) calls.push(call(chosen.chain.usdc, usdcAbi, "transfer", [SASA_TREASURY, (minOut * 20n) / 10_000n]));
       }
       // The balance at the top moves the moment the trade is sent; the real
       // numbers replace it as soon as the chain confirms (undone if it fails).

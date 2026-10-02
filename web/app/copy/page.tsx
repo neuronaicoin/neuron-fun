@@ -13,6 +13,7 @@ import { toast } from "@/components/alerts";
 import { CoinAvatar, Skeleton, timeAgo, usd } from "@/components/coins";
 import { ProfileLink } from "@/components/social";
 import { QuickTrade } from "@/components/trade";
+import { IS_TESTNET } from "@/lib/config";
 import { chainById } from "@/lib/config";
 import { fetchCoin, nativePerToken, type Coin } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
@@ -231,6 +232,7 @@ export default function CopyPage() {
               initialUsd={current.suggestUsd !== null ? String(Math.round(current.suggestUsd * 100) / 100) : undefined}
               initialSellPct={current.sellPct !== null ? nearestPct(current.sellPct) : undefined}
               initialChainId={current.chainId}
+              copyFee
               onTraded={() => {}}
               onDone={async ({ hash }) => {
                 try {
@@ -249,6 +251,9 @@ export default function CopyPage() {
                 }, 1200);
               }}
             />
+          )}
+          {currentCoin && !IS_TESTNET && (
+            <p className="mt-2 text-[0.6875rem] text-ink-3">Copied trades have a 0.2% copy fee on top of the 1% trading fee.</p>
           )}
           {queue.length > 1 && (
             <button type="button" onClick={() => setQueue((q) => q.slice(1))} className="mt-3 w-full h-11 rounded-xl border border-line text-ink-2 font-semibold">

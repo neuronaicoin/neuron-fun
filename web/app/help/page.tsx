@@ -11,6 +11,10 @@ const FAQ: { q: string; a: string }[] = [
   { q: "What does “graduation” mean?", a: "When a coin raises its target across all chains, it moves to a trading pool with liquidity locked forever. The chain that raised the most wins; the others close and holders there can always sell." },
   { q: "What is a creator lock?", a: "A creator can lock their own coins for 1 or 24 hours at launch. Nobody can lift it early. Locked coins get a “Dev locked” badge." },
   { q: "How do invite rewards work?", a: "Share your invite link from the Points page. Friends start with 100 points, and you earn points plus 25% of sasa’s fees from their trades for a year, paid daily." },
+  {
+    q: "What are sasa's fees?",
+    a: "Trading: 1% per trade (0.3% to the coin's creator, 0.7% to sasa), on the launch curve and in the pool after graduation. Graduation: 2% of the money that goes into the pool. Moving coins between chains after graduation: 0.1%. Other DEXs' coins: 0.7%. Deposits from another coin or chain: 0.25% plus network costs; sending USDC or USDG straight in is free. Copied trades: 0.2%. Boost: $10 for 6 hours or $20 for 24 hours. Launching a coin and withdrawing are free.",
+  },
   { q: "Do I pay network fees?", a: "Signed in with email: no, sasa pays them. With your own wallet (like MetaMask) you need a little of the chain’s coin for fees." },
 ];
 
