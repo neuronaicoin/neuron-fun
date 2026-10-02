@@ -5,8 +5,8 @@ name: omni-keeper-testnet
 # Each step is safe to repeat; the contracts check everything themselves.
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # The always-on keeper now runs on Railway (every 20 s). GitHub's schedule ran only every
+  # few hours, so it's off; this stays for a manual pass (or a dry run) by hand.
   workflow_dispatch:
     inputs:
       dry_run:
