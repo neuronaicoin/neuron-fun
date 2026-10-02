@@ -12,7 +12,7 @@ export default function Risk() {
       <ul>
         <li><b>Prices</b> can fall to zero in minutes. Most new coins never graduate, and most graduated coins lose value.</li>
         <li><b>Creators and big holders</b> can sell at any time, even if a coin looks safe. Safety checks only catch some warning signs.</li>
-        <li><b>Smart contracts</b> can have bugs. sasa&apos;s contracts are tested but have not had an independent audit yet, so money in them is limited for now.</li>
+        <li><b>Smart contracts</b> can have bugs. sasa&apos;s contracts were independently reviewed (see <a href="/security/" className="text-emerald">Security</a>), but no review can prove there are no bugs, so money in them is limited at first.</li>
         <li><b>Blockchains and bridges</b> can be slow, congested or fail; moving money or coins between chains depends on third-party services.</li>
         <li><b>Graduation</b> pauses trading briefly while every chain is settled; prices can move when trading resumes.</li>
         <li><b>Slippage</b>: the price can change between your tap and the trade landing; your trade is cancelled if it moves more than your limit.</li>

@@ -652,6 +652,9 @@ export default function CreatePage() {
               Fixed supply, no owner, no minting. Before graduation anyone can sell back at any time; after it, the pool
               is locked forever. Nobody, including you and us, can pull the money.
             </p>
+            <a href="/security/" className="inline-flex items-center gap-1.5 mt-2.5 text-[0.75rem] font-semibold text-up">
+              ✓ Contracts independently reviewed <span aria-hidden="true">→</span>
+            </a>
           </div>
         </aside>
       </div>
