@@ -49,6 +49,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
   const [minVol, setMinVol] = useState(0);
   const [minLiq, setMinLiq] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
   const [shown, setShown] = useState(STEP);
   const [growing, setGrowing] = useState(false);
   // A new tab, chain, search or filter starts from the top again.
@@ -146,7 +147,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
       <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-3 sm:pt-10">
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <div className="relative overflow-hidden rounded-3xl border border-line bg-surface p-4 sm:p-10">
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-line bg-surface px-4 py-3 sm:p-10">
             <div
               className="absolute inset-0 opacity-[0.07] pointer-events-none"
               style={{ backgroundImage: "radial-gradient(#2fd39b 1px, transparent 1px)", backgroundSize: "22px 22px" }}
@@ -159,23 +160,23 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 <span className="text-[1.35em] leading-none align-[-0.1em]">🚀</span>
               </p>
               <HeroMessages />
-              <div className="mt-3 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
+              <div className="mt-2 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : <StatSkeleton />}</div>
-                  <div className="text-[0.75rem] text-ink-3">racing now</div>
+                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : <StatSkeleton />}</div>
+                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">racing now</div>
                 </div>
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{trades24h ?? <StatSkeleton />}</div>
-                  <div className="text-[0.75rem] text-ink-3">trades 24h</div>
+                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{trades24h ?? <StatSkeleton />}</div>
+                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">trades 24h</div>
                 </div>
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{total ?? <StatSkeleton />}</div>
-                  <div className="text-[0.75rem] text-ink-3">launched here</div>
+                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{total ?? <StatSkeleton />}</div>
+                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3 truncate">launched here</div>
                 </div>
                 {/* Kept apart from our launchpad's numbers so neither is inflated. */}
                 <div>
-                  <div className="font-mono text-[1.25rem] sm:text-[1.625rem]">{extTotal ?? <StatSkeleton />}</div>
-                  <div className="text-[0.75rem] text-ink-3">to trade</div>
+                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{extTotal ?? <StatSkeleton />}</div>
+                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">to trade</div>
                 </div>
               </div>
             </div>
@@ -284,7 +285,18 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             ))}
           </div>
 
-          <div className="mt-2.5 grid gap-2.5 sm:flex sm:flex-wrap">
+          {/* Phones: volume and liquidity sit behind one button, so coins show on the first screen. */}
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
+            className={"sm:hidden mt-2.5 h-10 px-4 rounded-xl border text-[0.875rem] font-semibold flex items-center gap-2 " + (minVol || minLiq ? "border-emerald text-emerald" : "border-line")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" /></svg>
+            Filters{minVol || minLiq ? ` (${(minVol ? 1 : 0) + (minLiq ? 1 : 0)})` : ""}
+            <span aria-hidden="true" className="text-ink-3">{showFilters ? "▴" : "▾"}</span>
+          </button>
+          <div className={(showFilters ? "grid" : "hidden") + " mt-2.5 gap-2.5 sm:flex sm:flex-wrap"}>
             <FilterRow label="Volume 24h" values={VOLUME_FILTERS} value={minVol} onChange={setMinVol} />
             <FilterRow label="Liquidity" values={LIQUIDITY_FILTERS} value={minLiq} onChange={setMinLiq} />
           </div>
@@ -433,7 +445,7 @@ function HeroMessages() {
     <>
       <h1
         key={i}
-        className="hero-swap font-display font-semibold text-[1.5rem] sm:text-[2.75rem] lg:text-[clamp(2.5rem,4.1vw,3.625rem)] leading-[1.05] tracking-tight sm:mt-3 min-h-[2.1em]"
+        className="hero-swap font-display font-semibold text-[1.1875rem] sm:text-[2.75rem] lg:text-[clamp(2.5rem,4.1vw,3.625rem)] leading-[1.1] tracking-tight sm:mt-3 min-h-[2.2em]"
       >
         {words(m.a)}
         <br />
@@ -442,7 +454,7 @@ function HeroMessages() {
       <p key={`s${i}`} className="hero-swap hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl min-h-[3.4em]">
         {m.sub}
       </p>
-      <div className="flex gap-1.5 mt-2 sm:mt-3" role="group" aria-label="More about sasa">
+      <div className="hidden sm:flex gap-1.5 mt-3" role="group" aria-label="More about sasa">
         {HERO_MESSAGES.map((_, k) => (
           <button
             key={k}
