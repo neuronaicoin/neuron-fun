@@ -1,4 +1,15 @@
 import type { Metadata, Viewport } from "next";
+// Fonts are served from our own domain (not Google): a network that blocks or stalls
+// fonts.googleapis.com must never keep the page from showing.
+import "@fontsource/sora/500.css";
+import "@fontsource/sora/600.css";
+import "@fontsource/sora/700.css";
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
+import "@fontsource/instrument-sans/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";
@@ -60,12 +71,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-        />
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
         <script dangerouslySetInnerHTML={{ __html: THEME_CHECK }} />
       </head>

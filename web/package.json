@@ -10,6 +10,9 @@
   "dependencies": {
     "@alchemy/common": "^5.2.7",
     "@alchemy/wallet-apis": "^5.2.7",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/instrument-sans": "^5.3.0",
+    "@fontsource/sora": "^5.3.0",
     "@privy-io/react-auth": "^3.45.0",
     "@stripe/stripe-js": "^9.17.0",
     "@supabase/postgrest-js": "^2.117.2",
