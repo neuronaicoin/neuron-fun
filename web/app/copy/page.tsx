@@ -108,11 +108,23 @@ export default function CopyPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10 pb-32">
       <h1 className="font-display font-bold text-[1.625rem] sm:text-[2rem]">Copy trading</h1>
+      <div className="mt-3 grid sm:grid-cols-2 gap-2 text-[0.8125rem] leading-snug">
+        <div className="rounded-2xl border border-line bg-surface p-3">
+          <b className="block text-[0.875rem] text-ink">Copy someone</b>
+          <span className="text-ink-2">Pick a trader in <b>Best to copy</b> (or on their profile) and tap Copy. Each time they trade you get a signal here; tap Apply to make the same trade.</span>
+        </div>
+        <div className="rounded-2xl border border-line bg-surface p-3">
+          <b className="block text-[0.875rem] text-ink">Let others copy you (optional)</b>
+          <span className="text-ink-2">
+            Turn it on in <Link href="/me/" className="text-emerald font-semibold">You</Link> to earn a share of the fees from your copiers&apos; trades. You don&apos;t need it to copy others.
+          </span>
+        </div>
+      </div>
       <div className="mt-4 flex gap-1 p-1 rounded-2xl bg-paper w-fit max-w-full overflow-x-auto" role="tablist">
         {(
           [
             ["signals", `Signals${pending.length ? ` (${pending.length})` : ""}`],
-            ["copies", "Your copies"],
+            ["copies", "Who you copy"],
             ["best", "Best to copy"],
           ] as const
         ).map(([k, label]) => (
@@ -403,7 +415,7 @@ function BestTab() {
     <>
       <p className="text-ink-3 mt-3 text-[0.9375rem]">Traders who allow copying, ranked by how their copiers&apos; buys did in the last 30 days.</p>
       {rows.length === 0 ? (
-        <div className="mt-4 rounded-3xl border border-line bg-surface p-8 text-center text-ink-2">No one allows copying yet. Turn it on for yourself on the You page.</div>
+        <div className="mt-4 rounded-3xl border border-line bg-surface p-8 text-center text-ink-2">No traders allow copying yet. When a trader turns on &quot;Let others copy me&quot;, they show up here.</div>
       ) : (
         <div className="mt-4 rounded-3xl border border-line bg-surface overflow-x-auto">
           <table className="w-full text-[0.875rem]">

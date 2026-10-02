@@ -4,7 +4,7 @@
  * writes go through /api/social with the alerts session (one free signature).
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { IS_TESTNET } from "./config";
+import { IS_TESTNET, USD_MODE } from "./config";
 import { db, fetchTrades, type Trade } from "./data";
 import { ensureSession, type SignFn } from "./alerts";
 
@@ -29,7 +29,11 @@ export const COLORS = ["#ff6b1a", "#8a5cf6", "#2563eb", "#12b886", "#ef4444", "#
 export const EMOJIS = ["", "🙂", "🦦", "🐸", "🚀", "🔥", "👑", "💎", "🐋", "🐶", "🐱", "🦊", "🐼", "🦍", "🌙", "⚡"];
 
 /** Leaderboard entry needs at least this much volume (in ETH) in the period. */
-export const MIN_VOLUME_ETH = IS_TESTNET ? 0.0005 : 0.4;
+/**
+ * Minimum volume to show on the leaderboard, in the database's units (raw amount / 1e18).
+ * Dollar edition: USDC has 6 decimals, so $1 = 1e6 / 1e18 = 1e-12. ($1 on testnet, $100 on mainnet.)
+ */
+export const MIN_VOLUME_ETH = USD_MODE ? (IS_TESTNET ? 1 : 100) / 1e12 : IS_TESTNET ? 0.0005 : 0.4;
 
 const EMPTY = (address: string): Profile => ({
   address,

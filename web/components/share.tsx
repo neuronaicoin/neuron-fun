@@ -28,24 +28,42 @@ export function postOnX(text: string, url?: string) {
   const t = /@sasapadfun/i.test(honest) ? honest : `${honest}\n\nvia @${SASA_X}`;
   const q = new URLSearchParams({ text: t });
   if (url) q.set("url", url);
-  openX(`https://x.com/intent/post?${q.toString()}`);
+  // The X app (if installed) gets the whole post, link included, in one message.
+  openX(`https://x.com/intent/post?${q.toString()}`, `twitter://post?message=${encodeURIComponent(url ? `${t}\n${url}` : t)}`);
   window.dispatchEvent(new Event(SHARED_X_EVENT));
 }
 
 /** Opens X's "follow @sasapadfun" screen. */
 export function followOnX() {
-  openX(`https://x.com/intent/follow?screen_name=${SASA_X}`);
+  openX(`https://x.com/intent/follow?screen_name=${SASA_X}`, `twitter://user?screen_name=${SASA_X}`);
 }
 
 /**
- * Phones: open the link in this tab, so the X app takes it over (already
- * signed in, post pre-filled). A new browser tab would ask to log in to X.
+ * Phones: open the X app straight away when it's installed (signed in, post pre-filled);
+ * otherwise, a moment later, X's web page in this tab. (Web links alone often land on X's
+ * login page instead of the app, especially from the home-screen app.)
  * Computers: a new tab.
  */
-function openX(url: string) {
+function openX(url: string, appUrl?: string) {
   const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
-  if (phone) window.location.href = url;
-  else window.open(url, "_blank", "noopener,noreferrer");
+  if (!phone) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (!appUrl) {
+    window.location.href = url;
+    return;
+  }
+  let left = false;
+  const onHide = () => {
+    if (document.visibilityState === "hidden") left = true;
+  };
+  document.addEventListener("visibilitychange", onHide);
+  window.location.href = appUrl;
+  setTimeout(() => {
+    document.removeEventListener("visibilitychange", onHide);
+    if (!left) window.location.href = url; // no app: the web version
+  }, 1500);
 }
 
 export function ShareButton({ coin }: { coin: Coin }) {

@@ -93,9 +93,9 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
             </div>
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
               {kpis.map(([k, v, cls]) => (
-                <div key={k} className="rounded-2xl border border-line bg-paper p-3 min-w-0">
-                  <div className="text-[0.6875rem] text-ink-3">{k}</div>
-                  <div className={"font-mono font-semibold text-[0.9375rem] truncate " + (cls ?? "")}>{v}</div>
+                <div key={k} className="rounded-xl sm:rounded-2xl border border-line bg-paper px-2.5 py-1.5 sm:p-3 min-w-0 flex items-baseline justify-between gap-1.5 sm:block">
+                  <div className="text-[0.6875rem] text-ink-3 shrink-0">{k}</div>
+                  <div className={"font-mono font-semibold text-[0.875rem] sm:text-[0.9375rem] truncate text-right sm:text-left " + (cls ?? "")}>{v}</div>
                 </div>
               ))}
             </div>

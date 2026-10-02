@@ -29,9 +29,11 @@ function useFlash(value: number | null): string {
 function Stat({ label, value, raw, big = false }: { label: string; value: string; raw: number | null; big?: boolean }) {
   const flash = useFlash(raw);
   return (
-    <div className="rounded-2xl bg-paper border border-line px-3 py-2.5 min-w-0">
-      <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3 truncate">{label}</div>
-      <div className={"font-mono font-medium mt-0.5 truncate rounded " + (big ? "text-[1.125rem] sm:text-[1.3rem] " : "text-[0.9375rem] sm:text-[1.0625rem] ") + flash}>
+    // Phones: label and value on one line (short boxes, the chart starts higher up);
+    // wider screens: label above a bigger value.
+    <div className="rounded-xl sm:rounded-2xl bg-paper border border-line px-2.5 py-1.5 sm:px-3 sm:py-2.5 min-w-0 flex items-baseline justify-between gap-1.5 sm:block">
+      <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3 truncate shrink-0">{label}</div>
+      <div className={"font-mono font-medium sm:mt-0.5 truncate rounded text-right sm:text-left " + (big ? "text-[0.9375rem] sm:text-[1.3rem] " : "text-[0.875rem] sm:text-[1.0625rem] ") + flash}>
         {value}
       </div>
     </div>
@@ -78,7 +80,7 @@ export function LiveStats({ coin: initial, ethUsd: initialUsd }: { coin: Coin; e
 
   return (
     <div className="grid gap-2">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
         <Stat label="Market cap" value={compactUsd(mc)} raw={mc} big />
         <Stat label="24h change" value={change === null ? "—" : `${change >= 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)}%`} raw={change} />
         <Stat label="Holders" value={String(coin.holders)} raw={coin.holders} />

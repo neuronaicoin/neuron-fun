@@ -36,7 +36,7 @@ function usdcAllowanceSlot(owner: Address, spender: Address, base: number) {
 
 /** Where the creator's 0.3% of every trade goes. Fixed at launch. */
 const FEE_MODES = [
-  { id: 0, key: "creator", title: "To you", text: "Your 0.3% of every trade builds up for you to collect." },
+  { id: 0, key: "creator", title: "To you", text: "Your 0.3% of every trade is saved for you and paid to your wallet (anyone can trigger the payout from the coin page)." },
   { id: 1, key: "buyback", title: "Buyback & burn", text: "Your share buys the coin back and burns it, so the supply keeps shrinking." },
 ] as const;
 

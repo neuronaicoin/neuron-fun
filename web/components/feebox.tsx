@@ -24,8 +24,14 @@ type Row = {
 };
 
 const COPY = {
-  creator: { title: "Creator earnings", text: "0.3% of every trade goes to the creator." },
-  buyback: { title: "Buyback & burn", text: "0.3% of every trade buys this coin back and burns it. Anyone can run a buyback." },
+  creator: {
+    title: "Creator's share",
+    text: "The creator keeps their share: 0.3% of every trade is saved for them below. Anyone can send it to the creator's wallet; it never goes anywhere else.",
+  },
+  buyback: {
+    title: "Buyback & burn",
+    text: "The creator chose \"Buyback & burn\": 0.3% of every trade buys this coin back and burns it. Anyone can run a buyback.",
+  },
   holders: { title: "Rewards for holders", text: "0.3% of every trade is paid out to holders in USDC, in proportion to what they hold." },
 } as const;
 
@@ -113,8 +119,8 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
           ? "Run buyback"
           : c.state === "graduated"
             ? "Send to pool buyback"
-            : "Send to creator"
-        : "Send to creator";
+            : "Pay out to creator"
+        : "Pay out to creator";
 
   // In creator mode only the creator needs this box.
   if (mode === "creator" && !isCreator) return null;
@@ -162,7 +168,7 @@ export function FeeBox({ coin, onChange }: { coin: Coin; onChange: () => void })
                   <div className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-[0.875rem]">
                       <ChainChip chain={c.chain} muted={c.state === "closed"} />
-                      <span className="text-ink-3">waiting</span>
+                      <span className="text-ink-3">saved for the creator</span>
                       <span className="font-mono">{fmtEth(r.waiting, 6)}</span>
                     </span>
                     <button
