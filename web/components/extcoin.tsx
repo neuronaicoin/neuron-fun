@@ -1,8 +1,17 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+import { erc20Abi, type Address } from "viem";
+import { useWallet } from "./wallet";
+import { toast } from "./alerts";
+import { clientFor } from "@/lib/data";
+import { friendlyError } from "@/lib/format";
+import { refreshPortfolio } from "@/lib/portfolio";
+import { chainForNetwork, quoteCalls, quoteSwap } from "@/lib/extswap";
+import type { Quote } from "@/lib/relay";
+
 import { ContractAddress } from "./contract";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { postOnX } from "@/components/share";
@@ -157,11 +166,64 @@ function TokenCheck({ coin }: { coin: ExtCoin }) {
 }
 
 function TradeBox({ coin }: { coin: ExtCoin }) {
+  const { address, send } = useWallet();
+  const chain = chainForNetwork(coin.network);
+  const live = !IS_TESTNET && !!chain;
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [usd, setUsd] = useState("25");
+  const [pct, setPct] = useState(100);
+  const [held, setHeld] = useState<bigint | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
   const amount = Number(usd.replace(",", ".")) || 0;
-  const tokens = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
+  const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
   const fmt = (t: number) => (t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t.toFixed(2));
+
+  const loadHeld = useCallback(async () => {
+    if (!live || !address || !chain) return setHeld(null);
+    const b = (await clientFor(chain)
+      .readContract({ address: coin.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] })
+      .catch(() => 0n)) as bigint;
+    setHeld(b);
+  }, [live, address, chain, coin.address]);
+  useEffect(() => {
+    void loadHeld();
+  }, [loadHeld]);
+
+  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : held !== null ? (held * BigInt(pct)) / 100n : 0n;
+  useEffect(() => {
+    setQuote(null);
+    setError("");
+    if (!live || !address || !chain || raw <= 0n) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      quoteSwap({ chain, account: address, side, token: coin.address as Address, amount: raw, signal: ctrl.signal })
+        .then(setQuote)
+        .catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, address, side, raw.toString(), coin.address]);
+
+  async function go() {
+    if (!quote || !chain) return;
+    try {
+      setBusy(side === "buy" ? "Buying…" : "Selling…");
+      await send(chain.chain, quoteCalls(quote, chain), () => {});
+      toast(side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`);
+      void refreshPortfolio(true);
+      setTimeout(() => void loadHeld(), 1500);
+    } catch (e) {
+      toast(friendlyError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24">
       <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
@@ -178,27 +240,59 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
           </button>
         ))}
       </div>
-      <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
-        <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
-        <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
-      </label>
-      <div className="grid grid-cols-4 gap-1.5 mt-2">
-        {[10, 25, 50, 100].map((v) => (
-          <button key={v} type="button" aria-pressed={amount === v} onClick={() => setUsd(String(v))} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (amount === v ? "border-emerald text-emerald" : "border-line")}>
-            ${v}
-          </button>
-        ))}
-      </div>
+      {side === "buy" ? (
+        <>
+          <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+            <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
+            <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
+          </label>
+          <div className="grid grid-cols-4 gap-1.5 mt-2">
+            {[10, 25, 50, 100].map((v) => (
+              <button key={v} type="button" aria-pressed={amount === v} onClick={() => setUsd(String(v))} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (amount === v ? "border-emerald text-emerald" : "border-line")}>
+                ${v}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-4 gap-1.5 mt-4">
+          {[25, 50, 75, 100].map((v) => (
+            <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
+              {v === 100 ? "All" : `${v}%`}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
-        <span className="text-ink-3">{side === "buy" ? "You get about" : "Price"}</span>
-        <b className="font-mono">{side === "buy" ? (tokens !== null ? `${fmt(tokens)} $${coin.symbol}` : "—") : price(coin.priceUsd)}</b>
+        <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
+        <b className="font-mono">
+          {quote
+            ? side === "buy"
+              ? `${quote.outAmount ? fmt(Number(quote.outAmount)) : "—"} $${coin.symbol}`
+              : `$${Number(quote.outAmount).toFixed(2)}`
+            : side === "buy"
+              ? estimate !== null
+                ? `${fmt(estimate)} $${coin.symbol}`
+                : "—"
+              : "—"}
+        </b>
       </div>
-      <button type="button" disabled className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}>
-        {side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`}
+      {live && side === "sell" && held !== null && (
+        <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>
+      )}
+      <button
+        type="button"
+        disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
+        onClick={() => void go()}
+        className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+      >
+        {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
       </button>
+      {error && <p className="mt-2 text-[0.8125rem] text-danger">{error}</p>}
       {IS_TESTNET && (
         <p className="mt-3 rounded-xl bg-emerald-soft border border-emerald/40 p-3 text-[0.8125rem]">Test version: prices and charts are live; trading these coins opens at mainnet.</p>
       )}
+      {!IS_TESTNET && !chain && <p className="mt-3 text-[0.8125rem] text-ink-3">Trading coins on this chain is coming soon.</p>}
       <p className="text-[0.6875rem] text-ink-3 mt-2">0.7% fee. Best price across DEXs, paid in USDC.</p>
     </aside>
   );

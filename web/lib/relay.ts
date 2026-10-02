@@ -4,9 +4,10 @@
  * The list of chains and tokens comes live from Relay, so the menus only
  * show routes that really work: on testnet that is Sepolia <-> Base Sepolia;
  * on mainnet Solana, Ethereum, Base, Arbitrum, BNB, Robinhood and more
- * appear on their own. sasa adds no fee of its own.
+ * appear on their own. On mainnet sasa's own fee (FEE_BPS) is added to the quote and paid
+ * by Relay straight to the treasury; on testnet there is none.
  */
-import { IS_TESTNET } from "./config";
+import { FEE_BPS, IS_TESTNET, SASA_TREASURY } from "./config";
 
 export const RELAY_API = IS_TESTNET ? "https://api.testnets.relay.link" : "https://api.relay.link";
 export const NATIVE = "0x0000000000000000000000000000000000000000";
@@ -89,6 +90,8 @@ export type QuoteInput = {
   amount: string;
   useDepositAddress?: boolean;
   refundTo?: string;
+  /** Which sasa fee applies (mainnet only): moving money in, or buying/selling a coin. */
+  fee?: "deposit" | "swap";
 };
 
 export type StepItem = {
@@ -104,6 +107,8 @@ export type Quote = {
   depositAddress: string | null;
   inUsd: number;
   outAmount: string;
+  /** Raw amount out (smallest unit). */
+  outRaw: string;
   outUsd: number;
   outSymbol: string;
   /** Network, bridge and swap costs together, in dollars. */
@@ -116,7 +121,7 @@ type RawQuote = {
   message?: string;
   details?: {
     currencyIn?: { amountUsd?: string };
-    currencyOut?: { amountFormatted?: string; amountUsd?: string; currency?: { symbol?: string } };
+    currencyOut?: { amount?: string; amountFormatted?: string; amountUsd?: string; currency?: { symbol?: string } };
     totalImpact?: { usd?: string };
     timeEstimate?: number;
   };
@@ -138,9 +143,10 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     headers: { "content-type": "application/json" },
     signal,
     body: JSON.stringify({
-      ...q,
+      ...Object.fromEntries(Object.entries(q).filter(([k]) => k !== "fee")),
       tradeType: "EXACT_INPUT",
       referrer: "sasapad.fun",
+      ...(!IS_TESTNET && q.fee ? { appFees: [{ recipient: SASA_TREASURY, fee: String(FEE_BPS[q.fee]) }] } : {}),
     }),
   });
   const j = (await r.json().catch(() => ({}))) as RawQuote;
@@ -156,6 +162,7 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     depositAddress: j.steps.find((s) => s.depositAddress)?.depositAddress ?? null,
     inUsd,
     outAmount: d.currencyOut?.amountFormatted ?? "0",
+    outRaw: d.currencyOut?.amount ?? "0",
     outUsd,
     outSymbol: d.currencyOut?.currency?.symbol ?? "",
     costUsd: Number.isFinite(impact) ? impact : Math.max(0, inUsd - outUsd),

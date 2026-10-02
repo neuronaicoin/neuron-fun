@@ -7,6 +7,10 @@ import mainnetFill from "./mainnet.json";
  */
 export const NETWORK = "testnet" as "testnet" | "mainnet";
 export const IS_TESTNET = NETWORK === "testnet";
+/** sasa's treasury (sasa admin): receives the deposit and swap fees and Boost payments. */
+export const SASA_TREASURY = "0xe0ba5905940D748b23Dc01266AA884E2391CcA2F" as const;
+/** Fees taken on mainnet through Relay, in basis points (Relay sends them to the treasury). */
+export const FEE_BPS = { deposit: 25, swap: 70 } as const;
 
 /** Public, read-only database (Supabase). The key is the public "publishable" key. */
 export const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
