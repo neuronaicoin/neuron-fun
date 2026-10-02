@@ -683,6 +683,15 @@ export function QuickTrade({
       </div>
 
       {walletEmpty && IS_TESTNET && <FundingGuide address={address!} chains={sellable.map((c) => c.chain)} gasless={embedded} />}
+      {walletEmpty && !IS_TESTNET && (
+        <div className="mt-3 rounded-2xl border border-emerald/40 bg-emerald-soft p-4 text-center">
+          <p className="font-semibold">Deposit to start</p>
+          <p className="text-[0.8125rem] text-ink-2 mt-1">Send USDC from any exchange or wallet. No fee, ready in about a minute.</p>
+          <button type="button" onClick={() => openMoney({ kind: "deposit" })} className="mt-3 h-11 px-5 rounded-xl bg-emerald text-on-accent font-bold">
+            ＋ Deposit
+          </button>
+        </div>
+      )}
 
       <div className="mt-4">
         {!address ? (

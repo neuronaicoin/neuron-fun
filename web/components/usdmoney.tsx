@@ -68,7 +68,7 @@ export function UsdDepositSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="Add money" onClose={onClose}>
+    <Sheet title="Deposit" onClose={onClose}>
       <p className="text-[0.875rem] text-ink-2">
         Everything on sasa is in dollars (USDC). This is the test version: get <b className="text-ink">$100 of free test USDC</b> a day on each chain.
       </p>
@@ -146,7 +146,7 @@ export function UsdWithdrawSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="Send out" onClose={onClose}>
+    <Sheet title="Withdraw" onClose={onClose}>
       <p className="text-[0.875rem] text-ink-2">Send your dollars as USDC to any wallet.</p>
       {chains.length > 1 && (
         <div className="grid grid-cols-2 gap-2 mt-3" role="group" aria-label="From">

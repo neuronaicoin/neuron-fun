@@ -5,7 +5,8 @@
  * and loss, quick sell) and the host that shows Deposit / Withdraw / Sell.
  */
 import { UsdDepositSheet, UsdWithdrawSheet } from "./usdmoney";
-import { USD_MODE } from "@/lib/config";
+import { MainnetDepositSheet, MainnetWithdrawSheet } from "./mainnetmoney";
+import { USD_MODE, IS_TESTNET } from "@/lib/config";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Sheet } from "./chrome";
@@ -75,8 +76,8 @@ export function BalancePill() {
       <button
         type="button"
         onClick={() => openMoney({ kind: "deposit" })}
-        aria-label="Add money"
-        title="Add money"
+        aria-label="Deposit"
+        title="Deposit"
         className="w-8 h-8 rounded-[0.625rem] bg-emerald text-on-accent flex items-center justify-center shrink-0 hover:bg-emerald-dark"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
@@ -106,8 +107,9 @@ export function MoneyHost() {
   }, [address]);
   if (!address || !sheet) return null;
   // Dollar edition: USDC in and out (the ETH sheets stay for chains without USDC).
-  if (sheet.kind === "deposit") return USD_MODE ? <UsdDepositSheet onClose={closeMoney} /> : <DepositSheet onClose={closeMoney} />;
-  if (sheet.kind === "withdraw") return USD_MODE ? <UsdWithdrawSheet onClose={closeMoney} /> : <WithdrawSheet onClose={closeMoney} />;
+  if (sheet.kind === "deposit")
+    return !IS_TESTNET ? <MainnetDepositSheet onClose={closeMoney} /> : USD_MODE ? <UsdDepositSheet onClose={closeMoney} /> : <DepositSheet onClose={closeMoney} />;
+  if (sheet.kind === "withdraw") return !IS_TESTNET ? <MainnetWithdrawSheet onClose={closeMoney} /> : USD_MODE ? <UsdWithdrawSheet onClose={closeMoney} /> : <WithdrawSheet onClose={closeMoney} />;
   if (sheet.kind === "sell") return <SellSheet coin={sheet.coin} pct={sheet.pct} />;
   return <PortfolioSheet />;
 }
