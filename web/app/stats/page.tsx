@@ -60,7 +60,7 @@ export default function StatsPage() {
   const usdOf = (eth: number) => (ethUsd ? eth * ethUsd : null);
   const money = (eth: number) => {
     const v = usdOf(eth);
-    return v === null ? `${short(eth)} ETH` : short(v, "$");
+    return v === null ? "—" : short(v, "$");
   };
 
   const t = stats?.totals;
@@ -165,10 +165,10 @@ export default function StatsPage() {
       {/* Daily charts */}
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)] lg:grid-cols-2 gap-3">
         <Panel title="Daily volume" subtitle="Across the selected chains">
-          {stats ? <BarChart labels={labels} values={volSeries} format={(v) => (ethUsd ? short(v, "$") : `${short(v)} ETH`)} /> : <Skeleton className="h-60" />}
+          {stats ? <BarChart labels={labels} values={volSeries} format={(v) => (ethUsd ? short(v, "$") : "—")} /> : <Skeleton className="h-60" />}
         </Panel>
         <Panel title="Daily protocol revenue" subtitle="0.7% of every trade">
-          {stats ? <BarChart labels={labels} values={revSeries} color="var(--color-mint)" format={(v) => (ethUsd ? short(v, "$") : `${short(v)} ETH`)} /> : <Skeleton className="h-60" />}
+          {stats ? <BarChart labels={labels} values={revSeries} color="var(--color-mint)" format={(v) => (ethUsd ? short(v, "$") : "—")} /> : <Skeleton className="h-60" />}
         </Panel>
         <Panel title="Coins launched per day">
           {stats ? <BarChart labels={labels} values={daily.map((d) => d.launches)} color="#3B6FF5" integer format={(v) => Math.round(v).toLocaleString("en-US")} /> : <Skeleton className="h-60" />}

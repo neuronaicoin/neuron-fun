@@ -9,6 +9,8 @@ const THREADS_PER_PAGE = 25;
 const POSTS_PER_PAGE = 50;
 const CHAIN_NAMES = { 46630: "Robinhood Chain", 4663: "Robinhood Chain", 84532: "Base", 8453: "Base", 97: "BNB Chain", 56: "BNB Chain" };
 const NATIVE = { 97: "BNB", 56: "BNB" };
+// sasa's chains trade against dollars (USDC / USDG, 6 decimals): $ per 1e18 raw units = 1e12.
+const USD_CHAINS = new Set([46630, 84532, 4663, 8453]);
 const FEE_MODES = ["goes to the coin's creator", "buys the coin back and burns it", "is shared with the coin's holders"];
 const COIN_COLS = "id,creator,launch_key,name,symbol,logo,description,created_at,graduated_chain,fee_mode,curves,holders_total,trades_24h,change_24h,last_trade_at";
 
@@ -84,7 +86,7 @@ function facts(coin, px, env) {
   let open = 0;
   let priced = true;
   for (const k of curves) {
-    const p = px[NATIVE[k.chain_id] || "ETH"];
+    const p = USD_CHAINS.has(Number(k.chain_id)) ? 1e12 : px[NATIVE[k.chain_id] || "ETH"];
     if (!p) {
       priced = false;
       continue;

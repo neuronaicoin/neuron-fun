@@ -5,6 +5,7 @@
  * balance. Refreshes every few seconds, and at once after a trade on this page.
  * Numbers that change flash green (up) or red (down).
  */
+import { USD_MODE } from "@/lib/config";
 import { useEffect, useRef, useState } from "react";
 import { fetchCoin, type Coin } from "@/lib/data";
 import { burst, onTrade } from "@/lib/live";
@@ -84,7 +85,7 @@ export function LiveStats({ coin: initial, ethUsd: initialUsd }: { coin: Coin; e
         <Stat label="Market cap" value={compactUsd(mc)} raw={mc} big />
         <Stat label="24h change" value={change === null ? "—" : `${change >= 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)}%`} raw={change} />
         <Stat label="Holders" value={String(coin.holders)} raw={coin.holders} />
-        <Stat label="Volume 24h" value={vol !== null ? usd(vol, vol < 100 ? 2 : 0) : `${coin.volumeNative24h.toFixed(3)} ETH`} raw={coin.volumeNative24h} />
+        <Stat label="Volume 24h" value={vol !== null ? usd(vol, vol < 100 ? 2 : 0) : USD_MODE ? "—" : `${coin.volumeNative24h.toFixed(3)} ETH`} raw={coin.volumeNative24h} />
       </div>
       <div className="rounded-2xl bg-paper border border-line px-3 py-2.5">
         <div className="flex items-center justify-between text-[0.75rem] sm:text-[0.8125rem] font-semibold">

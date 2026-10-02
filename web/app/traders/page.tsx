@@ -170,7 +170,7 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
                   </span>
                 </a>
                 <span className={"font-mono text-[0.9375rem] shrink-0 " + (r.realized >= 0 ? "text-up" : "text-danger")}>
-                  {pnl !== null ? signed(pnl) : `${r.realized.toFixed(4)} ETH`}
+                  {pnl !== null ? signed(pnl) : "—"}
                 </span>
                 {p &&
                   (p.allowCopy && !p.hideTrades ? (

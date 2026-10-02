@@ -11,7 +11,8 @@ import { CHAINS, USD_MODE, type NeuronChain } from "./config";
 import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
 
-export const CASH_SYMBOL = "ETH";
+/** What cash is held in: dollars (USDC; USDG on Robinhood mainnet) in the dollar edition. */
+export const CASH_SYMBOL = USD_MODE ? "USDC" : "ETH";
 
 export type Position = {
   coin: Coin;

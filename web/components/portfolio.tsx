@@ -186,7 +186,8 @@ function PortfolioSheet() {
                     {c.chain.name}
                   </span>
                   <span className="font-mono">
-                    {money(c.usd)} <span className="text-ink-3">· {(Number(c.wei) / 1e18).toFixed(5)} {CASH_SYMBOL}</span>
+                    {money(c.usd)}
+                    {!USD_MODE && <span className="text-ink-3"> · {(Number(c.wei) / 1e18).toFixed(5)} {CASH_SYMBOL}</span>}
                   </span>
                 </li>
               ))}
