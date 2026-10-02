@@ -1,6 +1,12 @@
 import { defineChain, type Address, type Chain } from "viem";
+import mainnetFill from "./mainnet.json";
 
-export const IS_TESTNET = true;
+/**
+ * Which network the whole site runs on. Switch day: set this to "mainnet" (after the
+ * mainnet contracts are deployed and lib/mainnet.json is filled in from the deployments).
+ */
+export const NETWORK = "testnet" as "testnet" | "mainnet";
+export const IS_TESTNET = NETWORK === "testnet";
 
 /** Public, read-only database (Supabase). The key is the public "publishable" key. */
 export const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -82,7 +88,7 @@ const baseSepolia = defineChain({
   testnet: true,
 });
 
-export const CHAINS: NeuronChain[] = [
+const TESTNET_CHAINS: NeuronChain[] = [
   {
     key: "robinhood",
     name: "Robinhood Chain",
@@ -129,6 +135,77 @@ export const CHAINS: NeuronChain[] = [
     faucet: "https://www.alchemy.com/faucets/base-sepolia",
   },
 ];
+
+// ------------------------------------------------------------------ mainnet
+
+const robinhood = defineChain({
+  id: 4663,
+  name: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
+  blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
+});
+
+const base = defineChain({
+  id: 8453,
+  name: "Base",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://mainnet.base.org"] } },
+  blockExplorers: { default: { name: "Basescan", url: "https://basescan.org" } },
+});
+
+/**
+ * Addresses only known after the mainnet deploy (router, migrator, orders, start block) and
+ * the mainnet gas policies: filled in from contracts/deployments/mainnet on switch day.
+ */
+type MainnetFill = { router: Address; migrator: Address; orders?: Address; startBlock: string; gasPolicy: string };
+const FILL = mainnetFill as unknown as Record<string, MainnetFill | null>;
+
+function mainnetChain(c: Omit<NeuronChain, "router" | "migrator" | "orders" | "startBlock" | "gasPolicy">): NeuronChain | null {
+  const f = FILL[c.key];
+  if (!f) return null;
+  return { ...c, router: f.router, migrator: f.migrator, orders: f.orders, startBlock: BigInt(f.startBlock), gasPolicy: f.gasPolicy };
+}
+
+const MAINNET_CHAINS: NeuronChain[] = [
+  mainnetChain({
+    key: "robinhood",
+    name: "Robinhood Chain",
+    short: "Robinhood",
+    color: "#12B886",
+    chain: robinhood,
+    factory: "0xE0cdEd0C777FA52Ffa1C2495d916DcdC9b2dbE1d", // same address as testnet (same factory wallet, nonce 0/1)
+    eid: 30416,
+    priceSymbol: "USDC",
+    poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    usdc: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", // USDG (Paxos), shown to users as dollars
+    usdcSlots: { balance: 1, allowance: 3 }, // read from the live token (test/fork/DollarSlots)
+    acrossSpoke: "0xD29C85F15DF544bA632C9E25829fd29d767d7978",
+    legacy: [],
+    alchemyNetwork: "robinhood-mainnet",
+  }),
+  mainnetChain({
+    key: "base",
+    name: "Base",
+    short: "Base",
+    color: "#3B6FF5",
+    chain: base,
+    factory: "0xE0cdEd0C777FA52Ffa1C2495d916DcdC9b2dbE1d",
+    eid: 30184,
+    priceSymbol: "USDC",
+    poolManager: "0x498581fF718922c3f8e6A244956aF099B2652b2b",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC (Circle)
+    usdcSlots: { balance: 9, allowance: 10 }, // read from the live token (test/fork/DollarSlots)
+    acrossSpoke: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+    legacy: [],
+    alchemyNetwork: "base-mainnet",
+  }),
+].filter((c): c is NeuronChain => c !== null);
+
+export const CHAINS: NeuronChain[] = IS_TESTNET ? TESTNET_CHAINS : MAINNET_CHAINS;
+if (!IS_TESTNET && MAINNET_CHAINS.length < 2) {
+  throw new Error("NETWORK is mainnet but lib/mainnet.json is not filled in for every chain");
+}
 
 /**
  * sasa v5: every chain's coins trade against USDC (6 decimals). Site-wide, the
