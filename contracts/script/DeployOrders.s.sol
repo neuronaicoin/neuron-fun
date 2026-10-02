@@ -12,7 +12,7 @@ import {OmniOrders} from "../src/omni/OmniOrders.sol";
 contract DeployOrders is Script {
     function run() external {
         uint256 key = vm.envUint("PRIVATE_KEY");
-        string memory j = vm.readFile(string.concat("./deployments/omni/", vm.toString(block.chainid), ".json"));
+        string memory j = vm.readFile(string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/omni/")), vm.toString(block.chainid), ".json"));
         address usd = vm.parseJsonAddress(j, ".usd");
         require(usd.code.length > 0, "v6 dollar token not found on this chain");
         vm.startBroadcast(key);

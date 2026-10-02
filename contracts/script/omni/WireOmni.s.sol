@@ -6,6 +6,7 @@ import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {OmniHub} from "../../src/omni/OmniHub.sol";
 import {TestUsdOft} from "../../src/omni/TestUsdOft.sol";
+import {AcrossUsdBridge} from "../../src/omni/AcrossUsdBridge.sol";
 import {OftUsdBridge} from "../../src/omni/OftUsdBridge.sol";
 import {OmniFactory} from "../../src/omni/OmniFactory.sol";
 
@@ -30,10 +31,12 @@ contract WireOmni is Script {
         address consolidator;
         address factory;
         uint32 eid;
+        uint256 chainId;
+        bool across;
     }
 
     function _load(uint256 chainId) internal view returns (Local memory l) {
-        string memory j = vm.readFile(string.concat("./deployments/omni/", vm.toString(chainId), ".json"));
+        string memory j = vm.readFile(string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/omni/")), vm.toString(chainId), ".json"));
         l.usd = vm.parseJsonAddress(j, ".usd");
         l.hub = vm.parseJsonAddress(j, ".hub");
         l.bridge = vm.parseJsonAddress(j, ".bridge");
@@ -41,6 +44,8 @@ contract WireOmni is Script {
         l.consolidator = vm.parseJsonAddress(j, ".consolidator");
         l.factory = vm.parseJsonAddress(j, ".factory");
         l.eid = uint32(vm.parseJsonUint(j, ".eid"));
+        l.chainId = vm.parseJsonUint(j, ".chainId");
+        l.across = vm.keyExistsJson(j, ".bridgeKind") && keccak256(bytes(vm.parseJsonString(j, ".bridgeKind"))) == keccak256("across");
     }
 
     function run() external {
@@ -69,22 +74,43 @@ contract WireOmni is Script {
             Local memory r = _load(remotes[i]);
             require(r.factory == me.factory, "factory differs between chains: coins would not share an address");
             OmniHub(payable(me.hub)).setPeer(r.eid, bytes32(uint256(uint160(r.hub))));
-            TestUsdOft(me.usd).setPeer(r.eid, bytes32(uint256(uint160(r.usd))));
+            require(r.across == me.across, "every chain must use the same bridge kind");
             _route(ep, me.hub, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
-            _route(ep, me.usd, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
+            if (!me.across) {
+                // Testnet: the test dollar is itself an OFT and needs its own LayerZero link.
+                TestUsdOft(me.usd).setPeer(r.eid, bytes32(uint256(uint160(r.usd))));
+                _route(ep, me.usd, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
+            }
             OmniFactory(me.factory).setRoute(r.eid, OmniFactory.Route(sendLib, receiveLib, execCfg, ulnCfg));
             eids[i] = r.eid;
             twins[i] = bytes32(uint256(uint160(r.bridge)));
             console2.log("linked to eid", r.eid);
         }
-        OftUsdBridge br = OftUsdBridge(payable(me.bridge));
-        if (!br.locked()) {
-            br.setup(me.consolidator, me.migrator, eids, twins);
-            if (lockBridge) br.lock();
+        bool bridgeLocked;
+        if (me.across) {
+            // Mainnet: Across routes (destination chain id, its dollar, its bridge).
+            AcrossUsdBridge ab = AcrossUsdBridge(me.bridge);
+            AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](remotes.length);
+            for (uint256 i; i < remotes.length; ++i) {
+                Local memory r = _load(remotes[i]);
+                rs[i] = AcrossUsdBridge.Route(r.chainId, r.usd, r.bridge);
+            }
+            if (!ab.locked()) {
+                ab.setup(me.consolidator, me.migrator, eids, rs);
+                if (lockBridge) ab.lock();
+            }
+            bridgeLocked = ab.locked();
+        } else {
+            OftUsdBridge br = OftUsdBridge(payable(me.bridge));
+            if (!br.locked()) {
+                br.setup(me.consolidator, me.migrator, eids, twins);
+                if (lockBridge) br.lock();
+            }
+            bridgeLocked = br.locked();
         }
         OmniFactory(me.factory).setLaunchesOpen(openLaunches);
         vm.stopBroadcast();
-        console2.log("bridge locked:", br.locked(), " launches open:", openLaunches);
+        console2.log("bridge locked:", bridgeLocked, " launches open:", openLaunches);
     }
 
     function _route(

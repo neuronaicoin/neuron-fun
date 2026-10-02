@@ -13,6 +13,7 @@ import {NeuronGraduationHook} from "../../src/curve/NeuronGraduationHook.sol";
 import {UsdPoolRouter, IUsdGraduatedPools} from "../../src/usd/UsdPoolRouter.sol";
 import {TestUsdOft} from "../../src/omni/TestUsdOft.sol";
 import {OmniHub} from "../../src/omni/OmniHub.sol";
+import {AcrossUsdBridge, IAcrossSpokePool} from "../../src/omni/AcrossUsdBridge.sol";
 import {OftUsdBridge} from "../../src/omni/OftUsdBridge.sol";
 import {MigratorV6, IV6BuybackRouter} from "../../src/omni/MigratorV6.sol";
 import {ConsolidatorV6, IHubLocal, IUsdcBridge} from "../../src/omni/ConsolidatorV6.sol";
@@ -85,12 +86,22 @@ contract DeployOmni is Script {
         //   factory  0,1 : coin deployer, factory  (same addresses on every chain)
         //   factory  2   : optional top-up of the deployer (FUND_DEPLOYER, wei) from what is left
         //   deployer n+1..: usd, hub, bridge, migrator, router, bindRouter, consolidator, setKeeper, setFactory
+        // Mainnet: the chain's real dollar (USDC on Base, USDG on Robinhood) and Across for
+        // moving money; testnet: our own test dollar (an OFT) and the LayerZero bridge.
+        address realUsd = vm.envOr("USD_TOKEN", address(0));
+        address spoke = vm.envOr("ACROSS_SPOKE", address(0));
+        bool mainnet = realUsd != address(0);
+        if (mainnet) {
+            require(realUsd.code.length > 0, "USD_TOKEN has no code on this chain");
+            require(spoke.code.length > 0, "ACROSS_SPOKE has no code on this chain");
+        }
         uint64 n = vm.getNonce(deployer);
-        address usdAt = vm.computeCreateAddress(deployer, n + 1);
-        address hubAt = vm.computeCreateAddress(deployer, n + 2);
-        address bridgeAt = vm.computeCreateAddress(deployer, n + 3);
-        address migratorAt = vm.computeCreateAddress(deployer, n + 4);
-        address consolidatorAt = vm.computeCreateAddress(deployer, n + 7);
+        uint64 k = mainnet ? 0 : 1; // the test dollar takes one deployment slot
+        address usdAt = mainnet ? realUsd : vm.computeCreateAddress(deployer, n + 1);
+        address hubAt = vm.computeCreateAddress(deployer, n + k + 1);
+        address bridgeAt = vm.computeCreateAddress(deployer, n + k + 2);
+        address migratorAt = vm.computeCreateAddress(deployer, n + k + 3);
+        address consolidatorAt = vm.computeCreateAddress(deployer, n + k + 6);
         bytes32 salt = _mineHookSalt(poolManager, migratorAt);
         uint256 fund = vm.envOr("FUND_DEPLOYER", uint256(0));
 
@@ -115,9 +126,11 @@ contract DeployOmni is Script {
         o.factory = address(factory);
 
         vm.startBroadcast(key);
-        o.usd = address(new TestUsdOft(endpoint, deployer));
+        o.usd = mainnet ? realUsd : address(new TestUsdOft(endpoint, deployer));
         o.hub = address(new OmniHub(endpoint, deployer, coordEid, localEid));
-        o.bridge = address(new OftUsdBridge(IOFT(o.usd), endpoint, deployer));
+        o.bridge = mainnet
+            ? address(new AcrossUsdBridge(IAcrossSpokePool(spoke), IERC20(realUsd), deployer))
+            : address(new OftUsdBridge(IOFT(o.usd), endpoint, deployer));
         MigratorV6 migrator = new MigratorV6(
             IPoolManager(poolManager), IPositionManager(positionManager), IAllowanceTransfer(PERMIT2), IERC20(o.usd),
             IHubLocal(o.hub), o.bridge, rewards, 3_000, salt
@@ -139,6 +152,7 @@ contract DeployOmni is Script {
         vm.serializeUint(j, "chainId", block.chainid);
         vm.serializeUint(j, "eid", localEid);
         vm.serializeUint(j, "coordEid", coordEid);
+        vm.serializeString(j, "bridgeKind", mainnet ? "across" : "oft");
         vm.serializeAddress(j, "usd", o.usd);
         vm.serializeAddress(j, "hub", o.hub);
         vm.serializeAddress(j, "bridge", o.bridge);
@@ -150,7 +164,7 @@ contract DeployOmni is Script {
         vm.serializeAddress(j, "coinDeployer", address(coinDeployer));
         vm.serializeAddress(j, "curveDeployer", address(curveDeployer));
         string memory out = vm.serializeAddress(j, "factory", o.factory);
-        vm.writeJson(out, string.concat("./deployments/omni/", vm.toString(block.chainid), ".json"));
+        vm.writeJson(out, string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/omni/")), vm.toString(block.chainid), ".json"));
 
         console2.log("--- sasa v6 (omnichain) ---");
         console2.log("Chain id / eid:  ", block.chainid, localEid);
