@@ -18,6 +18,7 @@ contract LaunchCoinTest is Test {
     address treasury = address(0x7E);
     address alice = address(0xA11CE);
     address bob = address(0xB0B);
+    address carol = address(0xCA201);
     address creatorAddr = address(0xC4EA);
 
     function setUp() public {
@@ -90,6 +91,7 @@ contract LaunchCoinTest is Test {
         hs[1] = bob;
         hs[2] = address(0xE0A); // empty balance: skipped
         vm.prank(address(0xBEEF)); // anyone can trigger
+        vm.warp(block.timestamp + 24 hours); // public moves open a day after graduation
         coinA.moveBatch(hs, "");
         assertEq(coinA.balanceOf(alice), 0);
         assertEq(coinA.balanceOf(bob), 0);
@@ -110,6 +112,7 @@ contract LaunchCoinTest is Test {
         address[] memory hs = new address[](1);
         hs[0] = address(this);
         vm.expectRevert(abi.encodeWithSelector(LaunchCoin.NotPlainAccount.selector, address(this)));
+        vm.warp(block.timestamp + 24 hours); // public moves open a day after graduation
         coinA.moveBatch(hs, "");
     }
 
@@ -164,6 +167,7 @@ contract LaunchCoinTest is Test {
         address[] memory hs = new address[](2);
         hs[0] = alice;
         hs[1] = bob;
+        vm.warp(block.timestamp + 24 hours); // public moves open a day after graduation
         coinA.moveBatch(hs, "");
         _deliverLast();
         // Only dust below 1e-6 coin may stay behind; nothing is ever created.
@@ -199,4 +203,50 @@ contract LaunchCoinTest is Test {
         vm.expectRevert(LaunchCoin.BadFee.selector);
         new LaunchCoin("L", "L", address(ep), 10, treasury, creatorAddr, 1 days + 1, address(this));
     }
+
+    function test_moveBatch_keeperOnlyFirstDay_thenAnyone_moveSelfAnytime() public {
+        KeeperHubStub hub = new KeeperHubStub(address(0xBEE));
+        CurveHubStub curve = new CurveHubStub(address(hub));
+        LaunchCoin c = new LaunchCoin("Kedi", "KEDI", address(epA), 10, treasury, creatorAddr, 0, address(this));
+        c.setPeer(B, bytes32(uint256(uint160(address(coinB)))));
+        c.setController(address(curve));
+        vm.startPrank(address(curve));
+        c.mint(alice, 1_000 ether);
+        c.mint(bob, 1_000 ether);
+        c.mint(carol, 5 ether);
+        c.openBridge(B);
+        vm.stopPrank();
+        address[] memory hs = new address[](1);
+        hs[0] = alice;
+        // A stranger can't move alice during the first day.
+        vm.prank(address(0x5757));
+        vm.expectRevert(LaunchCoin.MoveNotOpenYet.selector);
+        c.moveBatch(hs, "");
+        // sasa's keeper can.
+        vm.prank(address(0xBEE));
+        c.moveBatch(hs, "");
+        assertEq(c.balanceOf(alice), 0);
+        // bob moves himself whenever he likes.
+        vm.prank(bob);
+        c.moveSelf("");
+        assertEq(c.balanceOf(bob), 0);
+        // After a day anyone may (liveness if the keeper stops).
+        hs[0] = carol;
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(address(0x5757));
+        c.moveBatch(hs, "");
+        assertEq(c.balanceOf(carol), 0);
+    }
+
+}
+
+
+contract KeeperHubStub {
+    address public keeper;
+    constructor(address k) { keeper = k; }
+}
+
+contract CurveHubStub {
+    address public hub;
+    constructor(address h) { hub = h; }
 }

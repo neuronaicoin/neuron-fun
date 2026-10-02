@@ -32,6 +32,14 @@ import {MessagingFee, MessagingReceipt} from "@layerzerolabs/oapp-evm/contracts/
  * - Owner rights (peers, endpoint settings) exist only while the factory sets the
  *   coin up in the launch transaction; the factory then gives them up for good.
  */
+interface ICoinCurveHub {
+    function hub() external view returns (address);
+}
+
+interface IHubKeeperView {
+    function keeper() external view returns (address);
+}
+
 contract LaunchCoin is OFT {
     uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
     /// @notice First word of a batch-move message. Normal OFT messages start with a
@@ -56,6 +64,10 @@ contract LaunchCoin is OFT {
     bool public bridgeOpen;
     /// @notice LayerZero endpoint id of the winning chain (0 until graduation).
     uint32 public homeEid;
+    /// @notice When the bridge opened (graduation). For the first PUBLIC_MOVE_AFTER only
+    /// sasa's keeper (and each holder for themselves) may move coins to the winning chain.
+    uint64 public bridgeOpenedAt;
+    uint256 public constant PUBLIC_MOVE_AFTER = 24 hours;
 
     event ControllerSet(address controller);
     event BridgeOpened(uint32 homeEid);
@@ -70,6 +82,7 @@ contract LaunchCoin is OFT {
     error NotLosingChain();
     error BadBatch();
     error BadFee();
+    error MoveNotOpenYet();
     error CreatorLocked(uint256 until);
 
     constructor(
@@ -128,6 +141,7 @@ contract LaunchCoin is OFT {
         if (bridgeOpen || winnerEid == 0) revert AlreadySet();
         bridgeOpen = true;
         homeEid = winnerEid;
+        bridgeOpenedAt = uint64(block.timestamp);
         emit BridgeOpened(winnerEid);
     }
 
@@ -157,6 +171,35 @@ contract LaunchCoin is OFT {
         payable
         returns (MessagingReceipt memory receipt)
     {
+        // First day after graduation: only sasa's keeper moves other people's coins
+        // (anyone else could otherwise move a holder at a moment they didn't choose).
+        // After that anyone may, so coins never stay stuck if the keeper stops.
+        if (!bridgeOpen) revert BridgeClosed();
+        if (homeEid == endpoint.eid()) revert NotLosingChain();
+        if (block.timestamp < uint256(bridgeOpenedAt) + PUBLIC_MOVE_AFTER && msg.sender != _keeper()) revert MoveNotOpenYet();
+        return _moveBatch(holders, options);
+    }
+
+    /// @notice A holder moves their own coins to the winning chain (same address), any time
+    /// after graduation. The caller pays the LayerZero fee in `msg.value`.
+    function moveSelf(bytes calldata options) external payable returns (MessagingReceipt memory receipt) {
+        address[] memory one = new address[](1);
+        one[0] = msg.sender;
+        return _moveBatch(one, options);
+    }
+
+    /// @dev sasa's keeper, read from this coin's curve and its hub (no admin on the coin itself).
+    function _keeper() internal view returns (address k) {
+        if (controller.code.length == 0) return address(0);
+        try ICoinCurveHub(controller).hub() returns (address h) {
+            if (h.code.length == 0) return address(0);
+            try IHubKeeperView(h).keeper() returns (address kk) {
+                k = kk;
+            } catch {}
+        } catch {}
+    }
+
+    function _moveBatch(address[] memory holders, bytes calldata options) internal returns (MessagingReceipt memory receipt) {
         if (!bridgeOpen) revert BridgeClosed();
         uint32 dst = homeEid;
         if (dst == endpoint.eid()) revert NotLosingChain();

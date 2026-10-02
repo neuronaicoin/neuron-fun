@@ -85,6 +85,8 @@ the web app and the off-chain services.
 - Ready when >= 99% of the expected money arrived, or 30 minutes after settlement.
 - 2% of the money goes to the treasury and the same share of pool coins is burned, so the
   pool opens at the graduation price `P_g`. Coins for money that never arrived are burned.
+- If more money than expected arrives (a gift, or a bridge paying more), the pool keeps all
+  the pool coins and all the money, so it opens slightly **above** P_g (only good for holders).
 - Full-range position in a 1% Uniswap v4 pool with `NeuronGraduationHook`; the position NFT
   stays in the migrator forever (no function can remove liquidity).
 - Pool fees: `collectFees` splits the coin-side and dollar-side fees between creator (30%)
@@ -92,9 +94,11 @@ the web app and the off-chain services.
 - Money arriving after the pool opened buys the coin back and burns it.
 
 ### Moving holders to the winning chain (`LaunchCoin`)
-- After graduation, anyone may move a **plain account's** coins (no code, or an EIP-7702
+- After graduation, sasa's keeper moves **plain accounts'** coins (no code, or an EIP-7702
   delegated EOA) from a losing chain to the same address on the winning chain, minus a 0.1%
-  fee. Contract wallets can only move their own coins with OFT `send`.
+  fee. For the first 24 hours only the keeper may do this for others; each holder may move
+  their own coins any time (`moveSelf`); after 24 hours anyone may call `moveBatch`.
+  Contract wallets can only move their own coins with OFT `send`.
 
 ### Orders (`OmniOrders`)
 - Users pre-approve; anyone may execute an order, but the trade must return an amount within
@@ -107,7 +111,7 @@ the web app and the off-chain services.
 |---|---|---|---|
 | Owner (factory, hub, bridge) | sasa admin wallet, moving to a 2/3 Safe | Set routes / config **for future launches** (fee <= 10%, move fee <= 0.5%, at least `minDvns` verifiers), open/close launches, set guardian, set the beta cap, unpause buys, set hub keeper/peers, Across fee within 0.5%, resend refunded Across deposits | Take users' or coins' money; change a launched coin's routes, fee or supply; remove pool liquidity; pause sells; renounce (disabled) |
 | Guardian | Hot wallet | `pauseBuys` | Unpause, anything else |
-| Keeper | Bot wallet | `freeze` (no rate limit), `forward`, `open`, move holders | Choose the winner (pure math on reports), redirect money |
+| Keeper | Bot wallet (set on the hub by the owner) | `freeze` (no rate limit), `forward`, `open`, move holders during the first 24 h after graduation | Choose the winner (pure math on reports), redirect money |
 | Splitter owner | sasa admin | Change treasury / rewards addresses and shares | Take funds already distributed |
 | Boost owner | sasa admin | Change plans and treasury | Anything about coins or trading |
 | Anyone | | Trade, finalize, forward, open, collect fees, execute orders within bounds, move plain accounts' coins to the winner (same address) | |
@@ -174,7 +178,7 @@ coin move fee 0.1%, at least 2 DVNs, coordinator Base.
 
 | ID | Finding | Status | Change |
 |---|---|---|---|
-| M-1 | `moveBatch` lets anyone move a plain account's coins to the winner | **Acknowledged, by design** | After settlement a losing chain's curve is closed and its money has left: coins there can no longer be traded, so moving them (always to the holder's own address, contract wallets excluded) is what keeps their value. Approvals on the losing chain have nothing to spend on, and orders there already refuse to run (`ChainLost`). Documented here as intended behaviour. |
+| M-1 | `moveBatch` lets anyone move a plain account's coins to the winner | **Fixed (round 2)** | For the first 24 hours after graduation (`PUBLIC_MOVE_AFTER`) only sasa's keeper (read from the coin's curve -> hub, no admin on the coin) may call `moveBatch`; each holder can move their own coins at any time with the new `moveSelf`; after 24 hours anyone may call `moveBatch`, so coins never stay stuck if the keeper stops. Moves still go only to the holder's own address on the winning chain and never touch contract wallets. Test: `test_moveBatch_keeperOnlyFirstDay_thenAnyone_moveSelfAnytime`. |
 | M-2 | Across refund smaller than the deposit would block `resend` | **Fixed** | `AcrossUsdBridge.resendAmount(id, amount, feeBps)`: owner only, once per deposit, amount <= the original and <= the bridge's balance, same coin and destination. Test: `test_resendAmount_partialRefund_sameCoinSameChain`. |
 | L-1 | Rounding dust (or donations) left in a settled curve | **Fixed** | `UsdCurveV6.settle` adds any balance above what the curve owes (money + creator + protocol fees) to `protocolFees`, so the curve always empties. Test: `test_settle_leftoverDollarsGoToProtocol_nothingStuck`. |
 | L-2 | Extra money at `open` raises the opening price above P_g | **Documented** | Only happens when more than the expected money arrives (a gift); the pool then opens slightly above P_g, which only benefits holders. |
@@ -183,4 +187,4 @@ coin move fee 0.1%, at least 2 DVNs, coordinator Base.
 | Info | Missing events on admin setters | **Fixed** | `GuardianSet`, `NativeCapSet`, `LaunchesOpenSet` (factory), `FactorySet`, `KeeperSet` (hub). `AcrossUsdBridge.setFeeBps` already emits `FeeSet`. |
 | Info | `BadFee` used for a bad lock length | No change | Cosmetic; kept to avoid touching the coin's bytecode. |
 
-All v6 unit tests pass after the changes (70 tests); `round1-fixes.diff` shows exactly what changed since commit `bdb6316`.
+All v6 unit tests pass after the changes (71 tests). `round1-fixes.diff` shows the round 1 changes since commit `bdb6316`; `round2-fixes.diff` shows the M-1 change on top of them.
