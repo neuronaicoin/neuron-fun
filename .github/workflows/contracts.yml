@@ -41,7 +41,13 @@ jobs:
         run: forge test --match-path "test/fork/Neuron*" --fork-url robinhood -vvv
 
       - name: v6 on a fork of Base (real USDC, Base's Uniswap v4)
-        run: forge test --match-path "test/fork/NeuronOmniV6*" --fork-url base -vvv
+        shell: bash
+        run: |
+          # Short log: the summary plus the trace of the first failing test (the full trace is too long for GitHub).
+          forge test --match-path "test/fork/NeuronOmniV6*" --fork-url base -vv && exit 0
+          echo "---------------- trace of test_fork_flow_usdcHigh (last 120 lines) ----------------"
+          forge test --match-path "test/fork/NeuronOmniV6*" --match-test test_fork_flow_usdcHigh --fork-url base -vvvv 2>&1 | tail -n 120
+          exit 1
 
       - name: Real dollars' storage slots (Base USDC, Robinhood USDG)
         run: forge test --match-path "test/fork/DollarSlots*" -vv
