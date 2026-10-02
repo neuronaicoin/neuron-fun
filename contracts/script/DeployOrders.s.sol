@@ -18,6 +18,9 @@ contract DeployOrders is Script {
         vm.startBroadcast(key);
         OmniOrders orders = new OmniOrders(IERC20(usd));
         vm.stopBroadcast();
+        string memory oj = "orders";
+        string memory oout = vm.serializeAddress(oj, "orders", address(orders));
+        vm.writeJson(oout, string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/omni/")), vm.toString(block.chainid), "-orders.json"));
         console2.log("Chain id:     ", block.chainid);
         console2.log("Dollar token: ", usd);
         console2.log("OmniOrders:   ", address(orders));

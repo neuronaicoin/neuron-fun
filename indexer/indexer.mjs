@@ -55,6 +55,8 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
   // v6 omnichain coins (optional): the OmniFactory on this chain. Its launches are indexed
   // as coins too, and its own buys (the creator's first buy) are credited to the creator.
   omniFactory: c.omniFactory ? getAddress(c.omniFactory) : null,
+  // Paid placement contract (SasaBoost), mainnet: "Boosted" row on Explore.
+  boost: c.boost ? getAddress(c.boost) : null,
   // Auto-orders contracts: their fills are credited to the order's owner.
   orders: list(c.orders),
   startBlock: BigInt(c.startBlock ?? 0),
@@ -81,6 +83,7 @@ const curveEvents = parseAbi([
   "event Settled(uint32 winnerEid, bool winner, uint256 moneyOut, uint256 poolTokens)",
 ]);
 // v6 launch. The coin has the same address on every chain; coinId = keccak(creator, launchKey).
+const boostedEvent = parseAbiItem("event Boosted(address indexed coin, address indexed payer, uint256 plan, uint256 paid, uint64 until)");
 const omniLaunchedEvent = parseAbiItem(
   "event Launched(bytes32 indexed coinId, address indexed coin, address indexed curve, address creator, uint32[] eids, string name, string symbol, string logo, string description, uint256 lockSeconds, uint8 feeMode)"
 );
@@ -210,6 +213,10 @@ async function indexRange(c, from, to) {
     })
   );
 
+  const boosts = c.boost
+    ? await pub.getLogs({ address: c.boost, event: boostedEvent, fromBlock: from, toBlock: to }).catch(() => [])
+    : [];
+
   const db = await pool.connect();
   try {
     await db.query("begin");
@@ -243,6 +250,24 @@ async function indexRange(c, from, to) {
           if (!lockWarned) log("creator locks: run indexer/lock.sql in Supabase");
           lockWarned = true;
         }
+      }
+    }
+
+    // 1a. Boosts (boost.sql). The coin's address is the same on every chain; keep the latest end.
+    if (boosts.length) {
+      await db.query("savepoint boost_rows");
+      try {
+        for (const l of boosts) {
+          await db.query(
+            `insert into coin_boost (coin, until) values ($1, to_timestamp($2))
+             on conflict (coin) do update set until = greatest(coin_boost.until, excluded.until)`,
+            [lc(l.args.coin), Number(l.args.until)]
+          );
+        }
+        await db.query("release savepoint boost_rows");
+      } catch (e) {
+        await db.query("rollback to savepoint boost_rows");
+        log("boosts: run indexer/boost.sql in Supabase");
       }
     }
 

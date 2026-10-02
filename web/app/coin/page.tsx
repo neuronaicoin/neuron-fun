@@ -18,6 +18,7 @@ import { LiveStats } from "@/components/livestats";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
 import { ShareButton, coinShareUrl, postOnX } from "@/components/share";
+import { BoostButton } from "@/components/boost";
 import { TrustCard } from "@/components/trust";
 import { FeeBox } from "@/components/feebox";
 import { CoinAlertButton } from "@/components/alerts";
@@ -169,6 +170,9 @@ function CoinPage() {
         </div>
       </div>
       {coin.description && <p className="text-[1rem] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
+      <div className="mt-3 empty:hidden">
+        <BoostButton coin={coin} />
+      </div>
 
       {winner && (
         <div className="mt-6 rounded-2xl bg-emerald-soft border border-emerald/40 text-ink p-5 sm:p-6">

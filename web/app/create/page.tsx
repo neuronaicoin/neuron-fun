@@ -20,6 +20,7 @@ import { clientFor, coinHref, isImageUrl } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
 import { fileToLogo } from "@/lib/image";
 import { call } from "@/lib/tx";
+import { BOOST_ON, BOOST_PLANS, boostCalls, boostChains } from "@/lib/boost";
 import { fetchPrices } from "@/lib/price";
 
 type Terms = { v0: bigint; t0: bigint; feeBps: bigint };
@@ -162,11 +163,15 @@ export default function CreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyDone, launchKey, address, coinKey]);
 
+  // Optional paid placement at launch (mainnet): null = none, else a plan index.
+  const [boostPlan, setBoostPlan] = useState<number | null>(null);
+
   async function launch() {
     if (!address || problem) return;
     const key = launchKey ?? (toHex(crypto.getRandomValues(new Uint8Array(32))) as Hex);
     setLaunchKey(key);
     setBusy(true);
+    let failedAny = false;
     for (const c of chosen) {
       if (runs[c.key]?.status === "done") continue;
       const set = (r: Run) => setRuns((p) => ({ ...p, [c.key]: r }));
@@ -209,7 +214,21 @@ export default function CreatePage() {
         set({ status: "done", hash });
       } catch (e) {
         set({ status: "failed", note: friendlyError(e) });
+        failedAny = true;
         break;
+      }
+    }
+    // Boost right after a successful launch, same tap (the coin's address is known ahead).
+    if (!failedAny && boostPlan !== null && BOOST_ON()) {
+      try {
+        const bc = boostChains()[0];
+        const coinAddr = (await clientFor(bc).readContract({ address: bc.factory, abi: omniFactoryAbi, functionName: "coinAddress", args: [address, key] })) as Address;
+        if ((await clientFor(bc).getCode({ address: coinAddr }))?.length) {
+          await send(bc.chain, boostCalls(bc, coinAddr, boostPlan), () => {});
+          toast(`🚀 Boosted for ${BOOST_PLANS[boostPlan].hours} hours`);
+        }
+      } catch (e) {
+        toast(`Launched. The boost didn't go through: ${friendlyError(e)}`);
       }
     }
     setBusy(false);
@@ -463,6 +482,29 @@ export default function CreatePage() {
               </p>
             )}
           </div>
+
+          {BOOST_ON() && (
+            <div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[0.9375rem] font-bold text-ink">Boost your launch</span>
+                <span className="text-[0.75rem] text-ink-3">optional · shows in Boosted on Explore</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {[null, 0, 1].map((p) => (
+                  <button
+                    key={String(p)}
+                    type="button"
+                    aria-pressed={boostPlan === p}
+                    onClick={() => setBoostPlan(p)}
+                    className={"rounded-2xl border-[1.5px] p-2.5 text-left " + (boostPlan === p ? "border-[#e8a200] ring-2 ring-[#e8a200]/25" : "border-line")}
+                  >
+                    <b className="block text-[0.9375rem]">{p === null ? "None" : `$${BOOST_PLANS[p].price}`}</b>
+                    <span className="text-[0.6875rem] text-ink-3">{p === null ? "Free" : `${BOOST_PLANS[p].hours} hours on top`}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="flex items-baseline justify-between">

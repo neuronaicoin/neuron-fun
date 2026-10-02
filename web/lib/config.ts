@@ -43,6 +43,8 @@ export type NeuronChain = {
   usdcSlots: { balance: number; allowance: number };
   /** Mainnet: Across's SpokePool here. Cash then moves between chains by itself when a buy needs it. */
   acrossSpoke?: Address;
+  /** Mainnet: SasaBoost (paid placement in the "Boosted" row). */
+  boost?: Address;
   startBlock: bigint;
   /** Price symbol of the gas coin (for dollar totals). */
   priceSymbol: "ETH" | "BNB" | "USD" | "USDC";
@@ -162,13 +164,13 @@ const base = defineChain({
  * Addresses only known after the mainnet deploy (router, migrator, orders, start block) and
  * the mainnet gas policies: filled in from contracts/deployments/mainnet on switch day.
  */
-type MainnetFill = { router: Address; migrator: Address; orders?: Address; startBlock: string; gasPolicy: string };
+type MainnetFill = { router: Address; migrator: Address; orders?: Address; boost?: Address; startBlock: string; gasPolicy: string };
 const FILL = mainnetFill as unknown as Record<string, MainnetFill | null>;
 
 function mainnetChain(c: Omit<NeuronChain, "router" | "migrator" | "orders" | "startBlock" | "gasPolicy">): NeuronChain | null {
   const f = FILL[c.key];
   if (!f) return null;
-  return { ...c, router: f.router, migrator: f.migrator, orders: f.orders, startBlock: BigInt(f.startBlock), gasPolicy: f.gasPolicy };
+  return { ...c, router: f.router, migrator: f.migrator, orders: f.orders, boost: f.boost, startBlock: BigInt(f.startBlock), gasPolicy: f.gasPolicy };
 }
 
 const MAINNET_CHAINS: NeuronChain[] = [

@@ -1,6 +1,7 @@
 "use client";
 
 import { GetAppButton } from "@/components/getapp";
+import { BoostedRow } from "@/components/boost";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -210,6 +211,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
       <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 sm:py-8 scroll-mt-20">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
+          <BoostedRow />
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
