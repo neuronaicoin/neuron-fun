@@ -39,6 +39,8 @@ const DRY = env("DRY_RUN", "false") === "true";
 const DEPLOYMENTS = env("DEPLOYMENTS", "../contracts/deployments/omni");
 const STATE_FILE = env("STATE_FILE", "./omni-state.json");
 const LZ_FEE = BigInt(env("LZ_FEE_WEI", "300000000000000"));
+// Graduated pools earn trading fees in Uniswap: collect them into the fee split this often.
+const COLLECT_MS = Number(env("COLLECT_HOURS", "6")) * 3_600_000;
 // Stop starting new work after this long, save progress and let the next run continue.
 const BUDGET_MS = Number(env("BUDGET_MS", String(9 * 60_000)));
 let STARTED = Date.now();
@@ -76,6 +78,7 @@ const consAbi = parseAbi([
 const migAbi = parseAbi([
   "function ready(bytes32) view returns (bool)",
   "function open(bytes32 coin)",
+  "function collectFees(address token) returns (uint256 usdcFees, uint256 tokenFees)",
   "function grads(bytes32) view returns (address token, bool known, bool opened, uint64 deadline, address creator, uint8 feeMode, uint256 expected, uint256 received, uint256 tokens)",
 ]);
 const coinAbi = parseAbi([
@@ -93,7 +96,7 @@ const SETTLED = 2;
 
 function loadChains() {
   const out = [];
-  for (const f of readdirSync(DEPLOYMENTS).filter((x) => x.endsWith(".json"))) {
+  for (const f of readdirSync(DEPLOYMENTS).filter((x) => /^\d+\.json$/.test(x))) {
     const d = JSON.parse(readFileSync(join(DEPLOYMENTS, f), "utf8"));
     const rpc = process.env[`RPC_${d.chainId}`];
     if (!rpc) {
@@ -176,7 +179,17 @@ async function main() {
   log(`${Object.keys(state.coins).length} v6 coins known`);
 
   for (const [id, coin] of Object.entries(state.coins)) {
-    if (coin.finished) continue;
+    if (coin.finished) {
+      // Pool fees: creator / buyback share and sasa's share (to the fee splitter).
+      const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
+      if (win && timeLeft() && Date.now() - (coin.lastCollect ?? 0) > COLLECT_MS) {
+        const ok = await send(win, `collect pool fees of ${coin.name}`, {
+          address: win.migrator, abi: migAbi, functionName: "collectFees", args: [coin.coin],
+        });
+        if (!DRY) coin.lastCollect = Date.now(); // success or not, try again in COLLECT_HOURS (ok: ${ok})
+      }
+      continue;
+    }
     if (!timeLeft()) { log("time budget spent; the next run continues"); break; }
     log(`coin ${coin.name} ${id.slice(0, 10)}…`);
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
@@ -273,7 +286,10 @@ async function main() {
     // New holders on a losing chain are impossible after graduation (its curve is closed).
     if (allMoved && win) {
       const g = await win.pub.readContract({ address: win.migrator, abi: migAbi, functionName: "grads", args: [id] });
-      if (g[2] && !DRY) coin.finished = true; // pool opened
+      if (g[2] && !DRY) {
+        coin.finished = true; // pool opened
+        coin.winner = winnerEid;
+      }
     }
   }
 
