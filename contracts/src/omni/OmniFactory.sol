@@ -124,6 +124,9 @@ contract OmniFactory is Ownable, ReentrancyGuard {
         UsdCurveV6.FeeMode feeMode
     );
     event RouteSet(uint32 eid);
+    event GuardianSet(address guardian);
+    event NativeCapSet(uint256 cap);
+    event LaunchesOpenSet(bool open);
     event ConfigSet(Config config);
     event BuysPausedSet(bool paused, address by);
 
@@ -300,10 +303,12 @@ contract OmniFactory is Ownable, ReentrancyGuard {
 
     function setGuardian(address g) external onlyOwner {
         guardian = g;
+        emit GuardianSet(g);
     }
 
     function setNativeCap(uint256 cap) external onlyOwner {
         nativeCap = cap;
+        emit NativeCapSet(cap);
     }
 
     // ------------------------------------------------------------ admin (future launches only)
@@ -323,6 +328,7 @@ contract OmniFactory is Ownable, ReentrancyGuard {
 
     function setLaunchesOpen(bool open) external onlyOwner {
         launchesOpen = open;
+        emit LaunchesOpenSet(open);
     }
 
     function renounceOwnership() public pure override {

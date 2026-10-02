@@ -155,14 +155,27 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
      * amount, with a new fee within the cap. Owner only, once per deposit.
      */
     function resend(uint256 id, uint256 newFeeBps) external onlyOwner nonReentrant {
+        _resend(id, sends[id].amount, newFeeBps);
+    }
+
+    /**
+     * @notice Same as `resend`, for a refund smaller than the deposit (if Across ever
+     * refunds less): sends `amount` (at most the original, at most what this bridge holds)
+     * to the same coin and destination.
+     */
+    function resendAmount(uint256 id, uint256 amount, uint256 newFeeBps) external onlyOwner nonReentrant {
+        _resend(id, amount, newFeeBps);
+    }
+
+    function _resend(uint256 id, uint256 amount, uint256 newFeeBps) internal {
         if (newFeeBps > MAX_FEE_BPS) revert FeeTooHigh();
         Sent storage s = sends[id];
         if (s.resent) revert AlreadyResent();
-        if (token.balanceOf(address(this)) < s.amount) revert NotRefunded();
+        if (amount == 0 || amount > s.amount || token.balanceOf(address(this)) < amount) revert NotRefunded();
         s.resent = true;
         uint256 nid = sends.length;
-        sends.push(Sent(s.dstEid, s.buyback, false, s.coin, s.amount));
-        _deposit(nid, s.dstEid, s.coin, s.amount, s.buyback, newFeeBps);
+        sends.push(Sent(s.dstEid, s.buyback, false, s.coin, amount));
+        _deposit(nid, s.dstEid, s.coin, amount, s.buyback, newFeeBps);
     }
 
     function _deposit(uint256 id, uint32 dstEid, bytes32 coin, uint256 amount, bool buyback, uint256 bps) internal {

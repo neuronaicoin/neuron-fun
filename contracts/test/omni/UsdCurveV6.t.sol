@@ -148,6 +148,21 @@ contract UsdCurveV6Test is Test {
         assertEq(usdc.balanceOf(address(curve)), 0);
     }
 
+    function test_settle_leftoverDollarsGoToProtocol_nothingStuck() public {
+        vm.prank(alice);
+        curve.buy(6_000e6, 0, alice);
+        usdc.mint(address(curve), 7); // rounding dust / dollars sent by mistake
+        uint256 protocolBefore = curve.protocolFees();
+        vm.startPrank(hub);
+        curve.freeze();
+        curve.settle(7, true, 200_000_000 ether, 6_000e6);
+        vm.stopPrank();
+        assertEq(curve.protocolFees(), protocolBefore + 7);
+        curve.claimCreatorFees();
+        curve.claimProtocolFees();
+        assertEq(usdc.balanceOf(address(curve)), 0, "nothing left behind");
+    }
+
     function test_settleLoser() public {
         vm.prank(alice);
         curve.buy(3_000e6, 0, alice);

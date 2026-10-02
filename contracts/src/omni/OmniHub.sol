@@ -110,13 +110,18 @@ contract OmniHub is OApp {
 
     // ------------------------------------------------------------------ admin
 
+    event FactorySet(address factory);
+    event KeeperSet(address keeper);
+
     function setFactory(address f) external onlyOwner {
         factory = f;
+        emit FactorySet(f);
     }
 
     function setKeeper(address k) external onlyOwner {
         keeper = k;
         lastKeeperPing = block.timestamp;
+        emit KeeperSet(k);
     }
 
     function ping() external {

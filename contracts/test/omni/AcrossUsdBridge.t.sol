@@ -183,4 +183,26 @@ contract AcrossUsdBridgeTest is Test {
         vm.expectRevert(AcrossUsdBridge.Locked.selector);
         baseBridge.setup(consolidator, address(1), eids, rs);
     }
+
+    function test_resendAmount_partialRefund_sameCoinSameChain() public {
+        vm.prank(consolidator);
+        baseBridge.send(RH_EID, COIN, 2_000e6, false, consolidator);
+        // Across refunds less than the deposit (edge case): resend what came back.
+        spokeBase.refund(usdc, address(baseBridge), 1_990e6);
+        vm.prank(safe);
+        vm.expectRevert(AcrossUsdBridge.NotRefunded.selector);
+        baseBridge.resend(0, 10); // the full amount isn't here
+        vm.prank(safe);
+        vm.expectRevert(AcrossUsdBridge.NotRefunded.selector);
+        baseBridge.resendAmount(0, 2_001e6, 10); // never more than the original
+        vm.prank(safe);
+        baseBridge.resendAmount(0, 1_990e6, 10);
+        MockSpoke.D memory d = spokeBase.last();
+        assertEq(d.inputAmount, 1_990e6);
+        assertEq(d.recipient, address(rhBridge));
+        assertEq(abi.decode(d.message, (bytes32)), COIN);
+        vm.prank(safe);
+        vm.expectRevert(AcrossUsdBridge.AlreadyResent.selector);
+        baseBridge.resendAmount(0, 1e6, 10);
+    }
 }

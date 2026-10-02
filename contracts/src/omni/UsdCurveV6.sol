@@ -295,6 +295,11 @@ contract UsdCurveV6 is ReentrancyGuard {
         uint256 money = realNative;
         realNative = 0;
         factory.noteNativeOut(money);
+        // Rounding dust or dollars sent here by mistake would otherwise stay forever:
+        // anything beyond what the curve owes is added to the protocol's fees.
+        uint256 owed = money + creatorFees + protocolFees;
+        uint256 bal = quote.balanceOf(address(this));
+        if (bal > owed) protocolFees += bal - owed;
         emit Settled(winner, isWinner, money, isWinner ? poolTokens : 0);
         coin.openBridge(winner);
         if (isWinner) {
