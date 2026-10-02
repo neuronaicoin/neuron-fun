@@ -76,7 +76,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <PauseBanner />
             <Header />
           </div>
-          <main className="flex-1 w-full">{children}</main>
+          {/* At least a screen tall: the footer never sits mid-page and then jumps down when data arrives (layout shift). */}
+          <main className="flex-1 w-full min-h-[100dvh]">{children}</main>
           <div className="app-chrome">
             <Footer />
             <BottomNav />

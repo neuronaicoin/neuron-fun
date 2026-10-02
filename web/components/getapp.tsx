@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sheet } from "@/components/chrome";
 
 /**
  * "📲 Get the app": puts sasa on the phone's home screen, where it opens full screen
@@ -122,43 +121,48 @@ export function GetAppButton({ className = "", variant = "chip" }: { className?:
         </button>
       )}
       {howTo && (
-        <Sheet title="Get the app" onClose={() => setHowTo(false)}>
-          <p className="text-[0.9375rem] text-ink-2 leading-snug">Two taps and sasa sits on your home screen, full screen like an app.</p>
-          <ol className="mt-4 grid gap-3">
-            <li className="flex items-center gap-3 rounded-2xl border border-line bg-paper p-3">
-              <span className="w-8 h-8 shrink-0 rounded-full bg-ink text-paper font-bold flex items-center justify-center">1</span>
-              <span className="text-[0.9375rem] leading-snug">
-                Tap{" "}
-                <span className="inline-flex items-center align-middle px-1.5 py-0.5 rounded-md border border-line bg-surface" aria-label="Share">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M12 3v12M8 7l4-4 4 4" />
-                    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
-                  </svg>
-                </span>{" "}
-                <b>Share</b> in Safari's bar
-              </span>
-            </li>
-            <li className="flex items-center gap-3 rounded-2xl border border-line bg-paper p-3">
-              <span className="w-8 h-8 shrink-0 rounded-full bg-ink text-paper font-bold flex items-center justify-center">2</span>
-              <span className="text-[0.9375rem] leading-snug">
-                Choose <b>Add to Home Screen</b>, then <b>Add</b>
-              </span>
-            </li>
-          </ol>
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                localStorage.setItem(ADDED_KEY, String(Date.now()));
-              } catch {}
-              setHowTo(false);
-              setHidden(true);
-            }}
-            className="mt-4 w-full h-12 rounded-2xl bg-emerald text-on-accent font-semibold"
+        // iPhone: Apple lets only Safari's own Share menu add a site to the home screen, so we
+        // point at that button (bottom of the screen in Safari) with one short line.
+        <div className="fixed inset-0 z-[80] bg-black/55" onClick={() => setHowTo(false)} role="dialog" aria-modal="true" aria-label="Get the app">
+          <div
+            className="absolute left-1/2 -translate-x-1/2 w-[min(22rem,calc(100vw-2rem))] rounded-3xl bg-surface border border-line p-5 text-center shadow-xl"
+            style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom, 0px))" }}
+            onClick={(e) => e.stopPropagation()}
           >
-            Done, I added it
-          </button>
-        </Sheet>
+            <p className="font-display font-bold text-[1.125rem]">Add sasa to your home screen</p>
+            <p className="mt-2 text-[0.9375rem] text-ink-2 leading-snug">
+              Tap{" "}
+              <span className="inline-flex items-center align-middle px-1.5 py-0.5 rounded-md border border-line bg-paper" aria-label="Share">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3v12M8 7l4-4 4 4" />
+                  <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+                </svg>
+              </span>{" "}
+              below (on newer iPhones: <b>⋯</b> then <b>Share</b>), then <b>Add to Home Screen</b>.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem(ADDED_KEY, String(Date.now()));
+                } catch {}
+                setHowTo(false);
+                setHidden(true);
+              }}
+              className="mt-4 h-10 px-5 rounded-xl bg-emerald text-on-accent font-semibold text-[0.875rem]"
+            >
+              Got it
+            </button>
+          </div>
+          {/* The arrow points at Safari's Share button in the bar below. */}
+          <div
+            aria-hidden="true"
+            className="absolute left-1/2 -translate-x-1/2 text-white text-[2.25rem] leading-none animate-bounce motion-reduce:animate-none"
+            style={{ bottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}
+          >
+            ⬇
+          </div>
+        </div>
       )}
     </>
   );
