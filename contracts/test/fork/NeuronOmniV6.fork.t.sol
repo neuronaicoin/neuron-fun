@@ -113,10 +113,15 @@ contract OmniV6ForkTest is Test {
     function _graduate() internal returns (uint256 total, uint256 pool) {
         vm.prank(alice);
         curve.buy(10_500e6, 0, alice);
+        // One chain only: the hub decides inside the freeze itself (no finalize, no messages).
+        total = curve.realNative();
+        uint256 v0 = curve.initialVirtualNative();
+        uint256 t0 = curve.initialVirtualToken();
+        pool = (total * t0 / (v0 + total)) * v0 / (v0 + total);
+        uint256 sold = curve.sold();
+        if (sold + pool > 1_000_000_000 ether) pool = 1_000_000_000 ether - sold;
         vm.prank(keeper);
         hub.freeze(ID, "");
-        (,,, total, pool) = hub.preview(ID);
-        hub.finalize(ID, 0, "");
         assertTrue(migrator.ready(ID), "all money here: ready at once");
         migrator.open(ID);
     }
