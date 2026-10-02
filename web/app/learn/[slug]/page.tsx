@@ -1,3 +1,4 @@
+import { IS_TESTNET } from "@/lib/config";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -73,7 +74,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
         <section className="mt-12 rounded-3xl border border-line bg-surface p-6 sm:p-8">
           <p className="font-display font-bold text-[1.375rem]">Launch once. Live on every chain.</p>
-          <p className="text-ink-2 mt-2">sasa is live on testnet and coming to mainnet soon.</p>
+          <p className="text-ink-2 mt-2">{IS_TESTNET ? "sasa is live on testnet and coming to mainnet soon." : "sasa is live on Robinhood Chain and Base."}</p>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="inline-flex mt-5 h-12 px-6 rounded-full bg-ink text-on-accent font-bold items-center">
             Follow @sasapadfun
           </a>

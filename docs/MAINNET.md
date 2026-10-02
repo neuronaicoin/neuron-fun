@@ -23,8 +23,12 @@ Everything below is done one step at a time, together. Contracts first, then the
 8. Railway neuron-fun (indexer): CHAINS <- printed value
 9. Railway rewards: CHAINS <- printed value
 10. Railway keeper: DEPLOYMENTS, RPC_4663, RPC_8453, PRIVATE_KEY (keeper wallet)
+10b. Railway neuron-fun (indexer) also: TARGET_USD=10000 (alerts and share cards)
+10c. Cloudflare Pages: environment variable TARGET_USD=10000 (forum pages)
+10d. ETH for gas: keeper wallet and sasa rewards wallet, a few dollars on each chain (rewards pays payouts and runs auto orders)
 11. Supabase SQL: indexer/boost.sql, then indexer/reset-mainnet.sql
-12. Privy: production mode; Alchemy key domain allowlist stays
+12. Privy: production mode (own Google login keys); Alchemy: confirm gas sponsorship works on Robinhood Chain mainnet, monthly spend cap set; key domain allowlist stays
+12b. Terms of Service, Privacy and Risk pages live (lawyer check, country restrictions)
 
 ## First real test (small money)
 13. Launch a coin on both chains, buy on both, graduate, pool trades, coins move, cash move (Across), auto order, payout, Boost, deposit (send USDC + another coin), withdraw, other-DEX coin buy/sell.

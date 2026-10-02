@@ -1,12 +1,21 @@
 "use client";
 
+import { IS_TESTNET } from "@/lib/config";
+
 import { useState } from "react";
 import { sessionToken } from "@/lib/alerts";
 
 const FAQ: { q: string; a: string }[] = [
-  { q: "Is this real money?", a: "Not yet. sasa runs on testnet: the USDC here is free test money with no value. Tap “Get $100” to try everything for free." },
-  { q: "How do I get test USDC?", a: "Tap your balance or “Deposit”, then “Get $100”. You can do it once a day on each chain." },
-  { q: "Do I need to pick a chain?", a: "No. sasa picks the best price for you when you buy, and sells where you hold. You can still change it with “change” in the trade box." },
+  ...(IS_TESTNET
+    ? [
+        { q: "Is this real money?", a: "Not yet. sasa runs on testnet: the USDC here is free test money with no value. Tap “Get $100” to try everything for free." },
+        { q: "How do I get test USDC?", a: "Tap your balance or “Deposit”, then “Get $100”. You can do it once a day on each chain." },
+      ]
+    : [
+        { q: "How do I add money?", a: "Tap “＋” next to your balance (or “Deposit”). Send USDC on Base or USDG on Robinhood Chain to your address for free, or bring another coin from any chain and it’s turned into dollars." },
+        { q: "How do I take money out?", a: "Tap your balance, then “Withdraw”. Send USDC on Base or USDG on Robinhood Chain to any wallet or exchange. On the exchange, pick the same network." },
+      ]),
+  { q: "Do I need to pick a chain?", a: "No. sasa picks the best price for you when you buy and sells everywhere you hold, in one tap." },
   { q: "My trade says it failed but my balance changed.", a: "Sometimes the network confirms slowly. Refresh the page after a few seconds; your balance and trades will show the real result." },
   { q: "What does “graduation” mean?", a: "When a coin raises its target across all chains, it moves to a trading pool with liquidity locked forever. The chain that raised the most wins; the others close and holders there can always sell." },
   { q: "What is a creator lock?", a: "A creator can lock their own coins for 1 or 24 hours at launch. Nobody can lift it early. Locked coins get a “Dev locked” badge." },

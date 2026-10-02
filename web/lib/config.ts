@@ -21,7 +21,8 @@ export const WALLETCONNECT_PROJECT_ID = "d5a8ab4f1bb470db701a5396d283b28a";
 
 /** Dollar total, across all chains, at which a coin graduates. Must match the keeper. */
 // Dollar edition testnet: $20 across all chains (each chain needs at least $10 to be the winner).
-export const TARGET_USD = 20;
+/** Dollars a coin raises to graduate: tiny on testnet (free test money), $10,000 on mainnet. */
+export const TARGET_USD = IS_TESTNET ? 20 : 10_000;
 
 /** Slippage tolerated on buys and sells, in basis points. */
 export const SLIPPAGE_BPS = 500n;
