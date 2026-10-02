@@ -8,7 +8,7 @@ import { CoinAvatar } from "./coins";
 import { ordersAbi } from "@/lib/abis";
 import { coinHref, type Coin } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
-import { ORDER_COLOR, ORDER_LABEL, ordersChanged, useMyOrders, type MyOrder } from "@/lib/myorders";
+import { ORDER_COLOR, ORDER_LABEL, ordersChanged, useAutoPanelOpen, useMyOrders, type MyOrder } from "@/lib/myorders";
 import { call } from "@/lib/tx";
 
 const SHORT: Record<MyOrder["kind"], string> = { tp: "TP", sl: "SL", dip: "DIP" };
@@ -38,7 +38,7 @@ function useCancel() {
   return { busy, cancel };
 }
 
-function Row({ o, showCoin, busy, onCancel }: { o: MyOrder; showCoin: boolean; busy: boolean; onCancel: () => void }) {
+function Row({ o, showCoin, busy, onCancel, lost }: { o: MyOrder; showCoin: boolean; busy: boolean; onCancel: () => void; lost?: string }) {
   return (
     <li className="flex items-center gap-3 py-2.5 border-t border-line first:border-t-0 min-w-0">
       {showCoin ? (
@@ -56,9 +56,15 @@ function Row({ o, showCoin, busy, onCancel }: { o: MyOrder; showCoin: boolean; b
         ) : (
           <span className="block font-semibold truncate">{ORDER_LABEL[o.kind]}</span>
         )}
-        <span className="block text-[0.75rem] text-ink-3 truncate">
-          {describe(o)} · {o.chain.short}
-        </span>
+        {lost ? (
+          <span className="block text-[0.75rem] text-danger leading-snug">
+            {o.chain.short} lost the race, so this can&apos;t fill. Cancel it and set it again on {lost}.
+          </span>
+        ) : (
+          <span className="block text-[0.75rem] text-ink-3 truncate">
+            {describe(o)} · {o.chain.short}
+          </span>
+        )}
       </div>
       <button
         type="button"
@@ -79,13 +85,25 @@ export function CoinOrders({ coin }: { coin: Coin }) {
   const { busy, cancel } = useCancel();
   const curves = new Set(coin.curves.map((c) => `${c.chain.chain.id}:${c.curve.toLowerCase()}`));
   const mine = (orders ?? []).filter((o) => curves.has(`${o.chain.chain.id}:${o.curve}`));
-  if (!address || !mine.length) return null;
+  const panelOpen = useAutoPanelOpen();
+  if (!address || !mine.length || panelOpen) return null;
   return (
     <section className="rounded-3xl border border-line bg-surface p-4" aria-label="Your auto orders">
       <h2 className="font-display font-bold text-[1rem]">Your orders on ${coin.symbol}</h2>
       <ul className="mt-1">
         {mine.map((o) => (
-          <Row key={`${o.chain.key}-${o.id}`} o={o} showCoin={false} busy={busy === `${o.chain.key}-${o.id}`} onCancel={() => void cancel(o)} />
+          <Row
+            key={`${o.chain.key}-${o.id}`}
+            o={o}
+            showCoin={false}
+            busy={busy === `${o.chain.key}-${o.id}`}
+            onCancel={() => void cancel(o)}
+            lost={
+              coin.graduatedOn && coin.curves.some((c) => c.chain.chain.id === o.chain.chain.id && c.state === "moved")
+                ? coin.graduatedOn.chain.short
+                : undefined
+            }
+          />
         ))}
       </ul>
     </section>

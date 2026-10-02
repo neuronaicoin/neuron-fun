@@ -215,7 +215,13 @@ function CoinPage() {
                 </div>
               )}
               <PriceChart curve={chartCurve} coin={USD_MODE ? coin : undefined} ethUsd={chartCurve.chain.priceSymbol === "ETH" || chartCurve.chain.priceSymbol === "USDC" ? ethUsd : null} alertLines={alertLines} markers={buyerMarkers} orderMarks={(myOrders ?? [])
-                .filter((o) => o.chain.chain.id === chartCurve.chain.chain.id && o.curve === chartCurve.curve.toLowerCase())
+                // The dollar chart is one line for the whole coin (all chains), so every order on
+                // this coin belongs on it; per-chain charts show that chain's orders only.
+                .filter((o) =>
+                  USD_MODE
+                    ? coin.curves.some((c) => c.chain.chain.id === o.chain.chain.id && c.curve.toLowerCase() === o.curve)
+                    : o.chain.chain.id === chartCurve.chain.chain.id && o.curve === chartCurve.curve.toLowerCase()
+                )
                 .map((o) => ({ perToken: o.trigger, color: ORDER_COLOR[o.kind], title: ORDER_LABEL[o.kind] }))} />
             </div>
           )}

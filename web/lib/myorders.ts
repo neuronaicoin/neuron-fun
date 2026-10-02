@@ -125,3 +125,21 @@ export function useMyOrders(address: Address | null | undefined): { orders: MyOr
 
 export const ORDER_LABEL: Record<MyOrder["kind"], string> = { tp: "Take profit", sl: "Stop loss", dip: "Buy the dip" };
 export const ORDER_COLOR: Record<MyOrder["kind"], string> = { tp: "#0f9d62", sl: "#d64532", dip: "#3b6ff5" };
+
+// How many Auto panels are open (they show their own order list).
+let panels = 0;
+export const AUTO_PANEL = "sasa-auto-panel";
+export function autoPanelOpen(delta: number) {
+  panels = Math.max(0, panels + delta);
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTO_PANEL));
+}
+export function useAutoPanelOpen(): boolean {
+  const [open, setOpen] = useState(panels > 0);
+  useEffect(() => {
+    const on = () => setOpen(panels > 0);
+    on();
+    window.addEventListener(AUTO_PANEL, on);
+    return () => window.removeEventListener(AUTO_PANEL, on);
+  }, []);
+  return open;
+}

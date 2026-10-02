@@ -18,7 +18,7 @@ import { routerOf } from "@/lib/contracts";
 import { clientFor, db, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtTokens, friendlyError } from "@/lib/format";
 import { call } from "@/lib/tx";
-import { ordersChanged } from "@/lib/myorders";
+import { autoPanelOpen, ordersChanged } from "@/lib/myorders";
 
 const TP = [25, 50, 100, 200, 500] as const;
 const SL = [10, 20, 30, 50] as const;
@@ -82,6 +82,11 @@ async function lastPrice(c: CurveInfo): Promise<number | null> {
 }
 
 export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
+  // While this panel is open it lists the orders itself: the card under the trade box steps aside.
+  useEffect(() => {
+    autoPanelOpen(+1);
+    return () => autoPanelOpen(-1);
+  }, []);
   const { address, send } = useWallet();
   // The coin object is replaced every few seconds by the page's refresh; key
   // everything on what actually matters so nothing reloads (or flickers) for it.
