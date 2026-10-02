@@ -96,7 +96,7 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
     router: "0x1bd54DB7E565DE3B76b4d74CdeF101d0D28e50C8",
     migrator: "0xC93e5764DE826fe3eA5B758342027fB309922B24",
-    // Auto orders for v6 coins come in a later update.
+    orders: "0x793191cb1d86a51CE596B0409873C534a3e21969",
     usdc: "0x3b4762Cd69CBC3e128781F44d6E6A1E882Dd5721",
     usdcSlots: { balance: 5, allowance: 6 },
     legacy: [],
@@ -118,6 +118,7 @@ export const CHAINS: NeuronChain[] = [
     poolManager: "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
     router: "0x324F309542bfDF1058a0B4880Cb9C0FD932020CD",
     migrator: "0x1e98de896584aE8C7966314E6A82ec2c434BC18D",
+    orders: "0x73CB6B02DF8Dd5bacB856EF6CFf2E9Dc24b7b650",
     usdc: "0x57A149c274d5065279F7926EF3D6b00214A8A07F",
     usdcSlots: { balance: 5, allowance: 6 },
     legacy: [],

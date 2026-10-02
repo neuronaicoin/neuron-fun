@@ -85,13 +85,13 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
   // The coin object is replaced every few seconds by the page's refresh; key
   // everything on what actually matters so nothing reloads (or flickers) for it.
   const curvesKey = coin.curves
-    .filter((c) => c.chain.orders && c.state !== "closed")
+    .filter((c) => c.chain.orders && c.state !== "closed" && c.state !== "moved")
     .map((c) => `${c.chain.key}:${c.curve}:${c.state}`)
     .join("|");
   const coinRef = useRef(coin);
   coinRef.current = coin;
   const curves = useMemo(
-    () => coinRef.current.curves.filter((c) => c.chain.orders && c.state !== "closed"),
+    () => coinRef.current.curves.filter((c) => c.chain.orders && c.state !== "closed" && c.state !== "moved"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [curvesKey]
   );
