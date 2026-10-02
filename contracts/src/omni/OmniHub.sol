@@ -174,6 +174,16 @@ contract OmniHub is OApp {
         }
         (uint256 money, uint256 sold) = ICurveV6Hub(l.curve).freeze();
         emit FreezeSent(coin, l.round, money, sold);
+        // A coin on this chain only: nothing to ask anyone. Decide here and now, in the
+        // same transaction, so it graduates with no pause (and no LayerZero fee).
+        if (l.eids.length == 1) {
+            _decideAlone(coin, l, money, sold);
+            if (msg.value > 0) {
+                (bool ok,) = payable(msg.sender).call{value: msg.value}("");
+                ok;
+            }
+            return;
+        }
         bytes memory msg_ = abi.encode(
             KIND_REPORT,
             coin,
@@ -188,6 +198,26 @@ contract OmniHub is OApp {
         );
         if (localEid == coordEid) _onReport(msg_, localEid);
         else _lzSend(coordEid, msg_, options, MessagingFee(msg.value, 0), payable(msg.sender));
+    }
+
+    /// @dev The same maths as `preview`, for one chain: graduates at the target, the
+    /// winner is this chain, the pool gets R / P_g tokens.
+    function _decideAlone(bytes32 coin, Local storage l, uint256 money, uint256 sold) internal {
+        uint64 round = l.round;
+        if (money < l.target || money == 0) {
+            l.round = round + 1;
+            ICurveV6Hub(l.curve).reopen();
+            emit Decided(coin, round, false, 0, money, 0);
+            emit Reopened(coin, round);
+            return;
+        }
+        uint256 v0 = ICurveV6Hub(l.curve).initialVirtualNative();
+        uint256 t0 = ICurveV6Hub(l.curve).initialVirtualToken();
+        uint256 poolTokens = (money * t0 / (v0 + money)) * v0 / (v0 + money);
+        if (sold + poolTokens > MAX_SUPPLY) poolTokens = MAX_SUPPLY - sold;
+        emit Decided(coin, round, true, localEid, money, poolTokens);
+        ICurveV6Hub(l.curve).settle(localEid, true, poolTokens, money);
+        emit Settled(coin, localEid, true);
     }
 
     // ------------------------------------------------------------------ step 2: decide (coordinator)

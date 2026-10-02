@@ -195,4 +195,58 @@ contract OmniHubTest is Test {
         e[0] = A;
         e[1] = B;
     }
+
+    // ---------------------------------------------------------------- one chain only
+
+    function _solo(bytes32 key) internal returns (UsdCurveV6 curve, LaunchCoin coin) {
+        coin = new LaunchCoin("Solo", "SOLO", address(b.ep), 10, address(0x7E), address(0xC4EA), 0, address(this));
+        uint256 r = (TARGET * 12) / 10;
+        curve = b.factory.deploy(
+            UsdCurveV6.Params(
+                b.usdc, coin, key, address(b.factory), address(b.hub), migB, consB, address(0xC4EA), address(0x9407), V0, T0, T0 - (V0 * T0) / (V0 + r), 100, 3_000,
+                UsdCurveV6.FeeMode.Creator
+            )
+        );
+        coin.setController(address(curve));
+        uint32[] memory eids = new uint32[](1);
+        eids[0] = B; // not the coordinator's chain
+        b.hub.register(key, address(curve), eids, TARGET);
+        vm.prank(alice);
+        b.usdc.approve(address(curve), type(uint256).max);
+    }
+
+    function test_singleChain_graduatesInTheFreezeItself_noMessages() public {
+        bytes32 key = bytes32("solo");
+        (UsdCurveV6 curve, LaunchCoin coin) = _solo(key);
+        vm.prank(alice);
+        curve.buy(10_500e6, 0, alice);
+        uint256 money = curve.realNative();
+        uint256 sold = curve.sold();
+        uint256 packets = b.ep.packetCount();
+        vm.deal(keeper, 1 ether);
+        vm.prank(keeper);
+        b.hub.freeze{value: 0.01 ether}(key, "");
+        assertEq(b.ep.packetCount(), packets, "nothing sent over LayerZero");
+        assertEq(keeper.balance, 1 ether, "fee handed back");
+        uint256 expect = (money * T0 / (V0 + money)) * V0 / (V0 + money);
+        if (sold + expect > 1_000_000_000 ether) expect = 1_000_000_000 ether - sold;
+        assertEq(b.usdc.balanceOf(migB), money, "money in the migrator at once");
+        assertEq(coin.balanceOf(migB), expect, "pool tokens at once");
+        assertTrue(coin.bridgeOpen());
+        assertEq(coin.homeEid(), B);
+    }
+
+    function test_singleChain_shortOfTarget_reopensAtOnce() public {
+        bytes32 key = bytes32("solo2");
+        (UsdCurveV6 curve,) = _solo(key);
+        vm.prank(alice);
+        curve.buy(2_000e6, 0, alice);
+        vm.prank(keeper);
+        b.hub.freeze(key, "");
+        // Trading again right away.
+        vm.prank(alice);
+        curve.buy(1e6, 0, alice);
+        (,, uint64 round,) = b.hub.localOf(key);
+        assertEq(round, 1);
+    }
 }

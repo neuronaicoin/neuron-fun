@@ -202,7 +202,8 @@ async function main() {
     // 1. freeze
     if (!anySettled && total >= target) {
       for (const r of reads.filter((x) => x.st === TRADING)) {
-        const remote = r.c.eid !== coord.eid;
+        // A coin on one chain only is decided right inside its freeze: no message, no fee.
+        const remote = r.c.eid !== coord.eid && coin.eids.length > 1;
         await send(r.c, `freeze ${coin.name} (total ${total} >= ${target})`, {
           address: r.c.hub, abi: hubAbi, functionName: "freeze", args: [id, remote ? lzOptions(300_000) : "0x"], value: remote ? LZ_FEE : 0n,
         });
