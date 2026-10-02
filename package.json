@@ -1,0 +1,12 @@
+{
+  "name": "sasa-keeper-service",
+  "private": true,
+  "description": "Lets Railway build the always-on v6 keeper from the repository root (it needs keeper/ and contracts/deployments/). Other services use their own folders.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "cd keeper && npm install --no-audit --no-fund",
+    "start": "cd keeper && node omni.mjs"
+  }
+}
