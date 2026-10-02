@@ -5,10 +5,10 @@ import { BoostedRow } from "@/components/boost";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChainChip, SkeletonTile, useCoins, usd } from "@/components/coins";
+import { ChainChip, CoinAvatar, SkeletonTile, useCoins, usd } from "@/components/coins";
 import { CoinTile, LiveTicker } from "@/components/discover";
 import { CHAINS, TARGET_USD } from "@/lib/config";
-import { fetchCoinCount, type SortKey } from "@/lib/data";
+import { coinHref, fetchCoinCount, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 import { ScrollRow } from "@/components/scrollrow";
@@ -212,6 +212,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 sm:py-8 scroll-mt-20">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
           <BoostedRow />
+          <AlmostThere coins={racing} />
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
@@ -459,5 +460,67 @@ function HeroMessages() {
         ))}
       </div>
     </>
+  );
+}
+
+
+/** Coins close to graduating (70%+): a last push often comes from seeing that. Plain data, no paid placement. */
+function AlmostThere({ coins }: { coins: Coin[] }) {
+  const near = coins
+    .filter((c) => !c.graduatedOn && !c.graduating && c.progress >= 0.7 && c.progress < 1)
+    .sort((a, b) => b.progress - a.progress)
+    .slice(0, 10);
+  if (!near.length) return null;
+  return (
+    <section aria-label="Almost graduating" className="mb-5">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="font-display font-bold text-[1.0625rem] flex items-center gap-2">
+          <span className="almost-live" aria-hidden="true" />
+          🎓 Almost graduating
+        </h3>
+        <span className="text-[0.6875rem] text-ink-3">70%+ of the way</span>
+      </div>
+      <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-2 pt-1 px-0.5 snap-x snap-mandatory">
+        {near.map((c) => {
+          const pct = Math.min(99, Math.floor(c.progress * 100));
+          const hot = pct >= 90;
+          const left = c.totalUsd !== null ? Math.max(0, TARGET_USD - c.totalUsd) : null;
+          // The tip grows as the coin gets closer: 0.95rem at 90% up to ~1.5rem at 99%.
+          const tipSize = hot ? 0.95 + (pct - 90) * 0.06 : 0.85;
+          return (
+            <Link
+              key={c.id}
+              href={coinHref(c)}
+              className={"almost-card snap-start shrink-0 w-[13.75rem] rounded-2xl border-[1.5px] bg-paper p-2.5 relative overflow-hidden " + (hot ? "almost-hot border-emerald" : "border-line hover:border-emerald/60")}
+            >
+              {hot && <span className="absolute top-2 right-2 rounded-full bg-emerald text-on-accent text-[0.625rem] font-extrabold tracking-wide px-1.5 py-0.5">HOT</span>}
+              <span className="flex items-center gap-2.5">
+                <CoinAvatar logo={c.logo} symbol={c.symbol} size={40} />
+                <span className="min-w-0">
+                  <b className="block truncate pr-8">{c.name}</b>
+                  <span className={"block font-mono font-semibold text-[0.875rem] " + (hot ? "text-emerald" : "text-up")}>
+                    {pct}%<span className="font-sans font-normal text-[0.6875rem] text-ink-3 ml-1">graduated</span>
+                  </span>
+                  {left !== null && <span className="block text-[0.6875rem] text-ink-3">{usd(left, left < 100 ? 2 : 0)} to go</span>}
+                </span>
+              </span>
+              <span className="relative block h-2.5 rounded-full bg-line mt-3.5 mb-1 mr-2.5" aria-hidden="true">
+                <span className="almost-fill absolute inset-y-0 left-0 rounded-full overflow-hidden" style={{ width: `${pct}%` }} />
+                {hot && (
+                  <>
+                    <span className="almost-spark absolute -top-3" style={{ left: `${pct - 6}%` }}>✨</span>
+                    <span className="almost-spark absolute -top-3.5 [animation-delay:.8s]" style={{ left: `${pct - 2}%` }}>✨</span>
+                  </>
+                )}
+                <span className="almost-tip absolute top-1/2 leading-none" style={{ left: `${pct}%`, fontSize: `${tipSize}rem` }}>
+                  {hot ? "🔥" : "⭐"}
+                </span>
+                <span className="absolute -right-2.5 top-1/2 -translate-y-1/2 text-[0.95rem] leading-none">🎓</span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }

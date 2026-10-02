@@ -8,12 +8,70 @@ import { useEffect, useRef, useState } from "react";
 import { EXT_NETWORKS, fetchExtCoins, type ExtCoin } from "@/lib/extcoins";
 import { postOnX } from "@/components/share";
 import { toast } from "@/components/alerts";
-import { IS_TESTNET } from "@/lib/config";
+import { IS_TESTNET, TARGET_USD, chainById } from "@/lib/config";
+import { db } from "@/lib/data";
 
 const MIN_VOL = 25_000; // skip thin coins: a daily post should show real movers
 
 const CHAIN_NAME: Record<string, string> = { robinhood: "Robinhood Chain", base: "Base", bsc: "BNB Chain", arc: "Arc", eth: "Ethereum" };
 const pct = (v: number) => `${v >= 0 ? "+" : ""}${v >= 100 ? v.toFixed(0) : v.toFixed(1)}%`;
+
+type Grad = { id: string; name: string; symbol: string; chain: string; hours: number | null };
+
+/** Graduations in the last 2 days, each as a ready post: facts only, no "buy" call. */
+function GraduatedPosts() {
+  const [list, setList] = useState<Grad[] | null>(null);
+  useEffect(() => {
+    const since = new Date(Date.now() - 48 * 3600e3).toISOString();
+    db.from("coin_list")
+      .select("id,name,symbol,graduated_chain,created_at,graduated_at")
+      .not("graduated_chain", "is", null)
+      .gte("graduated_at", since)
+      .order("graduated_at", { ascending: false })
+      .limit(10)
+      .then(({ data }) =>
+        setList(
+          ((data ?? []) as { id: string; name: string; symbol: string; graduated_chain: number | string; created_at: string; graduated_at: string | null }[]).map((r) => ({
+            id: r.id,
+            name: r.name,
+            symbol: r.symbol,
+            chain: chainById(Number(r.graduated_chain))?.name ?? "its winning chain",
+            hours: r.graduated_at ? (Date.parse(r.graduated_at) - Date.parse(r.created_at)) / 3600e3 : null,
+          }))
+        )
+      );
+  }, []);
+  const took = (h: number | null) => (h === null ? "" : h < 1 ? ` in ${Math.max(1, Math.round(h * 60))} min` : h < 48 ? ` in ${Math.floor(h)}h ${Math.round((h % 1) * 60)}m` : ` in ${Math.round(h / 24)} days`);
+  const post = (g: Grad) =>
+    `🎓 $${g.symbol} just graduated on ${g.chain}: $${TARGET_USD.toLocaleString("en-US")} raised${took(g.hours)}.\n\nLiquidity locked forever. One coin, one CA, every chain.`;
+  return (
+    <section className="mt-10">
+      <h2 className="font-display font-bold text-[1.25rem]">🎓 Graduated (last 2 days)</h2>
+      <p className="text-ink-3 text-[0.8125rem] mt-1">Facts only, no &quot;buy&quot; call: celebrates the platform without promoting a coin.</p>
+      {list === null ? (
+        <p className="mt-3 text-ink-3">Loading…</p>
+      ) : list.length === 0 ? (
+        <p className="mt-3 text-ink-2">No graduations in the last 2 days.</p>
+      ) : (
+        <ul className="mt-3 grid gap-3">
+          {list.map((g) => (
+            <li key={g.id} className="rounded-2xl border border-line bg-surface p-4">
+              <pre className="whitespace-pre-wrap font-sans text-[0.875rem]">{post(g)}</pre>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => void navigator.clipboard?.writeText(post(g)).then(() => toast("Text copied"), () => {})} className="h-11 rounded-xl border border-line font-semibold">
+                  Copy text
+                </button>
+                <button type="button" onClick={() => postOnX(post(g), `https://sasapad.fun/coin/?id=${encodeURIComponent(g.id)}`)} className="h-11 rounded-xl bg-emerald text-on-accent font-bold">
+                  Post on X
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 export default function DailyPage() {
   const [net, setNet] = useState("robinhood");
@@ -139,6 +197,7 @@ export default function DailyPage() {
           <p className="text-[0.75rem] text-ink-3 mt-3">Tags at most 3 projects so the post doesn’t look like spam. Post once or twice a day.</p>
         </>
       )}
+      <GraduatedPosts />
     </div>
   );
 }
