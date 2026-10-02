@@ -25,14 +25,19 @@ import {FactoryStub} from "../omni/UsdCurveV6.t.sol";
  * @notice v6 graduation against the real Uniswap v4 deployment on a fork of
  * Robinhood Chain mainnet: curve -> hub decision -> migrator opens the locked pool at
  * P_g -> pool trading, fees and buyback. Both coin/USDC orderings.
- *   forge test --match-path "test/fork/NeuronOmniV6*" --fork-url robinhood
+ *   forge test --match-path "test/fork/NeuronOmniV6*" --fork-url robinhood   (and --fork-url base)
  */
 contract OmniV6ForkTest is Test {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
 
-    address constant POOL_MANAGER = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
-    address constant POSITION_MANAGER = 0x58daec3116aae6D93017bAAea7749052E8a04fA7;
+    // Uniswap v4 and the chain's real dollar, per chain (Robinhood: USDG, Base: USDC).
+    address constant RH_POOL_MANAGER = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
+    address constant RH_POSITION_MANAGER = 0x58daec3116aae6D93017bAAea7749052E8a04fA7;
+    address constant RH_DOLLAR = 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168;
+    address constant BASE_POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
+    address constant BASE_POSITION_MANAGER = 0x7C5f5A4bBd8fD63184577525326123B519429bDc;
+    address constant BASE_DOLLAR = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     uint32 constant EID = 30_400;
     bytes32 constant ID = bytes32("kedi");
@@ -47,7 +52,8 @@ contract OmniV6ForkTest is Test {
     address bob = makeAddr("bob");
 
     IPoolManager pm;
-    TestUSDC usdc;
+    IERC20 usdc;
+    bool usdcLow;
     OmniHub hub;
     MigratorV6 migrator;
     UsdPoolRouter router;
@@ -55,18 +61,39 @@ contract OmniV6ForkTest is Test {
     UsdCurveV6 curve;
 
     function _stack(bool lowUsdc, UsdCurveV6.FeeMode mode) internal {
-        if (block.chainid != 4663) vm.skip(true);
-        pm = IPoolManager(POOL_MANAGER);
-        bytes32 initHash = keccak256(type(TestUSDC).creationCode);
-        bytes32 salt;
-        for (uint256 i;; ++i) {
-            address a = vm.computeCreate2Address(bytes32(i), initHash, address(this));
-            if (lowUsdc ? uint160(a) < (uint160(1) << 156) : uint160(a) > (type(uint160).max - (uint160(1) << 156))) {
-                salt = bytes32(i);
-                break;
-            }
+        _stack(lowUsdc, mode, false);
+    }
+
+    /// `real`: the chain's real dollar (its address decides the pool ordering); otherwise a
+    /// test dollar placed below or above the coin to test both orderings.
+    function _stack(bool lowUsdc, UsdCurveV6.FeeMode mode, bool real) internal {
+        address positionManager;
+        address dollar;
+        if (block.chainid == 4663) {
+            pm = IPoolManager(RH_POOL_MANAGER);
+            positionManager = RH_POSITION_MANAGER;
+            dollar = RH_DOLLAR;
+        } else if (block.chainid == 8453) {
+            pm = IPoolManager(BASE_POOL_MANAGER);
+            positionManager = BASE_POSITION_MANAGER;
+            dollar = BASE_DOLLAR;
+        } else {
+            vm.skip(true);
         }
-        usdc = new TestUSDC{salt: salt}();
+        if (real) {
+            usdc = IERC20(dollar);
+        } else {
+            bytes32 initHash = keccak256(type(TestUSDC).creationCode);
+            bytes32 salt;
+            for (uint256 i;; ++i) {
+                address a = vm.computeCreate2Address(bytes32(i), initHash, address(this));
+                if (lowUsdc ? uint160(a) < (uint160(1) << 156) : uint160(a) > (type(uint160).max - (uint160(1) << 156))) {
+                    salt = bytes32(i);
+                    break;
+                }
+            }
+            usdc = IERC20(address(new TestUSDC{salt: salt}()));
+        }
         MockLzEndpoint ep = new MockLzEndpoint(EID);
         hub = new OmniHub(address(ep), address(this), EID, EID); // single-chain coin: this hub coordinates
         hub.setKeeper(keeper);
@@ -83,7 +110,7 @@ contract OmniV6ForkTest is Test {
             }
         }
         migrator = new MigratorV6(
-            pm, IPositionManager(POSITION_MANAGER), IAllowanceTransfer(PERMIT2), IERC20(address(usdc)), IHubLocal(address(hub)),
+            pm, IPositionManager(positionManager), IAllowanceTransfer(PERMIT2), usdc, IHubLocal(address(hub)),
             makeAddr("bridge"), protocol, 3_000, hs
         );
         router = new UsdPoolRouter(pm, IUsdGraduatedPools(address(migrator)));
@@ -96,6 +123,7 @@ contract OmniV6ForkTest is Test {
             UsdCurveV6.Params(IERC20(address(usdc)), coin, ID, address(f), address(hub), address(migrator), makeAddr("cons"), creator, protocol, V0, T0, cap, 100, 3_000, mode)
         );
         coin.setController(address(curve));
+        usdcLow = real ? address(usdc) < address(coin) : lowUsdc;
         uint32[] memory eids = new uint32[](1);
         eids[0] = EID;
         hub.register(ID, address(curve), eids, TARGET);
@@ -126,8 +154,13 @@ contract OmniV6ForkTest is Test {
         migrator.open(ID);
     }
 
-    function _flow(bool low) internal {
-        _stack(low, UsdCurveV6.FeeMode.Creator);
+    function _flow(bool lowWanted) internal {
+        _flow(lowWanted, false);
+    }
+
+    function _flow(bool lowWanted, bool real) internal {
+        _stack(lowWanted, UsdCurveV6.FeeMode.Creator, real);
+        bool low = usdcLow;
         (uint256 total, uint256 pool) = _graduate();
         PoolKey memory key = migrator.poolKeyFor(address(coin));
         (uint160 sqrtP,,,) = pm.getSlot0(key.toId());
@@ -164,6 +197,11 @@ contract OmniV6ForkTest is Test {
 
     function test_fork_flow_usdcHigh() public {
         _flow(false);
+    }
+
+    /// The chain's real dollar end to end: USDG on Robinhood, Circle USDC on Base.
+    function test_fork_flow_realDollar() public {
+        _flow(false, true);
     }
 
     function test_fork_buybackMode() public {
