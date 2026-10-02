@@ -8,7 +8,8 @@ import { SENT_UNCONFIRMED, useWallet } from "./wallet";
 import { toast } from "./alerts";
 import { ConnectButton } from "./chrome";
 import { curveAbi, routerAbi, tokenAbi, usdcAbi } from "@/lib/abis";
-import { SLIPPAGE_BPS, USD_MODE, explorerTx, COIN_SLOTS } from "@/lib/config";
+import { USD_MODE, explorerTx, COIN_SLOTS } from "@/lib/config";
+import { SLIPPAGE_CHOICES, slippagePct, useSlippage } from "@/lib/slippage";
 import { call, type Call } from "@/lib/tx";
 import { signalTrade } from "@/lib/live";
 import { fetchTrades } from "@/lib/data";
@@ -98,6 +99,8 @@ export function QuickTrade({
   const autoReady = coin.curves.some((c) => !!c.chain.orders);
   const [usdIn, setUsdIn] = useState(initialUsd ?? "25");
   const [sellPct, setSellPct] = useState(initialSellPct ?? 100);
+  const [slip, setSlip] = useSlippage();
+  const [slipOpen, setSlipOpen] = useState(false);
   const [picked, setPicked] = useState<string | null>(
     () => coin.curves.find((c) => c.chain.chain.id === initialChainId)?.chain.key ?? null
   );
@@ -339,9 +342,10 @@ export function QuickTrade({
             : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [amount] })) as bigint),
           pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
         ]);
-        const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
+        const minOut = (out * (10_000n - slip)) / 10_000n;
         // Pay with USDC: approve exactly this buy (email users get it bundled, gasless).
-        if (allowance < amount) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, amount]));
+        // Approve once for good (wallets like MetaMask then need one confirmation per trade, not two).
+        if (allowance < amount) calls.push(call(chosen.chain.usdc, usdcAbi, "approve", [spender, maxUint256]));
         calls.push(
           pool
             ? call(spender, routerAbi, "buy", [chosen.token, amount, minOut, address, deadline()])
@@ -364,10 +368,10 @@ export function QuickTrade({
           : (pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteSell", args: [amount] }) as Promise<bigint>),
           pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
         ]);
-        const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
+        const minOut = (out * (10_000n - slip)) / 10_000n;
         proceeds = out;
         // Email users get approve + sell as one gasless bundle; wallets confirm each.
-        if (allowance < amount) calls.push(call(chosen.token, tokenAbi, "approve", [spender, amount]));
+        if (allowance < amount) calls.push(call(chosen.token, tokenAbi, "approve", [spender, maxUint256]));
         calls.push(
           pool
             ? call(spender, routerAbi, "sell", [chosen.token, amount, minOut, address, deadline()])
@@ -687,8 +691,30 @@ export function QuickTrade({
         </p>
       )}
       <p className="mt-4 text-[0.6875rem] leading-relaxed text-ink-3">
-        1% fee. If the price moves more than 5% before it lands, the trade is cancelled and nothing is spent.
+        1% fee. If the price moves more than {slippagePct(slip)} before it lands, the trade is cancelled and nothing is spent.{" "}
+        <button type="button" onClick={() => setSlipOpen((v) => !v)} className="underline font-semibold text-ink-2" aria-expanded={slipOpen}>
+          Change
+        </button>
       </p>
+      {slipOpen && (
+        <div className="mt-2 flex items-center gap-1.5 flex-wrap" role="group" aria-label="Price move limit">
+          {SLIPPAGE_CHOICES.map((v) => (
+            <button
+              key={v.toString()}
+              type="button"
+              onClick={() => {
+                setSlip(v);
+                setSlipOpen(false);
+              }}
+              aria-pressed={slip === v}
+              className={"h-8 px-3 rounded-lg border text-[0.8125rem] font-semibold " + (slip === v ? "border-emerald bg-emerald-soft" : "border-line")}
+            >
+              {slippagePct(v)}
+            </button>
+          ))}
+          <span className="text-[0.6875rem] text-ink-3">Higher fills more often on fast coins, at a worse price.</span>
+        </div>
+      )}
     {profit && <ProfitCard info={profit} link={coinShareUrl(coin.id)} onClose={() => setProfit(null)} />}
     </div>
   );

@@ -27,7 +27,6 @@ const MODE_META: Record<FeeMode, { label: string; color: string }> = {
 const LEADERS: { kind: LeaderKind; label: string; sub: (l: Leader) => string }[] = [
   { kind: "volume", label: "Volume", sub: (l) => `${l.trades.toLocaleString("en-US")} trades` },
   { kind: "fees", label: "Creator earnings", sub: (l) => MODE_META[l.feeMode].label.toLowerCase() },
-  { kind: "holders", label: "Holder payouts", sub: () => "paid to holders" },
   { kind: "burn", label: "Burned", sub: () => "bought back & burned" },
 ];
 

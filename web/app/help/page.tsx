@@ -95,6 +95,9 @@ export default function HelpPage() {
             <label className="grid gap-1">
               <span className="text-[0.8125rem] text-ink-3">How can we help?</span>
               <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={5} maxLength={4000} className={input + " py-3 resize-y"} placeholder="Tell us what happened, and the coin or page if it helps." />
+              {message.trim().length > 0 && message.trim().length < 10 && (
+                <span className="block mt-1 text-[0.75rem] text-ink-3">At least 10 characters ({10 - message.trim().length} more).</span>
+              )}
             </label>
             {/* Only bots fill this in. */}
             <input value={trap} onChange={(e) => setTrap(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" name="website" />
