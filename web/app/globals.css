@@ -310,3 +310,9 @@ a.press {
 @media (prefers-reduced-motion: reduce) {
   .hero-swap { animation: none; }
 }
+
+/* Never scroll sideways on phones: a wide child is clipped instead of widening the page. */
+html,
+body {
+  overflow-x: clip;
+}

@@ -3,7 +3,7 @@
   "short_name": "sasa",
   "description": "Launch once. Live on every chain.",
   "id": "/terminal/",
-  "start_url": "/terminal/",
+  "start_url": "/explore/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0b0806",

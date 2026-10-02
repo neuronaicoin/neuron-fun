@@ -19,7 +19,7 @@ import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
 import { usd } from "./coins";
-import { openMoney, optimisticCash, refreshCash, refreshPortfolio } from "@/lib/portfolio";
+import { openMoney, optimisticTrade, refreshCash, refreshPortfolio } from "@/lib/portfolio";
 import { routerOf, setOf } from "@/lib/contracts";
 import { AutoOrders } from "./autoorders";
 import { overCap, refreshSafety, useSafety } from "@/lib/safety";
@@ -376,8 +376,13 @@ export function QuickTrade({
       }
       // The balance at the top moves the moment the trade is sent; the real
       // numbers replace it as soon as the chain confirms (undone if it fails).
+      // A buy turns cash into coins worth about the same (less the 1% fee); a sell the reverse.
       undoCash = USD_MODE
-        ? optimisticCash(side === "buy" ? -Number(amount) / 1e6 : proceeds !== null ? Number(proceeds) / 1e6 : 0)
+        ? side === "buy"
+          ? optimisticTrade(-Number(amount) / 1e6, (Number(amount) / 1e6) * 0.99)
+          : proceeds !== null
+            ? optimisticTrade(Number(proceeds) / 1e6, -(Number(proceeds) / 1e6) / 0.99)
+            : null
         : null;
       const hash = await send(chosen.chain.chain, calls, setBusy);
       setDone({ chainKey: chosen.chain.key, hash });
@@ -400,8 +405,9 @@ export function QuickTrade({
       loadBalances().catch(() => {});
       // Cash updates at once (read from the chain); holdings follow the indexer a moment later.
       void refreshCash();
-      void refreshPortfolio(true);
-      setTimeout(() => void refreshPortfolio(true), 2_500);
+      // Public nodes can answer from a block or two behind; read again until they caught up,
+      // so the header settles on the real numbers without a page reload.
+      for (const ms of [1_500, 4_000, 8_000, 15_000]) setTimeout(() => void refreshPortfolio(true), ms);
       onTraded();
       // A sell that made 5% or more gets a card to share.
       if (side === "sell" && proceeds !== null) {

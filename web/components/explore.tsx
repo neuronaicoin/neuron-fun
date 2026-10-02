@@ -1,5 +1,7 @@
 "use client";
 
+import { GetAppButton } from "@/components/getapp";
+
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChainChip, SkeletonTile, useCoins, usd } from "@/components/coins";
@@ -200,6 +202,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
       <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2 overflow-x-auto no-scrollbar">
         <Link href="/swipe/" className="h-10 px-4 shrink-0 rounded-xl bg-emerald text-on-accent font-bold text-[0.875rem] flex items-center">🔥 Swipe</Link>
+        <GetAppButton />
         <Link href="/traders/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
         <Link href="/points/#invite" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">⚡ Invite &amp; earn</Link>
         <a href="/forum/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>

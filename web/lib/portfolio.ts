@@ -150,20 +150,29 @@ function USD_PER_WEI(_chain: NeuronChain, p: Portfolio): number {
  * replaces it either way.
  */
 export function optimisticCash(deltaUsd: number): () => void {
+  return optimisticTrade(deltaUsd, 0);
+}
+
+/**
+ * Moves the header numbers the moment a trade is sent: cash by `cashUsd`, the coins'
+ * value by `coinsUsd` (so a buy doesn't look like money vanished from the total).
+ * Returns an undo for when the trade fails; a later refresh replaces both with chain data.
+ */
+export function optimisticTrade(cashUsd: number, coinsUsd: number): () => void {
   const p = state.portfolio;
-  if (!p || !Number.isFinite(deltaUsd) || deltaUsd === 0) return () => {};
-  const bump = (d: number) => {
+  if (!p || !Number.isFinite(cashUsd) || !Number.isFinite(coinsUsd) || (cashUsd === 0 && coinsUsd === 0)) return () => {};
+  const bump = (dc: number, dv: number) => {
     const cur = state.portfolio;
     if (!cur) return;
-    const cashUsd = Math.max(0, cur.cashUsd + d);
-    set({ portfolio: { ...cur, cashUsd, totalUsd: cur.totalUsd + (cashUsd - cur.cashUsd) }, version: state.version + 1 });
+    const cash = Math.max(0, cur.cashUsd + dc);
+    set({ portfolio: { ...cur, cashUsd: cash, totalUsd: Math.max(0, cur.totalUsd + (cash - cur.cashUsd) + dv) }, version: state.version + 1 });
   };
-  bump(deltaUsd);
+  bump(cashUsd, coinsUsd);
   let undone = false;
   return () => {
     if (undone) return;
     undone = true;
-    bump(-deltaUsd);
+    bump(-cashUsd, -coinsUsd);
   };
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { GetAppButton } from "@/components/getapp";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -333,6 +335,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
             </Link>
           );
         })}
+        <GetAppButton variant="tile" />
       </div>
     </Sheet>
   );

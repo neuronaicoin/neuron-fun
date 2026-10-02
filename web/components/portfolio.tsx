@@ -49,7 +49,7 @@ export function BalancePill() {
       <button
         type="button"
         onClick={() => openMoney({ kind: "portfolio" })}
-        aria-label={total ? `Your portfolio: ${total}, cash ${cash}` : "Your portfolio"}
+        aria-label={total ? `Total ${total} (cash plus your coins), cash to spend ${cash}` : "Your portfolio"}
         className="h-9 flex items-center gap-2 pl-1 pr-1.5 rounded-xl"
       >
         <span className="hidden sm:flex w-8 h-8 rounded-[0.625rem] bg-emerald-soft text-emerald items-center justify-center shrink-0" aria-hidden="true">
@@ -60,7 +60,10 @@ export function BalancePill() {
         </span>
         {total ? (
           <span className="flex flex-col items-start leading-none min-w-[3.75rem]">
-            <span className="font-mono text-[0.9375rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
+            <span className="whitespace-nowrap">
+              <span className="text-[0.6875rem] text-ink-3 mr-1">Total</span>
+              <span className="font-mono text-[0.9375rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
+            </span>
             <span className="text-[0.6875rem] text-ink-3 mt-1 whitespace-nowrap">
               Cash <span className="font-mono text-up font-semibold tabular-nums">{cash}</span>
             </span>

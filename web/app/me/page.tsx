@@ -121,19 +121,19 @@ export default function MePage() {
               </div>
             )}
             <div className="grid grid-cols-3 gap-2 mt-4">
-              <div className="rounded-2xl bg-paper border border-line px-3 py-2.5">
+              <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
                 <div className="text-[0.75rem] text-ink-3">Cash</div>
-                <div className="font-mono font-semibold text-[1.0625rem] mt-0.5 text-up">{money(p.cashUsd)}</div>
+                <div className="font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 text-up truncate">{money(p.cashUsd)}</div>
                 <div className="text-[0.6875rem] text-ink-3">{CASH_SYMBOL}</div>
               </div>
-              <div className="rounded-2xl bg-paper border border-line px-3 py-2.5">
+              <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
                 <div className="text-[0.75rem] text-ink-3">Coins</div>
-                <div className="font-mono font-semibold text-[1.0625rem] mt-0.5">{money(p.coinsUsd)}</div>
-                <div className={"text-[0.6875rem] font-semibold " + (p.openPnlUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.openPnlUsd)} open</div>
+                <div className="font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 truncate">{money(p.coinsUsd)}</div>
+                <div className={"text-[0.6875rem] font-semibold truncate " + (p.openPnlUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.openPnlUsd)} open</div>
               </div>
-              <div className="rounded-2xl bg-paper border border-line px-3 py-2.5">
+              <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
                 <div className="text-[0.75rem] text-ink-3">Realized</div>
-                <div className={"font-mono font-semibold text-[1.0625rem] mt-0.5 " + (p.realizedUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.realizedUsd)}</div>
+                <div className={"font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 truncate " + (p.realizedUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.realizedUsd)}</div>
                 <div className="text-[0.6875rem] text-ink-3">from sells</div>
               </div>
             </div>
