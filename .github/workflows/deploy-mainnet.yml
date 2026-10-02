@@ -1,0 +1,169 @@
+name: deploy-mainnet
+
+# sasa v6 on MAINNET (real money). Run the steps in order, chain by chain:
+#   1. rewards  on base, then on robinhood   (fee splitter 30/70 + payout contract)
+#   2. deploy   on base, then on robinhood
+#   3. wire     on base, then on robinhood   (links the chains, locks the bridge routes)
+#   4. orders   on base, then on robinhood   (auto orders: take profit, stop loss, dip)
+#   5. handover on base, then on robinhood   (guardian, money cap, owner -> admin wallet)
+#   6. settings (either chain)               (prints the site / Railway settings to copy)
+# Leave "broadcast" unticked first: a free dry run that shows what would happen.
+#
+# Needs: secret MAINNET_DEPLOYER_KEY (deployer, ~$10 of ETH on each chain), secret
+# OMNI_FACTORY_KEY (never used on these chains: same factory address as testnet),
+# variable REWARDS (sasa rewards wallet), variables MAINNET_ADMIN, MAINNET_GUARDIAN and
+# MAINNET_KEEPER (the address of the Railway keeper's wallet).
+# LayerZero settings come live from LayerZero's registry (two verifiers on every chain).
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Chain"
+        type: choice
+        options: [base, robinhood]
+      step:
+        description: "Step"
+        type: choice
+        options: [rewards, deploy, wire, orders, handover, settings]
+      cap_usd:
+        description: "Money cap per chain during the beta, in dollars (handover step)"
+        default: "5000"
+      broadcast:
+        description: "Actually send transactions (leave unticked for a free dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-mainnet
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Chain settings
+        env:
+          NET: ${{ inputs.network }}
+        run: |
+          set -euo pipefail
+          case "$NET" in
+            base)
+              CHAIN_ID=8453; OTHER_ID=4663; RPC="https://mainnet.base.org"
+              USD_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913        # USDC
+              ACROSS_SPOKE=0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
+              POOL_MANAGER=0x498581fF718922c3f8e6A244956aF099B2652b2b
+              POSITION_MANAGER=0x7C5f5A4bBd8fD63184577525326123B519429bDc ;;
+            robinhood)
+              CHAIN_ID=4663; OTHER_ID=8453; RPC="https://rpc.mainnet.chain.robinhood.com"
+              USD_TOKEN=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168        # USDG
+              ACROSS_SPOKE=0xD29C85F15DF544bA632C9E25829fd29d767d7978
+              POOL_MANAGER=0x8366a39CC670B4001A1121B8F6A443A643e40951
+              POSITION_MANAGER=0x58daec3116aae6D93017bAAea7749052E8a04fA7 ;;
+          esac
+          node script/omni/lzconfig.mjs "$CHAIN_ID" "$OTHER_ID" > /tmp/lz.env
+          cat /tmp/lz.env
+          . /tmp/lz.env
+          # Everything must exist on the chain before we trust it.
+          GOT=$(cast chain-id --rpc-url "$RPC"); [ "$GOT" = "$CHAIN_ID" ] || { echo "RPC is chain $GOT, expected $CHAIN_ID"; exit 1; }
+          EID=$(cast call "$LZ_ENDPOINT" "eid()(uint32)" --rpc-url "$RPC" | awk '{print $1}')
+          [ "$EID" = "$LOCAL_EID" ] || { echo "endpoint eid $EID != $LOCAL_EID"; exit 1; }
+          for a in "$USD_TOKEN" "$ACROSS_SPOKE" "$POOL_MANAGER" "$POSITION_MANAGER" "$SEND_LIB" "$RECEIVE_LIB" "$EXECUTOR" ${DVNS//,/ }; do
+            [ "$(cast code "$a" --rpc-url "$RPC")" != "0x" ] || { echo "no contract at $a"; exit 1; }
+          done
+          echo "dollar: $(cast call "$USD_TOKEN" "symbol()(string)" --rpc-url "$RPC") decimals $(cast call "$USD_TOKEN" "decimals()(uint8)" --rpc-url "$RPC")"
+          {
+            echo "CHAIN_ID=$CHAIN_ID"; echo "OTHER_ID=$OTHER_ID"; echo "RPC=$RPC"
+            echo "USD_TOKEN=$USD_TOKEN"; echo "ACROSS_SPOKE=$ACROSS_SPOKE"
+            echo "POOL_MANAGER=$POOL_MANAGER"; echo "POSITION_MANAGER=$POSITION_MANAGER"
+            cat /tmp/lz.env
+          } >> "$GITHUB_ENV"
+
+      - name: Run
+        env:
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+          RAW_FKEY: ${{ secrets.OMNI_FACTORY_KEY }}
+          REWARDS_VAR: ${{ vars.REWARDS }}
+          ADMIN_VAR: ${{ vars.MAINNET_ADMIN }}
+          GUARDIAN_VAR: ${{ vars.MAINNET_GUARDIAN }}
+          KEEPER_VAR: ${{ vars.MAINNET_KEEPER }}
+          STEP: ${{ inputs.step }}
+          CAP_USD: ${{ inputs.cap_usd }}
+          BROADCAST: ${{ inputs.broadcast }}
+        run: |
+          set -euo pipefail
+          norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
+          KEY=$(norm "$RAW_KEY"); echo "::add-mask::$KEY"; export PRIVATE_KEY="$KEY"
+          [ "$KEY" != "0x" ] || { echo "MAINNET_DEPLOYER_KEY secret is missing"; exit 1; }
+          [ -n "$REWARDS_VAR" ] || { echo "Add the repo variable REWARDS first"; exit 1; }
+          export DEPLOY_DIR="./deployments/mainnet/"
+          export REWARDS="$REWARDS_VAR" TREASURY="${ADMIN_VAR:-}" MIN_DVNS=2 CONFIRMATIONS=3
+          export COORD_EID=30184 VIRTUAL_USD=4500000000 TARGET_USD=10000000000
+          DEPLOYER=$(cast wallet address "$KEY")
+          echo "deployer $DEPLOYER: $(cast balance "$DEPLOYER" --ether --rpc-url "$RPC") ETH"
+          FLAGS="--rpc-url $RPC -vv"
+          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          RJ="deployments/mainnet/$CHAIN_ID-rewards.json"
+          if [ "$STEP" != "rewards" ] && [ "$STEP" != "settings" ]; then
+            [ -f "$RJ" ] || { echo "run the rewards step on this chain first"; exit 1; }
+            # sasa's fee share goes to the splitter (30% rewards wallet / 70% treasury).
+            export REWARDS=$(node -e "console.log(require('./$RJ').splitter)")
+          fi
+          case "$STEP" in
+            rewards)
+              [ -n "$ADMIN_VAR" ] || { echo "Add the repo variable MAINNET_ADMIN first"; exit 1; }
+              export ADMIN="$ADMIN_VAR"
+              forge script script/omni/DeployMainnetRewards.s.sol $FLAGS ;;
+            orders)
+              forge script script/DeployOrders.s.sol $FLAGS ;;
+            settings)
+              node script/omni/mainnet-settings.mjs ;;
+            deploy)
+              FKEY=$(norm "$RAW_FKEY"); echo "::add-mask::$FKEY"; export OMNI_FACTORY_KEY="$FKEY"
+              # The always-on keeper's address: freezes without delay and moves holders on day one.
+              [ -n "$KEEPER_VAR" ] || { echo "Add the repo variable MAINNET_KEEPER (the keeper wallet's address) first"; exit 1; }
+              export KEEPER="$KEEPER_VAR"
+              [ -n "$ADMIN_VAR" ] || { echo "Add the repo variable MAINNET_ADMIN first (it becomes the treasury)"; exit 1; }
+              FADDR=$(cast wallet address "$FKEY")
+              [ "$(cast nonce "$FADDR" --rpc-url "$RPC")" = "0" ] || { echo "factory wallet $FADDR was used on this chain"; exit 1; }
+              # The factory wallet needs a little ETH for its two deployments: sent by the deployer.
+              if [ "$BROADCAST" = "true" ] && [ "$(cast balance "$FADDR" --rpc-url "$RPC")" = "0" ]; then
+                cast send "$FADDR" --value 0.0006ether --private-key "$KEY" --rpc-url "$RPC" >/dev/null
+                echo "sent 0.0006 ETH to the factory wallet"
+              fi
+              forge script script/omni/DeployOmni.s.sol $FLAGS ;;
+            wire)
+              [ -f "deployments/mainnet/$CHAIN_ID.json" ] && [ -f "deployments/mainnet/$OTHER_ID.json" ] || { echo "deploy on both chains first"; exit 1; }
+              export REMOTE_CHAIN_IDS="$OTHER_ID" LOCK_BRIDGE=true OPEN_LAUNCHES=true
+              forge script script/omni/WireOmni.s.sol $FLAGS ;;
+            handover)
+              [ -n "$ADMIN_VAR" ] && [ -n "$GUARDIAN_VAR" ] || { echo "Add the repo variables MAINNET_ADMIN and MAINNET_GUARDIAN"; exit 1; }
+              export ADMIN="$ADMIN_VAR" GUARDIAN="$GUARDIAN_VAR" NATIVE_CAP=$(( CAP_USD * 1000000 ))
+              forge script script/omni/HandOver.s.sol $FLAGS ;;
+          esac
+
+      - name: Save addresses to the repo
+        if: (inputs.step == 'deploy' || inputs.step == 'rewards' || inputs.step == 'orders') && inputs.broadcast
+        run: |
+          git config user.name "sasa-deploy"
+          git config user.email "deploy@sasapad.fun"
+          git add deployments/mainnet/*.json
+          git commit -m "mainnet ${{ inputs.step }} on ${{ inputs.network }}" || echo "nothing to commit"
+          git pull --rebase
+          git push
