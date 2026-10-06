@@ -349,3 +349,8 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 @media (hover: hover) { .ex-row:hover { background: var(--color-night); } }
 .ex-tabs { scrollbar-width: none; }
 .ex-tabs::-webkit-scrollbar { display: none; }
+
+/* update-133: Explore coin cards */
+.ex-card { transition: border-color 0.15s; }
+.ex-card:active { border-color: var(--color-ink-3); }
+@media (hover: hover) { .ex-card:hover { border-color: var(--color-ink-3); } }

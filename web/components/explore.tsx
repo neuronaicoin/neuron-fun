@@ -3,7 +3,6 @@
 import { BoostedRow } from "@/components/boost";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CoinAvatar, useCoins, usd } from "@/components/coins";
 import { coinMarketCapUsd } from "@/components/discover";
@@ -220,35 +219,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           </div>
         )}
 
-        {/* Phones: one coin per row. */}
-        <ul className="md:hidden mt-2 border-t border-line">
-          {loading && Array.from({ length: 10 }, (_, i) => <RowSkeleton key={i} />)}
-          {rows.map((r) => <CoinRow key={r.key} r={r} />)}
-          {moreLoading && Array.from({ length: 4 }, (_, i) => <RowSkeleton key={`m${i}`} />)}
+        {/* Every screen: a grid of coin cards (2 columns on phones, up to 5 on wide screens). */}
+        <ul className="ex-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 min-[380px]:gap-3 md:gap-4 px-4 sm:px-6 pt-3.5 md:pt-4">
+          {loading && Array.from({ length: 10 }, (_, i) => <CardSkeleton key={i} />)}
+          {rows.map((r) => <CoinCard key={r.key} r={r} />)}
+          {moreLoading && Array.from({ length: 4 }, (_, i) => <CardSkeleton key={`m${i}`} />)}
         </ul>
-
-        {/* Computers and tablets: a table. */}
-        <div className="hidden md:block mt-2 px-2 lg:px-3">
-          <table className="w-full border-collapse text-[0.875rem]">
-            <thead>
-              <tr className="text-[0.75rem] text-ink-3 text-right">
-                <th className="font-medium text-left py-2.5 px-3">Coin</th>
-                <th className="font-medium py-2.5 px-3">Market cap</th>
-                <th className="font-medium py-2.5 px-3">24h</th>
-                <th className="font-medium py-2.5 px-3">Volume 24h</th>
-                <th className="font-medium py-2.5 px-3 hidden lg:table-cell">Liquidity</th>
-                <th className="font-medium py-2.5 px-3 hidden lg:table-cell">Holders</th>
-                <th className="font-medium py-2.5 px-3">Age</th>
-                <th className="font-medium py-2.5 px-3 w-[9.5rem]">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && Array.from({ length: 12 }, (_, i) => <TableSkeleton key={i} />)}
-              {rows.map((r) => <CoinTableRow key={r.key} r={r} />)}
-              {moreLoading && Array.from({ length: 4 }, (_, i) => <TableSkeleton key={`m${i}`} />)}
-            </tbody>
-          </table>
-        </div>
 
         {coins && visible.length > 0 && (
           <div className="mt-5 px-4 flex flex-col items-center gap-2">
@@ -390,24 +366,14 @@ function toRow(r: Ranked, ethUsd: number | null): Row {
   };
 }
 
+/** A stable number from any text (FNV-1a), so each coin keeps its colour. */
 function hue(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
-
-function RowAvatar({ r, size }: { r: Row; size: number }) {
-  const [broken, setBroken] = useState(false);
-  const style = { width: size, height: size };
-  if (r.image && !broken) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={r.image} alt="" loading="lazy" decoding="async" style={style} className="rounded-full object-cover bg-night shrink-0" onError={() => setBroken(true)} />;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  return (
-    <span style={{ ...style, background: `hsl(${hue(r.seed)} 55% 48%)` }} className="rounded-full text-white font-bold flex items-center justify-center shrink-0" aria-hidden="true">
-      <span style={{ fontSize: size * 0.4 }}>{(r.symbol || "?").slice(0, 1).toUpperCase()}</span>
-    </span>
-  );
+  return (h >>> 0) % 360;
 }
 
 function Change({ v }: { v: number | null }) {
@@ -429,100 +395,112 @@ function age(iso: string | null): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-function gradText(r: Row): string {
-  if (r.graduated) return "Graduated";
-  if (r.graduating) return "Graduating";
-  if (r.progress === null) return r.where ?? "—";
-  return `${Math.min(99, Math.floor(r.progress * 100))}%`;
+// Calm, flat colours for coins without a picture: a soft background and the letter in a deeper tone.
+const ART = [
+  ["#f4d9c6", "#c2551a"],
+  ["#d8e6dc", "#2f7a4f"],
+  ["#dbe3f3", "#3557a8"],
+  ["#efe2c4", "#9a6b12"],
+  ["#e8dbe9", "#7a3f82"],
+  ["#d6e9ea", "#22737a"],
+  ["#f0d6d6", "#a33a3a"],
+  ["#e3e3dc", "#55554c"],
+] as const;
+
+function CardArt({ r }: { r: Row }) {
+  const [broken, setBroken] = useState(false);
+  if (r.image && !broken) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={r.image} alt="" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" onError={() => setBroken(true)} />;
+  }
+  const h = hue(r.seed);
+  const [bg, fg] = ART[h % ART.length];
+  const shape = h % 3;
+  return (
+    <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 w-full h-full" aria-hidden="true">
+      <rect width="200" height="200" fill={bg} />
+      {shape === 0 ? (
+        <circle cx="100" cy="100" r="58" fill={fg} opacity="0.14" />
+      ) : shape === 1 ? (
+        <rect x="44" y="44" width="112" height="112" rx="30" fill={fg} opacity="0.12" />
+      ) : (
+        <path d="M100 38l62 62-62 62-62-62z" fill={fg} opacity="0.12" />
+      )}
+      <text x="100" y="100" dy="0.35em" textAnchor="middle" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" fontWeight="700" fontSize="72" fill={fg}>
+        {(r.symbol || r.name || "?").slice(0, 1).toUpperCase()}
+      </text>
+    </svg>
+  );
 }
 
-function CoinRow({ r }: { r: Row }) {
-  const onCurve = r.progress !== null && !r.graduated;
+/** Launched in the last 15 minutes. */
+function isNew(iso: string | null) {
+  return !!iso && Date.now() - new Date(iso).getTime() < 15 * 60_000;
+}
+
+function CoinCard({ r }: { r: Row }) {
+  const onCurve = r.progress !== null && !r.graduated && !r.graduating;
+  const pct = r.progress === null ? 0 : Math.min(99, Math.floor(r.progress * 100));
   return (
-    <li>
-      <Link href={r.href} className="ex-row flex items-center gap-3 px-4 py-3 border-b border-line">
-        <RowAvatar r={r} size={40} />
-        <span className="flex-1 min-w-0">
-          <span className="block font-semibold text-[1rem] leading-snug truncate">{r.name}</span>
-          <span className="block text-[0.8125rem] text-ink-3 truncate">
-            {r.symbol} · {age(r.since)}
-            {r.where ? ` · ${r.where}` : r.graduated ? " · Graduated" : ""}
-          </span>
-        </span>
-        <span className="shrink-0 text-right">
-          <span className="block font-mono font-semibold text-[1rem] leading-snug">{compactUsd(r.mc)}</span>
-          <span className="block font-mono text-[0.8125rem] font-medium">
-            <Change v={r.change} />
-          </span>
-          {onCurve && (
-            <span className="block h-[3px] w-14 ml-auto mt-1 rounded-full bg-line overflow-hidden" aria-label={`${gradText(r)} to graduation`}>
-              <span className="block h-full bg-emerald" style={{ width: `${Math.max(3, Math.round((r.progress ?? 0) * 100))}%` }} />
+    <li className="min-w-0">
+      <Link href={r.href} className="ex-card group flex flex-col h-full min-w-0 rounded-[14px] border border-line bg-surface overflow-hidden">
+        <span className="relative block aspect-square bg-night overflow-hidden">
+          <CardArt r={r} />
+          {(r.graduated || r.graduating) && (
+            <span className="absolute left-2 bottom-2 h-[22px] px-2 rounded-md bg-black/60 text-white text-[0.6875rem] font-semibold flex items-center">
+              {r.graduated ? "Graduated" : "Graduating"}
             </span>
           )}
+          {isNew(r.since) && (
+            <span className="absolute right-2 bottom-2 h-[22px] px-2 rounded-md bg-surface text-ink text-[0.6875rem] font-semibold flex items-center">New</span>
+          )}
+        </span>
+        <span className="flex flex-col flex-1 min-w-0 p-2 min-[341px]:p-2.5">
+          <span className="block font-semibold text-[0.9375rem] leading-snug truncate">{r.name}</span>
+          <span className="block text-[0.75rem] text-ink-3 truncate">
+            {r.symbol} · {age(r.since)}
+          </span>
+          <span className="flex items-baseline justify-between gap-1.5 mt-1.5 font-mono">
+            <span className="font-bold text-[1rem] tracking-tight truncate">{compactUsd(r.mc)}</span>
+            <span className="text-[0.8125rem] font-semibold shrink-0">
+              <Change v={r.change} />
+            </span>
+          </span>
+          {onCurve && (
+            <span className="block h-1 rounded-full bg-line overflow-hidden mt-2" aria-hidden="true">
+              <span className="block h-full rounded-full bg-emerald" style={{ width: `${Math.max(4, pct)}%` }} />
+            </span>
+          )}
+          <span className="flex justify-between gap-2 text-[0.6875rem] text-ink-3 mt-1.5 font-mono">
+            {onCurve ? (
+              <>
+                <span className="truncate">{pct}% bonded</span>
+                <span className="shrink-0">{r.holders === null ? "" : `${r.holders.toLocaleString("en-US")} holders`}</span>
+              </>
+            ) : (
+              <>
+                <span className="truncate">Vol {compactUsd(r.vol)}</span>
+                <span className="shrink-0 truncate">{r.where ?? (r.holders === null ? "" : `${r.holders.toLocaleString("en-US")} holders`)}</span>
+              </>
+            )}
+          </span>
         </span>
       </Link>
     </li>
   );
 }
 
-function CoinTableRow({ r }: { r: Row }) {
-  const router = useRouter();
-  const onCurve = r.progress !== null && !r.graduated && !r.graduating;
+function CardSkeleton() {
   return (
-    <tr className="ex-row border-t border-line cursor-pointer" onClick={() => router.push(r.href)}>
-      <td className="py-2.5 px-3">
-        <Link href={r.href} className="flex items-center gap-2.5 min-w-0" onClick={(e) => e.stopPropagation()}>
-          <RowAvatar r={r} size={30} />
-          <span className="font-semibold truncate max-w-[16rem]">{r.name}</span>
-          <span className="text-ink-3 text-[0.8125rem] shrink-0">{r.symbol}</span>
-        </Link>
-      </td>
-      <td className="py-2.5 px-3 text-right font-mono font-semibold">{compactUsd(r.mc)}</td>
-      <td className="py-2.5 px-3 text-right font-mono"><Change v={r.change} /></td>
-      <td className="py-2.5 px-3 text-right font-mono">{compactUsd(r.vol)}</td>
-      <td className="py-2.5 px-3 text-right font-mono hidden lg:table-cell">{compactUsd(r.liq)}</td>
-      <td className="py-2.5 px-3 text-right font-mono hidden lg:table-cell">{r.holders === null ? "—" : r.holders.toLocaleString("en-US")}</td>
-      <td className="py-2.5 px-3 text-right text-ink-2">{age(r.since)}</td>
-      <td className="py-2.5 px-3">
-        {onCurve ? (
-          <span className="flex items-center justify-end gap-2">
-            <span className="h-1 w-16 rounded-full bg-line overflow-hidden">
-              <span className="block h-full bg-emerald" style={{ width: `${Math.max(3, Math.round((r.progress ?? 0) * 100))}%` }} />
-            </span>
-            <span className="font-mono w-9 text-right">{gradText(r)}</span>
-          </span>
-        ) : (
-          <span className="block text-right text-ink-3">{gradText(r)}</span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function RowSkeleton() {
-  return (
-    <li className="flex items-center gap-3 px-4 py-3 border-b border-line" aria-hidden="true">
-      <span className="shimmer w-10 h-10 rounded-full shrink-0" />
-      <span className="flex-1 grid gap-1.5">
-        <span className="shimmer h-4 w-2/3 rounded" />
-        <span className="shimmer h-3 w-1/3 rounded" />
-      </span>
-      <span className="grid gap-1.5 justify-items-end">
-        <span className="shimmer h-4 w-16 rounded" />
-        <span className="shimmer h-3 w-10 rounded" />
+    <li className="rounded-[14px] border border-line overflow-hidden" aria-hidden="true">
+      <span className="shimmer block aspect-square" />
+      <span className="grid gap-1.5 p-2.5">
+        <span className="shimmer h-4 w-3/4 rounded" />
+        <span className="shimmer h-3 w-1/2 rounded" />
+        <span className="shimmer h-4 w-2/3 rounded mt-1" />
+        <span className="shimmer h-1 w-full rounded mt-1" />
       </span>
     </li>
-  );
-}
-
-function TableSkeleton() {
-  return (
-    <tr className="border-t border-line" aria-hidden="true">
-      <td className="py-3 px-3"><span className="flex items-center gap-2.5"><span className="shimmer w-[30px] h-[30px] rounded-full" /><span className="shimmer h-4 w-36 rounded" /></span></td>
-      {Array.from({ length: 7 }, (_, i) => (
-        <td key={i} className={"py-3 px-3" + (i === 3 || i === 4 ? " hidden lg:table-cell" : "")}><span className="shimmer block h-4 w-14 ml-auto rounded" /></td>
-      ))}
-    </tr>
   );
 }
 
