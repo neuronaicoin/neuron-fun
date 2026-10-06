@@ -20,7 +20,7 @@ const OURS_AGAIN_MS = 6 * 3600_000;
 const EXT_AGAIN_MS = 24 * 3600_000;
 const SITEMAP_EVERY_MS = 24 * 3600_000;
 const TOP_EVERY_MS = 6 * 3600_000;
-const TOP_PAGES = ["", "trending-meme-coins", "robinhood-chain-meme-coins", "base-meme-coins", "bnb-chain-meme-coins", "ethereum-meme-coins", "arc-meme-coins", "meme-coin-gainers", "new-meme-coins"].map((s) => `${SITE}/top/${s ? `${s}/` : ""}`);
+const TOP_PAGES = ["", "trending-meme-coins", "robinhood-chain-meme-coins", "base-meme-coins", "bnb-chain-meme-coins", "ethereum-meme-coins", "arc-meme-coins", "meme-coin-gainers", "new-meme-coins", "robinhood-chain-meme-coin-gainers", "new-robinhood-chain-meme-coins", "base-meme-coin-gainers", "new-base-meme-coins", "bnb-chain-meme-coin-gainers", "new-bnb-chain-meme-coins", "ethereum-meme-coin-gainers", "new-ethereum-meme-coins", "arc-meme-coin-gainers", "new-arc-meme-coins"].map((s) => `${SITE}/top/${s ? `${s}/` : ""}`);
 const EXT_PER_TICK = 150; // about 4,000 a day at most
 const MAX_PER_REQUEST = 9_000; // IndexNow accepts up to 10,000
 

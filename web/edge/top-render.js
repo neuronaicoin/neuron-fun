@@ -15,7 +15,24 @@ export const LISTS = [
   { slug: "arc-meme-coins", short: "Arc", h1: "Top Arc meme coins today", what: "the most traded meme coins on Arc", network: "arc", chain: "Arc", sort: "volume" },
   { slug: "meme-coin-gainers", short: "Top gainers", h1: "Biggest meme coin gainers today", what: "the meme coins that rose the most in the last 24 hours, among coins with real trading volume", network: null, sort: "gainers" },
   { slug: "new-meme-coins", short: "New today", h1: "New meme coins today", what: "meme coins whose trading pool opened in the last 24 hours, busiest first", network: null, sort: "new" },
+].map((l) => ({ ...l, main: true }));
+
+// The same two views for every chain: biggest gainers and new pools.
+const CHAIN_PAGES = [
+  ["robinhood-chain", "robinhood", "Robinhood Chain"],
+  ["base", "base", "Base"],
+  ["bnb-chain", "bsc", "BNB Chain"],
+  ["ethereum", "eth", "Ethereum"],
+  ["arc", "arc", "Arc"],
 ];
+for (const [slug, network, chain] of CHAIN_PAGES) {
+  LISTS.push(
+    { slug: `${slug}-meme-coin-gainers`, short: `${chain} gainers`, h1: `Biggest ${chain} meme coin gainers today`, what: `the ${chain} meme coins that rose the most in the last 24 hours, among coins with real trading volume`, network, chain, sort: "gainers" },
+    { slug: `new-${slug}-meme-coins`, short: `New on ${chain}`, h1: `New ${chain} meme coins today`, what: `${chain} meme coins whose trading pool opened in the last 24 hours, busiest first`, network, chain, sort: "new" }
+  );
+}
+/** The list for a chain's network id and kind (used for links from coin pages). */
+export const listFor = (network, sort = "volume") => LISTS.find((l) => l.network === network && l.sort === sort) || LISTS[0];
 
 export const NETS = { base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
 export const MIN_GAINER_VOLUME = 10_000;
@@ -206,7 +223,8 @@ export function renderList(list, coins, now = new Date()) {
       { "@type": "ListItem", position: 3, name: list.h1, item: canonical } ] },
     { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) },
   ];
-  const tabs = LISTS.map((l) => `<a href="/top/${l.slug}/"${l.slug === list.slug ? ' class="on" aria-current="page"' : ""}>${esc(l.short)}</a>`).join("");
+  const tabList = LISTS.filter((l) => l.main || (list.network && l.network === list.network) || l.slug === list.slug);
+  const tabs = tabList.map((l) => `<a href="/top/${l.slug}/"${l.slug === list.slug ? ' class="on" aria-current="page"' : ""}>${esc(l.short)}</a>`).join("");
   const table = coins.length
     ? `<div class="wrap"><table><thead><tr><th>#</th><th>Coin</th><th class="h">Price</th><th>Market cap</th><th class="h">Volume 24h</th><th class="h">Liquidity</th><th>24h</th></tr></thead><tbody>${coins.map(row).join("")}</tbody></table></div>`
     : `<p>No coins match this list right now. It refreshes every 30 minutes.</p>`;
@@ -240,7 +258,7 @@ export function renderHub(firsts, now = new Date()) {
       { "@type": "ListItem", position: 1, name: "sasa", item: `${SITE}/` },
       { "@type": "ListItem", position: 2, name: "Top meme coins", item: canonical } ] },
   ];
-  const cards = LISTS.map((l) => {
+  const cards = LISTS.filter((l) => l.main).map((l) => {
     const top = firsts[l.slug] || [];
     const lines = top.length ? `<ol>${top.map((c) => `<li><a href="${coinUrl(c)}">${esc(c.name)}</a> <span class="${pct(c.change_24h).cls}">${pct(c.change_24h).text}</span></li>`).join("")}</ol>` : "<p>No coins right now.</p>";
     return `<section style="border:1px solid var(--line);border-radius:14px;padding:14px 16px"><h2 style="margin:0 0 4px;font-size:18px"><a href="/top/${l.slug}/" style="text-decoration:none">${esc(l.h1)}</a></h2>${lines}<a href="/top/${l.slug}/" style="font-size:14px;color:var(--acc);text-decoration:none;font-weight:600">See the full list</a></section>`;
@@ -250,6 +268,8 @@ export function renderHub(firsts, now = new Date()) {
 <h1>Top meme coins today</h1><p class="date">Updated ${esc(today)}, ${now.toISOString().slice(11, 16)} UTC</p>
 <p class="lead">The most traded meme coins on each chain, today's biggest gainers and the newest pools, rebuilt from live DEX data every 30 minutes. Every coin links to a page where you can see its chart and holders and buy or sell it with USDC.</p>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:12px;margin-top:20px">${cards}</div>
+<h2>By chain</h2>
+<div class="more">${LISTS.filter((l) => !l.main).map((l) => `<a href="/top/${l.slug}/">${esc(l.h1)}<span>Updated every 30 minutes</span></a>`).join("")}</div>
 </main>`;
   return shell({ title, description, canonical, ld, body });
 }

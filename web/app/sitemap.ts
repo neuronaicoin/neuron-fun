@@ -20,6 +20,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/top/arc-meme-coins/`, changeFrequency: "hourly", priority: 0.8 },
     { url: `${SITE_URL}/top/meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.8 },
     { url: `${SITE_URL}/top/new-meme-coins/`, changeFrequency: "hourly", priority: 0.8 },
+    { url: `${SITE_URL}/top/robinhood-chain-meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/new-robinhood-chain-meme-coins/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/base-meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/new-base-meme-coins/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/bnb-chain-meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/new-bnb-chain-meme-coins/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/ethereum-meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/new-ethereum-meme-coins/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/arc-meme-coin-gainers/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/top/new-arc-meme-coins/`, changeFrequency: "hourly", priority: 0.7 },
     ...ARTICLES.map((a) => ({ url: `${SITE_URL}/learn/${a.slug}/`, lastModified: a.updated, changeFrequency: "monthly" as const, priority: 0.7 })),
   ];
 }

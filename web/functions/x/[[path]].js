@@ -1,3 +1,4 @@
+import { isMemeForList, listFor } from "../../edge/top-render.js";
 /**
  * Cloudflare Pages Function for /x/?n=<network>&a=<token> (coins from any DEX).
  *
@@ -74,6 +75,21 @@ export async function onRequestGet(ctx) {
     .on('meta[property="og:url"]', set(pageUrl))
     .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
     .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>`, { html: true }) });
+  // Other busy coins on the same chain: links that help crawlers find more pages.
+  let related = "";
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/ext_coins?network=eq.${network}&select=network,address,name,symbol,vol_24h&order=vol_24h.desc.nullslast&limit=24`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      cf: { cacheTtl: 1800, cacheEverything: true },
+    });
+    if (r.ok) {
+      const esc2 = (x) => String(x ?? "").replace(/[&<>"]/g, (k) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[k]);
+      const list = (await r.json()).filter((o) => o.address !== address && isMemeForList(o)).slice(0, 12);
+      if (list.length)
+        related = `<h2>More meme coins on ${esc2(NETS[network])}</h2><ul>${list.map((o) => `<li><a href="${SITE}/x/?n=${o.network}&amp;a=${o.address}">${esc2(o.name)} ($${esc2(o.symbol)})</a></li>`).join("")}</ul>`;
+    }
+  } catch {}
+
   // A plain-text summary for crawlers and AI engines that don't run JavaScript.
   const html = (x) => String(x ?? "").replace(/[&<>"]/g, (k) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[k]);
   const price = Number(c.price_usd);
@@ -93,7 +109,8 @@ export async function onRequestGet(ctx) {
     `<noscript><article><h1>${html(c.name)} ($${html(c.symbol)}) on ${html(chain)}</h1><p>${html(description)}</p>` +
     `<ul>${facts.map((f) => `<li>${html(f)}</li>`).join("")}</ul>` +
     `<p>On sasa you can buy and sell ${html(c.name)} with USDC in one tap, with no bridging and no gas token, and follow its live chart and trades.</p>` +
-    `<p><a href="${SITE}/explore/">Explore more coins on ${html(chain)}</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
+    related +
+    `<p><a href="${SITE}/top/${listFor(network).slug}/">Top ${html(chain)} meme coins today</a> · <a href="${SITE}/top/${listFor(network, "gainers").slug}/">Biggest ${html(chain)} gainers</a> · <a href="${SITE}/top/${listFor(network, "new").slug}/">New ${html(chain)} meme coins</a> · <a href="${SITE}/explore/">Explore</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
   rw = rw.on("body", { element: (e) => e.append(summary, { html: true }) });
   return rw.transform(res);
 }

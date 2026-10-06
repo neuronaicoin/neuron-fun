@@ -117,7 +117,7 @@ export async function onRequestGet(ctx) {
     `<noscript><article><h1>${html(coin.name)} ($${html(coin.symbol)})</h1>` +
     `<p>${html(description)}</p><ul>${facts.map((f) => `<li>${html(f)}</li>`).join("")}</ul>` +
     `<p>${html(coin.name)} was launched on sasa, a multi-chain meme coin launchpad. Buy and sell it with USDC in one tap, see its live chart, holder map and first buyers on this page.</p>` +
-    `<p><a href="${board}">${html(coin.name)} forum</a> · <a href="${SITE}/explore/">Explore coins on sasa</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
+    `<p><a href="${board}">${html(coin.name)} forum</a> · <a href="${SITE}/explore/">Explore coins on sasa</a> · <a href="${SITE}/top/">Top meme coins today</a> · <a href="${SITE}/top/robinhood-chain-meme-coins/">Top Robinhood Chain meme coins</a> · <a href="${SITE}/top/base-meme-coins/">Top Base meme coins</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
   rw = rw.on("body", { element: (e) => e.append(summary, { html: true }) });
   const ldTag = `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\u003c")}</script><link rel="alternate" href="${board}" title="${String(coin.name).replace(/"/g, "&quot;")} forum">`;
   rw = rw.on("head", { element: (e) => e.append(ldTag, { html: true }) });
