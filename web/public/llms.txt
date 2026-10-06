@@ -1,24 +1,50 @@
 # sasa
 
-> sasa (sasapad.fun) is a multi-chain meme coin launchpad. You launch a coin once and it goes live on several chains at the same time (today Robinhood Chain and Base). Buys on every chain count toward one shared graduation target; when it is reached, the chain holding the most money wins and its liquidity is locked forever.
+> sasa (https://sasapad.fun) is a multi-chain meme coin launchpad and trading app. A coin launched on sasa goes live on several chains at the same time (today Robinhood Chain and Base). Buys on every chain count toward one shared graduation target; when it is reached, the chain holding the most money wins, all the money becomes a Uniswap pool on that chain with liquidity locked forever, and holders' coins move there automatically. sasa also lists the busiest meme coins from other DEXs on Robinhood Chain, Base and more, and lets anyone trade any of them with USDC in one tap.
 
-Status: live on testnet, mainnet coming soon. X: https://x.com/sasapadfun
+Status: live on testnet (free test USDC, no real value); mainnet coming soon. X: https://x.com/sasapadfun
 
 ## Key facts
-- Launch: one form (name, ticker, picture), one wallet confirmation per chain. No launch fee; only network fees.
-- Pricing: each chain has its own bonding curve until graduation. Anyone can sell back to the curve at any time before graduation.
-- Graduation: when the combined dollar total across chains reaches the target, the richest chain's curve becomes a trading pool locked forever. Buying stops on the other chains; holders there can always sell back.
-- Fees: 1% per trade; 0.3% to the coin's creator, 0.7% to the platform.
-- Safety: fixed supply of 1,000,000,000, no owner, no minting; the graduation keeper can only graduate or close a curve and cannot move funds.
-- Custody: none. Every transaction is signed in the user's own wallet.
+- Sign in with email or Google (a wallet is created automatically) or with your own wallet.
+- Everything is priced in USDC: one cash balance, deposits and withdrawals in USDC, no gas token needed and no bridging; the chain is picked automatically for each trade.
+- Launching is free: a name, a ticker and a picture, or an AI designer that turns one sentence into a name, ticker, story and logo. Optional creator lock (1 or 24 hours) and optional first buy.
+- Each coin has a fixed supply, no owner and no minting. Before graduation anyone can sell back to the curve; after graduation the pool's liquidity is locked forever.
+- Coin pages show a live chart, trades, a holder map with linked wallets, the first 30 buyers (Who bought) with what they still hold, a safety check, comments from holders and a forum board.
+- Trading tools: take profit, stop loss and buy-the-dip orders that fill automatically, price alerts with phone notifications, following traders and one-tap copy of their buys.
+- Fees are listed on the Help page: https://sasapad.fun/help/
+- Security review summary: https://sasapad.fun/security/
+
+## Main pages
+- [Explore](https://sasapad.fun/explore/): trending, new, almost graduating and graduated coins, ranked by real volume across every chain.
+- [Terminal](https://sasapad.fun/terminal/): live trading view with charts, trades and holders.
+- [Create a coin](https://sasapad.fun/create/): launch on one or several chains at once.
+- [Top traders](https://sasapad.fun/traders/) · [Stats](https://sasapad.fun/stats/) · [Help](https://sasapad.fun/help/)
+- [Coins on sasa right now](https://sasapad.fun/llms-coins.txt): plain-text list of the most traded coins with market cap, volume and links, refreshed every 30 minutes.
 
 ## Guides
-- [How to launch a meme coin on Robinhood Chain](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-robinhood-chain/)
-- [What is a bonding curve?](https://sasapad.fun/learn/what-is-a-bonding-curve/)
-- [Bonding curve simulator](https://sasapad.fun/learn/bonding-curve-simulator/): interactive; shows coins received, price impact and value at graduation for any buy, using the live contract settings.
-- [How to launch a token on multiple chains at once](https://sasapad.fun/learn/multi-chain-token-launch/)
+- [How to launch a meme coin on Base: a step-by-step guide](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-base/): Everything you need to launch a meme coin on Base: what it costs, the steps, how a bonding curve launch works and how to give your coin a fair start.
+- [What a meme coin's first buyers tell you (and how to read them)](https://sasapad.fun/learn/meme-coin-first-buyers/): How to read a meme coin's first buyers: who got in early, how much they paid, whether they still hold, and the patterns that signal a fair or a rigged launch.
+- [Bundled meme coin launches: how to spot linked wallets before you buy](https://sasapad.fun/learn/bundled-meme-coin-launches/): What a bundled launch is, why creators split supply across wallets, and the simple checks that reveal linked wallets on any meme coin.
+- [How to read a meme coin chart: candles, volume and market cap](https://sasapad.fun/learn/how-to-read-a-meme-coin-chart/): A plain guide to meme coin charts: what candles and volume bars mean, why the chart shows market cap, which time frame to use and the patterns worth knowing.
+- [Meme coin glossary: the terms every trader should know](https://sasapad.fun/learn/meme-coin-glossary/): Plain definitions of the words meme coin traders use: bonding curve, graduation, CA, market cap, FDV, liquidity, bundle, sniper, rug pull, dev lock and more.
+- [Bonding curve simulator: see what a meme coin buy gets you](https://sasapad.fun/learn/bonding-curve-simulator/): Try a free bonding curve simulator: pick how much a meme coin has raised and how much you buy, and see your coins, price impact and value at graduation.
+- [How to spot a meme coin rug pull: 9 red flags in 60 seconds](https://sasapad.fun/learn/how-to-spot-a-meme-coin-rug-pull/): A 60-second checklist to spot a meme coin rug pull: honeypots, hidden taxes, mint functions, unlocked liquidity, whale wallets and fake volume.
+- [Meme coin graduation explained: from bonding curve to Uniswap](https://sasapad.fun/learn/meme-coin-graduation-explained/): What meme coin graduation means, when it happens, what changes for holders, why liquidity is locked, and how a multi-chain race picks the winner.
+- [How to buy meme coins with USDC: no ETH, no bridging, no gas](https://sasapad.fun/learn/how-to-buy-meme-coins-with-usdc/): Buy meme coins with USDC on Robinhood Chain and Base without ETH, bridging or network fees. Why dollar pricing is simpler, step by step.
+- [Take profit and stop loss for meme coins, explained](https://sasapad.fun/learn/take-profit-stop-loss-meme-coins/): How take profit, stop loss and buy-the-dip orders work for meme coins, how to choose sensible levels, and what auto orders can't promise.
+- [Copy trading meme coins: how to follow top wallets safely](https://sasapad.fun/learn/copy-trading-meme-coins/): How meme coin copy trading works, how to pick traders to follow by real results, the risks of copying, and how traders earn from people who copy them.
+- [How to create a meme coin with AI in one sentence](https://sasapad.fun/learn/create-a-meme-coin-with-ai/): Create a meme coin with AI: one sentence gives you a name, ticker, logo and description in seconds. Good prompts, and what AI can't do.
+- [How to find trending meme coins early: 7 signals that actually matter](https://sasapad.fun/learn/how-to-find-trending-meme-coins-early/): Find trending meme coins early: read volume, holder growth, buy/sell ratio, liquidity and graduation progress, and spot the fake signals.
+- [Meme coin market cap vs FDV vs liquidity: what the numbers really mean](https://sasapad.fun/learn/meme-coin-market-cap-vs-fdv-vs-liquidity/): Market cap, FDV, liquidity and volume explained for meme coins: why high market cap on low liquidity is fragile, and how to spot broken numbers.
+- [How to earn from meme coin trading fees and referrals](https://sasapad.fun/learn/earn-from-meme-coin-trading-fees/): Earn on a meme coin launchpad without trading: creator fee share, 25% referral rewards on friends' trades for a year, and points.
+- [Robinhood Chain vs Base for meme coins: which should you launch on?](https://sasapad.fun/learn/robinhood-chain-vs-base-for-meme-coins/): Robinhood Chain and Base compared for meme coin launches and trading: who uses each, fees, liquidity and launchpads, and why you may not have to choose at all.
+- [How to launch a meme coin on Robinhood Chain](https://sasapad.fun/learn/how-to-launch-a-meme-coin-on-robinhood-chain/): A step-by-step guide to launching a meme coin on Robinhood Chain: what you need, what it costs, how the launch works and how to keep your holders safe.
+- [What is a bonding curve? Meme coin pricing explained](https://sasapad.fun/learn/what-is-a-bonding-curve/): How bonding curves price meme coins, why the price rises with every buy, what graduation means and why you can always sell back before it.
+- [How to launch a token on multiple chains at once](https://sasapad.fun/learn/multi-chain-token-launch/): Launch one coin on Robinhood Chain, Base and more in one step: how multi-chain launches work and how the shared graduation race is decided.
 
 ## Forum
-- [sasa forum](https://sasapad.fun/forum/): one discussion board per coin launched on sasa. Only holders of a coin can post on its board; anyone can read. Each board lists the coin's market cap, holders, chains and graduation status from the chain.
-- [sasa news & help](https://sasapad.fun/forum/sasa/): questions about launching and trading on sasa.
+- [sasa forum](https://sasapad.fun/forum/): one discussion board per coin launched on sasa. Only holders can post; anyone can read.
 - New threads: https://sasapad.fun/forum/feed.xml · all forum pages: https://sasapad.fun/forum/sitemap.xml
+
+## Sitemaps
+- https://sasapad.fun/sitemap.xml · https://sasapad.fun/sitemap-coins.xml · https://sasapad.fun/forum/sitemap.xml

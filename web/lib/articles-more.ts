@@ -120,7 +120,7 @@ export const MORE_ARTICLES: Article[] = [
     body: [
       { p: "Most meme coins today start life on a [bonding curve](/learn/what-is-a-bonding-curve/): a contract that sells the coin directly, raising the price with each buy. A curve is a great way to launch with no upfront liquidity, but it isn't meant to last. Graduation is the moment a coin outgrows it." },
       { h2: "When does a meme coin graduate?" },
-      { p: "Every coin has a graduation target, a fixed amount of money that buyers must put in. sasa shows it as a progress bar on every coin page and in the [Explore](/explore/) list, with a Closest to graduate tab for coins that are nearly there. As soon as the total reaches the target, graduation is triggered automatically." },
+      { p: "Every coin has a graduation target, a fixed amount of money that buyers must put in. sasa shows it as a progress bar on every coin page and in the [Explore](/explore/) list, with an Almost graduating tab for coins that are nearly there. As soon as the total reaches the target, graduation is triggered automatically." },
       { h2: "What happens at graduation" },
       { ol: [
         "Buying on the curve stops.",
@@ -132,7 +132,7 @@ export const MORE_ARTICLES: Article[] = [
       { h2: "Why locked liquidity matters" },
       { p: "Liquidity is what lets people sell. If it could be withdrawn, the coin could become unsellable in one transaction, the classic [rug pull](/learn/how-to-spot-a-meme-coin-rug-pull/). Locking it forever turns the pool into permanent infrastructure for the coin. Trading fees in the pool keep flowing as described in the [fees guide](/learn/earn-from-meme-coin-trading-fees/)." },
       { h2: "Graduation on several chains: the race" },
-      { p: "A coin launched on [several chains at once](/learn/multi-chain-token-launch/) has one curve per chain but one shared target. Buys on every chain add up, in USDC. When the total reaches the target, the chain holding the most money wins: its curve graduates into a locked pool. The other chains stop taking buys, and holders there can sell back to the curve at any time, so nobody's money gets stuck." },
+      { p: "A coin launched on [several chains at once](/learn/multi-chain-token-launch/) has one curve per chain but one shared target. Buys on every chain add up, in USDC. When the total reaches the target, the chain holding the most money wins: its curve graduates into a locked pool. Buying stops on the other chains, their money joins the winning pool, and coins held there move automatically to the same address on the winning chain, so nobody has to do anything." },
       { h2: "What to watch after graduation" },
       { ul: [
         "Liquidity: a deeper pool means smaller price moves per trade.",
@@ -144,7 +144,7 @@ export const MORE_ARTICLES: Article[] = [
       { q: "Do I need to claim or swap my coins after graduation?", a: "No. Your coins stay where they are and trade in the new pool automatically." },
       { q: "Does the price drop at graduation?", a: "It shouldn't: the pool is created at the curve's last price. After that, the price moves with supply and demand like any pool." },
       { q: "Can graduated liquidity ever be removed?", a: "Not on sasa. The liquidity position is locked forever by the contract." },
-      { q: "What if I hold the coin on the chain that lost the race?", a: "Buying stops there, but you can always sell back to that chain's curve and receive USDC." },
+      { q: "What if I hold the coin on the chain that lost the race?", a: "Nothing to do: your coins move automatically to the same address on the winning chain, where they keep trading." },
     ],
   },
   {
@@ -349,7 +349,7 @@ export const MORE_ARTICLES: Article[] = [
         "Holder count growing steadily, not in one jump from a single airdrop.",
         "More buys than sells: the buy/sell bar on each coin page shows it at a glance.",
         "Liquidity that keeps up with market value. A big market value on thin liquidity can collapse fast; see [market cap vs liquidity](/learn/meme-coin-market-cap-vs-fdv-vs-liquidity/).",
-        "Graduation progress moving: a coin climbing the Closest to graduate tab is attracting real money. [What graduation means](/learn/meme-coin-graduation-explained/).",
+        "Graduation progress moving: a coin climbing the Almost graduating tab is attracting real money. [What graduation means](/learn/meme-coin-graduation-explained/).",
         "Wide distribution: no single wallet holding a scary share of the supply.",
         "A community that talks about the coin, not just its price.",
       ] },
@@ -362,7 +362,7 @@ export const MORE_ARTICLES: Article[] = [
       { tip: "On sasa the Top gainers and Top losers tabs only include coins with at least $10K of 24h volume, so one tiny trade can't top the list." },
       { h2: "Where to look on sasa" },
       { ul: [
-        "[Explore](/explore/): Trending, Top gainers, Newest and Closest to graduate, across every chain.",
+        "[Explore](/explore/): Trending, New, Almost graduating and Gainers, across every chain.",
         "[Terminal](/terminal/): the top 20 per tab with the chart and trade box on one screen.",
         "Swipe: a fast way to scan coins one by one.",
       ] },

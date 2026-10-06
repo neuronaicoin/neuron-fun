@@ -30,6 +30,7 @@ import { sparkLoop } from "./spark.mjs";
 import { pointsLoop } from "./points.mjs";
 import { badgesLoop } from "./badges.mjs";
 import { marketsLoop } from "./markets.mjs";
+import { seoLoop } from "./seo.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -514,6 +515,7 @@ async function main() {
     pointsLoop(pool, log),
     badgesLoop(pool, log),
     marketsLoop(pool, log),
+    seoLoop(pool, log),
   ]);
 }
 

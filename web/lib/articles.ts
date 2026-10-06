@@ -3,6 +3,7 @@
  * Keep every claim true today; update when mainnet or fees change.
  */
 import { MORE_ARTICLES } from "./articles-more";
+import { NEW_ARTICLES } from "./articles-new";
 
 export type Block =
   | { h2: string }
@@ -169,7 +170,7 @@ const BASE_ARTICLES: Article[] = [
 ];
 
 // Newest first on the Learn page; the first three guides come from launch week.
-export const ARTICLES: Article[] = [...MORE_ARTICLES, ...BASE_ARTICLES];
+export const ARTICLES: Article[] = [...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES];
 
 export const articleBySlug = (slug: string) => ARTICLES.find((a) => a.slug === slug);
 export const SITE_URL = "https://sasapad.fun";

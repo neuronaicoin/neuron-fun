@@ -26,7 +26,7 @@ export async function onRequestGet(ctx) {
   const key = (ctx.env && ctx.env.SUPABASE_KEY) || SUPABASE_KEY;
   let coin = null;
   try {
-    const r = await fetch(`${base}/rest/v1/coin_list?id=eq.${encodeURIComponent(id)}&select=name,symbol,description,launch_key,created_at,holders_total`, {
+    const r = await fetch(`${base}/rest/v1/coin_list?id=eq.${encodeURIComponent(id)}&select=name,symbol,description,launch_key,created_at,holders_total,curves,graduated_chain,volume_native_24h,trades_24h,change_24h`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cf: { cacheTtl: 60, cacheEverything: true },
     });
@@ -41,7 +41,7 @@ export async function onRequestGet(ctx) {
     hasImage = h.ok;
   } catch {}
 
-  const title = `${coin.name} ($${coin.symbol}) on sasa`;
+  const title = `${coin.name} ($${coin.symbol}) price, chart and holders · sasa`;
   const description =
     (coin.description || "").trim().slice(0, 180) ||
     `Trade $${coin.symbol} on every chain at once. Launch once. Live on every chain.`;
@@ -94,6 +94,31 @@ export async function onRequestGet(ctx) {
       ],
     },
   ];
+  // A plain-text summary for crawlers and AI engines that don't run JavaScript.
+  // People never see it (the app renders the page); it says the same things.
+  const CHAIN_NAMES = { 46630: "Robinhood Chain", 4663: "Robinhood Chain", 84532: "Base", 8453: "Base", 56: "BNB Chain", 1: "Ethereum" };
+  const curves = Array.isArray(coin.curves) ? coin.curves : [];
+  const chains = [...new Set(curves.map((k) => CHAIN_NAMES[k.chain_id]).filter(Boolean))];
+  const raised = curves.filter((k) => k.state === 0 || k.state === 3).reduce((s, k) => s + Number(String(k.real_native || "0").split(".")[0]) / 1e6, 0);
+  const vol = Number(coin.volume_native_24h || 0) / 1e6;
+  const ch = coin.change_24h === null || coin.change_24h === undefined ? null : Number(coin.change_24h) * 100;
+  const usd = (v) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(2)}`);
+  const html = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const facts = [
+    chains.length ? `Chains: ${chains.join(", ")}` : "",
+    coin.graduated_chain ? "Status: graduated, trading in a locked Uniswap pool" : `Status: on its bonding curve${raised > 0 ? `, ${usd(raised)} raised so far` : ""}`,
+    coin.holders_total ? `Holders: ${Number(coin.holders_total).toLocaleString("en-US")}` : "",
+    vol > 0 ? `24h volume: ${usd(vol)}` : "",
+    Number.isFinite(ch) ? `24h change: ${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%` : "",
+    coin.trades_24h ? `Trades in the last 24 hours: ${coin.trades_24h}` : "",
+    coin.created_at ? `Launched: ${new Date(coin.created_at).toISOString().slice(0, 10)}` : "",
+  ].filter(Boolean);
+  const summary =
+    `<noscript><article><h1>${html(coin.name)} ($${html(coin.symbol)})</h1>` +
+    `<p>${html(description)}</p><ul>${facts.map((f) => `<li>${html(f)}</li>`).join("")}</ul>` +
+    `<p>${html(coin.name)} was launched on sasa, a multi-chain meme coin launchpad. Buy and sell it with USDC in one tap, see its live chart, holder map and first buyers on this page.</p>` +
+    `<p><a href="${board}">${html(coin.name)} forum</a> · <a href="${SITE}/explore/">Explore coins on sasa</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
+  rw = rw.on("body", { element: (e) => e.append(summary, { html: true }) });
   const ldTag = `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\u003c")}</script><link rel="alternate" href="${board}" title="${String(coin.name).replace(/"/g, "&quot;")} forum">`;
   rw = rw.on("head", { element: (e) => e.append(ldTag, { html: true }) });
   const out = rw.transform(res);
