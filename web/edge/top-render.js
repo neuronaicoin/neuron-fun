@@ -20,6 +20,37 @@ export const LISTS = [
 export const NETS = { base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
 export const MIN_GAINER_VOLUME = 10_000;
 
+// These lists promise meme coins: leave out tokenized stocks, majors, big brand
+// names, stablecoins and wrapped coins (they are still tradable in the app).
+const MAJORS = new Set(["bitcoin", "ethereum", "ether", "solana", "tether", "usd coin", "chainlink", "uniswap", "aave", "polygon", "avalanche", "toncoin", "tron", "cardano", "litecoin", "xrp", "stellar", "bnb", "arbitrum", "optimism", "base", "robinhood", "coinbase"]);
+const BRANDS = /\b(openai|chatgpt|anthropic|google|alphabet|meta platforms|facebook|apple|amazon|microsoft|nvidia|tesla|netflix|spacex|palantir|berkshire|jpmorgan|visa|mastercard|blackrock|microstrategy|strategy inc)\b/i;
+const COMPANY = /\b(inc|corp|corporation|ltd|plc|llc|holdings|class [abc]|industries|tokeni[sz]ed|xstock|etf|trust|shares?)\b\.?/i;
+const PLUMBING = /\b(wrapped|staked|stable ?coin|tether gold|pax gold)\b/i;
+export function isMemeForList(c) {
+  const name = String(c.name ?? "").trim();
+  const sym = String(c.symbol ?? "").trim().toUpperCase();
+  if (!name || !sym) return false;
+  if (MAJORS.has(name.toLowerCase())) return false;
+  if (BRANDS.test(name) || COMPANY.test(name) || PLUMBING.test(name)) return false;
+  if (/USD/.test(sym) || /^W(ETH|BTC|BNB|SOL|AVAX|POL|MATIC|S)$/.test(sym) || /^(ST|WST|WE|EZ|R|CB|S|M|OS)?ETH$/.test(sym) || /^(C?BTC|BTCB|TBTC|WBTC)$/.test(sym)) return false;
+  // Tokenized stocks: AAPLx, METAx, GOOGLx...
+  if (/^[A-Z]{1,5}X$/.test(sym) && /x$/.test(String(c.symbol))) return false;
+  return true;
+}
+
+/** Over +10,000% in a day means the pool just opened from a tiny first price: not a real move. */
+export const sane24h = (v) => {
+  const n = Number(v);
+  return v === null || v === undefined || !Number.isFinite(n) || Math.abs(n) > 10_000 ? null : n;
+};
+
+/** What a list shows: meme coins only, honest 24h changes, at most 50. */
+export function cleanCoins(rows, list) {
+  let out = (rows || []).filter(isMemeForList).map((c) => ({ ...c, change_24h: sane24h(c.change_24h) }));
+  if (list && list.sort === "gainers") out = out.filter((c) => c.change_24h !== null).sort((a, b) => b.change_24h - a.change_24h);
+  return out.slice(0, 50);
+}
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const jsonLd = (o) => JSON.stringify(o).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 const num = (v) => {
@@ -58,10 +89,10 @@ export function queryFor(list, now = new Date()) {
   const cols = "network,address,name,symbol,image,price_usd,mcap_usd,fdv_usd,liq_usd,vol_24h,change_24h,buys_24h,sells_24h,pool_created";
   const q = [`select=${cols}`, "vol_24h=gt.0"];
   if (list.network) q.push(`network=eq.${list.network}`);
-  if (list.sort === "gainers") q.push(`vol_24h=gte.${MIN_GAINER_VOLUME}`, "change_24h=not.is.null", "order=change_24h.desc");
+  if (list.sort === "gainers") q.push(`vol_24h=gte.${MIN_GAINER_VOLUME}`, "change_24h=not.is.null", "change_24h=lte.10000", "order=change_24h.desc");
   else if (list.sort === "new") q.push(`pool_created=gt.${new Date(now.getTime() - 86400_000).toISOString()}`, "order=vol_24h.desc.nullslast");
   else q.push("order=vol_24h.desc.nullslast");
-  q.push("limit=50");
+  q.push("limit=120"); // more than shown: some are left out by cleanCoins
   // "vol_24h" appears twice for gainers: PostgREST combines them with AND, which is what we want.
   return `ext_coins?${q.join("&")}`;
 }

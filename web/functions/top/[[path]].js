@@ -3,7 +3,7 @@
  * Daily "top meme coins" lists as complete HTML for search and AI engines,
  * rebuilt from live data and cached at the edge for 30 minutes.
  */
-import { LISTS, queryFor, renderHub, renderList } from "../../edge/top-render.js";
+import { LISTS, cleanCoins, queryFor, renderHub, renderList } from "../../edge/top-render.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
@@ -17,7 +17,7 @@ async function fetchList(env, list) {
     cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true },
   });
   if (!r.ok) throw new Error(`data ${r.status}`);
-  return r.json();
+  return cleanCoins(await r.json(), list);
 }
 
 const page = (body, status = 200) =>
