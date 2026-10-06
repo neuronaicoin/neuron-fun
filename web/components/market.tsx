@@ -436,8 +436,8 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
         const eth = t.nativeAmount / 1e18;
         const n = names?.get(t.coinId);
         return (
-          <li key={t.txHash + t.curve} className="flex items-center gap-3 py-2.5 text-[0.8125rem]">
-            <span className={"w-12 shrink-0 font-semibold " + (isBurn(t.trader) ? "text-mint" : t.isBuy ? "text-up" : "text-danger")}>
+          <li key={t.txHash + t.curve} className="flex items-center gap-2 sm:gap-3 py-2.5 text-[0.8125rem]">
+            <span className={"w-10 sm:w-12 shrink-0 font-semibold " + (isBurn(t.trader) ? "text-mint" : t.isBuy ? "text-up" : "text-danger")}>
               {isBurn(t.trader) ? "Burn" : t.isBuy ? "Buy" : "Sell"}
             </span>
             {!compact && chain && <ChainChip chain={chain} />}
@@ -454,8 +454,8 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
               )}
               {!isBurn(t.trader) && <TraderBadges address={t.trader} max={2} className="ml-1.5" />}
             </span>
-            <span className="font-mono text-right">{ethUsd ? usd(eth * ethUsd, 2) : `${eth.toFixed(5)} ETH`}</span>
-            <span className="w-16 text-right text-ink-3 shrink-0">
+            <span className="font-mono text-right shrink-0 whitespace-nowrap">{ethUsd ? usd(eth * ethUsd, 2) : `${eth.toFixed(5)} ETH`}</span>
+            <span className="w-14 sm:w-16 text-right text-ink-3 shrink-0 whitespace-nowrap">
               {chain ? (
                 <a href={explorerTx(chain, t.txHash)} target="_blank" rel="noreferrer">{timeAgo(t.ts)}</a>
               ) : (

@@ -4,6 +4,7 @@ import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
 import { ContractAddress } from "@/components/contract";
 import { HolderMap } from "@/components/holdermap";
+import { WhoBought } from "@/components/whobought";
 import { LockBadge } from "@/components/lock";
 import { Confetti, useGraduationParty } from "@/components/confetti";
 import Link from "next/link";
@@ -203,7 +204,7 @@ function CoinPage() {
       </div>
 
       <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
-        <div className="order-2 lg:order-1 grid gap-6 min-w-0">
+        <div className="order-2 lg:order-1 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 min-w-0">
           {chartCurve && (
             <div className="border border-line rounded-xl p-3 sm:p-4">
               {!USD_MODE && coin.curves.length > 1 && (
@@ -260,6 +261,8 @@ function CoinPage() {
           </div>
 
           <HolderMap coin={coin} />
+
+          <WhoBought coin={coin} ethUsd={ethUsd} />
 
           <CoinComments coin={coin} />
 

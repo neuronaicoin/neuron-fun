@@ -50,7 +50,7 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
     <div className={backLink ? "max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28 md:pb-12" : ""}>
       {backLink && <Link href="/explore/" className="text-emerald font-semibold text-[0.875rem]">← All coins</Link>}
       <div className={(backLink ? "mt-3 " : "") + "grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] items-start"}>
-        <div className="grid gap-4 min-w-0">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
           <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
             <div className="flex items-center gap-3 min-w-0">
               {coin.image && !broken ? (

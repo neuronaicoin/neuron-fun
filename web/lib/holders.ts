@@ -110,3 +110,89 @@ export function packCircles<T extends { r: number }>(items: T[], w: number, h: n
   }
   return out;
 }
+
+export type FirstBuyer = {
+  addr: string;
+  /** When the wallet first bought. */
+  firstAt: string;
+  /** Dollars spent on buys among the trades read. */
+  boughtUsd: number;
+  /** Share of supply the wallet holds now (0 = sold everything). */
+  share: number;
+  /** Sent or received this coin to or from another wallet. */
+  linked: boolean;
+};
+
+/**
+ * "Who bought": the first wallets to buy a coin, what they paid and what
+ * they still hold. Read from trades, balances and transfers (no new tables).
+ */
+export async function fetchFirstBuyers(coin: Coin, ethUsd: number | null, count = 30): Promise<FirstBuyer[]> {
+  const skip = systemAddrs(coin.curves);
+  const skipSet = new Set(skip);
+  const { data, error } = await db
+    .from("trades")
+    .select("trader,native_amount,ts")
+    .eq("coin_id", coin.id)
+    .eq("is_buy", true)
+    .order("ts", { ascending: true })
+    .order("log_index", { ascending: true })
+    .limit(400);
+  if (error) throw error;
+  const order: string[] = [];
+  const byAddr = new Map<string, { firstAt: string; spent: number }>();
+  for (const r of (data ?? []) as { trader: string; native_amount: number | string; ts: string }[]) {
+    const a = (r.trader ?? "").toLowerCase();
+    if (!a || skipSet.has(a)) continue;
+    const usd = ethUsd ? (Number(r.native_amount) / 1e18) * ethUsd : 0;
+    const cur = byAddr.get(a);
+    if (cur) cur.spent += usd;
+    else {
+      if (order.length >= count) continue;
+      order.push(a);
+      byAddr.set(a, { firstAt: r.ts, spent: usd });
+    }
+  }
+  if (!order.length) return [];
+
+  // What each of them holds now, all chains added up.
+  const held = new Map<string, number>();
+  const perChain = await Promise.all(
+    coin.curves.map(async (c) => {
+      const { data, error } = await db
+        .from("balances")
+        .select("holder,amount")
+        .eq("chain_id", c.chain.chain.id)
+        .eq("token", c.token.toLowerCase())
+        .in("holder", order);
+      if (error) throw error;
+      return (data ?? []) as { holder: string; amount: number | string }[];
+    })
+  );
+  for (const rows of perChain)
+    for (const r of rows) {
+      const a = r.holder.toLowerCase();
+      held.set(a, (held.get(a) ?? 0) + Number(r.amount) / 1e18);
+    }
+  const supply = SUPPLY_PER_CHAIN * Math.max(1, coin.curves.length);
+
+  // Wallets that moved this coin between each other.
+  const linked = new Set<string>();
+  try {
+    const { data: pairs } = await db.rpc("holder_links", { p_coin: coin.id, p_skip: skip });
+    for (const p of (pairs ?? []) as { a: string; b: string }[]) {
+      linked.add(p.a.toLowerCase());
+      linked.add(p.b.toLowerCase());
+    }
+  } catch {
+    /* no links available: nobody is marked */
+  }
+
+  return order.map((addr) => ({
+    addr,
+    firstAt: byAddr.get(addr)!.firstAt,
+    boughtUsd: byAddr.get(addr)!.spent,
+    share: Math.max(0, (held.get(addr) ?? 0) / supply),
+    linked: linked.has(addr),
+  }));
+}
