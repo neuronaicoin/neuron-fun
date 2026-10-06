@@ -270,7 +270,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       }
       if (!calls.length) return;
       await send(cur.chain.chain, calls, setBusy);
-      toast(count > 1 ? `${count} auto orders on ✓` : "Auto order on ✓");
+      toast(count > 1 ? `${count} auto orders on` : "Auto order on");
       setTp((x) => ({ ...x, on: false }));
       setSl((x) => ({ ...x, on: false }));
       setDip((x) => ({ ...x, on: false }));
@@ -331,7 +331,6 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       )}
 
       <Rule
-        icon="🎯"
         title="Take profit"
         sub="Sell when your coins are worth more"
         tone="up"
@@ -358,7 +357,6 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       </Rule>
 
       <Rule
-        icon="🛡"
         title="Stop loss"
         sub="Sell everything if the price falls"
         tone="danger"
@@ -375,7 +373,6 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
       </Rule>
 
       <Rule
-        icon="🪝"
         title="Buy the dip"
         sub="Buy automatically if the price drops"
         tone="accent"
@@ -420,9 +417,9 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
             {orders.map((o) => {
               const kind = o.isBuy ? "dip" : o.maxOut === MAX ? "tp" : "sl";
               const meta = {
-                tp: { icon: "🎯", label: "Take profit", bar: "bg-up", bg: "bg-up/15" },
-                sl: { icon: "🛡", label: "Stop loss", bar: "bg-danger", bg: "bg-danger/15" },
-                dip: { icon: "🪝", label: "Buy the dip", bar: "bg-emerald", bg: "bg-emerald-soft" },
+                tp: { label: "Take profit", bar: "bg-up", bg: "bg-up/15" },
+                sl: { label: "Stop loss", bar: "bg-danger", bg: "bg-danger/15" },
+                dip: { label: "Buy the dip", bar: "bg-emerald", bg: "bg-emerald-soft" },
               }[kind];
               const target = kind === "sl" ? o.maxOut : o.minOut;
               const pct =
@@ -440,9 +437,7 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
                     : `Sells if worth drops to ${eth(o.maxOut)} (now ${eth(o.now)})`;
               return (
                 <li key={`${o.chainKey}-${o.id}`} className="flex items-center gap-3 py-2.5">
-                  <span className={"w-9 h-9 rounded-xl flex items-center justify-center shrink-0 " + meta.bg} aria-hidden="true">
-                    {meta.icon}
-                  </span>
+                  <span className={"w-2.5 h-2.5 rounded-full shrink-0 " + meta.bar} aria-hidden="true" />
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-[0.875rem]">
                       {meta.label}
@@ -472,7 +467,6 @@ export function AutoOrders({ coin, ethUsd }: { coin: Coin; ethUsd: number | null
 }
 
 function Rule({
-  icon,
   title,
   sub,
   tone,
@@ -481,7 +475,6 @@ function Rule({
   onToggle,
   children,
 }: {
-  icon: string;
   title: string;
   sub: string;
   tone: "up" | "danger" | "accent";
@@ -496,9 +489,7 @@ function Rule({
   return (
     <div className={"mt-3 rounded-2xl border p-3 " + (on ? ring : "border-line") + (disabled ? " opacity-50" : "")}>
       <div className="flex items-center gap-3">
-        <span className="w-9 h-9 rounded-xl bg-paper flex items-center justify-center text-[1.0625rem] shrink-0" aria-hidden="true">
-          {icon}
-        </span>
+        <span className={"w-2.5 h-2.5 rounded-full shrink-0 " + sw} aria-hidden="true" />
         <span className="min-w-0 flex-1" id={id}>
           <span className="block font-semibold text-[0.9375rem]">{title}</span>
           <span className="block text-[0.75rem] text-ink-3">{sub}</span>

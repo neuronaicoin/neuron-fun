@@ -231,7 +231,7 @@ export function PriceChart({
       series = candlesRef.current;
       if (!series) return false;
       lines = values.map((v) =>
-        series!.createPriceLine({ price: v, color: "#8f7f73", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "🔔" })
+        series!.createPriceLine({ price: v, color: "#8f7f73", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "Alert" })
       );
       return true;
     };
@@ -449,7 +449,7 @@ export function TradesFeed({ coinId, trader, names, ethUsd, limit = 25, compact 
               )}
               {chain && (
                 <a className="font-mono text-ink-3 ml-2" href={explorerAddress(chain, t.trader)} target="_blank" rel="noreferrer">
-                  {isBurn(t.trader) ? <span className="font-sans font-semibold text-mint">🔥 Buyback</span> : shortAddr(t.trader)}
+                  {isBurn(t.trader) ? <span className="font-sans font-semibold text-mint">Buyback</span> : shortAddr(t.trader)}
                 </a>
               )}
               {!isBurn(t.trader) && <TraderBadges address={t.trader} max={2} className="ml-1.5" />}

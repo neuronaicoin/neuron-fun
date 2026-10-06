@@ -46,14 +46,14 @@ export function BalancePill() {
     } catch {}
   }, [address, total, cash]);
   return (
-    <div className="h-11 flex items-center gap-1 pl-1 pr-1 rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] shrink-0 hover:border-emerald/60 transition-colors">
+    <div className="h-10 flex items-center gap-1 pl-1 pr-1 rounded-xl shrink-0">
       <button
         type="button"
         onClick={() => openMoney({ kind: "portfolio" })}
         aria-label={total ? `Total ${total} (cash plus your coins), cash to spend ${cash}` : "Your portfolio"}
         className="h-9 flex items-center gap-2 pl-1 pr-1.5 rounded-xl"
       >
-        <span className="hidden sm:flex w-8 h-8 rounded-[0.625rem] bg-emerald-soft text-emerald items-center justify-center shrink-0" aria-hidden="true">
+        <span className="hidden sm:flex w-8 h-8 rounded-lg text-ink-3 items-center justify-center shrink-0" aria-hidden="true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="6" width="18" height="14" rx="3" />
             <path d="M3 10h18M16 15h2" />
@@ -66,7 +66,7 @@ export function BalancePill() {
               <span className="font-mono text-[0.9375rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
             </span>
             <span className="text-[0.6875rem] text-ink-3 mt-1 whitespace-nowrap">
-              Cash <span className="font-mono text-up font-semibold tabular-nums">{cash}</span>
+              Cash <span className="font-mono text-ink-2 font-semibold tabular-nums">{cash}</span>
             </span>
           </span>
         ) : (

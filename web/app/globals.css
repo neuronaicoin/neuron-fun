@@ -1,30 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  /* Dark theme. Names kept from the light version: mist = page, paper = bars
-     and inputs, surface = cards, ink = text. */
-  --color-mist: #0b0806;
-  --color-paper: #110c09;
-  --color-surface: #17110c;
-  --color-line: #2a2019;
-  --color-ink: #fff4ec;
-  --color-ink-2: #cdbbae;
-  --color-ink-3: #8f7f73;
+  /* update-130: plain, neutral look. Dark values here; light (the default) below.
+     Names kept: mist = page, paper = bars and inputs, surface = cards, ink = text. */
+  --color-mist: #0f0f10;
+  --color-paper: #0f0f10;
+  --color-surface: #161618;
+  --color-line: #27272a;
+  --color-ink: #f4f4f5;
+  --color-ink-2: #c7c7cc;
+  --color-ink-3: #8e8e95;
   --color-emerald: #ff6b1a;
   --color-emerald-dark: #e85a0c;
-  --color-emerald-soft: #2a170b;
+  --color-emerald-soft: #2a1a10;
   --color-on-accent: #1a0e05;
   --color-mint: #ffb020;
-  --color-night: #120d09;
-  --color-night-2: #1c150f;
-  --color-night-line: #2e231a;
-  --color-danger: #ef5b52;
-  --color-up: #2fd39b;
-  --color-warn-bg: #33260f;
+  --color-night: #141416;
+  --color-night-2: #1c1c1f;
+  --color-night-line: #2a2a2e;
+  --color-danger: #f0565e;
+  --color-up: #2bc06d;
+  --color-warn-bg: #2d2410;
   --color-warn-ink: #f6c56d;
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* The phone's own font: looks native on every iPhone and Android, loads instantly. */
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Calmer corners everywhere. */
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.875rem;
 }
 
 html {
@@ -40,28 +45,27 @@ html {
   }
 }
 
-/* Light theme: same names, daytime values. Set by the ☀/☾ button, or by
-   the phone's own setting until the user picks. */
+/* Light theme: the default. Same names, daytime values. Set by the theme button. */
 html[data-theme="light"] {
   color-scheme: light;
-  --color-mist: #f7f3ef;
-  --color-paper: #fdfbf9;
+  --color-mist: #ffffff;
+  --color-paper: #ffffff;
   --color-surface: #ffffff;
-  --color-line: #e8dfd6;
-  --color-ink: #1c140e;
-  --color-ink-2: #4d4239;
-  --color-ink-3: #8a7c70;
+  --color-line: #ebebe8;
+  --color-ink: #141414;
+  --color-ink-2: #45454a;
+  --color-ink-3: #75757b;
   --color-emerald: #f2600c;
   --color-emerald-dark: #d65209;
-  --color-emerald-soft: #ffeadb;
+  --color-emerald-soft: #fff1ea;
   --color-on-accent: #ffffff;
-  --color-mint: #d98a00;
-  --color-night: #f3ede7;
-  --color-night-2: #ebe3db;
-  --color-night-line: #ddd2c7;
-  --color-danger: #d9443a;
-  --color-up: #0f9d62;
-  --color-warn-bg: #fff3d6;
+  --color-mint: #c27a00;
+  --color-night: #f6f6f4;
+  --color-night-2: #ededea;
+  --color-night-line: #e0e0dc;
+  --color-danger: #e5484d;
+  --color-up: #12a150;
+  --color-warn-bg: #fff6dc;
   --color-warn-ink: #8a5a00;
 }
 
@@ -77,10 +81,13 @@ body {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
 }
 
-input,
-textarea,
-button {
-  font: inherit;
+/* In the base layer, so a button's own text size (a utility class) wins. */
+@layer base {
+  input,
+  textarea,
+  button {
+    font: inherit;
+  }
 }
 
 /* 16px inputs stop iOS from zooming in on focus. */
@@ -127,16 +134,17 @@ html.is-landing .app-root { display: none; }
 .app-chrome { display: contents; }
 html.is-landing .app-chrome,
 html.is-learn .app-chrome { display: none; }
-html.is-landing body { background: #0b0806; }
+html.is-landing body { background: var(--color-mist); }
 
 .sasa-landing {
-  --o: #ff6b1a; --a: #ffb020; --cream: #fff4ec; --mut: #a8978a; --line: #2a2019;
+  --o: var(--color-emerald); --a: var(--color-ink-2); --cream: var(--color-ink); --mut: var(--color-ink-3); --line: var(--color-line);
   position: relative; min-height: 100dvh; display: flex; flex-direction: column;
-  background: #0b0806; color: var(--cream); overflow: hidden;
+  background: var(--color-mist); color: var(--cream); overflow: hidden;
   font-family: var(--font-sans);
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
 }
-.sasa-glow {
+.sasa-glow { display: none; }
+.sasa-glow-unused {
   position: absolute; inset: -20% -10% auto auto; width: 70vmax; height: 70vmax; pointer-events: none;
   background: radial-gradient(closest-side, rgba(255, 107, 26, 0.22), rgba(255, 107, 26, 0));
 }
@@ -146,34 +154,33 @@ html.is-landing body { background: #0b0806; }
 }
 .sasa-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -0.03em; color: var(--cream); }
 .sasa-follow {
-  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px;
   border: 1px solid var(--line); color: var(--cream); font-weight: 600; font-size: 14px;
 }
-.sasa-follow:hover { border-color: var(--o); }
+.sasa-follow:hover { border-color: var(--mut); }
 .sasa-main { position: relative; flex: 1; max-width: 1120px; width: 100%; margin: 0 auto; padding: 48px 20px 40px; }
 .sasa-status {
-  display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px;
-  background: rgba(255, 107, 26, 0.1); border: 1px solid rgba(255, 107, 26, 0.35);
-  color: var(--a); font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.02em;
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--mut); font-size: 14px; font-weight: 500;
 }
-.sasa-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--o); box-shadow: 0 0 0 0 rgba(255, 107, 26, 0.7); animation: sasa-pulse 1.8s infinite; }
+.sasa-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--color-up); }
 @keyframes sasa-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,107,26,.7); } 100% { box-shadow: 0 0 0 10px rgba(255,107,26,0); } }
 .sasa-main h1 {
-  margin-top: 26px; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.04em;
-  font-size: clamp(44px, 9vw, 96px); line-height: 0.98;
+  margin-top: 18px; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.035em;
+  font-size: clamp(38px, 8vw, 80px); line-height: 1.02;
 }
-.sasa-main h1 em { font-style: normal; color: var(--o); }
+.sasa-main h1 em { font-style: normal; color: inherit; }
 .sasa-nowrap { white-space: nowrap; }
 .sasa-lead { margin-top: 24px; max-width: 560px; color: var(--mut); font-size: clamp(16px, 2.2vw, 20px); line-height: 1.55; }
 .sasa-actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
 .sasa-btn {
-  display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 999px;
-  background: var(--cream); color: #1a120c; font-weight: 700; font-size: 16px;
+  display: inline-flex; align-items: center; height: 50px; padding: 0 24px; border-radius: 12px;
+  background: var(--color-emerald); color: var(--color-on-accent); font-weight: 700; font-size: 16px;
 }
-.sasa-btn:hover { background: #ffffff; }
+.sasa-btn:hover { background: var(--color-emerald-dark); }
 .sasa-chains { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; list-style: none; padding: 0; }
 .sasa-chains li {
-  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--line); color: var(--cream); font-size: 14px; font-weight: 600;
 }
 .sasa-chains li span { width: 8px; height: 8px; border-radius: 999px; }
@@ -189,7 +196,7 @@ html.is-landing body { background: #0b0806; }
 .sasa-foot {
   position: relative; max-width: 1120px; width: 100%; margin: 0 auto; padding: 20px;
   display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between;
-  border-top: 1px solid var(--line); color: #6e5f53; font-size: 13px;
+  border-top: 1px solid var(--line); color: var(--mut); font-size: 13px;
 }
 
 .sasa-nav { display: flex; align-items: center; gap: 6px; }
@@ -199,8 +206,8 @@ html.is-landing body { background: #0b0806; }
 .sasa-guides h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
 .sasa-guide-grid { margin-top: 14px; display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 760px) { .sasa-guide-grid { grid-template-columns: repeat(3, 1fr); } }
-.sasa-guide { display: grid; gap: 8px; padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: #140e0a; }
-.sasa-guide:hover { border-color: rgba(255, 107, 26, 0.6); }
+.sasa-guide { display: grid; gap: 8px; padding: 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--color-surface); }
+.sasa-guide:hover { border-color: var(--mut); }
 .sasa-guide strong { font-family: var(--font-display); font-size: 17px; line-height: 1.3; color: var(--cream); }
 .sasa-guide span { color: var(--mut); font-size: 14px; line-height: 1.5; }
 .sasa-all { display: inline-block; margin-top: 14px; color: var(--o); font-weight: 600; font-size: 14px; }
@@ -258,10 +265,7 @@ html.is-landing body { background: #0b0806; }
 }
 
 /* Buttons and cards give a little when pressed. */
-button:not(:disabled):active,
-a.press:active {
-  transform: scale(0.97);
-}
+/* No shrinking on press: a plain colour change, like a native app. */
 button,
 a.press {
   transition-property: transform, background-color, border-color, color, box-shadow, opacity;
@@ -284,7 +288,6 @@ a.press {
 
 @media (prefers-reduced-motion: reduce) {
   .shimmer::after, .confetti-piece { animation: none; }
-  button:not(:disabled):active, a.press:active { transform: none; }
 }
 
 /* AI launch box: a soft gradient frame. */
@@ -294,7 +297,7 @@ a.press {
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  background: linear-gradient(120deg, #ff6b1a, #ffb020, #f472b6, #ff6b1a);
+  background: var(--color-line);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -331,3 +334,18 @@ body {
 .almost-hot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-emerald) 12%, transparent), 0 8px 24px -10px color-mix(in srgb, var(--color-emerald) 55%, transparent); animation: almost-glow 2.2s ease-in-out infinite; }
 @keyframes almost-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-emerald) 20%, transparent), 0 10px 30px -10px color-mix(in srgb, var(--color-emerald) 75%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .almost-live, .almost-fill::after, .almost-tip, .almost-spark, .almost-hot { animation: none; } .almost-spark { opacity: 1; } }
+
+/* ---------------------------------------------------------------------
+   update-130: natural look
+   ------------------------------------------------------------------- */
+/* Numbers line up in columns (prices, balances, tables). */
+.font-mono, .num { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+/* No grey/blue flash on tap, no double-tap zoom delay on buttons and rows. */
+a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* Long names never push a row wider than the phone. */
+.min-w-0 { min-width: 0; }
+/* Explore list: plain rows on phones, a table on computers. */
+.ex-row:active { background: var(--color-night); }
+@media (hover: hover) { .ex-row:hover { background: var(--color-night); } }
+.ex-tabs { scrollbar-width: none; }
+.ex-tabs::-webkit-scrollbar { display: none; }

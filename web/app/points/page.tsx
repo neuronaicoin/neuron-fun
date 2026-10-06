@@ -97,9 +97,8 @@ export default function PointsPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-10 pb-28 md:pb-12">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 sm:p-7">
-        <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-24 w-80 h-80 rounded-full bg-emerald/25 blur-3xl" />
-        <p className="relative font-mono text-[0.6875rem] sm:text-[0.75rem] tracking-[0.14em] text-emerald">SEASON 0 · RANKS THE EARLIEST SASA USERS</p>
-        <h1 className="relative font-display font-extrabold text-[1.75rem] sm:text-[2.5rem] leading-[1.05] tracking-tight mt-2">Earn points. Climb the board.</h1>
+        <p className="relative text-[0.8125rem] text-ink-3">Season 0</p>
+        <h1 className="relative font-display font-bold text-[1.625rem] sm:text-[2.25rem] leading-[1.1] tracking-tight mt-1">Earn points. Climb the board.</h1>
         <p className="relative text-ink-2 mt-2 max-w-[58ch] text-[0.9375rem]">
           Points show how active you are on sasa. The more you trade, launch and invite, the higher you climb. Top players get an OG badge on their profile for good.
         </p>
@@ -144,8 +143,8 @@ export default function PointsPage() {
               const ok = done.has(q.id);
               return (
                 <li key={q.id} className="flex items-center gap-3 py-2.5">
-                  <span className={"w-10 h-10 rounded-xl flex items-center justify-center text-[1.125rem] shrink-0 " + (ok ? "bg-up/15" : "bg-paper")} aria-hidden="true">
-                    {ok ? "✅" : q.icon}
+                  <span className={"w-6 h-6 rounded-full border flex items-center justify-center shrink-0 " + (ok ? "bg-up border-up text-white" : "border-line")} aria-hidden="true">
+                    {ok && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 12l5 5 9-10" /></svg>}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className={"block font-semibold text-[0.9375rem] " + (ok ? "line-through text-ink-3" : "")}>{q.title}</span>
@@ -181,9 +180,9 @@ export default function PointsPage() {
             <span className="text-[0.75rem] text-ink-3">resets at midnight UTC</span>
           </div>
           <ul className="mt-2 divide-y divide-line text-[0.875rem]">
-            <Daily icon="📈" title="Trade" note="1 point per $1 traded, up to 500 a day" pts="up to +500" />
-            <Daily icon="🔥" title="Keep your streak" note="Trade every day to grow your boost" pts="up to 2×" />
-            <Daily icon="🎓" title="Your coin graduates" note="For every coin you launched that reaches its target" pts="+1,000" />
+            <Daily title="Trade" note="1 point per $1 traded, up to 500 a day" pts="up to +500" />
+            <Daily title="Keep your streak" note="Trade every day to grow your boost" pts="up to 2×" />
+            <Daily title="Your coin graduates" note="For every coin you launched that reaches its target" pts="+1,000" />
           </ul>
           <p className="text-[0.75rem] text-ink-3 mt-3">Trades in coins you launched yourself don&apos;t earn trading points.</p>
         </section>
@@ -191,7 +190,7 @@ export default function PointsPage() {
         {/* On phones the invite card comes first: it's the one people act on. */}
         <div className="grid gap-4 order-first lg:order-none">
           {/* Invites */}
-          <section id="invite" className="scroll-mt-24 rounded-3xl border border-line p-4 sm:p-5 bg-gradient-to-br from-emerald-soft to-surface" aria-label="Invite friends">
+          <section id="invite" className="scroll-mt-24 rounded-xl border border-line p-4 sm:p-5 bg-surface" aria-label="Invite friends">
             <h2 className="font-display font-bold text-[1.125rem]">Invite friends, earn together</h2>
             <p className="text-[0.875rem] text-ink-2 mt-1">
               Your friends start with <b className="text-ink">100 points</b>. You get <b className="text-ink">20% of the points</b> they earn, plus{" "}
@@ -256,7 +255,7 @@ export default function PointsPage() {
                   const isMe = r.owner === me;
                   return (
                     <li key={r.owner} className={"flex items-center gap-3 px-2 py-2 rounded-xl " + (isMe ? "bg-emerald-soft" : "")}>
-                      <span className="w-8 text-center font-mono text-[0.8125rem] text-ink-3 shrink-0">{r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : r.rank}</span>
+                      <span className="w-8 text-center font-mono text-[0.8125rem] text-ink-3 shrink-0">{r.rank}</span>
                       <Link href={p ? profileHref(p) : `/u/${r.owner}/`} className="flex items-center gap-2.5 min-w-0 flex-1">
                         {p ? <Avatar profile={p} size={30} /> : <span className="w-[30px] h-[30px] rounded-full bg-line shrink-0" />}
                         <span className="font-semibold text-[0.875rem] truncate">{isMe ? "You" : p ? displayName(p) : `${r.owner.slice(0, 6)}…${r.owner.slice(-4)}`}</span>
@@ -308,12 +307,9 @@ function Mini({ value, label }: { value: string; label: string }) {
   );
 }
 
-function Daily({ icon, title, note, pts }: { icon: string; title: string; note: string; pts: string }) {
+function Daily({ title, note, pts }: { title: string; note: string; pts: string }) {
   return (
     <li className="flex items-center gap-3 py-2.5">
-      <span className="w-10 h-10 rounded-xl bg-paper flex items-center justify-center text-[1.125rem] shrink-0" aria-hidden="true">
-        {icon}
-      </span>
       <span className="min-w-0 flex-1">
         <span className="block font-semibold">{title}</span>
         <span className="block text-[0.75rem] text-ink-3">{note}</span>

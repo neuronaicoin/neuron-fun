@@ -89,12 +89,12 @@ export default function MePage() {
       </div>
       <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar -mx-1 px-1">
         {[
-          ["/traders/", "🏆 Top traders", false],
-          ["/traders/?tab=following", "👥 Following feed", false],
-          ["/copy/", "🪞 Copy signals", false],
-          ["/points/", "⚡ Points & invites", false],
-          ["/forum/", "💬 Forum", true],
-          [`/u/${address.toLowerCase()}/`, "🙂 Public profile", true],
+          ["/traders/", "Top traders", false],
+          ["/traders/?tab=following", "Following feed", false],
+          ["/copy/", "Copy signals", false],
+          ["/points/", "Points & invites", false],
+          ["/forum/", "Forum", true],
+          [`/u/${address.toLowerCase()}/`, "Public profile", true],
         ].map(([href, label, plain]) =>
           plain ? (
             <a key={href as string} href={href as string} className="h-10 px-4 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center shrink-0 whitespace-nowrap hover:border-emerald">

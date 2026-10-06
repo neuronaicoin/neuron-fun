@@ -10,13 +10,13 @@ import { db } from "./data";
 
 export type BadgeId = "whale" | "pnl" | "creator" | "early" | "diamond" | "streak";
 
-export const BADGES: Record<BadgeId, { icon: string; label: string; about: string }> = {
-  whale: { icon: "🐋", label: "Whale", about: "Top 5% of traders by 30-day trading volume" },
-  pnl: { icon: "📈", label: "Top PnL", about: "Top 10% of traders by 30-day realized profit" },
-  creator: { icon: "🚀", label: "Creator", about: "Launched a coin that graduated" },
-  early: { icon: "🎯", label: "Early", about: "Among the first 10 buyers of a coin" },
-  diamond: { icon: "💎", label: "Diamond", about: "Held a coin for 7+ days without selling" },
-  streak: { icon: "🔥", label: "Streak", about: "Traded 7+ days in a row" },
+export const BADGES: Record<BadgeId, { label: string; about: string }> = {
+  whale: { label: "Whale", about: "Top 5% of traders by 30-day trading volume" },
+  pnl: { label: "Top PnL", about: "Top 10% of traders by 30-day realized profit" },
+  creator: { label: "Creator", about: "Launched a coin that graduated" },
+  early: { label: "Early", about: "Among the first 10 buyers of a coin" },
+  diamond: { label: "Diamond", about: "Held a coin for 7+ days without selling" },
+  streak: { label: "Streak", about: "Traded 7+ days in a row" },
 };
 export const BADGE_ORDER: BadgeId[] = ["whale", "pnl", "creator", "early", "diamond", "streak"];
 

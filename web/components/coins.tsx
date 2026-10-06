@@ -69,14 +69,12 @@ export function ChainRace({ coin }: { coin: Coin }) {
     return (
       <div className="grid gap-3">
         <p className="flex items-center gap-2 text-[0.875rem]">
-          <span aria-hidden="true">🎉</span>
           <span>
             Graduated on <b>{winner.chain.short}</b>. Liquidity is locked forever.
           </span>
         </p>
         {coin.omni && coin.curves.some((c) => c.state === "moved") && (
           <div className="rounded-2xl border border-up/35 bg-up/10 px-3.5 py-3 text-[0.875rem] leading-snug flex gap-2.5">
-            <span aria-hidden="true">✅</span>
             <span>
               <b className="block">
                 Held ${coin.symbol} on {coin.curves.filter((c) => c.state === "moved").map((c) => c.chain.short).join(" or ")}?
@@ -105,7 +103,7 @@ export function GraduatingNotice({ compact = false }: { compact?: boolean }) {
     <div role="status" className="rounded-2xl border border-emerald/35 bg-emerald/10 px-3.5 py-3 text-[0.875rem] leading-snug flex gap-2.5">
       <span aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-[2.5px] border-emerald border-r-transparent animate-spin motion-reduce:animate-none" />
       <span>
-        <b className="block">🎓 Graduating… trading pauses for about 2 minutes</b>
+        <b className="block">Graduating… trading pauses for about 2 minutes</b>
         {!compact && "Your coins are safe. When the pool opens you can buy and sell again, at the graduation price."}
       </span>
     </div>

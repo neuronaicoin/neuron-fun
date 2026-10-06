@@ -325,7 +325,6 @@ export function DepositSheet({ onClose }: { onClose: () => void }) {
       <Sheet title="Deposit" onClose={onClose}>
         {view === "done" && track.result ? (
           <div className="text-center py-2">
-            <div className="text-[2.5rem]" aria-hidden="true">🎉</div>
             <h3 className="font-display text-[1.25rem] font-semibold mt-1">{fmtAmount(track.result.amount, "ETH")} arrived</h3>
             <p className="text-ink-2 mt-1">{track.result.usd > 0 ? `About ${fmtUsd(track.result.usd)} on ${to.name}. ` : ""}You&apos;re ready to trade.</p>
             <button type="button" onClick={onClose} className="mt-5 h-14 w-full rounded-2xl bg-emerald text-on-accent font-bold hover:bg-emerald-dark">
@@ -373,7 +372,7 @@ export function DepositSheet({ onClose }: { onClose: () => void }) {
       setView("track");
       await follow(q.requestId, setTrack, (usd) => setTrack({ at: 3, result: { amount: q.outAmount, usd: usd || q.outUsd } }));
       setView("done");
-      toast(`🔔 Deposit arrived: ${fmtAmount(q.outAmount, "ETH")}`);
+      toast(`Deposit arrived: ${fmtAmount(q.outAmount, "ETH")}`);
     } catch (e) {
       setBusy("");
       const code = (e as { code?: number }).code;
@@ -609,7 +608,7 @@ function DepositAddress({
         if (mine && alive) {
           setStatus({ state: mine.status, usd: mine.outUsd });
           if (mine.status === "success") {
-            toast("🔔 Deposit arrived in your sasa wallet");
+            toast("Deposit arrived in your sasa wallet");
             return;
           }
         }
@@ -655,7 +654,6 @@ function DepositAddress({
       <div className="mt-3">
         {status?.state === "success" ? (
           <div className="text-center py-2">
-            <div className="text-[2rem]" aria-hidden="true">🎉</div>
             <p className="font-semibold">Your deposit arrived{status.usd > 0 ? ` (about ${fmtUsd(status.usd)})` : ""}.</p>
           </div>
         ) : status?.state === "failure" || status?.state === "refund" ? (
@@ -914,7 +912,6 @@ export function WithdrawSheet({ onClose }: { onClose: () => void }) {
       <Sheet title="Withdraw" onClose={onClose}>
         {view === "done" ? (
           <div className="text-center py-2">
-            <div className="text-[2.5rem]" aria-hidden="true">✅</div>
             <h3 className="font-display text-[1.25rem] font-semibold mt-1">{receive ? `${fmtAmount(receive.amount, receive.symbol)} delivered` : "Delivered"}</h3>
             <p className="text-ink-2 mt-1">
               Sent to <span className="font-mono">{recipient.trim().slice(0, 6)}…{recipient.trim().slice(-4)}</span> on {dest.name}.
@@ -955,7 +952,7 @@ export function WithdrawSheet({ onClose }: { onClose: () => void }) {
         setBusy("");
         setTrack({ at: 2 });
         setView("done");
-        toast("🔔 Withdrawal sent");
+        toast("Withdrawal sent");
         return;
       }
       // Fresh quote with the real recipient, then run its transactions from the sasa wallet.
@@ -983,7 +980,7 @@ export function WithdrawSheet({ onClose }: { onClose: () => void }) {
       setView("track");
       await follow(q.requestId, setTrack, () => setTrack({ at: 3 }));
       setView("done");
-      toast("🔔 Withdrawal delivered");
+      toast("Withdrawal delivered");
     } catch (e) {
       setBusy("");
       const code = (e as { code?: number }).code;

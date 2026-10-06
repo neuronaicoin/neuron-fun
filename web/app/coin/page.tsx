@@ -116,7 +116,7 @@ function CoinPage() {
         <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
           <div className="grid gap-4 sm:gap-6 min-w-0">
             <Skeleton className="h-72 sm:h-96" />
-            <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
+            <div className="border border-line rounded-xl p-4 sm:p-5">
               <SkeletonRows rows={4} avatar="none" />
             </div>
           </div>
@@ -133,16 +133,19 @@ function CoinPage() {
     [...coin.curves].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       {party && !partyDone && <Confetti onDone={() => setPartyDone(true)} />}
-      <Link href="/explore/" className="text-[0.875rem] font-semibold text-emerald">← All coins</Link>
+      <Link href="/explore/" className="inline-flex items-center gap-1 text-[0.875rem] font-medium text-ink-3 hover:text-ink">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        Explore
+      </Link>
 
-      <div className="mt-4 sm:mt-5 flex items-start gap-3 sm:gap-4">
-        <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={56} />
+      <div className="mt-3 sm:mt-4 flex items-start gap-3 sm:gap-4">
+        <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={48} />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display font-semibold text-[1.625rem] sm:text-[2.25rem] leading-tight tracking-tight break-words">{coin.name}</h1>
+          <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.875rem] leading-tight tracking-tight break-words">{coin.name}</h1>
           <LockBadge coinId={coin.id} className="mt-2" />
-          <p className="text-ink-2 text-[0.9375rem] mt-1">
+          <p className="text-ink-3 text-[0.875rem] mt-0.5">
             ${coin.symbol} · created {timeAgo(coin.createdAt)} by <span className="font-mono">{shortAddr(coin.creator)}</span>
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -169,16 +172,15 @@ function CoinPage() {
           <StarButton coinId={coin.id} />
         </div>
       </div>
-      {coin.description && <p className="text-[1rem] text-ink-2 mt-4 leading-relaxed max-w-2xl">{coin.description}</p>}
+      {coin.description && <p className="text-[0.9375rem] text-ink-2 mt-3 leading-relaxed max-w-2xl">{coin.description}</p>}
       <div className="mt-3 empty:hidden">
         <BoostButton coin={coin} />
       </div>
 
       {winner && (
-        <div className="mt-6 rounded-2xl bg-emerald-soft border border-emerald/40 text-ink p-5 sm:p-6">
-          <p className="font-mono text-[0.75rem] tracking-[0.14em] text-mint">GRADUATED</p>
-          <h2 className="font-display font-semibold text-[1.375rem] sm:text-[1.625rem] mt-2">Winning chain: {winner.chain.name}</h2>
-          <p className="text-[#a9bab3] mt-2 text-[0.9375rem] leading-relaxed">
+        <div className="mt-5 rounded-xl border border-line text-ink p-4 sm:p-5">
+          <h2 className="font-display font-semibold text-[1.125rem] sm:text-[1.25rem]">Graduated on {winner.chain.name}</h2>
+          <p className="text-ink-2 mt-1.5 text-[0.9375rem] leading-relaxed">
             ${coin.symbol} now trades in a locked pool on {winner.chain.short}. That is where the coin lives from here on.
             {coin.omni
               ? "Coins held on the other chains moved here automatically, to the same address."
@@ -189,21 +191,21 @@ function CoinPage() {
             onClick={() =>
               postOnX(`$${coin.symbol} just graduated on ${winner.chain.short} 🎓 Liquidity locked forever on @sasapadfun`, coinShareUrl(coin.id))
             }
-            className="mt-4 h-11 px-4 rounded-xl bg-ink text-mist font-bold inline-flex items-center gap-2"
+            className="mt-3 h-10 px-4 rounded-xl border border-line font-semibold inline-flex items-center gap-2"
           >
-            🎓 Share the win on X
+            Share on X
           </button>
         </div>
       )}
 
-      <div className="mt-6">
+      <div className="mt-4 sm:mt-5">
         <LiveStats coin={coin} ethUsd={ethUsd} />
       </div>
 
       <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <div className="order-2 lg:order-1 grid gap-6 min-w-0">
           {chartCurve && (
-            <div className="bg-surface border border-line rounded-2xl p-4 sm:p-5">
+            <div className="border border-line rounded-xl p-3 sm:p-4">
               {!USD_MODE && coin.curves.length > 1 && (
                 <div className="flex flex-wrap gap-2 mb-4">
                   {coin.curves.map((c) => (
@@ -230,7 +232,7 @@ function CoinPage() {
             </div>
           )}
 
-          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
+          <div className="border border-line rounded-xl p-4 sm:p-5">
             <ProgressBar coin={coin} big />
             <div className="mt-6">
               <h2 className="font-display font-semibold text-[1.125rem] mb-3">The race</h2>
@@ -245,13 +247,13 @@ function CoinPage() {
           {/* Phones: the safety check sits here, folded, so the chart comes first. */}
           {!wide && <TrustCard coin={coin} collapsible />}
 
-          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
+          <div className="border border-line rounded-xl p-4 sm:p-5">
             <h2 className="font-display font-semibold text-[1.125rem] mb-2">Trades</h2>
             <TradesFeed coinId={coin.id} ethUsd={ethUsd} limit={allTrades ? 25 : 7} />
             <button
               type="button"
               onClick={() => setAllTrades((v) => !v)}
-              className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+              className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:bg-night"
             >
               {allTrades ? "Show fewer" : "Show more trades"}
             </button>
@@ -265,7 +267,7 @@ function CoinPage() {
 
           <FeeBox coin={coin} onChange={load} />
 
-          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6 text-[0.875rem] text-ink-2 grid gap-2">
+          <div className="border border-line rounded-xl p-4 sm:p-5 text-[0.875rem] text-ink-2 grid gap-2">
             <h2 className="font-display font-semibold text-[1.125rem] text-ink mb-1">Details</h2>
             {coin.curves.map((c) => (
               <div key={c.chain.key} className="flex justify-between gap-4">

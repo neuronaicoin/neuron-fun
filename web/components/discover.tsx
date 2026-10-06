@@ -106,9 +106,9 @@ export function CoinTile({ coin, ethUsd, spark }: { coin: Coin; ethUsd: number |
         {coin.graduatedOn ? (
           <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
         ) : coin.graduating ? (
-          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 backdrop-blur-sm text-white flex items-center gap-1">🎓 Graduating…</span>
+          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 backdrop-blur-sm text-white flex items-center gap-1">Graduating…</span>
         ) : pct >= 80 ? (
-          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-warn-ink text-on-accent flex items-center">🔥 {pct}%</span>
+          <span className="absolute bottom-2 right-2 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 text-white flex items-center">{pct}%</span>
         ) : null}
       </div>
       <div className="px-1.5 sm:px-2 pt-3 pb-1">
@@ -198,7 +198,7 @@ export function LiveTicker({ coins, ethUsd }: { coins: Coin[]; ethUsd: number | 
   const row = items.map(({ t, coin, chain }) => (
     <Link key={t.txHash + t.curve} href={coinHref(coin!)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 shrink-0 text-[0.6875rem] sm:text-[0.8125rem]">
       {t.trader.toLowerCase() === "0x000000000000000000000000000000000000dead" ? (
-        <span className="text-mint font-semibold">🔥 BURN</span>
+        <span className="text-mint font-semibold">BURN</span>
       ) : (
         <span className={t.isBuy ? "text-up font-semibold" : "text-danger font-semibold"}>{t.isBuy ? "BUY" : "SELL"}</span>
       )}

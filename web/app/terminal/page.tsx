@@ -249,7 +249,7 @@ function Terminal() {
 /** Market tabs, shared by the desktop list and the phone strip. */
 const MARKET_TABS: readonly (readonly [SortKey, string])[] = [
   ["watchlist", "★"],
-  ["trending", "🔥 Trending"],
+  ["trending", "Trending"],
   ["gainers", "Gainers"],
   ["losers", "Losers"],
   ["hot", "Closest to grad."],

@@ -193,7 +193,7 @@ export function HeaderBell() {
         aria-label={unread ? `${unread} unread notifications` : "Notifications"}
         aria-expanded={open !== "none"}
         className={
-          "relative w-11 h-11 shrink-0 rounded-2xl border border-line bg-surface text-ink-2 hover:text-ink hover:border-emerald/60 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] flex items-center justify-center " +
+          "relative w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 hover:text-ink flex items-center justify-center " +
           (ringing ? "bell-ring" : "")
         }
       >
@@ -243,7 +243,7 @@ function MarkAllButton() {
   );
 }
 
-const NOTE_ICON: Record<string, string> = { mc: "🔔", price: "🔔", move: "⚡", bond: "🔥", grad: "🎓", forum: "💬", follow: "👥", copy: "🪞", safety: "🛡", order: "🎯" };
+const NOTE_ICON: Record<string, string> = { mc: "$", price: "$", move: "%", bond: "↑", grad: "✓", forum: "#", follow: "+", copy: "⇄", safety: "!", order: "•" };
 
 function NotesList({ onPick, pad = "px-4" }: { onPick: () => void; pad?: string }) {
   const { notes, signedIn } = useAlerts();
@@ -271,7 +271,7 @@ function NotesList({ onPick, pad = "px-4" }: { onPick: () => void; pad?: string 
         <li key={n.id} className="border-t border-line">
           <button type="button" onClick={() => open(n)} className={"w-full text-left flex gap-3 py-3 hover:bg-paper " + pad}>
             <span className="w-9 h-9 rounded-xl bg-emerald-soft flex items-center justify-center shrink-0" aria-hidden="true">
-              {NOTE_ICON[n.kind] ?? "🔔"}
+              {NOTE_ICON[n.kind] ?? "•"}
             </span>
             <span className="min-w-0">
               <span className="block font-semibold text-[0.9rem] leading-snug">
@@ -583,8 +583,8 @@ function AlertFormSheet({ coin, ethUsd, onClose }: { coin: Coin; ethUsd: number 
           <div className="grid gap-2 mt-4" role="group" aria-label="Milestone">
             {(
               [
-                ["bond", "🔥", "Curve reaches 90%", bondDone ? (graduated ? "Already graduated" : "Already past 90%") : `Now ${Math.floor(coin.progress * 100)}% full`, bondDone],
-                ["grad", "🎓", "Coin graduates", graduated ? "Already graduated" : "When it moves to its locked pool", graduated],
+                ["bond", "", "Curve reaches 90%", bondDone ? (graduated ? "Already graduated" : "Already past 90%") : `Now ${Math.floor(coin.progress * 100)}% full`, bondDone],
+                ["grad", "", "Coin graduates", graduated ? "Already graduated" : "When it moves to its locked pool", graduated],
               ] as const
             ).map(([k, icon, title, sub, done]) => {
               const picked = msChoice === k;
@@ -597,7 +597,7 @@ function AlertFormSheet({ coin, ethUsd, onClose }: { coin: Coin; ethUsd: number 
                   onClick={() => setMs(k)}
                   className={"min-h-14 px-4 py-3 rounded-2xl border text-left flex items-center gap-3 disabled:opacity-50 " + (picked ? "border-emerald bg-emerald-soft" : "border-line")}
                 >
-                  <span className="text-[1.25rem]" aria-hidden="true">{icon}</span>
+                  {icon && <span className="text-[1.25rem]" aria-hidden="true">{icon}</span>}
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-[0.9375rem]">{title}</span>
                     <span className="block text-ink-3 text-[0.8125rem]">{sub}</span>
@@ -656,7 +656,7 @@ function pushHint(p: PushState): string {
   if (p === "on") return "Also send it to this device, even when sasa is closed.";
   if (p === "ios-install") return "On iPhone, add sasa to your Home Screen first.";
   if (p === "denied") return "Blocked for this site. Allow notifications in your browser settings.";
-  if (p === "unsupported") return "This browser can't show notifications. Alerts still show in the 🔔.";
+  if (p === "unsupported") return "This browser can't show notifications. Alerts still show under the bell.";
   return "Off on this device. Turn on to get alerts when sasa is closed.";
 }
 
@@ -841,11 +841,11 @@ function PushSheet({ onClose }: { onClose: () => void }) {
         </>
       ) : push === "denied" ? (
         <p className="text-ink-2 text-[0.9375rem] leading-relaxed">
-          Notifications are blocked for this site. Allow them in your browser&apos;s site settings, then come back here. Your alerts still show in the 🔔.
+          Notifications are blocked for this site. Allow them in your browser&apos;s site settings, then come back here. Your alerts still show under the bell.
         </p>
       ) : push === "unsupported" ? (
         <p className="text-ink-2 text-[0.9375rem] leading-relaxed">
-          This browser can&apos;t show notifications. Try Chrome, Edge, Firefox or Safari. Your alerts still show in the 🔔.
+          This browser can&apos;t show notifications. Try Chrome, Edge, Firefox or Safari. Your alerts still show under the bell.
         </p>
       ) : (
         <>

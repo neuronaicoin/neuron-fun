@@ -87,7 +87,7 @@ export function FollowButton({ profile, big = false }: { profile: Pick<Profile, 
         setBusy(true);
         try {
           await setFollowing(signMessage, target, !on);
-          toast(on ? `Unfollowed ${displayName(profile)}` : `Following ${displayName(profile)}. You'll get a 🔔 when they buy.`);
+          toast(on ? `Unfollowed ${displayName(profile)}` : `Following ${displayName(profile)}. You'll get an alert when they buy.`);
         } catch (err) {
           toast(friendlyError(err));
         } finally {
@@ -316,7 +316,6 @@ function FollowPopup() {
       className="fixed left-1/2 -translate-x-1/2 z-[60] w-[min(24rem,calc(100vw-1.5rem))] bg-surface border border-line rounded-2xl shadow-[0_14px_40px_rgba(0,0,0,0.45)] p-3 flex items-center gap-3"
       style={{ top: "calc(env(safe-area-inset-top, 0px) + 4.6rem)" }}
     >
-      <span className="text-[1.5rem]" aria-hidden="true">👥</span>
       <div className="min-w-0 flex-1">
         <div className="font-semibold text-[0.9rem] leading-snug">{shown.title}</div>
         <div className="text-ink-3 text-[0.8125rem] truncate">{shown.body}</div>

@@ -46,7 +46,7 @@ function GraduatedPosts() {
     `🎓 $${g.symbol} just graduated on ${g.chain}: $${TARGET_USD.toLocaleString("en-US")} raised${took(g.hours)}.\n\nLiquidity locked forever. One coin, one CA, every chain.`;
   return (
     <section className="mt-10">
-      <h2 className="font-display font-bold text-[1.25rem]">🎓 Graduated (last 2 days)</h2>
+      <h2 className="font-display font-bold text-[1.25rem]">Graduated (last 2 days)</h2>
       <p className="text-ink-3 text-[0.8125rem] mt-1">Facts only, no &quot;buy&quot; call: celebrates the platform without promoting a coin.</p>
       {list === null ? (
         <p className="mt-3 text-ink-3">Loading…</p>

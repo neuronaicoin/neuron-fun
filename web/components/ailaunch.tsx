@@ -91,9 +91,8 @@ export function AiLaunch({
   }
 
   return (
-    <section aria-label="Launch with AI" className="ai-glow relative rounded-3xl bg-surface p-4 sm:p-6">
-      <span className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-[0.75rem] font-bold text-white bg-gradient-to-r from-emerald to-[#f472b6]">✨ AI</span>
-      <h2 className="font-display font-bold text-[1.25rem] sm:text-[1.375rem] tracking-tight mt-2.5">Your coin, designed in seconds</h2>
+    <section aria-label="Launch with AI" className="relative rounded-xl border border-line bg-surface p-4 sm:p-6">
+      <h2 className="font-display font-bold text-[1.125rem] sm:text-[1.25rem] tracking-tight">Your coin, designed in seconds</h2>
       <p className="text-ink-2 text-[0.875rem] sm:text-[0.9375rem] mt-1 max-w-[52ch]">
         Tell us your idea in one sentence. Our AI creates the name, ticker, story and logo for you. Pick the one you love and launch.
       </p>
@@ -142,9 +141,9 @@ export function AiLaunch({
           type="button"
           onClick={() => void make()}
           disabled={busy}
-          className="mt-4 w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-emerald to-[#ff8a3d] text-white font-bold text-[1rem] flex items-center justify-center gap-2 disabled:opacity-60"
+          className="mt-4 w-full h-12 sm:h-13 rounded-xl bg-emerald text-on-accent font-bold text-[1rem] flex items-center justify-center gap-2 disabled:opacity-60"
         >
-          {busy ? "✨ Thinking…" : cards ? "↻ New ideas" : "✨ Make it for me"}
+          {busy ? "Thinking…" : cards ? "New ideas" : "Make it for me"}
         </button>
       ) : (
         <div className="mt-4">
@@ -183,7 +182,7 @@ export function AiLaunch({
                   ) : c.logoState === "loading" ? (
                     <span className="shimmer absolute inset-0" />
                   ) : (
-                    <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-emerald to-[#7c3aed] text-white">
+                    <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-night-2 text-ink">
                       <span className="font-display font-bold text-[1.25rem] sm:text-[1.5rem] opacity-90">{c.symbol.slice(0, 2)}</span>
                       <span
                         role="button"

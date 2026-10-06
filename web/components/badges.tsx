@@ -1,6 +1,6 @@
 "use client";
 
-/** Trader badges: emoji only in tight rows, chips with names on profiles. */
+/** Trader badges: small name tags in rows, chips with the meaning on profiles. */
 import { BADGES, useBadges, type BadgeId } from "@/lib/badges";
 
 export function BadgeIcons({ badges, max = 3, className = "" }: { badges: BadgeId[] | undefined; max?: number; className?: string }) {
@@ -8,13 +8,13 @@ export function BadgeIcons({ badges, max = 3, className = "" }: { badges: BadgeI
   const shown = badges.slice(0, max);
   const label = badges.map((b) => BADGES[b].label).join(", ");
   return (
-    <span className={"inline-flex items-center gap-0.5 shrink-0 align-middle text-[0.8125rem] leading-none " + className} title={label} aria-label={`Badges: ${label}`}>
-      {shown.map((b) => (
-        <span key={b} aria-hidden="true" title={`${BADGES[b].label}: ${BADGES[b].about}`}>
-          {BADGES[b].icon}
+    <span className={"inline-flex items-center gap-1 shrink-0 align-middle leading-none " + className} title={label} aria-label={`Badges: ${label}`}>
+      {shown.slice(0, 2).map((b) => (
+        <span key={b} aria-hidden="true" title={`${BADGES[b].label}: ${BADGES[b].about}`} className="h-4 px-1 rounded bg-night-2 text-ink-2 text-[0.625rem] font-semibold flex items-center">
+          {BADGES[b].label}
         </span>
       ))}
-      {badges.length > max && <span className="text-[0.6875rem] text-ink-3 font-semibold ml-0.5">+{badges.length - max}</span>}
+      {badges.length > Math.min(max, 2) && <span className="text-[0.6875rem] text-ink-3 font-semibold">+{badges.length - Math.min(max, 2)}</span>}
     </span>
   );
 }
@@ -35,7 +35,6 @@ export function BadgeChips({ address, className = "" }: { address: string; class
         <li key={b}>
           <details className="group relative">
             <summary className="list-none cursor-pointer h-7 px-2.5 rounded-lg border border-line bg-paper text-[0.75rem] font-semibold flex items-center gap-1 whitespace-nowrap hover:border-emerald/60 [&::-webkit-details-marker]:hidden">
-              <span aria-hidden="true">{BADGES[b].icon}</span>
               {BADGES[b].label}
             </summary>
             <span className="absolute z-20 left-0 top-full mt-1 w-56 max-w-[70vw] rounded-xl border border-line bg-surface p-2.5 text-[0.75rem] text-ink-2 shadow-lg">

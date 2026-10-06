@@ -19,7 +19,7 @@ export function InviteCard({ address, username }: { address: string; username: s
   }
 
   return (
-    <section className="rounded-3xl border border-line p-4 sm:p-5 bg-gradient-to-br from-emerald-soft to-surface" aria-label="Invite friends">
+    <section className="rounded-xl border border-line p-4 sm:p-5 bg-surface" aria-label="Invite friends">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-display font-bold text-[1.0625rem] sm:text-[1.125rem]">Invite friends, earn together</h2>
@@ -32,8 +32,8 @@ export function InviteCard({ address, username }: { address: string; username: s
           className="h-9 px-3 rounded-xl border border-line bg-surface font-bold text-[0.8125rem] flex items-center gap-1 shrink-0 hover:border-emerald/60"
           title="Your points"
         >
-          <span aria-hidden="true">⚡</span>
           <span className="font-mono tabular-nums">{total === null ? "…" : total.toLocaleString("en-US")}</span>
+          <span className="text-ink-3 font-normal">pts</span>
         </Link>
       </div>
       <div className="flex gap-2 mt-3">

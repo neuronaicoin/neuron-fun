@@ -25,7 +25,7 @@ export function RefCapture() {
     tried.current = address;
     claimRef(signMessage, ref)
       .then((r) => {
-        if (r.ok) toast("🎁 Welcome! You start with 100 points.");
+        if (r.ok) toast("Welcome. You start with 100 points.");
       })
       .catch(() => {
         tried.current = null; // try again next time
@@ -45,7 +45,7 @@ export function RefCapture() {
           try {
             localStorage.setItem(key, "1");
           } catch {}
-          toast("📣 Thanks for sharing! +100 points");
+          toast("Thanks for sharing. +100 points");
         })
         .catch(() => {});
     };

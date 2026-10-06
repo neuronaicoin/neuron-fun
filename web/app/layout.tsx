@@ -1,15 +1,5 @@
 import type { Metadata, Viewport } from "next";
-// Fonts are served from our own domain (not Google): a network that blocks or stalls
-// fonts.googleapis.com must never keep the page from showing.
-import "@fontsource/sora/500.css";
-import "@fontsource/sora/600.css";
-import "@fontsource/sora/700.css";
-import "@fontsource/instrument-sans/400.css";
-import "@fontsource/instrument-sans/500.css";
-import "@fontsource/instrument-sans/600.css";
-import "@fontsource/instrument-sans/700.css";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
+// No web fonts: the phone's own system font (fast, native on iPhone and Android).
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";
@@ -61,8 +51,8 @@ export const metadata: Metadata = {
  * page; /learn pages always use their own simple chrome.
  */
 const HOST_CHECK = (IS_TESTNET ? "" : "var NOLANDING=1;") + String.raw`try{var h=location.hostname,p=location.pathname,c=document.documentElement.classList;if(p.indexOf("/learn")===0){c.add("is-learn")}else if(typeof NOLANDING==="undefined"&&p==="/"&&(/(^|\.)sasapad\.(fun|com)$/.test(h)||/[?&]landing\b/.test(location.search))){c.add("is-landing")}}catch(e){}`;
-/** Runs before first paint: the saved theme, or the phone/computer setting. No flash. */
-const THEME_CHECK = String.raw`try{var t=localStorage.getItem("sasa-theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)}catch(e){}`;
+/** Runs before first paint: the saved theme, light by default. No flash. */
+const THEME_CHECK = String.raw`try{var t=localStorage.getItem("sasa-theme");if(t!=="light"&&t!=="dark"){t="light"}document.documentElement.setAttribute("data-theme",t)}catch(e){document.documentElement.setAttribute("data-theme","light")}`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -71,7 +61,7 @@ export const viewport: Viewport = {
   // People can still pinch-zoom (iOS ignores this for manual zoom).
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#0a0d0c",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

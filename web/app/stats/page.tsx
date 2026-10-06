@@ -90,10 +90,7 @@ export default function StatsPage() {
       {/* Title and filters */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="flex items-center gap-2 font-mono text-[0.6875rem] tracking-[0.16em] text-emerald">
-            <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" aria-hidden="true" /> LIVE · ON-CHAIN
-          </p>
-          <h1 className="font-display font-bold text-[1.875rem] sm:text-[2.75rem] tracking-tight mt-1">Stats</h1>
+          <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Stats</h1>
           <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">Every launch, trade and payout on sasa, across every chain.</p>
         </div>
       </div>

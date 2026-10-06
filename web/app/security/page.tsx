@@ -21,7 +21,7 @@ export default function Security() {
   return (
     <LegalPage title="Security">
       <div className="rounded-2xl border border-up/40 bg-up/10 p-4">
-        <p className="font-display font-bold text-[1.125rem] text-ink">✓ Independently reviewed</p>
+        <p className="font-display font-bold text-[1.125rem] text-ink">Independently reviewed</p>
         <p className="mt-1">
           sasa&apos;s smart contracts went through <b>three rounds of independent review</b>. No critical, high or open medium findings remain; the
           reviewer found the code ready for production after the final round.

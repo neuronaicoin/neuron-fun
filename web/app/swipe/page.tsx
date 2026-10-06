@@ -118,9 +118,6 @@ export default function SwipePage() {
           <div className="shimmer absolute inset-0 rounded-[1.75rem]" />
         ) : !current ? (
           <div className="absolute inset-0 rounded-[1.75rem] border border-line bg-surface flex flex-col items-center justify-center text-center gap-2 p-6">
-            <div className="text-[2.5rem]" aria-hidden="true">
-              🎉
-            </div>
             <b className="font-display text-[1.125rem]">{error ? "Couldn't load coins" : "You've seen them all"}</b>
             <span className="text-ink-2 text-[0.875rem]">{error ? "Check your connection and try again." : "New coins show up all the time."}</span>
             <button
@@ -321,7 +318,7 @@ function SwipeCard({
         {coin.graduatedOn ? (
           <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
         ) : pct >= 80 ? (
-          <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-warn-ink text-on-accent flex items-center">🔥 {pct}%</span>
+          <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 text-white flex items-center">{pct}%</span>
         ) : null}
         <span style={{ opacity: buyO }} className="absolute top-8 left-5 -rotate-12 px-3 py-1 rounded-xl border-4 border-up text-up font-display font-extrabold text-[1.75rem]">
           BUY

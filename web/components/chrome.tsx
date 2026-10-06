@@ -40,7 +40,6 @@ export function PauseBanner() {
     paused.length === CHAINS.length ? "every chain" : paused.length === 1 ? paused[0] : `${paused.slice(0, -1).join(", ")} and ${paused[paused.length - 1]}`;
   return (
     <div role="status" className="bg-warn-bg text-warn-ink text-center text-[0.8125rem] leading-snug px-4 py-2 border-b border-line">
-      <span aria-hidden="true" className="mr-1.5">⏸</span>
       Buying on {where} is paused for a moment. Selling works as usual.
     </div>
   );
@@ -153,11 +152,11 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
   );
 }
 
-/** ☀ / ☾ switch. Remembers the choice; until then the device setting wins. */
+/** Light / dark switch. Remembers the choice; light until the user picks. */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark" | null>(null);
   useEffect(() => {
-    setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+    setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
   }, []);
   const flip = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -173,7 +172,7 @@ export function ThemeToggle() {
       onClick={flip}
       aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
       title={theme === "light" ? "Dark mode" : "Light mode"}
-      className="w-11 h-11 shrink-0 rounded-2xl border border-line bg-surface text-ink-2 hover:text-ink hover:border-emerald/60 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] flex items-center justify-center"
+      className="w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 hover:text-ink flex items-center justify-center"
     >
       {theme === "light" ? (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -198,11 +197,11 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-surface rounded-t-3xl sm:rounded-3xl p-6 safe-bottom"
+        className="w-full sm:max-w-md max-h-[90dvh] overflow-y-auto overscroll-contain bg-surface rounded-t-2xl sm:rounded-2xl px-4 pt-5 sm:p-6 safe-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4 mb-4">
-          <h2 className="font-display text-[1.375rem] font-semibold">{title}</h2>
+          <h2 className="font-display text-[1.125rem] font-bold">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="w-10 h-10 -mr-2 rounded-full text-ink-3 text-[1.625rem] leading-none">
             ×
           </button>
@@ -223,7 +222,7 @@ const NAV = [
   { href: "/me/", label: "Your coins", from: "lg" },
   { href: "/traders/", label: "Traders", from: "lg" },
   { href: "/copy/", label: "Copy", from: "lg" },
-  { href: "/points/", label: "⚡ Points", from: "lg" },
+  { href: "/points/", label: "Points", from: "lg" },
   { href: "/forum/", label: "Forum", from: "xl" },
   { href: "/stats/", label: "Stats", from: "xl" },
 ] as const;
@@ -244,24 +243,24 @@ export function Header() {
     else setTimeout(warm, 2000);
   }, []);
   return (
-    <header className="sticky top-0 z-40 bg-paper/90 backdrop-blur border-b border-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-      <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
-        <Link href="/explore/" className="flex items-center gap-2.5 text-ink shrink-0">
-          <LogoMark />
-          <span className="font-display font-bold text-[1.375rem] tracking-tight">sasa</span>
+    <header className="sticky top-0 z-40 bg-paper border-b border-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+      <div className="max-w-7xl mx-auto h-14 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
+        <Link href="/explore/" className="flex items-center gap-2 text-ink shrink-0">
+          <LogoMark size={26} />
+          <span className="font-display font-bold text-[1.25rem] tracking-tight">sasa</span>
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 text-[0.8125rem] lg:text-[0.875rem] xl:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
             n.href === "/forum/" ? (
               // The forum is server-rendered HTML, not part of the app: a normal link.
-              <a key={n.href} href={n.href} className={"text-ink hover:text-emerald " + SHOW_FROM[n.from]}>
+              <a key={n.href} href={n.href} className={"text-ink-3 hover:text-ink " + SHOW_FROM[n.from]}>
                 {n.label}
               </a>
             ) : (
               <Link
                 key={n.href}
                 href={n.href}
-                className={(isActive(pathname, n.href) ? "text-emerald " : "text-ink hover:text-emerald ") + SHOW_FROM[n.from]}
+                className={(isActive(pathname, n.href) ? "text-ink font-semibold " : "text-ink-3 hover:text-ink ") + SHOW_FROM[n.from]}
               >
                 {n.label}
               </Link>
@@ -269,7 +268,7 @@ export function Header() {
           )}
           <HeaderMore />
         </nav>
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           <AlertsSync />
           <MoneyHost />
           <SocialSync />
@@ -287,16 +286,16 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE = [
-  { href: "/terminal/", label: "Terminal", icon: "📈", note: "Live trading", tablet: true },
-  { href: "/me/", label: "Your coins", icon: "👤", note: "Portfolio and profile", tablet: true },
-  { href: "/traders/", label: "Top traders", icon: "🏆", note: "Follow the best" },
-  { href: "/copy/", label: "Copy trading", icon: "🪞", note: "Signals from traders you copy" },
-  { href: "/points/", label: "Points", icon: "⚡", note: "Quests, invites, leaderboard" },
-  { href: "/swipe/", label: "Swipe", icon: "🔥", note: "Discover coins fast" },
-  { href: "/forum/", label: "Forum", icon: "💬", note: "Every coin's community", plain: true },
-  { href: "/stats/", label: "Stats", icon: "📊", note: "Volume, fees, graduations" },
-  { href: "/how-it-works/", label: "How it works", icon: "🧭", note: "sasa in 2 minutes" },
-  { href: "/help/", label: "Help", icon: "💁", note: "Answers, or write to us" },
+  { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
+  { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
+  { href: "/traders/", label: "Top traders", note: "Follow the best" },
+  { href: "/copy/", label: "Copy trading", note: "Signals from traders you copy" },
+  { href: "/points/", label: "Points", note: "Quests, invites, leaderboard" },
+  { href: "/swipe/", label: "Swipe", note: "Discover coins fast" },
+  { href: "/forum/", label: "Forum", note: "Every coin's community", plain: true },
+  { href: "/stats/", label: "Stats", note: "Volume, fees, graduations" },
+  { href: "/how-it-works/", label: "How it works", note: "sasa in 2 minutes" },
+  { href: "/help/", label: "Help", note: "Answers, or write to us" },
 ] as const;
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
@@ -305,23 +304,24 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   const points = useMyTotal(address);
   return (
     <Sheet title="More" onClose={onClose}>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid -mx-1">
         {MORE.map((m) => {
           const active = isActive(pathname, m.href);
           const cls =
             ("tablet" in m ? "hidden md:flex " : "flex ") +
-            "rounded-2xl border p-3 flex-col gap-1 min-h-[5.5rem] " +
-            (active ? "border-emerald bg-emerald-soft" : "border-line bg-paper hover:border-emerald/60");
+            "items-center justify-between gap-3 px-1 py-3 border-b border-line " +
+            (active ? "text-emerald" : "text-ink");
           const inner = (
             <>
-              <span className="text-[1.375rem] leading-none" aria-hidden="true">
-                {m.icon}
+              <span className="min-w-0">
+                <span className="block font-semibold text-[0.9375rem]">{m.label}</span>
+                <span className="block text-[0.75rem] text-ink-3 leading-snug">{m.note}</span>
               </span>
-              <span className="font-semibold text-[0.9375rem]">
-                {m.label}
-                {m.href === "/points/" && points !== null && <span className="ml-1.5 font-mono text-[0.8125rem] text-emerald">{points.toLocaleString("en-US")}</span>}
-              </span>
-              <span className="text-[0.6875rem] text-ink-3 leading-snug">{m.note}</span>
+              {m.href === "/points/" && points !== null ? (
+                <span className="font-mono text-[0.875rem] text-ink-2 shrink-0">{points.toLocaleString("en-US")}</span>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-ink-3 shrink-0" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+              )}
             </>
           );
           // The forum is served outside the app, so it needs a full page load.
@@ -347,7 +347,7 @@ function HeaderMore() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="hidden md:inline lg:hidden text-ink hover:text-emerald" aria-haspopup="dialog">
-        More ▾
+        More
       </button>
       {open && <MoreSheet onClose={() => setOpen(false)} />}
     </>
@@ -377,7 +377,7 @@ export function BottomNav() {
   }, []);
   const moreActive = MORE.some((m) => !("tablet" in m) && isActive(pathname, m.href));
   return (
-    <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper/95 backdrop-blur border-t border-line safe-bottom pt-2">
+    <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-5">
         {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
@@ -386,7 +386,7 @@ export function BottomNav() {
             <Link
               key={n.href}
               href={n.href}
-              className={"flex flex-col items-center gap-1 py-1 text-[0.75rem] font-semibold " + (active ? "text-emerald" : "text-ink-3")}
+              className={"flex flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-medium " + (active ? "text-ink" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
               {n.label === "Create a coin" ? "Create" : n.label === "Your coins" ? "You" : n.label === "Terminal" ? "Trade" : n.label}
@@ -397,7 +397,7 @@ export function BottomNav() {
           type="button"
           onClick={() => setMore(true)}
           aria-haspopup="dialog"
-          className={"flex flex-col items-center gap-1 py-1 text-[0.75rem] font-semibold " + (moreActive ? "text-emerald" : "text-ink-3")}
+          className={"flex flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-medium " + (moreActive ? "text-ink" : "text-ink-3")}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <circle cx="5" cy="12" r="2" />
@@ -412,7 +412,7 @@ export function BottomNav() {
 }
 
 function NavIcon({ name }: { name: string }) {
-  const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (name === "Explore")
     return (
       <svg {...common}>
@@ -473,7 +473,7 @@ export function Footer() {
           <Link href="/terms/" className="text-emerald">Terms</Link>
           <Link href="/privacy/" className="text-emerald">Privacy</Link>
           <Link href="/risk/" className="text-emerald">Risks</Link>
-          <Link href="/security/" className="text-emerald">✓ Security</Link>
+          <Link href="/security/" className="text-emerald">Security</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
         </nav>
@@ -482,7 +482,7 @@ export function Footer() {
   );
 }
 
-/** ⚡ your points on very wide screens; elsewhere the "⚡ Points" link (and the You page on phones) leads there. */
+/** Your points on very wide screens; elsewhere the "Points" link (and the You page on phones) leads there. */
 function PointsPill() {
   const { address } = useWallet();
   const total = useMyTotal(address);
@@ -491,10 +491,10 @@ function PointsPill() {
     <Link
       href="/points/"
       title="Your points"
-      className="hidden 2xl:flex h-11 items-center gap-1.5 px-3 rounded-2xl border border-line bg-surface font-bold text-[0.875rem] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_18px_rgba(0,0,0,0.06)] hover:border-emerald/60"
+      className="hidden 2xl:flex h-10 items-center gap-1.5 px-3 rounded-xl border border-line font-semibold text-[0.875rem] hover:text-ink"
     >
-      <span aria-hidden="true">⚡</span>
       <span className="font-mono tabular-nums">{total.toLocaleString("en-US")}</span>
+      <span className="text-ink-3 font-normal">pts</span>
     </Link>
   );
 }

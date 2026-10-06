@@ -160,7 +160,7 @@ export function HolderMap({ coin }: { coin: Coin }) {
                   )}
                   {p.kind === "creator" && locked && p.r > 24 && (
                     <text x={p.x} y={p.y - p.r * 0.38} textAnchor="middle" fontSize={p.r / 3.2}>
-                      🔒
+                      LOCKED
                     </text>
                   )}
                 </g>
@@ -184,7 +184,7 @@ export function HolderMap({ coin }: { coin: Coin }) {
                 <span className="font-semibold">{selName(sel.addr)}</span>
                 <span className="text-ink-3"> · {pct(sel.share)} of supply</span>
                 {linked.has(sel.addr) && <span className="text-warn-ink"> · linked wallet</span>}
-                {sel.kind === "creator" && locked && lockUntil && <span className="text-up"> · 🔒 {timeLeft(lockUntil, now)} left</span>}
+                {sel.kind === "creator" && locked && lockUntil && <span className="text-up"> · locked {timeLeft(lockUntil, now)}</span>}
               </span>
               <Link href={profileHref(profiles.get(sel.addr) ?? { address: sel.addr as `0x${string}`, username: null })} className="shrink-0 font-bold text-emerald">
                 Profile
@@ -218,7 +218,7 @@ export function HolderMap({ coin }: { coin: Coin }) {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
             <Stat label="Top 10 hold" value={pct(top10)} tone={top10 > 0.5 ? "warn" : "good"} />
-            <Stat label="Creator holds" value={pct(creatorShare)} tone={creatorShare > 0.1 ? "warn" : undefined} note={locked && lockUntil ? `🔒 ${timeLeft(lockUntil, now)}` : undefined} />
+            <Stat label="Creator holds" value={pct(creatorShare)} tone={creatorShare > 0.1 ? "warn" : undefined} note={locked && lockUntil ? `Locked ${timeLeft(lockUntil, now)}` : undefined} />
             <Stat label="Linked wallets" value={pct(linkedShare)} tone={linkedShare > 0.1 ? "warn" : undefined} />
             <Stat label="Shown" value={String(data.holders.length)} note="biggest wallets" />
           </div>

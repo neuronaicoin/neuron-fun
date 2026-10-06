@@ -682,7 +682,7 @@ export function QuickTrade({
 
       {closedHere && (
         <p className="mt-3 text-[0.8125rem] text-warn-ink bg-warn-bg rounded-xl p-3">
-          ${coin.symbol} graduated{winner ? ` on ${winner.chain.short}` : ""} 🎉 You still have some from before on {chosen?.chain.short}: sell them anytime for USDC.
+          ${coin.symbol} graduated{winner ? ` on ${winner.chain.short}` : ""}. You still have some from before on {chosen?.chain.short}: sell them anytime for USDC.
         </p>
       )}
 

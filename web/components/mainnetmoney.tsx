@@ -226,7 +226,7 @@ function OtherDeposit() {
         if (mine && alive) {
           if (mine.status === "success") {
             setArrived(`$${mine.outUsd.toFixed(2)} added to your cash ✓`);
-            toast("🔔 Deposit arrived");
+            toast("Deposit arrived");
             void refreshPortfolio(true);
             return;
           }

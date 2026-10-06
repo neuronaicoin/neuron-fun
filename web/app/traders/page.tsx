@@ -48,8 +48,8 @@ function Traders() {
       <div className="flex gap-1 p-1 rounded-2xl bg-paper border border-line w-max" role="tablist" aria-label="Traders">
         {(
           [
-            ["top", "🏆 Top traders"],
-            ["following", "👥 Following"],
+            ["top", "Top traders"],
+            ["following", "Following"],
           ] as const
         ).map(([k, l]) => (
           <button
@@ -68,7 +68,7 @@ function Traders() {
         ))}
       </div>
       <Link href="/copy/?tab=best" className="mt-3 inline-flex items-center gap-1.5 text-[0.875rem] font-bold text-emerald">
-        🪞 Best traders to copy
+        Best traders to copy
       </Link>
       {tab === "top" ? <Leaderboard ethUsd={ethUsd} /> : <Following ethUsd={ethUsd} />}
     </div>
@@ -116,7 +116,7 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
       <div className="flex gap-1 p-1 rounded-2xl bg-paper border border-line w-max" role="group" aria-label="View">
         {(
           [
-            ["bubbles", "🫧 Bubbles"],
+            ["bubbles", "Bubbles"],
             ["list", "List"],
           ] as const
         ).map(([k, l]) => (
@@ -150,14 +150,14 @@ function Leaderboard({ ethUsd }: { ethUsd: number | null }) {
             return (
               <li key={r.trader} className="flex items-center gap-3 px-3 sm:px-4 py-3">
                 <span className={"w-7 text-center font-mono text-[0.875rem] shrink-0 " + (i < 3 ? "text-[1.1rem]" : "text-ink-3")}>
-                  {i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}
+                  {i + 1}
                 </span>
                 <a href={p ? profileHref(p) : `/u/${r.trader}/`} className="flex items-center gap-3 min-w-0 flex-1">
                   {p ? <Avatar profile={p} size={40} /> : <span className="w-10 h-10 rounded-full bg-line shrink-0" />}
                   <span className="min-w-0">
                     <span className="block font-semibold truncate">
                       {p ? displayName(p) : `${r.trader.slice(0, 6)}…`}
-                      {isQuickSeller(r) && <span className="text-[0.75rem] text-ink-3 font-normal" title="Often sells within minutes of buying"> ⚡</span>}
+                      {isQuickSeller(r) && <span className="ml-1 text-[0.6875rem] text-ink-3 font-normal" title="Often sells within minutes of buying">quick seller</span>}
                       {p && p.allowCopy && !p.hideTrades && <CopyBadge className="ml-1.5 align-middle" />}
                     </span>
                     <span className="flex items-center gap-1.5 text-[0.75rem] text-ink-3 min-w-0">
@@ -226,7 +226,7 @@ function Following({ ethUsd }: { ethUsd: number | null }) {
     <>
       <h1 className="font-display font-semibold text-[1.75rem] sm:text-[2.25rem] tracking-tight mt-6">Following</h1>
       <p className="text-ink-2 mt-1">
-        Trades from the {followees.length} {followees.length === 1 ? "person" : "people"} you follow. You get a 🔔 when they buy.
+        Trades from the {followees.length} {followees.length === 1 ? "person" : "people"} you follow. You get an alert when they buy.
       </p>
       {feed === null ? (
         <div className="mt-4 bg-surface border border-line rounded-2xl px-3 sm:px-4">

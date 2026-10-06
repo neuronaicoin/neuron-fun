@@ -83,7 +83,7 @@ export default function ProfilePage() {
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-semibold text-[1.75rem]">No one here</h1>
         <p className="text-ink-2 mt-2">This profile doesn&apos;t exist. Check the name, or find people on the leaderboard.</p>
-        <Link href="/traders/" className="inline-block mt-5 text-emerald font-semibold">🏆 Top traders</Link>
+        <Link href="/traders/" className="inline-block mt-5 text-emerald font-semibold">Top traders</Link>
       </div>
     );
   }
@@ -159,7 +159,7 @@ export default function ProfilePage() {
         </button>
       )}
       {isQuickSeller(all) && (
-        <p className="text-[0.8125rem] text-ink-3 mt-3">⚡ Often sells within minutes of buying. Keep that in mind before following their buys.</p>
+        <p className="text-[0.8125rem] text-ink-3 mt-3">Often sells within minutes of buying. Keep that in mind before following their buys.</p>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">

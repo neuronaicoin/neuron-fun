@@ -29,22 +29,21 @@ export function BoostedRow() {
   }, []);
   if (!coins.length) return null;
   return (
-    <section aria-label="Boosted coins" className="mb-5">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="font-display font-bold text-[1.0625rem]">🚀 Boosted</h3>
-        <span className="text-[0.6875rem] text-ink-3">Paid placement</span>
+    <section aria-label="Promoted coins" className="mt-4">
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h2 className="font-semibold text-[0.9375rem]">Promoted</h2>
+        <span className="text-[0.75rem] text-ink-3">Paid placement</span>
       </div>
-      <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
         {coins.map(({ coin }) => (
           <Link
             key={coin.id}
             href={coinHref(coin)}
-            className="shrink-0 w-[13.5rem] flex items-center gap-2.5 rounded-2xl border-[1.5px] border-[#e8a200]/60 bg-[#e8a200]/10 p-2.5 hover:border-[#e8a200]"
+            className="shrink-0 w-[12.5rem] flex items-center gap-2.5 rounded-xl border border-line p-2.5 hover:border-ink-3"
           >
-            <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={44} />
+            <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={36} />
             <span className="min-w-0">
-              <span className="block text-[0.625rem] font-extrabold tracking-wide text-[#c98a00] uppercase">Promoted</span>
-              <b className="block truncate">{coin.name}</b>
+              <b className="block truncate font-semibold text-[0.9375rem]">{coin.name}</b>
               <span className="block font-mono text-[0.8125rem]">{compactUsd(coin.totalUsd)}</span>
             </span>
           </Link>
@@ -65,9 +64,9 @@ export function BoostButton({ coin }: { coin: Coin }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="h-9 px-3 rounded-xl border-[1.5px] border-[#e8a200] bg-[#e8a200]/10 font-bold text-[0.8125rem] whitespace-nowrap"
+        className="h-9 px-3 rounded-xl border border-line font-semibold text-[0.8125rem] whitespace-nowrap hover:border-ink-3"
       >
-        🚀 {until ? `Boosted · ${leftText(until)}` : "Boost"}
+        {until ? `Promoted · ${leftText(until)}` : "Promote"}
       </button>
       {open && <BoostSheet coin={coin} token={token} onClose={() => setOpen(false)} />}
     </>
@@ -100,7 +99,7 @@ function BoostSheet({ coin, token, onClose }: { coin: Coin; token: Address; onCl
         return;
       }
       await send(chain.chain, boostCalls(chain, token, plan), () => {});
-      toast(`🚀 $${coin.symbol} boosted for ${BOOST_PLANS[plan].hours} hours`);
+      toast(`$${coin.symbol} promoted for ${BOOST_PLANS[plan].hours} hours`);
       void refreshPortfolio(true);
       onClose();
     } catch (e) {
@@ -111,7 +110,7 @@ function BoostSheet({ coin, token, onClose }: { coin: Coin; token: Address; onCl
   }
 
   return (
-    <Sheet title={`Boost $${coin.symbol}`} onClose={onClose}>
+    <Sheet title={`Promote $${coin.symbol}`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-2">
         {BOOST_PLANS.map((p) => (
           <button
@@ -119,16 +118,16 @@ function BoostSheet({ coin, token, onClose }: { coin: Coin; token: Address; onCl
             type="button"
             aria-pressed={plan === p.plan}
             onClick={() => setPlan(p.plan)}
-            className={"rounded-2xl border-[1.5px] p-3 text-left " + (plan === p.plan ? "border-[#e8a200] ring-2 ring-[#e8a200]/25" : "border-line")}
+            className={"rounded-xl border p-3 text-left " + (plan === p.plan ? "border-ink ring-1 ring-ink" : "border-line")}
           >
             <b className="block text-[1.125rem]">${p.price}</b>
             <span className="text-[0.75rem] text-ink-3">+{p.hours} hours</span>
           </button>
         ))}
       </div>
-      <p className="mt-3 text-[0.8125rem] text-ink-2">Shows ${coin.symbol} in the Boosted row on Explore. Adds to the time left; anyone can boost a coin they like.</p>
-      <button type="button" disabled={busy} onClick={() => void go()} className="mt-3 w-full h-12 rounded-2xl bg-[#e8a200] text-[#1c140e] font-extrabold disabled:opacity-50">
-        {busy ? "Boosting…" : `Boost for $${price}`}
+      <p className="mt-3 text-[0.8125rem] text-ink-2">Shows ${coin.symbol} in the Promoted row on Explore. Adds to the time left; anyone can promote a coin they like.</p>
+      <button type="button" disabled={busy} onClick={() => void go()} className="mt-3 w-full h-12 rounded-xl bg-emerald text-on-accent font-bold disabled:opacity-50">
+        {busy ? "Promoting…" : `Promote for $${price}`}
       </button>
     </Sheet>
   );

@@ -225,10 +225,10 @@ export default function CreatePage() {
         const coinAddr = (await clientFor(bc).readContract({ address: bc.factory, abi: omniFactoryAbi, functionName: "coinAddress", args: [address, key] })) as Address;
         if ((await clientFor(bc).getCode({ address: coinAddr }))?.length) {
           await send(bc.chain, boostCalls(bc, coinAddr, boostPlan), () => {});
-          toast(`🚀 Boosted for ${BOOST_PLANS[boostPlan].hours} hours`);
+          toast(`Promoted for ${BOOST_PLANS[boostPlan].hours} hours`);
         }
       } catch (e) {
-        toast(`Launched. The boost didn't go through: ${friendlyError(e)}`);
+        toast(`Launched. The promotion didn't go through: ${friendlyError(e)}`);
       }
     }
     setBusy(false);
@@ -237,8 +237,7 @@ export default function CreatePage() {
   if (allDone && launchKey && address) {
     return (
       <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <div className="mx-auto w-16 h-16 rounded-full bg-emerald-soft flex items-center justify-center text-[1.875rem]">🎉</div>
-        <h1 className="font-display font-bold text-[1.875rem] mt-6">${cleanSymbol} is live on {chosen.length} chain{chosen.length > 1 ? "s" : ""}</h1>
+        <h1 className="font-display font-bold text-[1.75rem]">${cleanSymbol} is live on {chosen.length} chain{chosen.length > 1 ? "s" : ""}</h1>
         <p className="text-ink-2 mt-3">Every buy, on every chain, now counts toward one {usd(TARGET_USD)} target. Share it so people can find it.</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {chosen.map((c) => <ChainChip key={c.key} chain={c} />)}
@@ -268,11 +267,10 @@ export default function CreatePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-12">
-      <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">ONE COIN · EVERY CHAIN</p>
       <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.875rem] tracking-tight sm:mt-2">
         {aiMode ? (
           <>
-            Create your coin <span className="bg-gradient-to-r from-emerald to-[#f472b6] bg-clip-text text-transparent">with AI</span>
+            Create your coin with AI
           </>
         ) : (
           "Launch a coin"
@@ -293,14 +291,11 @@ export default function CreatePage() {
         <button
           type="button"
           onClick={() => setMode(true)}
-          className="group mt-4 sm:mt-6 w-full sm:w-auto inline-flex items-center gap-3 rounded-2xl pl-3 pr-5 py-3 text-left text-white bg-gradient-to-r from-emerald via-[#ff7a2e] to-[#f472b6] shadow-[0_10px_30px_rgba(242,96,12,0.3)] hover:brightness-105"
+          className="group mt-4 sm:mt-6 w-full sm:w-auto inline-flex items-center gap-3 rounded-xl pl-4 pr-4 py-3 text-left text-paper bg-ink hover:opacity-90"
         >
-          <span className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-[1.25rem] shrink-0" aria-hidden="true">
-            ✨
-          </span>
           <span className="min-w-0">
             <span className="block font-bold text-[1rem] sm:text-[1.0625rem] leading-tight">Create your coin with AI</span>
-            <span className="block text-[0.8125rem] text-white/85 leading-snug mt-0.5">One sentence in. Name, ticker, story and logo out.</span>
+            <span className="block text-[0.8125rem] opacity-75 leading-snug mt-0.5">One sentence in. Name, ticker, story and logo out.</span>
           </span>
           <span className="ml-auto pl-2 text-[1.25rem] transition-transform group-hover:translate-x-0.5" aria-hidden="true">
             →
@@ -334,9 +329,9 @@ export default function CreatePage() {
       )}
 
       <div className="mt-4 sm:mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
-        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-7 grid gap-5 sm:gap-6">
-          <div className="grid gap-4 sm:gap-5 grid-cols-[96px_1fr] sm:grid-cols-[180px_1fr] items-start">
-            <label className="relative aspect-square rounded-2xl border-2 border-dashed border-line hover:border-emerald bg-paper flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden">
+        <div className="rounded-xl border border-line bg-surface p-3.5 sm:p-7 grid grid-cols-[minmax(0,1fr)] gap-5 sm:gap-6 min-w-0">
+          <div className="grid gap-4 sm:gap-5 grid-cols-[minmax(0,1fr)] min-[340px]:grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[180px_minmax(0,1fr)] items-start">
+            <label className="relative w-[96px] min-[340px]:w-auto aspect-square rounded-2xl border-2 border-dashed border-line hover:border-emerald bg-paper flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden">
               {logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logo} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -458,8 +453,8 @@ export default function CreatePage() {
               {(
                 [
                   [0, "No lock", "Sell any time"],
-                  [3600, "1 hour", "🔒 badge on your coin"],
-                  [86400, "24 hours", "🔒 strongest signal"],
+                  [3600, "1 hour", "Locked badge on your coin"],
+                  [86400, "24 hours", "Strongest signal"],
                 ] as const
               ).map(([s, title, text]) => (
                 <button
@@ -486,8 +481,8 @@ export default function CreatePage() {
           {BOOST_ON() && (
             <div>
               <div className="flex items-baseline justify-between">
-                <span className="text-[0.9375rem] font-bold text-ink">Boost your launch</span>
-                <span className="text-[0.75rem] text-ink-3">optional · shows in Boosted on Explore</span>
+                <span className="text-[0.9375rem] font-bold text-ink">Promote your launch</span>
+                <span className="text-[0.75rem] text-ink-3">optional · shows in Promoted on Explore</span>
               </div>
               <div className="grid grid-cols-3 gap-2 mt-2">
                 {[null, 0, 1].map((p) => (
@@ -496,7 +491,7 @@ export default function CreatePage() {
                     type="button"
                     aria-pressed={boostPlan === p}
                     onClick={() => setBoostPlan(p)}
-                    className={"rounded-2xl border-[1.5px] p-2.5 text-left " + (boostPlan === p ? "border-[#e8a200] ring-2 ring-[#e8a200]/25" : "border-line")}
+                    className={"rounded-xl border p-2.5 text-left " + (boostPlan === p ? "border-ink ring-1 ring-ink" : "border-line")}
                   >
                     <b className="block text-[0.9375rem]">{p === null ? "None" : `$${BOOST_PLANS[p].price}`}</b>
                     <span className="text-[0.6875rem] text-ink-3">{p === null ? "Free" : `${BOOST_PLANS[p].hours} hours on top`}</span>
@@ -527,7 +522,7 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
-            <div className="grid grid-cols-[1fr_auto] gap-2 mt-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 mt-2">
               <label className={"flex items-center gap-2 h-11 rounded-2xl border-2 px-3 bg-paper " + (custom ? "border-emerald" : "border-line") + " focus-within:border-emerald"}>
                 <span className="text-ink-3 font-mono">$</span>
                 <input
@@ -569,7 +564,7 @@ export default function CreatePage() {
                       <span className="text-ink-2">{r?.note ?? (r?.status === "done" ? "Live" : "Waiting")}</span>
                     </span>
                     {r?.status === "done" && r.hash && (
-                      <a href={explorerTx(c, r.hash)} target="_blank" rel="noreferrer" className="text-up font-semibold">Live ✓</a>
+                      <a href={explorerTx(c, r.hash)} target="_blank" rel="noreferrer" className="text-up font-semibold">Live</a>
                     )}
                     {r?.status === "failed" && <span className="text-danger font-semibold">Stopped</span>}
                   </li>
@@ -598,9 +593,7 @@ export default function CreatePage() {
         </div>
 
         <aside className="lg:sticky lg:top-24 grid gap-4">
-          <p className="hidden lg:flex items-center gap-2 text-[0.75rem] font-mono tracking-[0.14em] text-ink-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald" aria-hidden="true" /> LIVE PREVIEW
-          </p>
+          <p className="hidden lg:block text-[0.8125rem] text-ink-3">Preview</p>
           <div className="hidden lg:block rounded-3xl border border-line bg-surface p-3">
             <div className="relative aspect-square rounded-2xl overflow-hidden bg-paper flex items-center justify-center">
               {logo ? (
@@ -653,7 +646,7 @@ export default function CreatePage() {
               is locked forever. Nobody, including you and us, can pull the money.
             </p>
             <a href="/security/" className="inline-flex items-center gap-1.5 mt-2.5 text-[0.75rem] font-semibold text-up">
-              ✓ Contracts independently reviewed <span aria-hidden="true">→</span>
+              Contracts independently reviewed <span aria-hidden="true">→</span>
             </a>
           </div>
         </aside>

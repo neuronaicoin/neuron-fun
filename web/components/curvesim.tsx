@@ -310,7 +310,7 @@ export function CurveSim({
             $0 raised
           </text>
           <text x={W - R} y={H - 7} textAnchor="end" style={{ fill: "var(--color-ink-3)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
-            🎓 {money(r.capRaised)}
+            {money(r.capRaised)}
           </text>
           <text x={W - R} y={TOP - 5} textAnchor="end" style={{ fill: "var(--color-ink-3)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
             MC {compactUsd(r.mcEnd)}

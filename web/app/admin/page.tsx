@@ -357,7 +357,7 @@ export default function AdminPage() {
       </div>
 
       <p className="text-[0.8125rem] text-ink-3 mt-6 max-w-[65ch]">
-        You get a 🔔 notification when a chain is paused or resumed, passes 80% of its cap, or fills up.
+        You get a notification when a chain is paused or resumed, passes 80% of its cap, or fills up.
       </p>
 
       {safeTx && <SafeSheet tx={safeTx} onClose={() => setSafeTx(null)} />}

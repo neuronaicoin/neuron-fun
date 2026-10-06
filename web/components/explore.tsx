@@ -1,35 +1,32 @@
 "use client";
 
-import { GetAppButton } from "@/components/getapp";
 import { BoostedRow } from "@/components/boost";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChainChip, CoinAvatar, SkeletonTile, useCoins, usd } from "@/components/coins";
-import { CoinTile, LiveTicker } from "@/components/discover";
-import { CHAINS, TARGET_USD } from "@/lib/config";
-import { coinHref, fetchCoinCount, type Coin, type SortKey } from "@/lib/data";
+import { CoinAvatar, useCoins, usd } from "@/components/coins";
+import { coinMarketCapUsd } from "@/components/discover";
+import { TARGET_USD } from "@/lib/config";
+import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
-import { ScrollRow } from "@/components/scrollrow";
-import { useSparks } from "@/lib/spark";
 import { compactUsd } from "@/lib/format";
-import { EXT_NETWORKS, fetchExtCoins, fetchExtCount, type ExtCoin, type ExtSort } from "@/lib/extcoins";
-import { ExtTile } from "@/components/exttile";
-import { MERGED_SORTS, rankMerged } from "@/lib/rank";
+import { EXT_NETWORKS, extHref, extNetwork, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
 // Trending is ranked by 24h volume for everyone (see lib/rank.ts).
 const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
 
 const SORTS: { id: SortKey; label: string }[] = [
-  { id: "trending", label: "🔥 Trending" },
-  { id: "gainers", label: "Top gainers 24h" },
-  { id: "losers", label: "Top losers 24h" },
-  { id: "hot", label: "Closest to graduate" },
+  { id: "trending", label: "Trending" },
+  { id: "new", label: "New" },
+  { id: "hot", label: "Almost graduating" },
   { id: "bonding", label: "Bonding" },
-  { id: "new", label: "Newest" },
   { id: "graduated", label: "Graduated" },
+  { id: "gainers", label: "Gainers" },
+  { id: "losers", label: "Losers" },
 ];
 
 // Minimum 24h volume and liquidity, in USD. Liquidity of a coin still on its
@@ -55,13 +52,8 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   // A new tab, chain, search or filter starts from the top again.
   useEffect(() => setShown(STEP), [sort, chain, search, minVol, minLiq]);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
-  const [total, setTotal] = useState<number | null>(null);
   // Coins from every other DEX on the same chains, shown after ours.
   const [ext, setExt] = useState<ExtCoin[] | null>(null);
-  const [extTotal, setExtTotal] = useState<number | null>(null);
-  useEffect(() => {
-    fetchExtCount().then(setExtTotal);
-  }, []);
   const extSort = EXT_SORT[sort];
   // Ask for one step more than shown, so we know whether "Load more" has anything to add.
   const extLimit = shown + STEP;
@@ -94,7 +86,6 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
-    fetchCoinCount().then(setTotal);
   }, []);
   useEffect(() => {
     const t = setTimeout(() => setSearch(query.trim()), 300);
@@ -130,10 +121,10 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     }
   }
 
-  const sparks = useSparks(useMemo(() => visible.flatMap((r) => (r.kind === "ours" ? [r.coin.id] : [])), [visible]));
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
-  const liveUsd = coins ? racing.reduce((s, c) => s + (c.totalUsd ?? 0), 0) : null;
-  const trades24h = coins?.reduce((s, c) => s + c.trades24h, 0) ?? null;
+  const rows = visible.map((r) => toRow(r, ethUsd));
+  const loading = !coins && !error;
+  const moreLoading = !!coins && (growing || (ext === null && !!extSort));
 
   return (
     <>
@@ -143,131 +134,52 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       </div>
     )}
     <div className="app-root">
-      {coins && <LiveTicker coins={coins} ethUsd={ethUsd} />}
-
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-3 sm:pt-10">
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-line bg-surface px-4 py-3 sm:p-10">
-            <div
-              className="absolute inset-0 opacity-[0.07] pointer-events-none"
-              style={{ backgroundImage: "radial-gradient(#2fd39b 1px, transparent 1px)", backgroundSize: "22px 22px" }}
-              aria-hidden="true"
-            />
-            <div className="relative">
-              <p className="hidden sm:block font-mono text-[0.75rem] tracking-[0.16em] text-emerald">
-                CREATE <span aria-hidden="true">→</span> MULTI-CHAIN <span className="text-[1.35em] leading-none align-[-0.1em]">🔥</span>{" "}
-                <span aria-hidden="true">→</span> BONDING <span aria-hidden="true">→</span> GRADUATE{" "}
-                <span className="text-[1.35em] leading-none align-[-0.1em]">🚀</span>
-              </p>
-              <HeroMessages />
-              <div className="mt-2 sm:mt-6 grid grid-cols-4 gap-2 sm:gap-3 max-w-lg">
-                <div>
-                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{coins ? compactUsd(liveUsd) : <StatSkeleton />}</div>
-                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">racing now</div>
-                </div>
-                <div>
-                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{trades24h ?? <StatSkeleton />}</div>
-                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">trades 24h</div>
-                </div>
-                <div>
-                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{total ?? <StatSkeleton />}</div>
-                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3 truncate">launched here</div>
-                </div>
-                {/* Kept apart from our launchpad's numbers so neither is inflated. */}
-                <div>
-                  <div className="font-mono text-[1rem] sm:text-[1.625rem]">{extTotal ?? <StatSkeleton />}</div>
-                  <div className="text-[0.6875rem] sm:text-[0.75rem] text-ink-3">to trade</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden lg:flex relative overflow-hidden rounded-3xl border border-line bg-surface p-8 flex-col justify-between gap-6">
-            <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald/10 blur-3xl pointer-events-none" aria-hidden="true" />
-            <div className="relative">
-              <h2 className="font-display font-semibold text-[1.75rem] sm:text-[2.25rem] leading-tight">
-                Create on <span className="text-emerald">multiple chains</span> at once
-              </h2>
-              <div className="flex flex-wrap gap-2 mt-4">
-                {CHAINS.map((c) => (
-                  <ChainChip key={c.key} chain={c} />
-                ))}
-              </div>
-              <p className="text-[0.875rem] text-ink-2 mt-4">Graduates at {usd(TARGET_USD)} across all chains.</p>
-            </div>
-            <Link href="/create/" className="relative h-13 px-6 rounded-2xl bg-emerald text-on-accent text-[1rem] font-bold flex items-center justify-between hover:bg-emerald-dark">
-              Launch a coin <span aria-hidden="true">↗</span>
-            </Link>
-          </div>
+      <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-6 flex items-center gap-3">
+          <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] tracking-tight shrink-0">Explore</h1>
+          <div className="flex-1" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            aria-label="Search coins"
+            type="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            className="h-10 w-full max-w-[13rem] sm:max-w-[20rem] min-w-0 px-3 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3 focus:border-ink-3 outline-none"
+          />
         </div>
-      </section>
 
-      <nav aria-label="More" className="lg:hidden max-w-7xl mx-auto px-4 pt-3 flex gap-2 overflow-x-auto no-scrollbar">
-        <Link href="/swipe/" className="h-10 px-4 shrink-0 rounded-xl bg-emerald text-on-accent font-bold text-[0.875rem] flex items-center">🔥 Swipe</Link>
-        <GetAppButton />
-        <Link href="/traders/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">🏆 Top traders</Link>
-        <Link href="/points/#invite" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">⚡ Invite &amp; earn</Link>
-        <a href="/forum/" className="h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center">💬 Forum</a>
-      </nav>
-
-      <section id="explore" className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 sm:py-8 scroll-mt-20">
-        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6">
+        <div className="px-4 sm:px-6">
           <BoostedRow />
           <AlmostThere coins={racing} />
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h2 className="font-display font-semibold text-[1.625rem] sm:text-[2rem] tracking-tight">Coins</h2>
-                <Link
-                  href="/swipe/"
-                  className="hidden lg:inline-flex h-9 px-3.5 rounded-xl bg-emerald-soft text-emerald font-bold text-[0.8125rem] items-center gap-1.5 hover:bg-emerald hover:text-on-accent"
-                >
-                  🔥 Swipe to discover
-                </Link>
-                <Link
-                  href="/points/#invite"
-                  className="hidden lg:inline-flex h-9 px-3.5 rounded-xl border border-line bg-paper text-ink font-bold text-[0.8125rem] items-center gap-1.5 hover:border-emerald/60"
-                >
-                  ⚡ Invite &amp; earn
-                </Link>
-              </div>
-              <p className="font-mono text-[0.75rem] text-ink-3 tracking-wider mt-1">{coins ? `${visible.length} SHOWN` : "LOADING"}</p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name or ticker"
-                aria-label="Search coins"
-                className="h-11 px-4 rounded-xl border border-line bg-paper focus:border-emerald sm:w-56"
-              />
+        </div>
 
-            </div>
-          </div>
-          <ScrollRow label="Sort coins" className="mt-4">
+        <div className="mt-3 border-b border-line">
+          <div className="ex-tabs flex gap-5 sm:gap-6 overflow-x-auto px-4 sm:px-6" role="tablist" aria-label="Sort coins">
             {SORTS.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                aria-pressed={sort === s.id}
+                role="tab"
+                aria-selected={sort === s.id}
                 onClick={(e) => {
                   setSort(s.id);
-                  e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+                  e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
                 }}
                 className={
-                  "h-10 w-[9.75rem] sm:w-[10.5rem] shrink-0 px-3 rounded-xl text-[0.8125rem] sm:text-[0.875rem] font-semibold whitespace-nowrap border flex items-center justify-center " +
-                  (sort === s.id ? "bg-emerald text-on-accent border-emerald shadow-[0_4px_14px_rgba(242,96,12,0.25)]" : "bg-paper border-line text-ink-2 hover:text-ink hover:border-emerald/50")
+                  "shrink-0 -mb-px py-3 border-b-2 text-[0.9375rem] whitespace-nowrap " +
+                  (sort === s.id ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")
                 }
               >
                 {s.label}
               </button>
             ))}
-          </ScrollRow>
-          <div
-            className="mt-2.5 flex gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit overflow-x-auto [scrollbar-width:none]"
-            role="group"
-            aria-label="Chain"
-          >
+          </div>
+        </div>
+
+        <div className="px-4 sm:px-6 pt-2.5 flex items-center gap-2">
+          <div className="ex-tabs flex-1 min-w-0 flex gap-1 overflow-x-auto" role="group" aria-label="Chain">
             {[{ key: "all", short: "All chains", color: "" }, ...EXT_NETWORKS.map((n) => ({ key: n.id, short: n.label, color: n.color }))].map((c) => (
               <button
                 key={c.key}
@@ -275,119 +187,124 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 aria-pressed={chain === c.key}
                 onClick={() => setChain(c.key)}
                 className={
-                  "shrink-0 h-9 px-3 sm:px-4 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center gap-2 " +
-                  (chain === c.key ? "bg-ink text-paper shadow-sm" : "text-ink-2 hover:text-ink")
+                  "shrink-0 h-8 px-3 rounded-lg text-[0.8125rem] whitespace-nowrap flex items-center gap-1.5 " +
+                  (chain === c.key ? "bg-night-2 text-ink font-semibold" : "text-ink-3 font-medium hover:text-ink")
                 }
               >
-                {c.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
+                {c.color && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
                 {c.short}
               </button>
             ))}
           </div>
-
-          {/* Phones: volume and liquidity sit behind one button, so coins show on the first screen. */}
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
-            className={"sm:hidden mt-2.5 h-10 px-4 rounded-xl border text-[0.875rem] font-semibold flex items-center gap-2 " + (minVol || minLiq ? "border-emerald text-emerald" : "border-line")}
+            className={"shrink-0 h-8 px-3 rounded-lg border text-[0.8125rem] font-medium flex items-center gap-1.5 " + (minVol || minLiq ? "border-ink text-ink" : "border-line text-ink-2")}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" /></svg>
             Filters{minVol || minLiq ? ` (${(minVol ? 1 : 0) + (minLiq ? 1 : 0)})` : ""}
-            <span aria-hidden="true" className="text-ink-3">{showFilters ? "▴" : "▾"}</span>
           </button>
-          <div className={(showFilters ? "grid" : "hidden") + " mt-2.5 gap-2.5 sm:flex sm:flex-wrap"}>
+        </div>
+        {showFilters && (
+          <div className="px-4 sm:px-6 pt-2.5 grid gap-2 sm:flex sm:flex-wrap sm:gap-4">
             <FilterRow label="Volume 24h" values={VOLUME_FILTERS} value={minVol} onChange={setMinVol} />
             <FilterRow label="Liquidity" values={LIQUIDITY_FILTERS} value={minLiq} onChange={setMinLiq} />
           </div>
+        )}
 
-          {error && (
-            <div className="mt-5 p-4 rounded-2xl bg-warn-bg text-warn-ink text-[0.9375rem] flex items-center justify-between gap-4">
-              <span>{error}</span>
-              <button type="button" onClick={reload} className="font-semibold underline">Try again</button>
-            </div>
-          )}
-
-          <div className="mt-5 grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-            {!coins && !error && [0, 1, 2, 3, 4, 5, 6, 7].map((i) => <SkeletonTile key={i} />)}
-            {coins &&
-              visible.map((r) =>
-                r.kind === "ours" ? (
-                  <CoinTile key={r.coin.id} coin={r.coin} ethUsd={ethUsd} spark={sparks.get(r.coin.id)} />
-                ) : (
-                  <ExtTile key={`${r.coin.network}:${r.coin.address}`} coin={r.coin} />
-                )
-              )}
-            {coins && (growing || (ext === null && !!extSort)) && [0, 1, 2, 3].map((i) => <SkeletonTile key={`more-${i}`} />)}
+        {error && (
+          <div className="mx-4 sm:mx-6 mt-4 p-4 rounded-xl bg-warn-bg text-warn-ink text-[0.9375rem] flex items-center justify-between gap-4">
+            <span>{error}</span>
+            <button type="button" onClick={reload} className="font-semibold underline shrink-0">Try again</button>
           </div>
-          {coins && visible.length > 0 && (
-            <div className="mt-6 flex flex-col items-center gap-2">
-              {canGrow ? (
-                <button
-                  type="button"
-                  onClick={() => void grow()}
-                  disabled={growing || loadingMore}
-                  className="h-12 px-8 rounded-xl border border-line bg-paper text-ink font-semibold hover:border-emerald disabled:opacity-50"
-                >
-                  {growing || loadingMore ? "Loading…" : "Load more"}
-                </button>
-              ) : null}
-              <p className="text-[0.75rem] text-ink-3">
-                {canGrow ? `Showing ${visible.length}` : `All ${visible.length} shown`}
-              </p>
-            </div>
-          )}
-          {coins && ranked.length === 0 && ext !== null && (
-            <div className="mt-5 text-center py-12 border border-dashed border-line rounded-2xl">
-              <p className="text-ink-2">
-                {filtered
-                  ? "No coins match these filters."
-                  : search
-                    ? "Nothing matches that search."
-                    : sort === "graduated"
-                      ? "No graduates yet."
-                      : sort === "bonding"
-                        ? "No coins on their bonding curve right now."
-                        : "No coins here yet. Start one."}
-              </p>
-              {filtered ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMinVol(0);
-                    setMinLiq(0);
-                  }}
-                  className="inline-flex mt-4 h-11 px-6 rounded-xl border border-line bg-paper font-semibold items-center hover:border-emerald"
-                >
-                  Clear filters
-                </button>
-              ) : (
-                <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
-              )}
-            </div>
-          )}
+        )}
+
+        {/* Phones: one coin per row. */}
+        <ul className="md:hidden mt-2 border-t border-line">
+          {loading && Array.from({ length: 10 }, (_, i) => <RowSkeleton key={i} />)}
+          {rows.map((r) => <CoinRow key={r.key} r={r} />)}
+          {moreLoading && Array.from({ length: 4 }, (_, i) => <RowSkeleton key={`m${i}`} />)}
+        </ul>
+
+        {/* Computers and tablets: a table. */}
+        <div className="hidden md:block mt-2 px-2 lg:px-3">
+          <table className="w-full border-collapse text-[0.875rem]">
+            <thead>
+              <tr className="text-[0.75rem] text-ink-3 text-right">
+                <th className="font-medium text-left py-2.5 px-3">Coin</th>
+                <th className="font-medium py-2.5 px-3">Market cap</th>
+                <th className="font-medium py-2.5 px-3">24h</th>
+                <th className="font-medium py-2.5 px-3">Volume 24h</th>
+                <th className="font-medium py-2.5 px-3 hidden lg:table-cell">Liquidity</th>
+                <th className="font-medium py-2.5 px-3 hidden lg:table-cell">Holders</th>
+                <th className="font-medium py-2.5 px-3">Age</th>
+                <th className="font-medium py-2.5 px-3 w-[9.5rem]">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && Array.from({ length: 12 }, (_, i) => <TableSkeleton key={i} />)}
+              {rows.map((r) => <CoinTableRow key={r.key} r={r} />)}
+              {moreLoading && Array.from({ length: 4 }, (_, i) => <TableSkeleton key={`m${i}`} />)}
+            </tbody>
+          </table>
         </div>
+
+        {coins && visible.length > 0 && (
+          <div className="mt-5 px-4 flex flex-col items-center gap-2">
+            {canGrow ? (
+              <button
+                type="button"
+                onClick={() => void grow()}
+                disabled={growing || loadingMore}
+                className="h-11 px-8 rounded-xl border border-line text-ink font-semibold hover:bg-night disabled:opacity-50"
+              >
+                {growing || loadingMore ? "Loading…" : "Load more"}
+              </button>
+            ) : null}
+            <p className="text-[0.75rem] text-ink-3">{canGrow ? `Showing ${visible.length}` : `All ${visible.length} shown`}</p>
+          </div>
+        )}
+        {coins && ranked.length === 0 && ext !== null && (
+          <div className="mx-4 sm:mx-6 mt-5 text-center py-12 border border-dashed border-line rounded-xl">
+            <p className="text-ink-2">
+              {filtered
+                ? "No coins match these filters."
+                : search
+                  ? "Nothing matches that search."
+                  : sort === "graduated"
+                    ? "No graduates yet."
+                    : sort === "bonding"
+                      ? "No coins on their bonding curve right now."
+                      : "No coins here yet. Start one."}
+            </p>
+            {filtered ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMinVol(0);
+                  setMinLiq(0);
+                }}
+                className="inline-flex mt-4 h-11 px-6 rounded-xl border border-line font-semibold items-center"
+              >
+                Clear filters
+              </button>
+            ) : (
+              <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
+            )}
+          </div>
+        )}
       </section>
     </div>
     </>
   );
 }
 
-function StatSkeleton() {
-  return <span className="shimmer block h-[1.25rem] sm:h-[1.625rem] w-14 rounded-md my-[0.25rem]" aria-hidden="true" />;
-}
-
-/** A filter in the same box style as the chain picker above it: label first, then the minimums. */
+/** A filter row: label, then the minimums. */
 function FilterRow({ label, values, value, onChange }: { label: string; values: readonly number[]; value: number; onChange: (v: number) => void }) {
   return (
-    <div
-      className="flex items-center gap-1 p-1 rounded-2xl border border-line bg-paper w-full sm:w-fit overflow-x-auto [scrollbar-width:none]"
-      role="group"
-      aria-label={`Minimum ${label.toLowerCase()}`}
-    >
-      <span className="shrink-0 h-6 pl-2.5 pr-3 mr-0.5 border-r border-line text-[0.8125rem] font-bold text-ink whitespace-nowrap flex items-center">
-        {label}
-      </span>
+    <div className="ex-tabs flex items-center gap-1 overflow-x-auto min-w-0" role="group" aria-label={`Minimum ${label.toLowerCase()}`}>
+      <span className="shrink-0 pr-2 text-[0.8125rem] font-semibold text-ink whitespace-nowrap">{label}</span>
       {values.map((v) => (
         <button
           key={v}
@@ -395,8 +312,8 @@ function FilterRow({ label, values, value, onChange }: { label: string; values: 
           aria-pressed={value === v}
           onClick={() => onChange(v)}
           className={
-            "shrink-0 h-9 px-3 sm:px-4 rounded-xl text-[0.8125rem] font-semibold whitespace-nowrap flex items-center justify-center " +
-            (value === v ? "bg-ink text-paper shadow-sm" : "text-ink-2 hover:text-ink")
+            "shrink-0 h-8 px-3 rounded-lg text-[0.8125rem] whitespace-nowrap " +
+            (value === v ? "bg-night-2 text-ink font-semibold" : "text-ink-3 font-medium hover:text-ink")
           }
         >
           {filterLabel(v)}
@@ -406,77 +323,210 @@ function FilterRow({ label, values, value, onChange }: { label: string; values: 
   );
 }
 
-/**
- * The hero's headline and line under it: one of sasa's real features, changing every
- * 25 seconds (the dots jump to one). Every line here must be true on the live site.
- * Each headline is two short lines (the second in the accent colour), so the card
- * keeps its height as they change.
- */
-const HERO_MESSAGES: { a: string[]; b: string[]; sub: string }[] = [
-  { a: ["No wallet.", "No gas."], b: ["No bridge.", "Just buy."], sub: "Sign in with email, add USDC from any chain and buy any coin in one tap." },
-  { a: ["One sentence."], b: ["Your coin,", "made by AI."], sub: "Describe an idea. Get a name, ticker, logo and story in seconds, ready to launch." },
-  { a: ["Launch once."], b: ["Live on", "every chain."], sub: "Buyers on every chain push your coin to graduation together. The chain with the most money wins." },
-  { a: ["Spot a top trader?"], b: ["Copy in", "one tap."], sub: "Follow the best traders and get their buys as signals you can copy or skip." },
-  { a: ["Set your exit."], b: ["It sells", "itself."], sub: "Take profit, stop loss and buy-the-dip orders fill on their own, even while you sleep." },
-  { a: ["Every hot coin."], b: ["One place", "to trade them."], sub: "Coins from sasa and other DEXs, ranked by real volume. No head start for anyone." },
-  { a: ["Invite a friend."], b: ["Share", "their fees."], sub: "Friends start with 100 points. You earn a share of sasa's fees on their trades for a year." },
-];
-const HERO_EVERY_MS = 25_000;
+/* ------------------------------------------------------------------ rows */
 
-function HeroMessages() {
-  const [i, setI] = useState(0);
-  const [tick, setTick] = useState(0); // restarts the timer when someone picks a dot
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") setI((n) => (n + 1) % HERO_MESSAGES.length);
-    }, HERO_EVERY_MS);
-    return () => clearInterval(t);
-  }, [tick]);
-  const m = HERO_MESSAGES[i];
-  // The last phrase of the second line takes the accent colour ("Just buy.").
-  const words = (parts: string[], accentLast = false) =>
-    parts.map((w, k) => (
-      <span key={k} className={"whitespace-nowrap" + (accentLast && k === parts.length - 1 ? " text-emerald" : "")}>
-        {k > 0 ? " " : ""}
-        {w}
-      </span>
-    ));
+type Row = {
+  key: string;
+  href: string;
+  name: string;
+  symbol: string;
+  image: string | null;
+  seed: string;
+  mc: number | null;
+  /** Percent (12.5 = +12.5%). */
+  change: number | null;
+  vol: number | null;
+  liq: number | null;
+  holders: number | null;
+  since: string | null;
+  /** 0..1 while on its curve; null for coins from other DEXs. */
+  progress: number | null;
+  graduated: boolean;
+  graduating: boolean;
+  /** Chain name, shown for coins from other DEXs. */
+  where: string | null;
+};
+
+function toRow(r: Ranked, ethUsd: number | null): Row {
+  if (r.kind === "ours") {
+    const c = r.coin;
+    return {
+      key: c.id,
+      href: coinHref(c),
+      name: c.name,
+      symbol: c.symbol,
+      image: c.logo && isImageUrl(c.logo) ? c.logo : null,
+      seed: c.id,
+      mc: coinMarketCapUsd(c, ethUsd),
+      change: c.change24h === null || !Number.isFinite(c.change24h) ? null : c.change24h * 100,
+      vol: ethUsd ? c.volumeNative24h * ethUsd : null,
+      liq: c.totalUsd,
+      holders: c.holders,
+      since: c.createdAt,
+      progress: c.graduatedOn ? 1 : Math.max(0, Math.min(1, c.progress)),
+      graduated: !!c.graduatedOn,
+      graduating: c.graduating,
+      where: null,
+    };
+  }
+  const c = r.coin;
+  return {
+    key: `${c.network}:${c.address}`,
+    href: extHref(c),
+    name: c.name,
+    symbol: c.symbol,
+    image: c.image,
+    seed: c.address,
+    mc: c.mcapUsd,
+    change: c.change24h,
+    vol: c.vol24h,
+    liq: c.liqUsd,
+    holders: null,
+    since: c.poolCreated,
+    progress: null,
+    graduated: false,
+    graduating: false,
+    where: extNetwork(c.network)?.label ?? null,
+  };
+}
+
+function hue(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+function RowAvatar({ r, size }: { r: Row; size: number }) {
+  const [broken, setBroken] = useState(false);
+  const style = { width: size, height: size };
+  if (r.image && !broken) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={r.image} alt="" loading="lazy" decoding="async" style={style} className="rounded-full object-cover bg-night shrink-0" onError={() => setBroken(true)} />;
+  }
   return (
-    <>
-      <h1
-        key={i}
-        className="hero-swap font-display font-semibold text-[1.1875rem] sm:text-[2.75rem] lg:text-[clamp(2.5rem,4.1vw,3.625rem)] leading-[1.1] tracking-tight sm:mt-3 min-h-[2.2em]"
-      >
-        {words(m.a)}
-        <br />
-        {words(m.b, true)}
-      </h1>
-      <p key={`s${i}`} className="hero-swap hidden sm:block text-[1.125rem] text-ink-2 mt-4 max-w-xl min-h-[3.4em]">
-        {m.sub}
-      </p>
-      <div className="hidden sm:flex gap-1.5 mt-3" role="group" aria-label="More about sasa">
-        {HERO_MESSAGES.map((_, k) => (
-          <button
-            key={k}
-            type="button"
-            aria-label={`Show message ${k + 1}`}
-            aria-pressed={k === i}
-            onClick={() => {
-              setI(k);
-              setTick((t) => t + 1);
-            }}
-            className="h-5 flex items-center group"
-          >
-            <span className={"block h-1.5 rounded-full transition-all " + (k === i ? "w-5 bg-emerald" : "w-1.5 bg-line group-hover:bg-ink-3")} />
-          </button>
-        ))}
-      </div>
-    </>
+    <span style={{ ...style, background: `hsl(${hue(r.seed)} 55% 48%)` }} className="rounded-full text-white font-bold flex items-center justify-center shrink-0" aria-hidden="true">
+      <span style={{ fontSize: size * 0.4 }}>{(r.symbol || "?").slice(0, 1).toUpperCase()}</span>
+    </span>
   );
 }
 
+function Change({ v }: { v: number | null }) {
+  if (v === null || !Number.isFinite(v)) return <span className="text-ink-3">—</span>;
+  const a = Math.abs(v);
+  const text = a >= 1000 ? `${(a / 1000).toFixed(1)}K%` : `${a >= 100 ? a.toFixed(0) : a.toFixed(1)}%`;
+  const up = v > 0.05;
+  const down = v < -0.05;
+  return <span className={up ? "text-up" : down ? "text-danger" : "text-ink-3"}>{(up ? "+" : down ? "−" : "") + text}</span>;
+}
 
-/** Coins close to graduating (70%+): a last push often comes from seeing that. Plain data, no paid placement. */
+/** "3m", "5h", "2d": short, so the row stays one line. */
+function age(iso: string | null): string {
+  if (!iso) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function gradText(r: Row): string {
+  if (r.graduated) return "Graduated";
+  if (r.graduating) return "Graduating";
+  if (r.progress === null) return r.where ?? "—";
+  return `${Math.min(99, Math.floor(r.progress * 100))}%`;
+}
+
+function CoinRow({ r }: { r: Row }) {
+  const onCurve = r.progress !== null && !r.graduated;
+  return (
+    <li>
+      <Link href={r.href} className="ex-row flex items-center gap-3 px-4 py-3 border-b border-line">
+        <RowAvatar r={r} size={40} />
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold text-[1rem] leading-snug truncate">{r.name}</span>
+          <span className="block text-[0.8125rem] text-ink-3 truncate">
+            {r.symbol} · {age(r.since)}
+            {r.where ? ` · ${r.where}` : r.graduated ? " · Graduated" : ""}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block font-mono font-semibold text-[1rem] leading-snug">{compactUsd(r.mc)}</span>
+          <span className="block font-mono text-[0.8125rem] font-medium">
+            <Change v={r.change} />
+          </span>
+          {onCurve && (
+            <span className="block h-[3px] w-14 ml-auto mt-1 rounded-full bg-line overflow-hidden" aria-label={`${gradText(r)} to graduation`}>
+              <span className="block h-full bg-emerald" style={{ width: `${Math.max(3, Math.round((r.progress ?? 0) * 100))}%` }} />
+            </span>
+          )}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function CoinTableRow({ r }: { r: Row }) {
+  const router = useRouter();
+  const onCurve = r.progress !== null && !r.graduated && !r.graduating;
+  return (
+    <tr className="ex-row border-t border-line cursor-pointer" onClick={() => router.push(r.href)}>
+      <td className="py-2.5 px-3">
+        <Link href={r.href} className="flex items-center gap-2.5 min-w-0" onClick={(e) => e.stopPropagation()}>
+          <RowAvatar r={r} size={30} />
+          <span className="font-semibold truncate max-w-[16rem]">{r.name}</span>
+          <span className="text-ink-3 text-[0.8125rem] shrink-0">{r.symbol}</span>
+        </Link>
+      </td>
+      <td className="py-2.5 px-3 text-right font-mono font-semibold">{compactUsd(r.mc)}</td>
+      <td className="py-2.5 px-3 text-right font-mono"><Change v={r.change} /></td>
+      <td className="py-2.5 px-3 text-right font-mono">{compactUsd(r.vol)}</td>
+      <td className="py-2.5 px-3 text-right font-mono hidden lg:table-cell">{compactUsd(r.liq)}</td>
+      <td className="py-2.5 px-3 text-right font-mono hidden lg:table-cell">{r.holders === null ? "—" : r.holders.toLocaleString("en-US")}</td>
+      <td className="py-2.5 px-3 text-right text-ink-2">{age(r.since)}</td>
+      <td className="py-2.5 px-3">
+        {onCurve ? (
+          <span className="flex items-center justify-end gap-2">
+            <span className="h-1 w-16 rounded-full bg-line overflow-hidden">
+              <span className="block h-full bg-emerald" style={{ width: `${Math.max(3, Math.round((r.progress ?? 0) * 100))}%` }} />
+            </span>
+            <span className="font-mono w-9 text-right">{gradText(r)}</span>
+          </span>
+        ) : (
+          <span className="block text-right text-ink-3">{gradText(r)}</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function RowSkeleton() {
+  return (
+    <li className="flex items-center gap-3 px-4 py-3 border-b border-line" aria-hidden="true">
+      <span className="shimmer w-10 h-10 rounded-full shrink-0" />
+      <span className="flex-1 grid gap-1.5">
+        <span className="shimmer h-4 w-2/3 rounded" />
+        <span className="shimmer h-3 w-1/3 rounded" />
+      </span>
+      <span className="grid gap-1.5 justify-items-end">
+        <span className="shimmer h-4 w-16 rounded" />
+        <span className="shimmer h-3 w-10 rounded" />
+      </span>
+    </li>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <tr className="border-t border-line" aria-hidden="true">
+      <td className="py-3 px-3"><span className="flex items-center gap-2.5"><span className="shimmer w-[30px] h-[30px] rounded-full" /><span className="shimmer h-4 w-36 rounded" /></span></td>
+      {Array.from({ length: 7 }, (_, i) => (
+        <td key={i} className={"py-3 px-3" + (i === 3 || i === 4 ? " hidden lg:table-cell" : "")}><span className="shimmer block h-4 w-14 ml-auto rounded" /></td>
+      ))}
+    </tr>
+  );
+}
+
+/** Coins close to graduating (70%+), as a plain row. Plain data, no paid placement. */
 function AlmostThere({ coins }: { coins: Coin[] }) {
   const near = coins
     .filter((c) => !c.graduatedOn && !c.graduating && c.progress >= 0.7 && c.progress < 1)
@@ -484,50 +534,29 @@ function AlmostThere({ coins }: { coins: Coin[] }) {
     .slice(0, 10);
   if (!near.length) return null;
   return (
-    <section aria-label="Almost graduating" className="mb-5">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="font-display font-bold text-[1.0625rem] flex items-center gap-2">
-          <span className="almost-live" aria-hidden="true" />
-          🎓 Almost graduating
-        </h3>
-        <span className="text-[0.6875rem] text-ink-3">70%+ of the way</span>
+    <section aria-label="Almost graduating" className="mt-4">
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h2 className="font-semibold text-[0.9375rem]">Almost graduating</h2>
+        <span className="text-[0.75rem] text-ink-3">70% or more</span>
       </div>
-      <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-2 pt-1 px-0.5 snap-x snap-mandatory">
+      <div className="ex-tabs flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
         {near.map((c) => {
           const pct = Math.min(99, Math.floor(c.progress * 100));
-          const hot = pct >= 90;
           const left = c.totalUsd !== null ? Math.max(0, TARGET_USD - c.totalUsd) : null;
-          // The tip grows as the coin gets closer: 0.95rem at 90% up to ~1.5rem at 99%.
-          const tipSize = hot ? 0.95 + (pct - 90) * 0.06 : 0.85;
           return (
-            <Link
-              key={c.id}
-              href={coinHref(c)}
-              className={"almost-card snap-start shrink-0 w-[13.75rem] rounded-2xl border-[1.5px] bg-paper p-2.5 relative overflow-hidden " + (hot ? "almost-hot border-emerald" : "border-line hover:border-emerald/60")}
-            >
-              {hot && <span className="absolute top-2 right-2 rounded-full bg-emerald text-on-accent text-[0.625rem] font-extrabold tracking-wide px-1.5 py-0.5">HOT</span>}
+            <Link key={c.id} href={coinHref(c)} className="shrink-0 w-[12.5rem] rounded-xl border border-line p-2.5 hover:border-ink-3">
               <span className="flex items-center gap-2.5">
-                <CoinAvatar logo={c.logo} symbol={c.symbol} size={40} />
+                <CoinAvatar logo={c.logo} symbol={c.symbol} size={36} />
                 <span className="min-w-0">
-                  <b className="block truncate pr-8">{c.name}</b>
-                  <span className={"block font-mono font-semibold text-[0.875rem] " + (hot ? "text-emerald" : "text-up")}>
-                    {pct}%<span className="font-sans font-normal text-[0.6875rem] text-ink-3 ml-1">graduated</span>
+                  <b className="block truncate font-semibold text-[0.9375rem]">{c.name}</b>
+                  <span className="block text-[0.75rem] text-ink-3">
+                    <span className="font-mono text-ink font-semibold">{pct}%</span>
+                    {left !== null && ` · ${usd(left, left < 100 ? 2 : 0)} to go`}
                   </span>
-                  {left !== null && <span className="block text-[0.6875rem] text-ink-3">{usd(left, left < 100 ? 2 : 0)} to go</span>}
                 </span>
               </span>
-              <span className="relative block h-2.5 rounded-full bg-line mt-3.5 mb-1 mr-2.5" aria-hidden="true">
-                <span className="almost-fill absolute inset-y-0 left-0 rounded-full overflow-hidden" style={{ width: `${pct}%` }} />
-                {hot && (
-                  <>
-                    <span className="almost-spark absolute -top-3" style={{ left: `${pct - 6}%` }}>✨</span>
-                    <span className="almost-spark absolute -top-3.5 [animation-delay:.8s]" style={{ left: `${pct - 2}%` }}>✨</span>
-                  </>
-                )}
-                <span className="almost-tip absolute top-1/2 leading-none" style={{ left: `${pct}%`, fontSize: `${tipSize}rem` }}>
-                  {hot ? "🔥" : "⭐"}
-                </span>
-                <span className="absolute -right-2.5 top-1/2 -translate-y-1/2 text-[0.95rem] leading-none">🎓</span>
+              <span className="block h-1 rounded-full bg-line mt-2.5 overflow-hidden" aria-hidden="true">
+                <span className="block h-full bg-emerald" style={{ width: `${pct}%` }} />
               </span>
             </Link>
           );

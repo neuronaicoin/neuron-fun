@@ -16,8 +16,8 @@ export default function LearnIndex() {
     <div className="min-h-dvh flex flex-col bg-mist">
       <LearnHeader />
       <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-12">
-        <p className="font-mono text-[0.75rem] tracking-[0.16em] text-emerald">LEARN</p>
-        <h1 className="font-display font-bold text-[2.25rem] sm:text-[3rem] tracking-tight mt-3 leading-[1.05]">Guides to launching meme coins</h1>
+        <p className="text-[0.875rem] text-ink-3">Learn</p>
+        <h1 className="font-display font-bold text-[2rem] sm:text-[2.5rem] tracking-tight mt-1 leading-[1.1]">Guides to launching meme coins</h1>
         <p className="text-[1.0625rem] text-ink-2 mt-4 max-w-xl">Short, honest explanations of how meme coin launches work, across Robinhood Chain, Base and beyond.</p>
         <ul className="mt-10 grid gap-4">
           {ARTICLES.map((a) => (

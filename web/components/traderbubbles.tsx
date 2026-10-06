@@ -103,7 +103,7 @@ export function TraderBubbles({ rows, profiles, ethUsd }: { rows: TraderStats[];
               )}
               {p.rank < 3 && (
                 <text x={p.x + p.r * 0.62} y={p.y - p.r * 0.62} textAnchor="middle" fontSize={Math.max(14, p.r / 3.4)}>
-                  {["🥇", "🥈", "🥉"][p.rank]}
+                  {`#${p.rank + 1}`}
                 </text>
               )}
             </g>
@@ -118,7 +118,7 @@ export function TraderBubbles({ rows, profiles, ethUsd }: { rows: TraderStats[];
             <span className="min-w-0">
               <span className="block font-semibold truncate">
                 #{sel.rank + 1} {nameOf(sel.trader)}
-                {isQuickSeller(sel) && <span className="text-[0.75rem] text-ink-3 font-normal"> ⚡</span>}
+                {isQuickSeller(sel) && <span className="ml-1 text-[0.6875rem] text-ink-3 font-normal">quick seller</span>}
                 {profiles.get(sel.trader)?.allowCopy && !profiles.get(sel.trader)?.hideTrades && <CopyBadge className="ml-1.5 align-middle" />}
               </span>
               <span className="block text-[0.75rem] text-ink-3">

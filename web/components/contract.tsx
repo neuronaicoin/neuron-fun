@@ -74,7 +74,7 @@ export function ContractAddress({
   }
 
   return (
-    <div className={"flex items-center gap-1.5 sm:gap-2 max-w-full w-fit rounded-xl border border-line bg-paper pl-2.5 pr-1 py-1 " + className}>
+    <div className={"flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full w-fit rounded-xl border border-line bg-paper pl-2.5 pr-1 py-1 " + className}>
       <span className="text-[0.6875rem] font-semibold text-ink-3 shrink-0">CA</span>
       <button
         type="button"

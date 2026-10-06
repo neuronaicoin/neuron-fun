@@ -107,15 +107,14 @@ export function GetAppButton({ className = "", variant = "chip" }: { className?:
           onClick={() => void go()}
           className={"h-10 px-4 shrink-0 rounded-xl border border-line bg-surface font-semibold text-[0.875rem] flex items-center gap-1.5 " + className}
         >
-          <span aria-hidden="true">📲</span> {mode === "ios" ? "Add to Home Screen" : "Get the app"}
+          {mode === "ios" ? "Add to Home Screen" : "Get the app"}
         </button>
       ) : (
         <button
           type="button"
           onClick={() => void go()}
-          className={"rounded-2xl border border-line bg-paper hover:border-emerald/60 p-3 flex flex-col gap-1 min-h-[5.5rem] text-left " + className}
+          className={"flex items-center justify-between gap-3 px-1 py-3 border-b border-line text-left w-full " + className}
         >
-          <span className="text-[1.375rem] leading-none" aria-hidden="true">📲</span>
           <span className="font-semibold text-[0.9375rem]">{mode === "ios" ? "Add to Home Screen" : "Get the app"}</span>
           <span className="text-[0.6875rem] text-ink-3 leading-snug">sasa on your home screen</span>
         </button>
