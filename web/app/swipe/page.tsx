@@ -115,9 +115,9 @@ export default function SwipePage() {
 
       <div className="relative mt-4 h-[min(34rem,calc(100dvh-22rem))] min-h-[27rem]">
         {deck === null ? (
-          <div className="shimmer absolute inset-0 rounded-[1.75rem]" />
+          <div className="shimmer absolute inset-0 rounded-2xl" />
         ) : !current ? (
-          <div className="absolute inset-0 rounded-[1.75rem] border border-line bg-surface flex flex-col items-center justify-center text-center gap-2 p-6">
+          <div className="absolute inset-0 rounded-2xl border border-line bg-surface flex flex-col items-center justify-center text-center gap-2 p-6">
             <b className="font-display text-[1.125rem]">{error ? "Couldn't load coins" : "You've seen them all"}</b>
             <span className="text-ink-2 text-[0.875rem]">{error ? "Check your connection and try again." : "New coins show up all the time."}</span>
             <button
@@ -160,7 +160,7 @@ export default function SwipePage() {
           onClick={() => act("skip")}
           disabled={!current}
           aria-label="Skip"
-          className="w-16 h-16 rounded-full border border-line bg-surface text-danger text-[1.625rem] shadow-[0_6px_20px_rgba(0,0,0,0.12)] disabled:opacity-40"
+          className="w-14 h-14 rounded-full border border-line bg-surface text-danger text-[1.375rem] disabled:opacity-40"
         >
           ✕
         </button>
@@ -169,7 +169,7 @@ export default function SwipePage() {
           onClick={() => act("save")}
           disabled={!current}
           aria-label="Save to favourites"
-          className="w-14 h-14 rounded-full border border-line bg-surface text-[#ffb020] text-[1.375rem] shadow-[0_6px_20px_rgba(0,0,0,0.12)] disabled:opacity-40"
+          className="w-12 h-12 rounded-full border border-line bg-surface text-ink-2 text-[1.25rem] disabled:opacity-40"
         >
           ★
         </button>
@@ -178,7 +178,7 @@ export default function SwipePage() {
           onClick={() => act("buy")}
           disabled={!current}
           aria-label={`Buy $${amount}`}
-          className="w-[4.5rem] h-[4.5rem] rounded-full bg-up text-on-accent font-bold text-[1.125rem] shadow-[0_8px_24px_rgba(15,157,98,0.35)] disabled:opacity-40"
+          className="w-16 h-16 rounded-full bg-up text-white font-bold text-[1rem] disabled:opacity-40"
         >
           ${amount}
         </button>
@@ -198,7 +198,7 @@ export default function SwipePage() {
                   localStorage.setItem("sasa-swipe-amount", String(v));
                 } catch {}
               }}
-              className={"h-8 px-3 rounded-lg border font-bold " + (amount === v ? "border-up text-up" : "border-line text-ink-2")}
+              className={"h-8 px-3 rounded-lg border font-semibold " + (amount === v ? "border-ink text-ink" : "border-line text-ink-2")}
             >
               ${v}
             </button>
@@ -295,7 +295,7 @@ function SwipeCard({
         setDragging(false);
         setD({ x: 0, y: 0 });
       }}
-      className="absolute inset-0 rounded-[1.75rem] border border-line bg-surface overflow-hidden flex flex-col select-none shadow-[0_18px_50px_rgba(0,0,0,0.18)]"
+      className="absolute inset-0 rounded-2xl border border-line bg-surface overflow-hidden flex flex-col select-none"
       style={{
         transform,
         transition: dragging ? "none" : "transform 0.3s ease-out, opacity 0.3s",
@@ -316,7 +316,7 @@ function SwipeCard({
         </div>
         <LockBadge coinId={coin.id} size="sm" onArt className="absolute bottom-3 left-3" />
         {coin.graduatedOn ? (
-          <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-emerald text-on-accent flex items-center">Graduated</span>
+          <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 text-white flex items-center">Graduated</span>
         ) : pct >= 80 ? (
           <span className="absolute bottom-3 right-3 h-6 px-2 rounded-full text-[0.6875rem] font-bold bg-black/65 text-white flex items-center">{pct}%</span>
         ) : null}
@@ -333,11 +333,11 @@ function SwipeCard({
       <div className="p-4">
         <div className="flex items-baseline gap-2 min-w-0">
           <b className="font-display text-[1.25rem] truncate">{coin.name}</b>
-          <span className="font-mono text-[0.8125rem] text-ink-3 shrink-0">${coin.symbol}</span>
+          <span className="text-[0.8125rem] text-ink-3 shrink-0">{coin.symbol}</span>
         </div>
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 mt-2.5">
           <span className="leading-none">
-            <span className="block text-[0.625rem] font-semibold tracking-wider uppercase text-ink-3">MC</span>
+            <span className="block text-[0.6875rem] text-ink-3">Market cap</span>
             <span className="block font-mono font-bold tabular-nums text-[1.25rem] mt-1">{compactUsd(coinMarketCapUsd(coin, ethUsd))}</span>
           </span>
           <Sparkline pts={spark} className="w-full h-9" />

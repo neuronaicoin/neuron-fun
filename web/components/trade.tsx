@@ -782,7 +782,7 @@ export function QuickTrade({
         </p>
       )}
       <p className="mt-4 text-[0.6875rem] leading-relaxed text-ink-3">
-        1% fee. If the price moves more than {slippagePct(slip)} before it lands, the trade is cancelled and nothing is spent.{" "}
+        If the price moves more than {slippagePct(slip)} before it lands, the trade is cancelled and nothing is spent.{" "}
         <button type="button" onClick={() => setSlipOpen((v) => !v)} className="underline font-semibold text-ink-2" aria-expanded={slipOpen}>
           Change
         </button>

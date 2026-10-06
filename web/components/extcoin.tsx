@@ -293,7 +293,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
         <p className="mt-3 rounded-xl bg-emerald-soft border border-emerald/40 p-3 text-[0.8125rem]">Test version: prices and charts are live; trading these coins opens at mainnet.</p>
       )}
       {!IS_TESTNET && !chain && <p className="mt-3 text-[0.8125rem] text-ink-3">Trading coins on this chain is coming soon.</p>}
-      <p className="text-[0.6875rem] text-ink-3 mt-2">0.7% fee. Best price across DEXs, paid in USDC.</p>
+      <p className="text-[0.6875rem] text-ink-3 mt-2">Best price across DEXs, paid in USDC.</p>
     </aside>
   );
 }

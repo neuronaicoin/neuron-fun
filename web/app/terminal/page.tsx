@@ -13,7 +13,7 @@ import { useSearchParams } from "next/navigation";
 import { formatEther } from "viem";
 import { useWallet } from "@/components/wallet";
 import { ChainChip, ChainRace, ChangeBadge, CoinAvatar, ProgressBar, Skeleton, StarButton, timeAgo, useCoins, usd } from "@/components/coins";
-import { coinMarketCapUsd, compactUsd, RaceBar } from "@/components/discover";
+import { coinMarketCapUsd, compactUsd } from "@/components/discover";
 import { PriceChart, TopHolders, TradesFeed } from "@/components/market";
 import { QuickTrade } from "@/components/trade";
 import { MobileTradeBar } from "@/components/mobiletrade";
@@ -227,7 +227,7 @@ function Terminal() {
               </div>
               <div className="mt-3"><FeeBox coin={coin} onChange={loadCoin} /></div>
               <div className="mt-3"><TrustCard coin={coin} /></div>
-              <div className="mt-3 rounded-3xl border border-line bg-surface p-4 sm:p-5">
+              <div className="mt-3 rounded-xl border border-line bg-surface p-4 sm:p-5">
                 <ProgressBar coin={coin} />
                 <div className="mt-4">
                   <ChainRace coin={coin} />
@@ -252,7 +252,7 @@ const MARKET_TABS: readonly (readonly [SortKey, string])[] = [
   ["trending", "Trending"],
   ["gainers", "Gainers"],
   ["losers", "Losers"],
-  ["hot", "Closest to grad."],
+  ["hot", "Almost graduating"],
   ["bonding", "Bonding"],
   ["new", "New"],
   ["graduated", "Graduated"],
@@ -272,8 +272,8 @@ function MarketTabs({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) =>
             e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
           }}
           className={
-            "h-9 px-3.5 rounded-xl text-[0.8125rem] font-semibold shrink-0 whitespace-nowrap " +
-            (sort === k ? "bg-emerald text-on-accent" : "text-ink-2 hover:text-ink hover:bg-paper")
+            "h-9 px-1.5 -mb-px border-b-2 text-[0.875rem] shrink-0 whitespace-nowrap " +
+            (sort === k ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")
           }
         >
           {l}
@@ -305,23 +305,26 @@ function Markets(props: {
   const coins = ranked ? ranked.filter((r): r is Extract<Ranked, { kind: "ours" }> => r.kind === "ours").map((r) => r.coin) : null;
   const sparks = useSparks(useMemo(() => (coins ?? []).map((c) => c.id), [coins]));
   return (
-    <div className="rounded-3xl border border-line bg-surface overflow-hidden">
-      <div className="p-3 border-b border-line">
+    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <div className="px-3 pt-3 border-b border-line">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name or ticker"
+          placeholder="Search"
           aria-label="Search coins"
-          className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-[0.875rem] focus:border-emerald"
+          type="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          className="w-full h-10 px-3 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3 focus:border-ink-3 outline-none"
         />
-        <div className="mt-2">
+        <div className="mt-1">
           <MarketTabs sort={sort} setSort={setSort} />
         </div>
       </div>
       <ul className={(full ? "" : "max-h-[70dvh] lg:max-h-[calc(100dvh-220px)] overflow-y-auto ") + "divide-y divide-line"}>
         {!coins && [0, 1, 2, 3, 4, 5, 6].map((i) => (
           <li key={i} className="px-3 py-2.5 flex items-center gap-2.5" aria-hidden="true">
-            <span className="shimmer w-9 h-9 rounded-xl shrink-0" />
+            <span className="shimmer w-9 h-9 rounded-full shrink-0" />
             <span className="flex-1 min-w-0 grid gap-1.5">
               <span className="shimmer h-3.5 w-3/5 rounded-md" />
               <span className="shimmer h-2.5 w-2/5 rounded-md" />
@@ -349,7 +352,7 @@ function Markets(props: {
                   <span className="min-w-0">
                     <span className="block font-semibold text-[0.875rem] truncate">{c.name}</span>
                     <span className="block text-[0.75rem] text-ink-3 truncate mt-0.5">
-                      ${c.symbol} · {c.graduatedOn ? "graduated" : `${Math.round(c.progress * 100)}% to grad.`}
+                      {c.symbol} · {c.graduatedOn ? "Graduated" : `${Math.min(99, Math.floor(c.progress * 100))}%`}
                     </span>
                   </span>
                   <Sparkline pts={sparks.get(c.id)} fill={false} className="w-14 h-6" />
@@ -358,7 +361,11 @@ function Markets(props: {
                     <ChangeBadge value={c.change24h} className="block text-[0.75rem] font-semibold mt-0.5" />
                   </span>
                 </span>
-                <span className="block mt-1.5"><RaceBar coin={c} /></span>
+                {!c.graduatedOn && (
+                  <span className="block mt-1.5 h-[3px] rounded-full bg-line overflow-hidden" aria-hidden="true">
+                    <span className="block h-full bg-emerald" style={{ width: `${Math.max(3, Math.round(c.progress * 100))}%` }} />
+                  </span>
+                )}
               </span>
             </button>
           </li>
@@ -385,7 +392,7 @@ function ExtRow({ c, selected, onChoose }: { c: ExtCoin; selected: string; onCho
                     <span className="min-w-0">
                       <span className="block font-semibold text-[0.875rem] truncate">{c.name}</span>
                       <span className="block text-[0.75rem] text-ink-3 truncate mt-0.5">
-                        ${c.symbol}
+                        {c.symbol}
                         {net && (
                           <span className="ml-1.5 inline-block align-middle w-2 h-2 rounded-full" style={{ background: net.color }} aria-label={net.label} />
                         )}{" "}
@@ -423,7 +430,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       {party && !partyDone && <Confetti onDone={() => setPartyDone(true)} />}
-      <div className="rounded-3xl border border-line bg-surface p-3.5 sm:p-5">
+      <div className="rounded-xl border border-line bg-surface p-3.5 sm:p-5">
         <div className="flex items-start gap-3">
           <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={46} />
           <div className="min-w-0 flex-1">
@@ -453,7 +460,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
       </div>
 
       {chartCurve && (
-        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
+        <div className="rounded-xl border border-line bg-surface p-4 sm:p-5">
           {!USD_MODE && coin.curves.length > 1 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {coin.curves.map((c) => (
@@ -472,8 +479,8 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
         </div>
       )}
 
-      <div className="rounded-3xl border border-line bg-surface">
-        <div className="flex gap-1 p-2 border-b border-line overflow-x-auto" role="tablist" aria-label="Details">
+      <div className="rounded-xl border border-line bg-surface">
+        <div className="flex gap-5 px-4 border-b border-line overflow-x-auto no-scrollbar" role="tablist" aria-label="Details">
           {([["trades", "Trades"], ["comments", "Comments"], ["holders", "Holders"], ["position", "My position"], ["about", "About"]] as const).map(([k, l]) => (
             <button
               key={k}
@@ -481,7 +488,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               role="tab"
               aria-selected={tab === k}
               onClick={() => setTab(k)}
-              className={"h-9 px-4 rounded-xl text-[0.8125rem] font-semibold shrink-0 " + (tab === k ? "bg-paper text-ink" : "text-ink-3")}
+              className={"h-11 -mb-px border-b-2 text-[0.875rem] shrink-0 whitespace-nowrap " + (tab === k ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")}
             >
               {l}
             </button>
@@ -494,7 +501,7 @@ function Center({ coin, ethUsd }: { coin: Coin; ethUsd: number | null }) {
               <button
                 type="button"
                 onClick={() => setAllTrades((v) => !v)}
-                className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:border-emerald/60"
+                className="mt-2 w-full h-10 rounded-xl border border-line text-[0.8125rem] font-semibold text-ink-2 hover:bg-night"
               >
                 {allTrades ? "Show fewer" : "Show more trades"}
               </button>

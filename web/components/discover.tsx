@@ -37,7 +37,7 @@ export function CoinArt({ coin, className = "", small = false }: { coin: Coin; c
   return (
     <div
       className={"w-full h-full flex items-center justify-center " + className}
-      style={{ background: `radial-gradient(120% 90% at 20% 10%, hsl(${h} 70% 42%), hsl(${(h + 60) % 360} 60% 14%) 70%)` }}
+      style={{ background: `hsl(${h} 45% 42%)` }}
     >
       <span className="font-display font-bold text-white/90" style={{ fontSize: small ? "22px" : "clamp(36px, 8vw, 84px)" }}>
         {(coin.symbol || "?").slice(0, 2).toUpperCase()}
