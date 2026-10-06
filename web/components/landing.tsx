@@ -33,6 +33,7 @@ export function Landing() {
           <span>sasa</span>
         </a>
         <nav className="sasa-nav">
+          <a href="/top/" className="sasa-learn">Top coins</a>
           <a href="/learn/" className="sasa-learn">Learn</a>
           <a href={X_URL} className="sasa-follow" target="_blank" rel="noreferrer">
           Follow on

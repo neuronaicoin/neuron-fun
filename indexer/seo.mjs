@@ -6,6 +6,7 @@
 //   - a coin traded on sasa: its page again, at most once every 6 hours
 //   - coins from other DEXs that trade: their pages, at most once a day each,
 //     busiest first (new pools first)
+//   - the daily "top meme coins" lists: every 6 hours
 //   - every page in sasa's sitemap: once a day
 //
 // Turn off with SEO_PING=off. The key file lives at sasapad.fun/<key>.txt.
@@ -18,6 +19,8 @@ const TICK_MS = 2 * 60_000;
 const OURS_AGAIN_MS = 6 * 3600_000;
 const EXT_AGAIN_MS = 24 * 3600_000;
 const SITEMAP_EVERY_MS = 24 * 3600_000;
+const TOP_EVERY_MS = 6 * 3600_000;
+const TOP_PAGES = ["", "trending-meme-coins", "robinhood-chain-meme-coins", "base-meme-coins", "bnb-chain-meme-coins", "ethereum-meme-coins", "arc-meme-coins", "meme-coin-gainers", "new-meme-coins"].map((s) => `${SITE}/top/${s ? `${s}/` : ""}`);
 const EXT_PER_TICK = 150; // about 4,000 a day at most
 const MAX_PER_REQUEST = 9_000; // IndexNow accepts up to 10,000
 
@@ -113,6 +116,9 @@ export async function seoLoop(pool, log) {
       } catch (e) {
         if (!/does not exist/.test(e.message)) throw e;
       }
+
+      // The daily "top meme coins" lists change all day: every 6 hours.
+      if (TOP_PAGES.some((u) => due(u, TOP_EVERY_MS, now))) urls.push(...TOP_PAGES);
 
       // Everything in the sitemaps, once a day (Learn, forum boards, main pages).
       if (now - lastSitemap >= SITEMAP_EVERY_MS) {

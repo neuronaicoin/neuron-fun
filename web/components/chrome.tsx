@@ -468,6 +468,7 @@ export function Footer() {
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
           <a href="/forum/" className="text-emerald">Forum</a>
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
+          <a href="/top/" className="text-emerald">Top coins</a>
           <Link href="/learn/" className="text-emerald">Learn</Link>
           <Link href="/help/" className="text-emerald">Help</Link>
           <Link href="/terms/" className="text-emerald">Terms</Link>
