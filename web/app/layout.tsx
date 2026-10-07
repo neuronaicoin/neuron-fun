@@ -64,12 +64,24 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
 };
 
+// Google Analytics 4 (visits and traffic sources only): live site only, no ads features or
+// Google signals, and no analytics cookies in the EU/EEA, UK and Switzerland (consent mode:
+// Google gets cookieless pings there). Page changes are counted by GA's browser-history tracking.
+const GA_ID = "G-G35JGWX5FT";
+const GA_INIT = `(function(){try{if(location.hostname!=="sasapad.fun"&&location.hostname!=="www.sasapad.fun")return;
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;
+gtag("consent","default",{ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied",analytics_storage:"granted"});
+gtag("consent","default",{analytics_storage:"denied",region:["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE","IS","LI","NO","GB","CH"]});
+gtag("js",new Date());gtag("config","${GA_ID}",{allow_google_signals:false,allow_ad_personalization_signals:false});
+var s=document.createElement("script");s.async=true;s.src="https://www.googletagmanager.com/gtag/js?id=${GA_ID}";document.head.appendChild(s);}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
         <script dangerouslySetInnerHTML={{ __html: THEME_CHECK }} />
+        <script dangerouslySetInnerHTML={{ __html: GA_INIT }} />
       </head>
       <body className="min-h-dvh flex flex-col">
         <WalletProvider>

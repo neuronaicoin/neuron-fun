@@ -13,7 +13,7 @@ export default function Privacy() {
         <li><b>Wallet address</b> and your public on-chain activity (trades, launches). This is public on the blockchain anyway.</li>
         <li><b>Sign-in details</b> if you sign in with email or Google: handled by our wallet provider; we receive your wallet address and, for email sign-in, your email.</li>
         <li><b>What you choose to add</b>: profile name, picture, bio, links, comments, forum posts, watchlist, alerts and messages to support.</li>
-        <li><b>Basic usage data</b>: pages visited and device type, without ads or cross-site tracking, to keep sasa working and improve it.</li>
+        <li><b>Basic usage data</b>: pages visited, device type and how you found sasa, measured with Google Analytics with its advertising features turned off, to keep sasa working and improve it. In the EU, UK and Switzerland it sets no analytics cookies.</li>
         <li><b>Push notifications</b>: if you turn them on, a technical address your browser gives us to send them.</li>
       </ul>
 
@@ -25,8 +25,8 @@ export default function Privacy() {
 
       <h2>Who helps us run sasa</h2>
       <p>
-        Hosting, database, wallet sign-in, gas sponsorship, email and blockchain data providers process data for us so sasa can work. They may be in other
-        countries.
+        Hosting, database, wallet sign-in, gas sponsorship, email, analytics (Google Analytics) and blockchain data providers process data for us so sasa
+        can work. They may be in other countries.
       </p>
 
       <h2>Your choices</h2>
