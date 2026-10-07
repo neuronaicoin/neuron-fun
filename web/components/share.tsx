@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Sheet } from "./chrome";
 import { SUPABASE_URL } from "@/lib/config";
 import type { Coin } from "@/lib/data";
+import { useCoinLinks } from "@/lib/coinlinks";
 
 const SITE = "https://sasapad.fun";
 
@@ -18,14 +19,49 @@ export const SASA_X = "sasapadfun";
 /** Fired whenever someone opens the X composer from sasa (the points quest listens). */
 export const SHARED_X_EVENT = "sasa:shared-x";
 
+/** A coin being shared: its ticker, chain name(s) and the project's own X account if known. */
+export type ShareCoinTags = { symbol: string; chains?: string[]; handle?: string | null };
+
+const CHAIN_TAG: Record<string, string> = {
+  robinhood: "RobinhoodChain", "robinhood chain": "RobinhoodChain", base: "Base", bnb: "BNBChain", "bnb chain": "BNBChain", bsc: "BNBChain",
+  arc: "Arc", ethereum: "Ethereum", eth: "Ethereum",
+};
+const cleanHandle = (h?: string | null) => {
+  const v = (h ?? "").trim().replace(/^https?:\/\/(www\.)?(x|twitter)\.com\//i, "").replace(/^@/, "").split(/[/?#]/)[0];
+  return /^[A-Za-z0-9_]{1,15}$/.test(v) && v.toLowerCase() !== SASA_X ? v : null;
+};
+
+/**
+ * Rule for every coin post: tag the coin's own project account (when it has one) and
+ * end with exactly three hashtags: the coin's ticker, #memecoin and its chain.
+ */
+export function coinTags(c: ShareCoinTags): { handle: string | null; tags: string[] } {
+  const tags: string[] = [];
+  const tick = c.symbol.replace(/^\$/, "").replace(/[^A-Za-z0-9_]/g, "");
+  if (/^[A-Za-z][A-Za-z0-9_]{0,24}$/.test(tick) && tick.toLowerCase() !== "memecoin") tags.push(`#${tick}`);
+  tags.push("#memecoin");
+  for (const ch of c.chains ?? []) {
+    const t = CHAIN_TAG[ch.trim().toLowerCase()];
+    if (t && !tags.includes(`#${t}`) && tags.length < 3) tags.push(`#${t}`);
+  }
+  for (const extra of ["#crypto", "#memecoins"]) if (tags.length < 3) tags.push(extra);
+  return { handle: cleanHandle(c.handle), tags: tags.slice(0, 3) };
+}
+
 /**
  * Opens X's composer with text and a link (X adds the link's card itself).
  * Every post mentions @sasapadfun, so each share also shows people where it came from.
+ * Coin posts (`coin` given) also tag the project's X account and add three hashtags.
  */
-export function postOnX(text: string, url?: string) {
+export function postOnX(text: string, url?: string, coin?: ShareCoinTags) {
   // While we're on testnet, every post says so: nobody should think this is live money.
   const honest = IS_TESTNET && !/testnet/i.test(text) ? `${text}\n\n🧪 On testnet now (free test USDC) · mainnet soon` : text;
-  const t = /@sasapadfun/i.test(honest) ? honest : `${honest}\n\nvia @${SASA_X}`;
+  let t = /@sasapadfun/i.test(honest) ? honest : `${honest}\n\nvia @${SASA_X}`;
+  if (coin) {
+    const { handle, tags } = coinTags(coin);
+    if (handle && !new RegExp(`@${handle}\\b`, "i").test(t)) t += ` · @${handle}`;
+    t = t.replace(/(\s#[A-Za-z0-9_]+)+\s*$/, "") + `\n\n${tags.join(" ")}`;
+  }
   const q = new URLSearchParams({ text: t });
   if (url) q.set("url", url);
   // The X app (if installed) gets the whole post, link included, in one message.
@@ -67,6 +103,8 @@ function openX(url: string, appUrl?: string) {
 }
 
 export function ShareButton({ coin }: { coin: Coin }) {
+  const links = useCoinLinks(coin.id);
+  const tagInfo: ShareCoinTags = { symbol: coin.symbol, chains: (coin.graduatedOn ? [coin.graduatedOn] : coin.curves).map((k) => k.chain.short), handle: links?.x ?? null };
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imgOk, setImgOk] = useState(true);
@@ -108,7 +146,7 @@ export function ShareButton({ coin }: { coin: Coin }) {
           )}
           <p className="text-[0.8125rem] text-ink-3 mt-3">{text}</p>
           <div className="grid gap-2 mt-4">
-            <button type="button" onClick={() => postOnX(text, url)} className="h-12 rounded-2xl bg-ink text-mist font-bold flex items-center justify-center gap-2">
+            <button type="button" onClick={() => postOnX(text, url, tagInfo)} className="h-12 rounded-2xl bg-ink text-mist font-bold flex items-center justify-center gap-2">
               <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
               </svg>

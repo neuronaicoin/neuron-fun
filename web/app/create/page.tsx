@@ -247,7 +247,8 @@ export default function CreatePage() {
           onClick={() =>
             postOnX(
               `I just launched $${cleanSymbol} on @sasapadfun 🚀 Live on ${chosen.map((c) => c.short).join(" + ")} at once. Be early 👇`,
-              coinShareUrl(`${address.toLowerCase()}:${coinKey}`)
+              coinShareUrl(`${address.toLowerCase()}:${coinKey}`),
+              { symbol: cleanSymbol, chains: chosen.map((c) => c.short), handle: draftToLinks(links).x }
             )
           }
           className="mt-8 w-full h-13 rounded-2xl bg-ink text-mist font-bold flex items-center justify-center gap-2"

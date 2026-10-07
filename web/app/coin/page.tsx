@@ -2,6 +2,7 @@
 
 import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
+import { useCoinLinks } from "@/lib/coinlinks";
 import { ContractAddress } from "@/components/contract";
 import { HolderMap } from "@/components/holdermap";
 import { WhoBought } from "@/components/whobought";
@@ -55,6 +56,7 @@ function CoinPage() {
   const alertLines = useMemo(() => alertLinesFor(alerts, id), [alerts, id]);
   const wallet = useWallet();
   const { orders: myOrders } = useMyOrders(wallet.address);
+  const projectX = useCoinLinks(valid ? id : "")?.x ?? null; // the coin's own X account, tagged when shared
   const markerCurve = coin
     ? (coin.curves.find((c) => c.chain.key === chartChain) ?? coin.graduatedOn ?? [...coin.curves].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0])?.curve ?? null
     : null;
@@ -190,7 +192,7 @@ function CoinPage() {
           <button
             type="button"
             onClick={() =>
-              postOnX(`$${coin.symbol} just graduated on ${winner.chain.short} 🎓 Liquidity locked forever on @sasapadfun`, coinShareUrl(coin.id))
+              postOnX(`$${coin.symbol} just graduated on ${winner.chain.short} 🎓 Liquidity locked forever on @sasapadfun`, coinShareUrl(coin.id), { symbol: coin.symbol, chains: [winner.chain.short], handle: projectX })
             }
             className="mt-3 h-10 px-4 rounded-xl border border-line font-semibold inline-flex items-center gap-2"
           >

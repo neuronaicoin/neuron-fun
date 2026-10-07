@@ -63,7 +63,7 @@ export function ProfitCard({ info, link, onClose }: { info: ProfitInfo; link: st
             type="button"
             onClick={() => {
               download();
-              postOnX(text, link);
+              postOnX(text, link, { symbol: info.symbol });
               setNote("The card is downloaded. Attach it to your post on X.");
             }}
             className="h-12 rounded-2xl bg-ink text-mist font-bold"

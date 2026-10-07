@@ -71,9 +71,10 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                     onClick={() =>
                       postOnX(
                         IS_TESTNET
-                          ? `$${coin.symbol} is listed on sasa 👀\n\nSoon: buy it in USDC in one tap, no bridging, no gas.${coin.xHandle ? `\n\n@${coin.xHandle}` : ""}`
-                          : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas.${coin.xHandle ? `\n\n@${coin.xHandle}` : ""}`,
-                        `https://sasapad.fun${extHref(coin)}`
+                          ? `$${coin.symbol} is listed on sasa 👀\n\nSoon: buy it in USDC in one tap, no bridging, no gas.`
+                          : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas.`,
+                        `https://sasapad.fun${extHref(coin)}`,
+                        { symbol: coin.symbol, chains: [net.label], handle: coin.xHandle }
                       )
                     }
                     className="h-7 px-2.5 rounded-lg border border-line text-[0.75rem] font-semibold hover:border-emerald/60 flex items-center gap-1"

@@ -61,7 +61,7 @@ function GraduatedPosts() {
                 <button type="button" onClick={() => void navigator.clipboard?.writeText(post(g)).then(() => toast("Text copied"), () => {})} className="h-11 rounded-xl border border-line font-semibold">
                   Copy text
                 </button>
-                <button type="button" onClick={() => postOnX(post(g), `https://sasapad.fun/coin/?id=${encodeURIComponent(g.id)}`)} className="h-11 rounded-xl bg-emerald text-on-accent font-bold">
+                <button type="button" onClick={() => postOnX(post(g), `https://sasapad.fun/coin/?id=${encodeURIComponent(g.id)}`, { symbol: g.symbol, chains: [g.chain] })} className="h-11 rounded-xl bg-emerald text-on-accent font-bold">
                   Post on X
                 </button>
               </div>
