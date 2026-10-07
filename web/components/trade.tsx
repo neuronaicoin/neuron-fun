@@ -19,7 +19,7 @@ import type { ProfitInfo } from "@/lib/pnlcard";
 import { ProfitCard } from "./profitcard";
 import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
-import { fmtEth, fmtTokens, friendlyError } from "@/lib/format";
+import { fmtEth, fmtTokens, friendlyError, retryNetwork } from "@/lib/format";
 import { usd } from "./coins";
 import { openMoney, optimisticTrade, refreshCash, refreshPortfolio } from "@/lib/portfolio";
 import { routerOf, setOf } from "@/lib/contracts";
@@ -300,7 +300,8 @@ export function QuickTrade({
     };
     const t = setTimeout(async () => {
       try {
-        const qs = await Promise.all(legs.map((l) => quoteLeg(l.c, l.amount)));
+        // a busy node is asked again before the quote shows as unavailable
+        const qs = await Promise.all(legs.map((l) => retryNetwork(() => quoteLeg(l.c, l.amount))));
         setQuote(qs.some((q) => q === null) ? null : qs.reduce((a: bigint, q) => a + (q as bigint), 0n));
       } catch {
         setQuote(null);
@@ -392,7 +393,7 @@ export function QuickTrade({
         // trade moves the price more than the 5% slippage allows, and the quote
         // on screen may be from before it (that made every 2nd buy revert).
         // Price and allowance in parallel: one wait instead of two.
-        const [out, allowance] = await Promise.all([
+        const [out, allowance] = await retryNetwork(async () => Promise.all([
           pool
             ? ((
                 await pub.simulateContract({
@@ -408,7 +409,7 @@ export function QuickTrade({
               ).result as bigint)
             : ((await pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteBuy", args: [buyAmt] })) as bigint),
           pub.readContract({ address: chosen.chain.usdc, abi: usdcAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
-        ]);
+        ]));
         const minOut = (out * (10_000n - slip)) / 10_000n;
         // Pay with USDC: approve exactly this buy (email users get it bundled, gasless).
         // Approve once for good (wallets like MetaMask then need one confirmation per trade, not two).
@@ -420,7 +421,7 @@ export function QuickTrade({
             : call(spender, curveAbi, "buy", [buyAmt, minOut, address])
         );
       } else {
-        const [out, allowance] = await Promise.all([
+        const [out, allowance] = await retryNetwork(() => Promise.all([
           // Fresh price at send time (see the buy side).
           pool
           ? pub.simulateContract({
@@ -435,7 +436,7 @@ export function QuickTrade({
               }).then((r) => r.result as bigint)
           : (pub.readContract({ address: spender, abi: curveAbi, functionName: "quoteSell", args: [amount] }) as Promise<bigint>),
           pub.readContract({ address: chosen.token, abi: tokenAbi, functionName: "allowance", args: [address, spender] }) as Promise<bigint>,
-        ]);
+        ]));
         const minOut = (out * (10_000n - slip)) / 10_000n;
         proceeds = out;
         // Email users get approve + sell as one gasless bundle; wallets confirm each.

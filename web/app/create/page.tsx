@@ -17,7 +17,8 @@ import { omniFactoryAbi, usdcAbi } from "@/lib/abis";
 import { overCap, useSafety } from "@/lib/safety";
 import { CHAINS, SLIPPAGE_BPS, TARGET_USD, explorerTx, type NeuronChain } from "@/lib/config";
 import { clientFor, coinHref, isImageUrl } from "@/lib/data";
-import { friendlyError } from "@/lib/format";
+import { friendlyError, isNetworkError, retryNetwork } from "@/lib/format";
+import { cashOf } from "@/lib/portfolio";
 import { fileToLogo } from "@/lib/image";
 import { call } from "@/lib/tx";
 import { BOOST_ON, BOOST_PLANS, boostCalls, boostChains } from "@/lib/boost";
@@ -171,10 +172,29 @@ export default function CreatePage() {
     const key = launchKey ?? (toHex(crypto.getRandomValues(new Uint8Array(32))) as Hex);
     setLaunchKey(key);
     setBusy(true);
+    // Before anything is sent: every chain must hold enough USDC for its share of the
+    // first buy. Otherwise the coin would go live on some chains and stop on others.
+    const todo = chosen.filter((c) => runs[c.key]?.status !== "done");
+    const short: string[] = [];
+    for (const c of todo) {
+      const need = devCost(c);
+      if (need <= 0n) continue;
+      const have = await retryNetwork(() => cashOf(c, address)).catch(() => null);
+      if (have !== null && have < need) {
+        short.push(c.key);
+        setRuns((p) => ({ ...p, [c.key]: { status: "failed", note: `Needs $${(Number(need) / 1e6).toFixed(2)} USDC on ${c.short} for your first buy (you have $${(Number(have) / 1e6).toFixed(2)}). Lower your first buy or add USDC on ${c.short}.` } }));
+      }
+    }
+    if (short.length) {
+      setBusy(false);
+      return;
+    }
     let failedAny = false;
     for (const c of chosen) {
       if (runs[c.key]?.status === "done") continue;
       const set = (r: Run) => setRuns((p) => ({ ...p, [c.key]: r }));
+      // A busy node is retried quietly (up to 3 tries); a real "no" from the chain is shown once.
+      for (let attempt = 1; ; attempt++) {
       try {
         // v6: the same launch on every chain picked (same key, same chain list), so the coin
         // gets the same address everywhere. The creator's first buy is in USDC (0 = none),
@@ -203,20 +223,38 @@ export default function CreatePage() {
             stateDiff: [{ slot: usdcAllowanceSlot(address, c.factory, c.usdcSlots.allowance), value: numberToHex(maxUint256, { size: 32 }) }],
           },
         ];
-        await pub.simulateContract({ account: address, address: c.factory, abi: omniFactoryAbi, functionName: "launch", args: [l], stateOverride: override });
+        await retryNetwork(() => pub.simulateContract({ account: address, address: c.factory, abi: omniFactoryAbi, functionName: "launch", args: [l], stateOverride: override }));
         const calls = [];
         if (value > 0n) {
-          const allowance = (await pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "allowance", args: [address, c.factory] })) as bigint;
+          const allowance = (await retryNetwork(() => pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "allowance", args: [address, c.factory] }))) as bigint;
           if (allowance < value) calls.push(call(c.usdc, usdcAbi, "approve", [c.factory, value]));
         }
         calls.push(call(c.factory, omniFactoryAbi, "launch", [l]));
         const hash = await send(c.chain, calls, (note) => set({ status: "working", note }));
         set({ status: "done", hash });
+        break;
       } catch (e) {
+        // It may have landed even though the answer got lost: the coin's address is known ahead.
+        const pub = clientFor(c);
+        const landed = await retryNetwork(async () => {
+          const coinAddr = (await pub.readContract({ address: c.factory, abi: omniFactoryAbi, functionName: "coinAddress", args: [address, key] })) as Address;
+          return !!(await pub.getCode({ address: coinAddr }))?.length;
+        }).catch(() => false);
+        if (landed) {
+          set({ status: "done" });
+          break;
+        }
+        if (attempt < 3 && (isNetworkError(e) || String((e as Error)?.message ?? "").includes("SENT_UNCONFIRMED"))) {
+          set({ status: "working", note: `${c.short} is busy, trying again…` });
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          continue;
+        }
         set({ status: "failed", note: friendlyError(e) });
         failedAny = true;
         break;
       }
+      }
+      if (failedAny) break;
     }
     // Boost right after a successful launch, same tap (the coin's address is known ahead).
     if (!failedAny && boostPlan !== null && BOOST_ON()) {

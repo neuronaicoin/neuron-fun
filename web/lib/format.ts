@@ -33,6 +33,32 @@ export function shortAddr(a: string): string {
 }
 
 /** A readable reason from a wallet or contract error. */
+const NETWORK_RE = /RPC Request failed|HTTP request failed|request timed out|timed? ?out|Too Many Requests|\b429\b|rate limit|fetch failed|Failed to fetch|NetworkError|socket hang up|ECONNRESET/i;
+
+/** True when a call failed because a node didn't answer, not because the chain said no. */
+export function isNetworkError(e: unknown): boolean {
+  const err = e as { shortMessage?: string; message?: string; details?: string };
+  const m = `${err?.shortMessage ?? ""} ${err?.message ?? ""} ${err?.details ?? ""}`;
+  if (/revert|reverted|execution reverted/i.test(m)) return false;
+  return NETWORK_RE.test(m);
+}
+
+/**
+ * Reads and simulations are safe to repeat: when a node doesn't answer, try again
+ * (0.6 s, then 1.5 s) before showing anything to the user.
+ */
+export async function retryNetwork<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  const waits = [600, 1500, 3000];
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= tries - 1 || !isNetworkError(e)) throw e;
+      await new Promise((r) => setTimeout(r, waits[Math.min(i, waits.length - 1)]));
+    }
+  }
+}
+
 export function friendlyError(e: unknown): string {
   const err = e as { shortMessage?: string; message?: string; code?: number; cause?: { code?: number } };
   if (err?.code === 4001 || err?.cause?.code === 4001) return "You cancelled it in your wallet.";
@@ -43,8 +69,8 @@ export function friendlyError(e: unknown): string {
   if (/ParentNotListed/i.test(msg)) return "That family coin is not available right now. Pick another one.";
   if (/LaunchFeeNotCovered/i.test(msg)) return "The amount sent does not cover the creation fee.";
   // The chain's node didn't answer (busy, rate-limited, or a flaky connection).
-  if (/RPC Request failed|HTTP request failed|request timed out|Too Many Requests|\b429\b|rate limit/i.test(msg))
-    return "The network didn't answer in time. Check your balance first (it may have gone through), then try again in a few seconds.";
+  if (isNetworkError(e))
+    return "The network is busy right now. Please check your balance, then try again in a few seconds.";
   // Beta safety locks (v3). Selectors too, for errors that arrive undecoded.
   let raw = msg;
   try {
@@ -55,6 +81,12 @@ export function friendlyError(e: unknown): string {
   if (/BuysPaused|0xf7cdbb58/i.test(raw)) return "Buying on this chain is paused for a moment. Selling works as usual.";
   if (/CreatorLocked|0xdd5074de/i.test(raw)) return "Your coins are locked until the time you set at launch. You can sell once the lock ends.";
   if (/CapReached|0x55f8a908/i.test(raw)) return "This chain is at its beta capacity right now. Try a smaller amount or another chain. Selling is open.";
+  // Launch and token errors that used to arrive as bare signatures.
+  if (/ERC20InsufficientBalance|0xe450d38c|transfer amount exceeds balance/i.test(raw)) return "Not enough USDC on this chain for that amount. Lower it or add USDC on this chain.";
+  if (/ERC20InsufficientAllowance|0xfb8f41b2/i.test(raw)) return "The approval didn't go through. Please try again.";
+  if (/LaunchesClosed/i.test(raw)) return "New launches are paused for a moment. Please try again shortly.";
+  if (/NoRoute/i.test(raw)) return "This chain can't link to the others right now. Launch on one chain, or try again later.";
+  if (/BadChains/i.test(raw)) return "That chain combination isn't available. Pick the chains again.";
   return msg.split("\n")[0].slice(0, 180);
 }
 

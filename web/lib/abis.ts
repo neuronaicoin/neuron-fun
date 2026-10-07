@@ -43,6 +43,17 @@ export const omniFactoryAbi = parseAbi([
   "function launch(Launch l) returns (address coin, address curve)",
   "function coinAddress(address creator, bytes32 launchKey) view returns (address)",
   "function launchesOpen() view returns (bool)",
+  // errors, so a failed launch says why instead of showing a bare signature
+  "error LaunchesClosed()",
+  "error BadChains()",
+  "error NoRoute(uint32 eid)",
+  "error CapReached(uint256 total, uint256 cap)",
+  "error BuysPaused()",
+  "error DeployFailed()",
+  "error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)",
+  "error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)",
+  "error SafeERC20FailedOperation(address token)",
+  "error ReentrancyGuardReentrantCall()",
   // Reference curve for all chains together; each chain's curve is 1/N of it (N = chains picked).
   "function config() view returns (uint256 virtualNative, uint256 virtualToken, uint256 target, uint16 feeBps, uint16 creatorShareBps, uint16 moveFeeBps)",
 ]);
