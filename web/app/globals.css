@@ -354,3 +354,14 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .ex-card { transition: border-color 0.15s; }
 .ex-card:active { border-color: var(--color-ink-3); }
 @media (hover: hover) { .ex-card:hover { border-color: var(--color-ink-3); } }
+/* landing hero: text left, the app on phones right */
+.sasa-hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: center; padding-top: 32px; }
+@media (min-width: 900px) { .sasa-hero { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+.sasa-hero-art { display: block; max-width: 520px; width: 100%; justify-self: center; }
+.sasa-hero-art img { width: 100%; height: auto; display: block; }
+.sasa-btn-2 { background: transparent; color: var(--cream); border: 1.5px solid var(--line); }
+.sasa-btn-2:hover { background: var(--color-paper); border-color: var(--mut); }
+@media (max-width: 480px) { .sasa-hide-s { display: none; } .sasa-learn { padding: 0 8px; } .sasa-follow { padding: 0 10px; } }
+@media (min-width: 900px) { .sasa-hero h1 { font-size: clamp(44px, 5vw, 64px); } }
+.sasa-follow { white-space: nowrap; }
+@media (max-width: 480px) { .sasa-follow-t { display: none; } }

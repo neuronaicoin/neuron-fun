@@ -33,10 +33,11 @@ export function Landing() {
           <span>sasa</span>
         </a>
         <nav className="sasa-nav">
-          <a href="/top/" className="sasa-learn">Top coins</a>
-          <a href="/learn/" className="sasa-learn">Learn</a>
+          <a href="/explore/" className="sasa-learn">Explore</a>
+          <a href="/create/" className="sasa-learn">Create</a>
+          <a href="/learn/" className="sasa-learn sasa-hide-s">Learn</a>
           <a href={X_URL} className="sasa-follow" target="_blank" rel="noreferrer">
-          Follow on
+          <span className="sasa-follow-t">Follow on</span>
           <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
           </svg>
@@ -44,7 +45,8 @@ export function Landing() {
         </nav>
       </header>
 
-      <main className="sasa-main">
+      <main className="sasa-main sasa-hero">
+        <div className="sasa-hero-text">
         <div className="sasa-status">
           <span className="sasa-dot" aria-hidden="true" />
           Testnet live · Mainnet coming soon
@@ -59,9 +61,8 @@ export function Landing() {
           line, and the chain with the most support wins.
         </p>
         <div className="sasa-actions">
-          <a href={X_URL} className="sasa-btn" target="_blank" rel="noreferrer">
-            Follow @sasapadfun
-          </a>
+          <a href="/explore/" className="sasa-btn">Trade coins</a>
+          <a href="/create/" className="sasa-btn sasa-btn-2">Create a coin</a>
         </div>
         <ul className="sasa-chains" aria-label="Chains">
           {CHAINS.map((c) => (
@@ -71,6 +72,11 @@ export function Landing() {
             </li>
           ))}
         </ul>
+        </div>
+        <a href="/create/" className="sasa-hero-art" aria-label="Create a coin or trade one on sasa">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/hero-phones.png" alt="sasa on a phone: the Create a coin screen and a Buy screen" width={560} height={620} />
+        </a>
       </main>
 
       <section className="sasa-steps" aria-label="How it works">
@@ -90,7 +96,7 @@ export function Landing() {
       <section className="sasa-guides" aria-labelledby="guides">
         <h2 id="guides">Guides</h2>
         <div className="sasa-guide-grid">
-          {ARTICLES.map((a) => (
+          {ARTICLES.slice(0, 6).map((a) => (
             <a key={a.slug} href={`/learn/${a.slug}/`} className="sasa-guide">
               <strong>{a.title}</strong>
               <span>{a.summary}</span>
