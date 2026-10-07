@@ -464,6 +464,10 @@ export function Footer() {
             site is financial advice. Every transaction is signed in your own wallet; sasa never holds your
             funds.
           </p>
+          <p className="text-[0.8125rem] leading-relaxed text-ink mt-2 font-semibold">
+            sasa has no token. Any coin using the sasa or Sasapad name or logo is not ours. We only announce from{" "}
+            <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">@sasapadfun</a>.
+          </p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
           <a href="/forum/" className="text-emerald">Forum</a>

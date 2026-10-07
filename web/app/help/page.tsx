@@ -6,6 +6,7 @@ import { useState } from "react";
 import { sessionToken } from "@/lib/alerts";
 
 const FAQ: { q: string; a: string }[] = [
+  { q: "Does sasa have a token?", a: "No. sasa has no token. Any coin using the sasa or Sasapad name or logo, on any chain, is not made by us. Never buy a “sasa token” from anyone; we only announce news from @sasapadfun on X." },
   ...(IS_TESTNET
     ? [
         { q: "Is this real money?", a: "Not yet. sasa runs on testnet: the USDC here is free test money with no value. Tap “Get $100” to try everything for free." },
