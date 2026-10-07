@@ -223,3 +223,147 @@ export async function cardLoop(pool, log) {
     await new Promise((r) => setTimeout(r, every));
   }
 }
+
+// ---------------------------------------------------------------- coins from other DEXs
+// Same idea for /x/ pages: a card with the coin's own name, picture and numbers,
+// so a shared link never shows a sample coin. Drawn for the busiest listed coins.
+
+const EXT_NET = {
+  base: { name: "Base", color: "#3B6FF5" },
+  robinhood: { name: "Robinhood Chain", color: "#12B886" },
+  bsc: { name: "BNB Chain", color: "#F3BA2F" },
+  eth: { name: "Ethereum", color: "#8A92B2" },
+  arc: { name: "Arc", color: "#9B8CFF" },
+};
+
+export const extCardName = (network, address) => `x-${network}-${String(address).toLowerCase()}.png`;
+
+/** Coin picture as a data: URL resvg can draw (remote images can't be fetched while drawing). */
+const picCache = new Map();
+async function picture(url) {
+  if (typeof url !== "string" || !url.startsWith("https://")) return null;
+  if (picCache.has(url)) return picCache.get(url);
+  let out = null;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const type = (r.headers.get("content-type") || "").split(";")[0].trim();
+    if (r.ok && /^image\/(png|jpeg|webp)$/.test(type)) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 0 && buf.length < 600_000) out = `data:${type};base64,${buf.toString("base64")}`;
+    }
+  } catch {}
+  if (picCache.size > 800) picCache.delete(picCache.keys().next().value);
+  picCache.set(url, out);
+  return out;
+}
+
+const pctText = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n) || Math.abs(n) > 10_000) return null;
+  return `${n >= 0 ? "+" : "−"}${Math.abs(n) >= 100 ? Math.abs(n).toFixed(0) : Math.abs(n).toFixed(1)}%`;
+};
+
+/** What an other-DEX coin's card shows, from one ext_coins row. */
+export function extCardFacts(row, logo) {
+  const mc = Number(row.mcap_usd) > 0 ? Number(row.mcap_usd) : Number(row.fdv_usd) > 0 ? Number(row.fdv_usd) : null;
+  return {
+    name: String(row.name || row.symbol || "?"),
+    symbol: String(row.symbol || "?"),
+    net: EXT_NET[row.network] ?? { name: String(row.network), color: "#8F7F73" },
+    marketCap: mc,
+    volume: Number(row.vol_24h) > 0 ? Number(row.vol_24h) : null,
+    liquidity: Number(row.liq_usd) > 0 ? Number(row.liq_usd) : null,
+    change: pctText(row.change_24h),
+    up: Number(row.change_24h) >= 0,
+    logo,
+  };
+}
+
+/** Changes only when what people would notice changes (about 5% steps). */
+export function extCardSignature(f) {
+  const step = (v) => (v ? Math.round(Math.log(v) / Math.log(1.05)) : 0);
+  return createHash("sha1").update(JSON.stringify([f.name, f.symbol, f.net.name, step(f.marketCap), step(f.volume), f.change ? Math.round(parseFloat(f.change.replace("−", "-")) / 5) : null, !!f.logo])).digest("hex");
+}
+
+export function extCardSvg(f) {
+  const W = 1200, H = 630;
+  const pic = f.logo
+    ? `<image href="${f.logo}" x="80" y="150" width="300" height="300" preserveAspectRatio="xMidYMid slice" clip-path="url(#pic)"/>`
+    : `<rect x="80" y="150" width="300" height="300" rx="40" fill="url(#art)"/><text x="230" y="335" text-anchor="middle" font-family="Sora" font-weight="700" font-size="120" fill="#FFF4EC" fill-opacity="0.92">${esc((f.symbol || "?").slice(0, 2).toUpperCase())}</text>`;
+  const n = [...f.name].length;
+  const nameSize = n <= 12 ? 60 : n <= 17 ? 48 : 40;
+  const nameMax = nameSize === 40 ? 24 : 17;
+  const chipW = 26 + f.net.name.length * 11.5;
+  const stat = (x, label, value) => `<text x="${x}" y="470" font-family="Sora" font-weight="700" font-size="34" fill="#FFF4EC">${esc(value)}</text><text x="${x + 2}" y="502" font-family="IBM Plex Mono" font-size="19" fill="#8F7F73">${label}</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<defs>
+<radialGradient id="glow" cx="85%" cy="15%" r="70%"><stop offset="0%" stop-color="#FF6B1A" stop-opacity="0.30"/><stop offset="100%" stop-color="#FF6B1A" stop-opacity="0"/></radialGradient>
+<linearGradient id="art" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF8A3D"/><stop offset="100%" stop-color="#8A2E07"/></linearGradient>
+<clipPath id="pic"><rect x="80" y="150" width="300" height="300" rx="40"/></clipPath>
+</defs>
+<rect width="${W}" height="${H}" fill="#0B0806"/><rect width="${W}" height="${H}" fill="url(#glow)"/>
+${mark(80, 56, 52)}
+<text x="146" y="94" font-family="Sora" font-weight="700" font-size="32" fill="#FFF4EC">sasa</text>
+<text x="1120" y="92" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">sasapad.fun</text>
+<rect x="78" y="148" width="304" height="304" rx="42" fill="none" stroke="#2E231A" stroke-width="2"/>
+${pic}
+<text x="440" y="215" font-family="Sora" font-weight="700" font-size="${nameSize}" fill="#FFF4EC">${esc(clip(f.name, nameMax))}</text>
+<text x="442" y="258" font-family="IBM Plex Mono" font-size="26" fill="#A8978A">$${esc(clip(f.symbol, 12))}</text>
+<g transform="translate(442,282)"><rect width="${chipW}" height="40" rx="20" fill="${f.net.color}"/><text x="${chipW / 2}" y="27" text-anchor="middle" font-family="Sora" font-weight="600" font-size="19" fill="#FFFFFF">${esc(f.net.name)}</text></g>
+<text x="440" y="390" font-family="Sora" font-weight="700" font-size="52" fill="#FFF4EC">${esc(money(f.marketCap))}</text>
+${f.change ? `<text x="1120" y="390" text-anchor="end" font-family="Sora" font-weight="700" font-size="44" fill="${f.up ? "#2FD39B" : "#FF5C5C"}">${esc(f.change)}</text>` : ""}
+<text x="442" y="420" font-family="IBM Plex Mono" font-size="20" fill="#8F7F73">market cap</text>
+${f.change ? `<text x="1120" y="420" text-anchor="end" font-family="IBM Plex Mono" font-size="20" fill="#8F7F73">24h</text>` : ""}
+${stat(440, "volume 24h", money(f.volume))}
+${stat(760, "liquidity", money(f.liquidity))}
+<text x="80" y="590" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">Trade any coin. <tspan fill="#FF6B1A">Launch your own.</tspan></text>
+</svg>`;
+}
+
+export function renderExtCard(f) {
+  const r = new Resvg(extCardSvg(f), {
+    fitTo: { mode: "width", value: 1200 },
+    font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: "Sora" },
+  });
+  return r.render().asPng();
+}
+
+/** Cards for the busiest other-DEX coins, redrawn when their numbers move about 5%. */
+export async function extCardLoop(pool, log) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return;
+  const every = Number(process.env.EXT_CARD_EVERY_MS ?? "120000");
+  const perRound = Number(process.env.EXT_CARD_PER_ROUND ?? "120");
+  for (;;) {
+    try {
+      const { rows } = await pool.query(
+        `select e.network, e.address, e.name, e.symbol, e.image, e.mcap_usd, e.fdv_usd, e.vol_24h, e.liq_usd, e.change_24h, s.sig
+         from ext_coins e left join card_state s on s.coin_id = 'x:' || e.network || ':' || e.address
+         order by e.vol_24h desc nulls last
+         limit 2000`
+      );
+      let drawn = 0;
+      for (const row of rows) {
+        if (drawn >= perRound) break;
+        const pre = extCardFacts(row, null);
+        // cheap check first (no picture download) — the signature only records whether a picture exists
+        if (row.sig && row.sig === extCardSignature({ ...pre, logo: row.image ? "x" : null })) continue;
+        const f = extCardFacts(row, await picture(row.image));
+        const sig = extCardSignature({ ...f, logo: row.image ? "x" : null });
+        if (sig === row.sig) continue;
+        await upload(url, key, extCardName(row.network, row.address), renderExtCard(f));
+        await pool.query(
+          `insert into card_state (coin_id, sig, drawn_at) values ($1, $2, now())
+           on conflict (coin_id) do update set sig = excluded.sig, drawn_at = excluded.drawn_at`,
+          [`x:${row.network}:${row.address}`, sig]
+        );
+        drawn++;
+      }
+      if (drawn) log(`share cards (other DEXs): drew ${drawn}`);
+    } catch (e) {
+      if (!/does not exist/.test(e.message)) log(`share cards (other DEXs): ${e.message}`);
+    }
+    await new Promise((r) => setTimeout(r, every));
+  }
+}

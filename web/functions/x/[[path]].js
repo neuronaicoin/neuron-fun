@@ -75,6 +75,20 @@ export async function onRequestGet(ctx) {
     .on('meta[property="og:url"]', set(pageUrl))
     .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
     .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>`, { html: true }) });
+  // Share image: the coin's own card (drawn by the indexer for busy coins), else the plain sasa card.
+  // Never the homepage's sample coin.
+  const card = `${SUPABASE_URL}/storage/v1/object/public/cards/x-${network}-${address}.png`;
+  let img = `${SITE}/og-plain.png`;
+  try {
+    const h = await fetch(card, { method: "HEAD", cf: { cacheTtl: 300 } });
+    if (h.ok) img = card;
+  } catch {}
+  rw = rw
+    .on('meta[property="og:image"]', set(img))
+    .on('meta[name="twitter:image"]', set(img))
+    .on('meta[property="og:image:width"]', set("1200"))
+    .on('meta[property="og:image:height"]', set("630"))
+    .on('meta[property="og:image:alt"]', set(title));
   // Other busy coins on the same chain: links that help crawlers find more pages.
   let related = "";
   try {

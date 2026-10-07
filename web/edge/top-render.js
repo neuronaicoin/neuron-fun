@@ -180,8 +180,8 @@ const LOGO = `<svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="tru
 function shell({ title, description, canonical, ld, body }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${canonical}">
-<meta property="og:type" content="website"><meta property="og:site_name" content="sasa"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${SITE}/og-2.png">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@sasapadfun"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(description)}"><meta name="twitter:image" content="${SITE}/og-2.png">
+<meta property="og:type" content="website"><meta property="og:site_name" content="sasa"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${SITE}/og-plain.png">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@sasapadfun"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(description)}"><meta name="twitter:image" content="${SITE}/og-plain.png">
 <link rel="icon" href="/sasa-icon.svg" type="image/svg+xml"><meta name="theme-color" content="#ffffff">
 <style>${CSS}</style>${ld.map((o) => `<script type="application/ld+json">${jsonLd(o)}</script>`).join("")}</head><body>
 <header class="top"><div class="bar"><a class="brand" href="/">${LOGO}sasa</a><nav><a href="/top/">Top coins</a><a href="/learn/">Learn</a><a class="cta" href="/explore/">Open app</a></nav></div></header>

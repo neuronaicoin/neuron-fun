@@ -64,6 +64,9 @@ export async function onRequestGet(ctx) {
       .on('meta[name="twitter:image"]', set(image))
       .on('meta[property="og:image:width"]', set("1200"))
       .on('meta[property="og:image:height"]', set("630"));
+  } else {
+    // no card drawn yet: the plain sasa card (never the homepage's sample coin)
+    rw = rw.on('meta[property="og:image"]', set(`${SITE}/og-plain.png`)).on('meta[name="twitter:image"]', set(`${SITE}/og-plain.png`));
   }
   // Structured data for search engines and AI answers: what this page is,
   // where it sits, and where people discuss the coin (its forum board).
