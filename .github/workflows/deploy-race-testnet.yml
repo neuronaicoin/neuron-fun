@@ -1,0 +1,70 @@
+name: sasa v7 race contracts
+
+# Runs only when started by hand (bot commits don't start workflows).
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Unit + fuzz (local Uniswap v4)
+            kind: local
+          - name: Fork Base (real Uniswap v4, real USDC)
+            kind: base
+          - name: Fork Robinhood Chain (real Uniswap v4, real USDG)
+            kind: robinhood
+    defaults:
+      run:
+        working-directory: contracts-v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Get libraries
+        run: |
+          mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
+          cd lib/v4-periphery
+          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
+          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
+          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
+          cd ../../../..
+          cp -r ../contracts/lib/layerzero lib/layerzero
+
+      - name: v6 contracts are used unchanged
+        run: |
+          for f in LaunchCoin OmniHub ConsolidatorV6 OmniDeployers UsdCurveV6 Create3 TestUsdOft OftUsdBridge AcrossUsdBridge; do
+            cmp src/omni/$f.sol ../contracts/src/omni/$f.sol || { echo "src/omni/$f.sol differs from v6"; exit 1; }
+          done
+          cmp src/usd/UsdPoolRouter.sol ../contracts/src/usd/UsdPoolRouter.sol || { echo "UsdPoolRouter differs from v6"; exit 1; }
+          echo "All v6 files identical."
+
+      - name: Build
+        run: forge build
+
+      - name: Unit and fuzz tests
+        if: matrix.kind == 'local'
+        run: forge test --no-match-path "test/fork/*" --fuzz-runs 2000 -vv
+
+      - name: Fork tests on Base
+        if: matrix.kind == 'base'
+        # the public Base RPC drops parallel requests: one test at a time, one retry
+        run: |
+          forge test --match-path "test/fork/*" --fork-url base --threads 1 --fuzz-runs 30 -vv && exit 0
+          echo "Retrying failed tests once..."
+          forge test --match-path "test/fork/*" --fork-url base --threads 1 --fuzz-runs 30 --rerun -vv
+
+      - name: Fork tests on Robinhood Chain
+        if: matrix.kind == 'robinhood'
+        run: forge test --match-path "test/fork/*" --fork-url robinhood --fuzz-runs 30 -vv
