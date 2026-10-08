@@ -27,6 +27,10 @@ import {PositionInfo, PositionInfoLibrary} from "@uniswap/v4-periphery/src/libra
 
 import {RaceLaunchHook} from "./RaceLaunchHook.sol";
 
+interface IRaceFactoryHub {
+    function hub() external view returns (address);
+}
+
 interface IRaceCoin is IERC20 {
     function mint(address to, uint256 amount) external;
     function burn(uint256 amount) external;
@@ -186,6 +190,13 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
             tickSpacing: TICK_SPACING,
             hooks: IHooks(address(hook))
         });
+    }
+
+    /// @notice The cross-chain hub of this chain. The coin (v6 LaunchCoin) asks its controller
+    /// (this builder) for it to find sasa's keeper, who moves holders' coins off a losing
+    /// chain during the first day after the race.
+    function hub() external view returns (address) {
+        return factory == address(0) ? address(0) : IRaceFactoryHub(factory).hub();
     }
 
     /// @notice For the v6 USD pool router (unchanged): a tradable pool's launch position and

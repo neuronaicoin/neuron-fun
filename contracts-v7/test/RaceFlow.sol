@@ -541,6 +541,29 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         assertEq(loser.usdc.balanceOf(address(loser.builder)), loser.builder.dollarsReserved());
     }
 
+    /// After the race, sasa's keeper can move holders' coins off the losing chain at once
+    /// (the coin finds the keeper through its controller, the builder, and the hub).
+    function _flow_keeperMovesHolders() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 100 * D);
+        _buy(b, cb, bob, 20 * D);
+        assertEq(b.builder.hub(), address(b.hub), "builder names its hub");
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        // B lost: bob's coins on B go to A through the keeper, within the first day
+        address[] memory who = new address[](1);
+        who[0] = bob;
+        uint256 n0 = b.ep.packetCount();
+        vm.prank(alice); // not the keeper: refused during the first day
+        vm.expectRevert(LaunchCoin.MoveNotOpenYet.selector);
+        LaunchCoin(cb).moveBatch(who, "");
+        vm.prank(keeper);
+        LaunchCoin(cb).moveBatch(who, "");
+        assertLt(IERC20(cb).balanceOf(bob), 1e12, "moved off the losing chain (only bridge dust stays)");
+        assertEq(b.ep.packetCount(), n0 + 1, "one cross-chain message sent");
+    }
+
     function _posId(Net memory c, address coin) internal view returns (uint256 id) {
         (id,,,,,,) = c.builder.races(coin);
     }
@@ -568,6 +591,7 @@ contract RaceLowTest is RaceFlow {
     function test_buybackArrives() public { _flow_buybackArrives(); }
     function test_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
     function testFuzz_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
+    function test_keeperMovesHolders() public { _flow_keeperMovesHolders(); }
 }
 
 /// dollars sort after the coins (USDC is currency1)
@@ -588,4 +612,5 @@ contract RaceHighTest is RaceFlow {
     function test_buybackArrives() public { _flow_buybackArrives(); }
     function test_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
     function testFuzz_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
+    function test_keeperMovesHolders() public { _flow_keeperMovesHolders(); }
 }
