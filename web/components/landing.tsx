@@ -1,4 +1,5 @@
 import { ARTICLES } from "@/lib/articles";
+import { RaceTeaser } from "@/components/racepromo";
 
 /**
  * Pre-launch page shown on sasapad.fun (see the host check in layout.tsx).
@@ -78,6 +79,8 @@ export function Landing() {
           <img src="/hero-phones.png" alt="sasa on a phone: the Create a coin screen and a Buy screen" width={560} height={620} />
         </a>
       </main>
+
+      <RaceTeaser />
 
       <section className="sasa-steps" aria-label="How it works">
         {[

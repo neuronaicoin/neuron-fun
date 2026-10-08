@@ -365,3 +365,45 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 @media (min-width: 900px) { .sasa-hero h1 { font-size: clamp(44px, 5vw, 64px); } }
 .sasa-follow { white-space: nowrap; }
 @media (max-width: 480px) { .sasa-follow-t { display: none; } }
+
+/* ---------- the five-minute race (coming soon) ---------- */
+.race-teaser { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: center; max-width: 1120px; margin: 40px auto 8px; padding: 28px 20px; border: 1px solid var(--color-line); border-radius: 24px; background: var(--color-paper); }
+@media (min-width: 900px) { .race-teaser { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); padding: 40px; gap: 40px; } }
+.race-soon { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--color-emerald); border-radius: 999px; padding: 5px 11px; }
+.race-title { margin-top: 14px; font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 4.6vw, 52px); line-height: 1.04; letter-spacing: -0.035em; color: var(--color-ink); }
+.race-title em { font-style: normal; color: var(--color-emerald); }
+.race-lead { margin-top: 14px; color: var(--color-ink-3); font-size: 16px; line-height: 1.55; max-width: 520px; }
+.race-points { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.race-points li { display: grid; gap: 2px; padding-left: 14px; border-left: 3px solid var(--color-emerald); }
+.race-points strong { color: var(--color-ink); font-size: 15px; }
+.race-points span { color: var(--color-ink-3); font-size: 14px; line-height: 1.45; }
+.race-actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.race-btn { display: inline-flex; align-items: center; height: 46px; padding: 0 18px; border-radius: 14px; background: var(--color-ink); color: var(--color-paper); font-weight: 700; font-size: 15px; }
+.race-link { color: var(--color-emerald); font-weight: 700; font-size: 15px; }
+.race-media { min-width: 0; }
+.race-video { width: 100%; height: auto; display: block; border-radius: 18px; border: 1px solid var(--color-line); background: #f6f2ee; aspect-ratio: 16 / 9; }
+.race-bars { display: grid; gap: 7px; min-width: 0; }
+.race-lane { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; align-items: center; }
+.race-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--color-ink); white-space: nowrap; }
+.race-name i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.race-track { height: 9px; border-radius: 6px; background: var(--color-line); overflow: hidden; }
+.race-track b { display: block; height: 100%; border-radius: 6px; width: 30%; animation: race-run 6.8s ease-in-out infinite alternate; }
+@keyframes race-run { 0% { width: 18%; } 35% { width: 74%; } 60% { width: 46%; } 100% { width: 92%; } }
+@media (prefers-reduced-motion: reduce) { .race-track b { animation: none; width: 60%; } }
+.race-bars-c .race-lane { grid-template-columns: 76px minmax(0, 1fr); }
+.race-bars-c .race-name { font-size: 11px; }
+.race-banner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 14px 16px 2px; padding: 14px 16px; border-radius: 18px; border: 1px solid var(--color-line); background: var(--color-paper); color: var(--color-ink); }
+@media (min-width: 720px) { .race-banner { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; margin: 16px 24px 4px; padding: 16px 20px; } }
+.race-banner:hover { border-color: var(--color-ink-3); }
+.race-banner-text { display: grid; gap: 4px; min-width: 0; }
+.race-banner-text .race-soon { justify-self: start; font-size: 10.5px; padding: 3px 9px; }
+.race-banner-text strong { font-family: var(--font-display); font-size: 18px; letter-spacing: -0.02em; }
+.race-banner-sub { color: var(--color-ink-3); font-size: 13.5px; line-height: 1.4; }
+.race-banner-go { color: var(--color-emerald); font-weight: 700; font-size: 14px; white-space: nowrap; }
+.race-page { max-width: 1120px; margin: 0 auto; padding: 8px 4px 40px; }
+.race-steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-width: 1120px; margin: 24px auto 0; padding: 0 20px; }
+@media (min-width: 800px) { .race-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.race-step { border: 1px solid var(--color-line); border-radius: 18px; padding: 18px; background: var(--color-paper); }
+.race-step span { color: var(--color-emerald); font-weight: 700; font-size: 13px; }
+.race-step h2 { margin-top: 6px; font-family: var(--font-display); font-size: 20px; color: var(--color-ink); letter-spacing: -0.02em; }
+.race-step p { margin-top: 6px; color: var(--color-ink-3); font-size: 14.5px; line-height: 1.5; }

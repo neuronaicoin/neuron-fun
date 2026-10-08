@@ -13,6 +13,7 @@ import { Landing } from "@/components/landing";
 import { compactUsd } from "@/lib/format";
 import { EXT_NETWORKS, extHref, extNetwork, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
+import { RaceBanner } from "@/components/racepromo";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
 // Trending is ranked by 24h volume for everyone (see lib/rank.ts).
@@ -133,6 +134,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       </div>
     )}
     <div className="app-root">
+      <div className="max-w-7xl mx-auto"><RaceBanner /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
         <div className="px-4 sm:px-6 pt-4 sm:pt-6 flex items-center gap-3">
           <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] tracking-tight shrink-0">Explore</h1>
