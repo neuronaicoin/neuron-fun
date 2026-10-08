@@ -1,0 +1,18 @@
+{
+  "bridge": "0xc5292784a9458Aa26b1a2c755F2e5Cc2E2A70BB8",
+  "bridgeKind": "oft",
+  "builder": "0x2042c3657206e2783Ea0873Ca6015Fd805B94224",
+  "chainId": 84532,
+  "coinDeployer": "0x6668E5D8f7147db7a2Ab0dFcB0f218381Aaf8d08",
+  "consolidator": "0xbb60032b835B4192E9B71Bf5C906cb48aB0477Ae",
+  "coordEid": 40245,
+  "eid": 40245,
+  "factory": "0xFa44D740C9fc675Fba46f7F2f147bf97c7B1c406",
+  "hook": "0x137d8A01E629e376a4A4C9A759d6ebbc59142080",
+  "hub": "0xB0a4be575a3d49C6ba26963Fe5E236160d9c6e5c",
+  "minFirstBuy": 5000000,
+  "router": "0xC42a2EC4BDd190A1E503dF97712404c1A5B84cD7",
+  "startBlock": 47841735,
+  "startMarketCap": 3000000000,
+  "usd": "0x57A149c274d5065279F7926EF3D6b00214A8A07F"
+}
