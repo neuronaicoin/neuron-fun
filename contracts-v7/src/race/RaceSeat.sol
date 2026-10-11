@@ -39,6 +39,7 @@ contract RaceSeat {
     bool public reported;
 
     error NotHub();
+    error NotBuilder();
 
     constructor(
         address hub_,
@@ -75,6 +76,13 @@ contract RaceSeat {
     function settle(uint32 winner, bool isWinner, uint256, uint256) external onlyHub {
         winnerEid = winner;
         uint256 handed = builder.settle(coin, winner, isWinner);
+        if (handed > 0) IConsolidatorIn(builder.consolidator()).fromCurve(coinId, handed);
+    }
+
+    /// @notice A losing hand-over that waited for a fair price and was finished later by the
+    /// builder: registered at the consolidator like the one in `settle`. Builder only.
+    function bookHandOver(uint256 handed) external {
+        if (msg.sender != address(builder)) revert NotBuilder();
         if (handed > 0) IConsolidatorIn(builder.consolidator()).fromCurve(coinId, handed);
     }
 

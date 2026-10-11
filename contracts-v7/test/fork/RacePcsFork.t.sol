@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.26;
+
+import {StdCheats} from "forge-std/StdCheats.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IVault} from "infinity-core/src/interfaces/IVault.sol";
+import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
+import {IPriceFeedPcs, IPancakeV3PoolMin} from "../../src/race/RaceBuilderPcs.sol";
+import {PcsRaceBase, IMintBurn, IWBNBTest} from "../RacePcsFlow.t.sol";
+
+/// Gives / takes a real token with forge's `deal` (real USDC can't be minted).
+contract DealMinter is StdCheats {
+    IERC20 public immutable token;
+    constructor(IERC20 t) { token = t; }
+    function mint(address to, uint256 a) external { deal(address(token), to, token.balanceOf(to) + a); }
+    function burn(address from, uint256 a) external { deal(address(token), from, token.balanceOf(from) - a); }
+}
+
+interface IV3Liquidity {
+    function liquidity() external view returns (uint128);
+}
+
+interface IFeedInfo {
+    function description() external view returns (string memory);
+}
+
+/// The whole race flow with chain A on the REAL BNB Chain (run with --fork-url bsc):
+/// PancakeSwap Infinity's vault and CL pool manager, PancakeSwap v3 USDC/WBNB, WBNB, USDC
+/// (18 decimals) and Chainlink BNB/USD. Chain B (the USDC builder) is deployed in the fork.
+contract RacePcsForkTest is PcsRaceBase {
+    address constant VAULT = 0x238a358808379702088667322f80aC48bAd5e6c4;
+    address constant CL_POOL_MANAGER = 0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b;
+    address constant USDC = 0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d;
+    address constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+    address constant BNB_USD = 0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE;
+    // PancakeSwap v3 USDC/WBNB pools (different fee tiers); the deeper one is used
+    address constant V3_A = 0xf2688Fb5B81049DFB7703aDa5e770543770612C4;
+    address constant V3_B = 0x81A9b5F18179cE2bf8f001b8a634Db80771F1824;
+
+    function setUp() public override {
+        if (block.chainid != 56) {
+            vm.skip(true);
+            return;
+        }
+        super.setUp();
+    }
+
+    function _setupChainA() internal override {
+        vault = IVault(VAULT);
+        clpm = ICLPoolManager(CL_POOL_MANAGER);
+        usdcA = IERC20(USDC);
+        minterA = IMintBurn(address(new DealMinter(usdcA)));
+        wbnb = IWBNBTest(WBNB);
+        feed = IPriceFeedPcs(BNB_USD);
+        v3 = IPancakeV3PoolMin(_deeper(V3_A, V3_B));
+    }
+
+    function _deeper(address a, address b) internal view returns (address) {
+        bool okA = _isDollarPool(a);
+        bool okB = _isDollarPool(b);
+        require(okA || okB, "no USDC/WBNB v3 pool");
+        if (!okB) return a;
+        if (!okA) return b;
+        return IV3Liquidity(a).liquidity() >= IV3Liquidity(b).liquidity() ? a : b;
+    }
+
+    function _isDollarPool(address p) internal view returns (bool) {
+        if (p.code.length == 0) return false;
+        address t0 = IPancakeV3PoolMin(p).token0();
+        address t1 = IPancakeV3PoolMin(p).token1();
+        return (t0 == USDC && t1 == WBNB) || (t0 == WBNB && t1 == USDC);
+    }
+
+    function _freshFeed() internal override {} // the real feed
+    function _maxFeedAge() internal pure override returns (uint256) { return 1 days; }
+    function _bigUsdc() internal pure override returns (uint256) { return 30_000_000 * U; }
+    function _bigBnb() internal pure override returns (uint256) { return 60_000 ether; }
+
+    // ---- facts about the real contracts the builder relies on
+
+    function test_fork_realAddresses() public {
+        assertEq(keccak256(bytes(IFeedInfo(BNB_USD).description())), keccak256("BNB / USD"), "Chainlink BNB/USD");
+        assertEq(feed.decimals(), 8);
+        assertEq(IERC20Decimals(USDC).decimals(), 18, "BNB Chain USDC has 18 decimals");
+        assertTrue(IVault(VAULT).isAppRegistered(CL_POOL_MANAGER), "CL pool manager registered");
+        // a sane BNB price, fresh enough
+        uint256 p = pb.bnbPrice();
+        assertGt(p, 50e8);
+        assertLt(p, 5_000e8);
+    }
+
+    /// The dollar pool is deep enough for the race's swaps: $5,000 each way at >= 99% of Chainlink.
+    function test_fork_dollarPoolDepth() public {
+        minterA.mint(bob, 5_000 * U);
+        uint256 bnbGot = _dollarTrade(true, 5_000 * U);
+        assertGe(pb.bnbToUsdc(bnbGot), (5_000 * U * 99) / 100, "USDC -> BNB");
+        uint256 usdcGot = _dollarTrade(false, bnbGot);
+        assertGe(usdcGot, (pb.bnbToUsdc(bnbGot) * 99) / 100, "BNB -> USDC");
+        emit log_named_address("dollar pool", address(v3));
+    }
+}
+
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}

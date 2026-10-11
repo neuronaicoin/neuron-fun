@@ -31,6 +31,7 @@ remappings = [
   "solmate/=lib/v4-periphery/lib/v4-core/lib/solmate/",
   "@layerzerolabs/=lib/layerzero/@layerzerolabs/",
   "solidity-bytes-utils/=lib/layerzero/solidity-bytes-utils/",
+  "infinity-core/=lib/infinity-core/",
 ]
 
 [fuzz]
@@ -39,3 +40,4 @@ runs = 500
 [rpc_endpoints]
 base = "https://mainnet.base.org"
 robinhood = "https://rpc.mainnet.chain.robinhood.com"
+bsc = "https://bsc-dataseed.bnbchain.org"
