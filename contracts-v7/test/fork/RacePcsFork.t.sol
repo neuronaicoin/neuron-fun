@@ -20,6 +20,10 @@ interface IV3Liquidity {
     function liquidity() external view returns (uint128);
 }
 
+interface IV3Slot0 {
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint32, bool);
+}
+
 interface IFeedInfo {
     function description() external view returns (string memory);
 }
@@ -72,6 +76,13 @@ contract RacePcsForkTest is PcsRaceBase {
         address t0 = IPancakeV3PoolMin(p).token0();
         address t1 = IPancakeV3PoolMin(p).token1();
         return (t0 == USDC && t1 == WBNB) || (t0 == WBNB && t1 == USDC);
+    }
+
+    /// a push on the real pool moves the price ~5% (well past the 2% rule), not to the edge:
+    /// crossing every tick would read thousands of slots from a node that prunes old state
+    function _pushLimit(bool zeroForOne) internal view override returns (uint160) {
+        (uint160 sqrtP,,,,,,) = IV3Slot0(address(v3)).slot0();
+        return zeroForOne ? uint160((uint256(sqrtP) * 975) / 1000) : uint160((uint256(sqrtP) * 1025) / 1000);
     }
 
     function _freshFeed() internal override {} // the real feed

@@ -114,11 +114,13 @@ contract V3Trader {
     address private _pool;
     address private _payer;
 
-    function trade(IPancakeV3PoolMin pool, bool zeroForOne, uint256 amountIn) external returns (uint256 out) {
+    /// `limit` = the v3 price limit (0 = none): a big push can stop a few percent away instead
+    /// of crossing every tick of the pool
+    function trade(IPancakeV3PoolMin pool, bool zeroForOne, uint256 amountIn, uint160 limit) public returns (uint256 out) {
         _pool = address(pool);
         _payer = msg.sender;
-        (int256 a0, int256 a1) = pool.swap(msg.sender, zeroForOne, int256(amountIn),
-            zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341, "");
+        if (limit == 0) limit = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+        (int256 a0, int256 a1) = pool.swap(msg.sender, zeroForOne, int256(amountIn), limit, "");
         _pool = address(0);
         out = uint256(-(zeroForOne ? a1 : a0));
     }
@@ -386,21 +388,32 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
 
     /// bob trades in the dollar pool: USDC -> WBNB (BNB gets dear) or WBNB -> USDC (BNB gets cheap)
     function _dollarTrade(bool usdcIn, uint256 amountIn) internal returns (uint256 out) {
+        out = _dollarPush(usdcIn, amountIn);
+    }
+
+    /// a big push: on the real pool it stops ~5% away from today's price (see `_pushLimit`)
+    function _dollarPush(bool usdcIn, uint256 amountIn) internal returns (uint256 out) {
         bool z = usdcIn == (address(usdcA) == v3.token0());
+        uint160 limit = _pushLimit(z);
         vm.prank(bob);
-        out = trader.trade(v3, z, amountIn);
+        out = trader.trade(v3, z, amountIn, limit);
+    }
+
+    /// v3 price limit for a big push (0 = none; the local mock pool has no ticks)
+    function _pushLimit(bool) internal view virtual returns (uint160) {
+        return 0;
     }
 
     function _bnbDear() internal returns (uint256 wbnbGot) {
         minterA.mint(bob, _bigUsdc());
-        wbnbGot = _dollarTrade(true, _bigUsdc());
+        wbnbGot = _dollarPush(true, _bigUsdc());
     }
 
     function _bnbCheap() internal returns (uint256 usdcGot) {
         vm.deal(bob, bob.balance + _bigBnb());
         vm.prank(bob);
         wbnb.deposit{value: _bigBnb()}();
-        usdcGot = _dollarTrade(false, _bigBnb());
+        usdcGot = _dollarPush(false, _bigBnb());
     }
 
     function _coinId() internal view returns (bytes32) {
