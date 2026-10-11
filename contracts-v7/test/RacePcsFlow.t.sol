@@ -30,6 +30,7 @@ import {OmniCoinDeployer} from "../src/omni/OmniDeployers.sol";
 import {RaceBuilder} from "../src/race/RaceBuilder.sol";
 import {RaceBuilderPcs, IPriceFeedPcs, IWrappedNative, IPancakeV3PoolMin} from "../src/race/RaceBuilderPcs.sol";
 import {RaceLaunchHookPcs} from "../src/race/RaceLaunchHookPcs.sol";
+import {RaceTradePcs, IRaceBuilderPcsPools} from "../src/race/RaceTradePcs.sol";
 import {RaceLaunchHook} from "../src/race/RaceLaunchHook.sol";
 import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {MockLzEndpoint} from "./MockLzEndpoint.sol";
@@ -651,6 +652,44 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         desk.swap(k, false, got);
         vm.stopPrank();
         assertGt(alice.balance - b0, 0.5 ether, "sold back for BNB");
+    }
+
+    /// Users trade with USDC only: USDC -> BNB -> coin and back in one call each.
+    function test_tradeWithUsdc() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        vm.warp(block.timestamp + 301); // opening fee over: 2%
+        RaceTradePcs t = new RaceTradePcs(IRaceBuilderPcsPools(address(pb)));
+        minterA.mint(alice, 100 * U);
+        vm.startPrank(alice);
+        usdcA.approve(address(t), type(uint256).max);
+        IERC20(coin).approve(address(t), type(uint256).max);
+        uint256 u0 = usdcA.balanceOf(alice);
+        uint256 got = t.buy(coin, 100 * U, 1, alice, block.timestamp);
+        assertGt(got, 0);
+        assertEq(usdcA.balanceOf(alice), u0 - 100 * U);
+        uint256 back = t.sell(coin, got, 1, alice, block.timestamp);
+        vm.stopPrank();
+        // a round trip costs only the fees (2% + 2% in the coin pool, the dollar pool's fee)
+        assertGt(back, 94 * U, "round trip");
+        assertLt(back, 100 * U);
+        assertEq(IERC20(coin).balanceOf(alice), 0);
+        assertEq(address(t).balance, 0, "router keeps no BNB");
+        assertEq(usdcA.balanceOf(address(t)), 0, "router keeps no USDC");
+        assertEq(wbnb.balanceOf(address(t)), 0, "router keeps no WBNB");
+        assertEq(IERC20(coin).balanceOf(address(t)), 0, "router keeps no coins");
+        // the user's minimum protects the trade; an old deadline is refused
+        minterA.mint(alice, 10 * U);
+        vm.startPrank(alice);
+        vm.expectRevert();
+        t.buy(coin, 10 * U, type(uint256).max, alice, block.timestamp);
+        vm.expectRevert(RaceTradePcs.Expired.selector);
+        t.buy(coin, 10 * U, 1, alice, block.timestamp - 1);
+        vm.stopPrank();
+        // nobody can call the inside steps
+        vm.expectRevert(RaceTradePcs.NotOurCall.selector);
+        t.lockAcquired("");
+        vm.expectRevert(RaceTradePcs.NotOurCall.selector);
+        t.pancakeV3SwapCallback(1, 0, "");
     }
 
     function testFuzz_supplyNeverGrows(uint96 bnbIn, uint96 usdIn) public {

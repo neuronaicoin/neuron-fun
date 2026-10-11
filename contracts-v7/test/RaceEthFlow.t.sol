@@ -28,6 +28,7 @@ import {OmniCoinDeployer} from "../src/omni/OmniDeployers.sol";
 import {RaceBuilder} from "../src/race/RaceBuilder.sol";
 import {RaceBuilderEth, IPriceFeed} from "../src/race/RaceBuilderEth.sol";
 import {RaceLaunchHook} from "../src/race/RaceLaunchHook.sol";
+import {RaceTradeEth, IRaceBuilderEthPools} from "../src/race/RaceTradeEth.sol";
 import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {MockLzEndpoint} from "./MockLzEndpoint.sol";
 import {USD6, Swapper} from "./RaceFlow.sol";
@@ -492,6 +493,38 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertGt(spent, 0);
         assertGt(burned, 0);
         assertEq(IERC20(coin).totalSupply(), s0 - burned);
+    }
+
+    /// Users trade with USDC only: USDC -> ETH -> coin and back in one call each.
+    function test_tradeWithUsdc() public {
+        address coin = _launchBoth(5 * D, 5 * D, 0);
+        vm.warp(block.timestamp + 301); // opening fee over: 2%
+        RaceTradeEth t = new RaceTradeEth(IRaceBuilderEthPools(address(eb)));
+        minterA.mint(alice, 100 * D);
+        vm.startPrank(alice);
+        usdcA.approve(address(t), type(uint256).max);
+        IERC20(coin).approve(address(t), type(uint256).max);
+        uint256 u0 = usdcA.balanceOf(alice);
+        uint256 got = t.buy(coin, 100 * D, 1, alice, block.timestamp);
+        assertGt(got, 0);
+        assertEq(usdcA.balanceOf(alice), u0 - 100 * D);
+        uint256 back = t.sell(coin, got, 1, alice, block.timestamp);
+        vm.stopPrank();
+        assertGt(back, 94 * D, "round trip");
+        assertLt(back, 100 * D);
+        assertEq(IERC20(coin).balanceOf(alice), 0);
+        assertEq(address(t).balance, 0, "router keeps no ETH");
+        assertEq(usdcA.balanceOf(address(t)), 0, "router keeps no USDC");
+        assertEq(IERC20(coin).balanceOf(address(t)), 0, "router keeps no coins");
+        minterA.mint(alice, 10 * D);
+        vm.startPrank(alice);
+        vm.expectRevert();
+        t.buy(coin, 10 * D, type(uint256).max, alice, block.timestamp);
+        vm.expectRevert(RaceTradeEth.Expired.selector);
+        t.buy(coin, 10 * D, 1, alice, block.timestamp - 1);
+        vm.stopPrank();
+        vm.expectRevert(RaceTradeEth.OnlyPoolManager.selector);
+        t.unlockCallback("");
     }
 
     /// Supply only goes down, whatever wins.

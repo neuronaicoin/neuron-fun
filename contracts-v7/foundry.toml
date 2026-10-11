@@ -41,3 +41,4 @@ runs = 500
 base = "https://mainnet.base.org"
 robinhood = "https://rpc.mainnet.chain.robinhood.com"
 bsc = "https://bsc-dataseed.bnbchain.org"
+arc = "https://rpc.mainnet.arc.io"

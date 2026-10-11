@@ -18,12 +18,14 @@ abstract contract RaceForkBase is RaceFlow {
     function _real() internal view returns (address pm, address posm) {
         if (block.chainid == 8453) return (0x498581fF718922c3f8e6A244956aF099B2652b2b, 0x7C5f5A4bBd8fD63184577525326123B519429bDc);
         if (block.chainid == 4663) return (0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x58daec3116aae6D93017bAAea7749052E8a04fA7);
+        // Arc: the same Uniswap deployer and addresses as Robinhood Chain (checked by test_fork_arcUniswap)
+        if (block.chainid == 5042) return (0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x58daec3116aae6D93017bAAea7749052E8a04fA7);
         return (address(0), address(0));
     }
 
     function _v4(uint32) internal view override returns (IPoolManager, IPositionManager) {
         (address pm, address posm) = _real();
-        require(pm != address(0), "fork Base (8453) or Robinhood (4663)");
+        require(pm != address(0), "fork Base (8453), Robinhood (4663) or Arc (5042)");
         return (IPoolManager(pm), IPositionManager(posm));
     }
 
@@ -60,14 +62,19 @@ contract RaceForkHighTest is RaceForkBase {
     function testFuzz_fork_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
 }
 
-/// The chain's REAL dollar on both race "chains" (Base: USDC, Robinhood: USDG), real Uniswap.
+interface IPosmPoolManager {
+    function poolManager() external view returns (address);
+}
+
+/// The chain's REAL dollar on both race "chains" (Base: USDC, Robinhood: USDG, Arc: USDC), real Uniswap.
 /// No bridge here (real dollars can't be minted): launch, launch fee, trading, the race
 /// verdict, the losing pool's hand-over to the consolidator and the winner going on.
 contract RaceForkRealDollarTest is RaceForkBase {
     function _usdcAt(uint32) internal view override returns (address) {
         if (block.chainid == 8453) return 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC
         if (block.chainid == 4663) return 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168; // USDG
-        revert("fork Base or Robinhood");
+        if (block.chainid == 5042) return 0x3600000000000000000000000000000000000000; // USDC (6-decimal view of Arc's own money)
+        revert("fork Base, Robinhood or Arc");
     }
 
     function _deployDollar() internal pure override returns (bool) {
@@ -75,7 +82,25 @@ contract RaceForkRealDollarTest is RaceForkBase {
     }
 
     function _fund(Net memory c, address who, uint256 amount) internal override {
+        if (block.chainid == 5042) {
+            // on Arc USDC is the chain's own money (18 decimals natively, 6 through the ERC-20)
+            vm.deal(who, who.balance + amount * 1e12);
+            return;
+        }
         deal(address(c.usdc), who, IERC20(address(c.usdc)).balanceOf(who) + amount);
+    }
+
+    /// Arc only: the Uniswap v4 PositionManager really belongs to the PoolManager we use, and
+    /// the ERC-20 USDC is the same money as the native balance.
+    function test_fork_arcUniswap() public {
+        if (block.chainid != 5042) return;
+        (address pm, address posm) = _real();
+        assertGt(pm.code.length, 0, "PoolManager deployed");
+        assertGt(posm.code.length, 0, "PositionManager deployed");
+        assertEq(IPosmPoolManager(posm).poolManager(), pm, "PositionManager uses this PoolManager");
+        address x = address(0xA4C0);
+        vm.deal(x, 3 ether);
+        assertEq(IERC20(0x3600000000000000000000000000000000000000).balanceOf(x), 3 * 1e6, "3 USDC");
     }
 
     function test_fork_realDollar_decimals() public view {
