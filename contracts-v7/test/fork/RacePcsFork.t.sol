@@ -42,6 +42,9 @@ contract RacePcsForkTest is PcsRaceBase {
             vm.skip(true);
             return;
         }
+        // BNB Chain makes a block every ~0.5 s and public nodes drop old state within about a
+        // minute: every test forks the newest block again, so it never reads pruned state
+        vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
     }
 
