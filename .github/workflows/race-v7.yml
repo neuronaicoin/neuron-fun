@@ -18,6 +18,8 @@ jobs:
             kind: base
           - name: Fork Robinhood Chain (real Uniswap v4, real USDG)
             kind: robinhood
+          - name: Fork BNB Chain (real PancakeSwap Infinity, real USDC)
+            kind: bsc
     defaults:
       run:
         working-directory: contracts-v7
@@ -41,6 +43,8 @@ jobs:
           cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
           cd ../../../..
           cp -r ../contracts/lib/layerzero lib/layerzero
+          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
+          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
 
       - name: v6 contracts are used unchanged
         run: |
@@ -68,3 +72,10 @@ jobs:
       - name: Fork tests on Robinhood Chain
         if: matrix.kind == 'robinhood'
         run: forge test --match-path "test/fork/*" --fork-url robinhood --fuzz-runs 30 -vv
+
+      - name: Fork tests on BNB Chain
+        if: matrix.kind == 'bsc'
+        run: |
+          forge test --match-path "test/fork/RacePcsFork.t.sol" --fork-url bsc --threads 1 --fuzz-runs 30 -vv && exit 0
+          echo "Retrying failed tests once..."
+          forge test --match-path "test/fork/RacePcsFork.t.sol" --fork-url bsc --threads 1 --fuzz-runs 30 --rerun -vv
