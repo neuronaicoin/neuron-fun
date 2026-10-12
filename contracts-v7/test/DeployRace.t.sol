@@ -16,6 +16,7 @@ import {IVault} from "infinity-core/src/interfaces/IVault.sol";
 import {CLPoolManager} from "infinity-core/src/pool-cl/CLPoolManager.sol";
 
 import {DeployRace} from "../script/race/DeployRace.s.sol";
+import {RebalanceTestPool} from "../script/race/RebalanceTestPool.s.sol";
 import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {RaceBuilderEth} from "../src/race/RaceBuilderEth.sol";
 import {RaceBuilderPcs} from "../src/race/RaceBuilderPcs.sol";
@@ -113,6 +114,46 @@ contract DeployRaceTest is Test, DeployPermit2 {
         uint256 got = t.buy(coin, 20e6, 1, alice, block.timestamp);
         vm.stopPrank();
         assertGt(got, 0, "bought with USDC through ETH");
+
+        // the buys pushed the tiny test pool off the feed price; the testnet rebalancer brings it back
+        (uint160 drifted,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
+        uint160 target = uint160(_sqrt((uint256(2_500e6) << 192) / 1 ether));
+        assertGt(drifted, target, "price drifted up after buys");
+        vm.setEnv("ETH_BUDGET_WEI", "20000000000000000");
+        new RebalanceTestPool().run();
+        (uint160 back,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
+        assertEq(back, target, "pool back at the feed price");
+        // and it works the other way too (pool below the feed: the rebalancer buys ETH with dollars)
+        TestUsdV7(usd).faucet(deployer);
+        vm.deal(deployer, 10 ether);
+        vm.startPrank(alice);
+        IERC20(coin).approve(address(t), type(uint256).max);
+        t.sell(coin, IERC20(coin).balanceOf(alice), 1, alice, block.timestamp);
+        vm.stopPrank();
+        (uint160 down,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
+        assertLt(down, target, "price drifted down after a sell");
+        vm.setEnv("MIN_OFF_BPS", "1");
+        new RebalanceTestPool().run();
+        (uint160 back2,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
+        assertEq(back2, target, "pool back at the feed price again");
+        // launching still works afterwards
+        _launch2(factory, usd);
+    }
+
+    function _launch2(address factory, address usd) internal {
+        uint32[] memory eids = new uint32[](1);
+        eids[0] = 40_001;
+        TestUsdV7(usd).faucet(address(0xBEEF));
+        vm.startPrank(address(0xBEEF));
+        IERC20(usd).approve(factory, type(uint256).max);
+        RaceFactory(factory).launch(RaceFactory.Launch("Second", "TWO", "", "", bytes32("k2"), eids, 0, 5e6, 0));
+        vm.stopPrank();
+    }
+
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) { y = z; z = (x / z + z) / 2; }
     }
 
     function test_deployPcs() public {

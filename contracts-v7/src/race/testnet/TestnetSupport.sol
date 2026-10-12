@@ -5,6 +5,14 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {OFT} from "@layerzerolabs/oft-evm/contracts/OFT.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 
 /**
  * TESTNET ONLY. None of these contracts is ever deployed on a mainnet: there the race
@@ -157,4 +165,63 @@ contract TestDollarPool is Ownable {
 
 interface ITestV3Callback {
     function pancakeV3SwapCallback(int256, int256, bytes calldata) external;
+}
+
+/**
+ * @notice TESTNET ONLY. Our test ETH / dollar Uniswap v4 pool is tiny and nobody arbitrages
+ * it, so after a few launches (or when the real Chainlink feed moves) its price drifts away
+ * from the feed and the builders refuse to swap (Slippage). This pushes the pool back to a
+ * target price with one swap that stops exactly at that price. The caller pays whichever
+ * side the pool needs (ETH as msg.value, dollars via approve) and receives the other side.
+ * On a mainnet the real pool is deep and arbitraged: this contract is never deployed there.
+ */
+contract TestPoolRebalancer is IUnlockCallback {
+    using SafeERC20 for IERC20;
+    using PoolIdLibrary for PoolKey;
+    using TransientStateLibrary for IPoolManager;
+
+    IPoolManager public immutable poolManager;
+
+    error OnlyPoolManager();
+
+    constructor(IPoolManager pm) {
+        poolManager = pm;
+    }
+
+    /// @param key the ETH / dollar pool (currency0 must be native ETH)
+    /// @param targetSqrtPriceX96 where the price should end up
+    function rebalance(PoolKey calldata key, uint160 targetSqrtPriceX96) external payable {
+        poolManager.unlock(abi.encode(key, targetSqrtPriceX96, msg.sender));
+        if (address(this).balance > 0) {
+            (bool ok,) = msg.sender.call{value: address(this).balance}("");
+            require(ok, "refund");
+        }
+    }
+
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert OnlyPoolManager();
+        (PoolKey memory key, uint160 target, address payer) = abi.decode(data, (PoolKey, uint160, address));
+        (uint160 now_,,,) = StateLibrary.getSlot0(poolManager, key.toId());
+        if (now_ == target) return "";
+        // zeroForOne lowers the price: sell ETH when the pool is above the target
+        bool zeroForOne = now_ > target;
+        poolManager.swap(key, SwapParams({zeroForOne: zeroForOne, amountSpecified: -int256(uint256(type(uint128).max)), sqrtPriceLimitX96: target}), "");
+        Currency inC = zeroForOne ? key.currency0 : key.currency1;
+        Currency outC = zeroForOne ? key.currency1 : key.currency0;
+        int256 owed = poolManager.currencyDelta(address(this), inC);
+        if (owed < 0) {
+            if (inC.isAddressZero()) {
+                poolManager.settle{value: uint256(-owed)}();
+            } else {
+                poolManager.sync(inC);
+                IERC20(Currency.unwrap(inC)).safeTransferFrom(payer, address(poolManager), uint256(-owed));
+                poolManager.settle();
+            }
+        }
+        int256 credit = poolManager.currencyDelta(address(this), outC);
+        if (credit > 0) poolManager.take(outC, payer, uint256(credit));
+        return "";
+    }
+
+    receive() external payable {}
 }
