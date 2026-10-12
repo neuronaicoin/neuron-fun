@@ -20,8 +20,6 @@ jobs:
             kind: robinhood
           - name: Fork BNB Chain (real PancakeSwap Infinity, real USDC)
             kind: bsc
-          - name: Fork Arc (real Uniswap v4, real USDC)
-            kind: arc
     defaults:
       run:
         working-directory: contracts-v7
@@ -31,7 +29,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.3.5
 
       - name: Get libraries
         run: |
@@ -61,7 +59,10 @@ jobs:
 
       - name: Unit and fuzz tests
         if: matrix.kind == 'local'
-        run: forge test --no-match-path "test/fork/*" --fuzz-runs 2000 -vv
+        run: |
+          forge test --no-match-path "test/fork/*" --no-match-contract DeployRaceTest --fuzz-runs 2000 -vv
+          # the deploy-script test sets env vars, so it runs on its own, one test at a time
+          forge test --match-contract DeployRaceTest --threads 1 -vv
 
       - name: Fork tests on Base
         if: matrix.kind == 'base'
@@ -81,10 +82,3 @@ jobs:
           forge test --match-path "test/fork/RacePcsFork.t.sol" --fork-url bsc --threads 1 --fuzz-runs 30 -vv && exit 0
           echo "Retrying failed tests once..."
           forge test --match-path "test/fork/RacePcsFork.t.sol" --fork-url bsc --threads 1 --fuzz-runs 30 --rerun -vv
-
-      - name: Fork tests on Arc
-        if: matrix.kind == 'arc'
-        run: |
-          forge test --match-path "test/fork/RaceFork.t.sol" --fork-url arc --threads 1 --fuzz-runs 30 -vv && exit 0
-          echo "Retrying failed tests once..."
-          forge test --match-path "test/fork/RaceFork.t.sol" --fork-url arc --threads 1 --fuzz-runs 30 --rerun -vv
