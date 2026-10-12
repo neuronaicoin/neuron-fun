@@ -10,6 +10,10 @@ import {OftUsdBridge} from "../../src/omni/OftUsdBridge.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {TestUsdV7} from "../../src/race/testnet/TestnetSupport.sol";
 
+interface IMessageLibSupport {
+    function isSupportedEid(uint32 eid) external view returns (bool);
+}
+
 /**
  * @notice Connects this chain's v7 contracts to the same contracts on the other chains
  * (after DeployRace ran everywhere). Safe to run again: it only (re)sets links.
@@ -71,11 +75,21 @@ contract WireRace is Script {
         uint32[] memory eids = new uint32[](remotes.length);
         bytes32[] memory twins = new bytes32[](remotes.length);
 
+        // LayerZero must have a path from this chain to every remote (on testnets some pairs are
+        // missing; ALLOW_MISSING_ROUTES=true skips those with a warning, never on mainnet)
+        bool allowMissing = vm.envOr("ALLOW_MISSING_ROUTES", false);
+        uint256 linked;
         vm.startBroadcast(key);
         for (uint256 i; i < remotes.length; ++i) {
             Local memory r = _load(remotes[i]);
             require(r.factory == me.factory, "factory differs between chains: coins would not share an address");
             require(r.across == me.across, "every chain must use the same bridge kind");
+            if (!IMessageLibSupport(sendLib).isSupportedEid(r.eid) || !IMessageLibSupport(receiveLib).isSupportedEid(r.eid)) {
+                require(allowMissing, string.concat("LayerZero has no path from this chain to eid ", vm.toString(r.eid)));
+                console2.log("WARNING: LayerZero has no path to eid", r.eid, "- skipped (coins can't race between these two chains)");
+                continue;
+            }
+            linked++;
             OmniHub(payable(me.hub)).setPeer(r.eid, bytes32(uint256(uint160(r.hub))));
             _route(ep, me.hub, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
             if (me.usdIsTest) {
@@ -85,10 +99,13 @@ contract WireRace is Script {
                 _route(ep, me.usd, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
             }
             RaceFactory(me.factory).setRoute(r.eid, RaceFactory.Route(sendLib, receiveLib, execCfg, ulnCfg));
-            eids[i] = r.eid;
-            twins[i] = bytes32(uint256(uint160(r.bridge)));
+            eids[linked - 1] = r.eid;
+            twins[linked - 1] = bytes32(uint256(uint160(r.bridge)));
             console2.log("linked to eid", r.eid);
         }
+        require(linked > 0, "no remote chain reachable");
+        // drop the skipped remotes from the bridge's lists
+        if (linked < remotes.length) (eids, twins) = _trim(eids, twins, linked);
         bool bridgeLocked;
         if (me.across) {
             AcrossUsdBridge ab = AcrossUsdBridge(me.bridge);
@@ -113,6 +130,16 @@ contract WireRace is Script {
         RaceFactory(me.factory).setLaunchesOpen(openLaunches);
         vm.stopBroadcast();
         console2.log("bridge locked:", bridgeLocked, " launches open:", openLaunches);
+    }
+
+    function _trim(uint32[] memory a, bytes32[] memory b, uint256 n) internal pure returns (uint32[] memory, bytes32[] memory) {
+        uint32[] memory a2 = new uint32[](n);
+        bytes32[] memory b2 = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            a2[i] = a[i];
+            b2[i] = b[i];
+        }
+        return (a2, b2);
     }
 
     function _route(ILayerZeroEndpointV2 ep, address oapp, uint32 eid, address sendLib, address receiveLib, bytes memory execCfg, bytes memory ulnCfg)
