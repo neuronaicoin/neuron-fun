@@ -55,7 +55,8 @@ contract RebalanceTestPool is Script {
         }
         uint256 key = vm.envUint("PRIVATE_KEY");
         address me = vm.addr(key);
-        uint256 budget = vm.envOr("ETH_BUDGET_WEI", uint256(0.01 ether));
+        uint256 budget = vm.envOr("ETH_BUDGET_WEI", uint256(0.03 ether));
+        if (budget > me.balance / 2) budget = me.balance / 2; // never spend the gas money
         vm.startBroadcast(key);
         address rb = vm.envOr("REBALANCER", address(0));
         if (rb == address(0)) rb = address(new TestPoolRebalancer(pm));
@@ -64,7 +65,11 @@ contract RebalanceTestPool is Script {
         vm.stopBroadcast();
         (uint160 after_,,,) = pm.getSlot0(k.toId());
         console2.log("pool sqrt price now:", after_);
-        require(after_ == target, "pool did not reach the feed price: raise ETH_BUDGET_WEI or top up test dollars");
+        if (after_ != target) {
+            uint256 left = after_ > target ? ((after_ - target) * 10_000) / target : ((target - after_) * 10_000) / target;
+            console2.log("WARNING: the ETH budget ran out before the feed price; still off by (bps):", left);
+            console2.log("  send more test ETH to the deployer or raise ETH_BUDGET_WEI");
+        }
         console2.log("rebalancer:", rb);
         console2.log("deployer ETH:", me.balance);
     }

@@ -119,6 +119,12 @@ contract DeployRaceTest is Test, DeployPermit2 {
         (uint160 drifted,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
         uint160 target = uint160(_sqrt((uint256(2_500e6) << 192) / 1 ether));
         assertGt(drifted, target, "price drifted up after buys");
+        // a budget too small only gets part of the way (and never reverts)
+        vm.setEnv("ETH_BUDGET_WEI", "100000000000000");
+        new RebalanceTestPool().run();
+        (uint160 halfway,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());
+        assertLt(halfway, drifted, "moved toward the feed");
+        assertGt(halfway, target, "but the small budget did not reach it");
         vm.setEnv("ETH_BUDGET_WEI", "20000000000000000");
         new RebalanceTestPool().run();
         (uint160 back,,,) = IPoolManager(pm).getSlot0(b.dollarPoolKey().toId());

@@ -191,7 +191,7 @@ contract TestPoolRebalancer is IUnlockCallback {
     /// @param key the ETH / dollar pool (currency0 must be native ETH)
     /// @param targetSqrtPriceX96 where the price should end up
     function rebalance(PoolKey calldata key, uint160 targetSqrtPriceX96) external payable {
-        poolManager.unlock(abi.encode(key, targetSqrtPriceX96, msg.sender));
+        poolManager.unlock(abi.encode(key, targetSqrtPriceX96, msg.sender, msg.value));
         if (address(this).balance > 0) {
             (bool ok,) = msg.sender.call{value: address(this).balance}("");
             require(ok, "refund");
@@ -200,12 +200,16 @@ contract TestPoolRebalancer is IUnlockCallback {
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert OnlyPoolManager();
-        (PoolKey memory key, uint160 target, address payer) = abi.decode(data, (PoolKey, uint160, address));
+        (PoolKey memory key, uint160 target, address payer, uint256 ethBudget) = abi.decode(data, (PoolKey, uint160, address, uint256));
         (uint160 now_,,,) = StateLibrary.getSlot0(poolManager, key.toId());
         if (now_ == target) return "";
-        // zeroForOne lowers the price: sell ETH when the pool is above the target
+        // zeroForOne lowers the price: sell ETH when the pool is above the target. Selling ETH
+        // spends at most the ETH sent along (the price then gets as close as that allows);
+        // buying ETH spends test dollars, which are free, so that side is unlimited.
         bool zeroForOne = now_ > target;
-        poolManager.swap(key, SwapParams({zeroForOne: zeroForOne, amountSpecified: -int256(uint256(type(uint128).max)), sqrtPriceLimitX96: target}), "");
+        if (zeroForOne && ethBudget == 0) return "";
+        int256 amountIn = zeroForOne ? -int256(ethBudget) : -int256(uint256(type(uint128).max));
+        poolManager.swap(key, SwapParams({zeroForOne: zeroForOne, amountSpecified: amountIn, sqrtPriceLimitX96: target}), "");
         Currency inC = zeroForOne ? key.currency0 : key.currency1;
         Currency outC = zeroForOne ? key.currency1 : key.currency0;
         int256 owed = poolManager.currencyDelta(address(this), inC);
