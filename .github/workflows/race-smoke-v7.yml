@@ -113,7 +113,7 @@ jobs:
           for c in $CHAINS; do
             if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then
               echo "  $(name $c):"
-              if ETH_BUDGET_WEI=15000000000000000 forge script script/race/RebalanceTestPool.s.sol --rpc-url $(rpc $c) --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH" /tmp/rebalance-$c.log | sed 's/^/   /'; else echo "   ❌ rebalance failed:"; tail -30 /tmp/rebalance-$c.log; exit 1; fi
+              if forge script script/race/RebalanceTestPool.s.sol --rpc-url $(rpc $c) --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH" /tmp/rebalance-$c.log | sed 's/^/   /'; else echo "   ❌ rebalance failed:"; tail -30 /tmp/rebalance-$c.log; exit 1; fi
             fi
           done
           echo "== 0b. Top up the test dollar pools (stand-ins for the real USDC/WBNB pool; mainnet pools are deep)"
