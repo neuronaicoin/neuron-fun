@@ -9,8 +9,8 @@ name: deploy-race-testnet
 # price feed are deployed too; the test dollar pools are created and seeded by the deployer.
 # Each deploy saves contracts-v7/deployments/race/<chainid>.json and commits it.
 #
-# Needs: secret DEPLOYER_PRIVATE_KEY (with test ETH/BNB on every chain: ~0.1 for the
-# contracts + 0.05 to seed the dollar pool) and secret RACE_FACTORY_KEY (a NEW wallet, never
+# Needs: secret DEPLOYER_PRIVATE_KEY (with test ETH/BNB on every chain: ~0.02 for the
+# contracts + 0.02 to seed the dollar pool) and secret RACE_FACTORY_KEY (a NEW wallet, never
 # used on any chain, with a little test ETH/BNB on every chain). v6 is not touched.
 
 on:
@@ -139,6 +139,8 @@ jobs:
           KEY=$(norm "$RAW_KEY"); echo "::add-mask::$KEY"; export PRIVATE_KEY="$KEY"
           if [ "$KEY" = "0x" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
           export MIN_DVNS=1 CONFIRMATIONS=2 START_MC=3000000000 MIN_FIRST_BUY=5000000
+          # test ETH/BNB put into the test dollar pool (testnet faucets are stingy: 0.02 is enough for $5 races)
+          export SEED_WEI=20000000000000000
           FLAGS="--rpc-url $RPC -vv"
           if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
           if [ "$STEP" = "deploy" ]; then
