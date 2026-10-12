@@ -110,6 +110,19 @@ contract RaceForkRealDollarTest is RaceForkBase {
     }
 
     function test_fork_realDollar_launchAndRace() public {
+        // Arc: USDC is the chain's own money, moved by Arc's own built-in code that the test
+        // tool may not have. A plain 1 USDC transfer between two wallets shows whether it does.
+        if (block.chainid == 5042) {
+            vm.deal(alice, 10 ether);
+            vm.prank(alice);
+            (bool ok,) = address(a.usdc).call{gas: 1_000_000}(abi.encodeCall(IERC20.transfer, (bob, 1e6)));
+            console.log("plain Arc USDC transfer works in the test tool:", ok);
+            if (!ok) {
+                console.log("=> the test tool can't run Arc's USDC; this flow is checked on Arc testnet instead");
+                vm.skip(true);
+                return;
+            }
+        }
         // each stage is logged, so a failure on a new chain shows where it stopped
         console.log("stage: launch A");
         (address ca,) = _launch(a, _eids2(), 5 * D, 0);
