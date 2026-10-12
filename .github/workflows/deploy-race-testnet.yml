@@ -141,6 +141,8 @@ jobs:
           export MIN_DVNS=1 CONFIRMATIONS=2 START_MC=3000000000 MIN_FIRST_BUY=5000000
           # test ETH/BNB put into the test dollar pool (testnet faucets are stingy: 0.02 is enough for $5 races)
           export SEED_WEI=20000000000000000
+          # Robinhood testnet's faucet gives 0.01 a day: a smaller seed there (deepen later)
+          if [ "$CHAIN_ID" = "46630" ]; then export SEED_WEI=5000000000000000; fi
           FLAGS="--rpc-url $RPC -vv"
           if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
           if [ "$STEP" = "deploy" ]; then
