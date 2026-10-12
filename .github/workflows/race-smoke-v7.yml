@@ -87,6 +87,10 @@ jobs:
           EIDS=$(for c in $CHAINS; do j $c eid; done | sort -n | paste -sd, -)
           echo "me: $ME  factory: $FAC  coin: $COIN  eids: [$EIDS]  expected winner: $(name $W)"
 
+          echo "== 0. Keep the test price feeds fresh (testnets without Chainlink; builders refuse a stale feed)"
+          for c in $CHAINS; do
+            if [ "$(j $c feedIsTest)" = "true" ]; then echo "  $(name $c):"; tx $(rpc $c) $(j $c feed) "touch()"; fi
+          done
           echo "== 1. Launch the same coin on every chain in the race (\$5 first buy on each)"
           for c in $CHAINS; do
             USD=$(j $c usd)
