@@ -97,6 +97,10 @@ const coinAbi = parseAbi([
   "function isPlainAccount(address) view returns (bool)",
   "function moveBatch(address[] holders, bytes options) payable",
 ]);
+const testFeedAbi = parseAbi([
+  "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)",
+  "function touch()",
+]);
 const NONE = 0, RACING = 1, WON = 2, LOST = 3;
 
 // ------------------------------------------------------------------ chains
@@ -179,6 +183,18 @@ async function main() {
     const bal = await c.pub.getBalance({ address: account.address }).catch(() => null);
     if (bal !== null && bal < BigInt(env("MIN_GAS_WEI", "2000000000000000"))) {
       await alert("race keeper", `gas-${c.chainId}`, `keeper wallet ${account.address} is low on gas on chain ${c.chainId} (${Number(bal) / 1e18}). Top it up.`);
+    }
+  }
+  // Testnets with no Chainlink use our TestFeed: anyone may refresh its timestamp, and the
+  // builders refuse a feed older than maxFeedAge, so keep it fresh (never runs on a mainnet).
+  for (const c of chains) {
+    if (!c.feedIsTest || !c.feed) continue;
+    try {
+      const [, , , updatedAt] = await c.pub.readContract({ address: c.feed, abi: testFeedAbi, functionName: "latestRoundData" });
+      const age = BigInt(Math.floor(Date.now() / 1000)) - updatedAt;
+      if (age > BigInt(c.maxFeedAge ?? 7200) / 2n) await send(c, "touch the test price feed", { address: c.feed, abi: testFeedAbi, functionName: "touch" });
+    } catch (e) {
+      log(`${c.chainId}: test feed check failed: ${e.shortMessage || e.message}`);
     }
   }
   const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
