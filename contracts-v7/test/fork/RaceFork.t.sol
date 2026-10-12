@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {console} from "forge-std/console.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
@@ -109,17 +110,37 @@ contract RaceForkRealDollarTest is RaceForkBase {
     }
 
     function test_fork_realDollar_launchAndRace() public {
+        // each stage is logged, so a failure on a new chain shows where it stopped
+        console.log("stage: launch A");
         (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        console.log("stage: launch B");
         (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        console.log("stage: buy A");
         _buy(a, ca, alice, 200 * D);
+        console.log("stage: buy B");
         _buy(b, cb, bob, 50 * D);
         vm.warp(block.timestamp + 301);
+        console.log("stage: buy A after the race");
         uint256 got = _buy(a, ca, alice, 25 * D);
         assertGt(got, 0);
-        _endRace();
+        bytes32 id = _coinId();
+        console.log("stage: freeze A");
+        vm.prank(keeper);
+        a.hub.freeze(id, "");
+        console.log("stage: freeze B");
+        vm.prank(keeper);
+        b.hub.freeze(id, "");
+        console.log("stage: report B -> A");
+        a.ep.deliver(b.ep.packetAt(b.ep.packetCount() - 1));
+        console.log("stage: finalize on A");
+        a.hub.finalize(id, 0, "");
+        console.log("stage: verdict A -> B (B loses, hands over)");
+        b.ep.deliver(a.ep.packetAt(a.ep.packetCount() - 1));
         (uint256 usdB,) = b.builder.poolAmounts(cb);
         assertEq(usdB, 0, "losing pool emptied");
         assertGt(b.cons.pendingPool(_coinId()), 0, "money waiting to cross");
+        console.log("stage: sell on A");
         assertGt(_sell(a, ca, alice, IERC20(ca).balanceOf(alice) / 2), 0);
+        console.log("stage: done");
     }
 }
