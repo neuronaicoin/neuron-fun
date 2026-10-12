@@ -91,6 +91,15 @@ jobs:
           for c in $CHAINS; do
             if [ "$(j $c feedIsTest)" = "true" ]; then echo "  $(name $c):"; tx $(rpc $c) $(j $c feed) "touch()"; fi
           done
+          echo "== 0b. Top up the test dollar pools (stand-ins for the real USDC/WBNB pool; mainnet pools are deep)"
+          for c in $CHAINS; do
+            if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
+              P=$(j $c dollarPool); nat=$(cast call --rpc-url $(rpc $c) $(j $c wnative) "balanceOf(address)(uint256)" $P | awk '{print $1}'); usd=$(cast call --rpc-url $(rpc $c) $(j $c usd) "balanceOf(address)(uint256)" $P | awk '{print $1}')
+              echo "  $(name $c): pool has $nat wei native, $usd test dollars"
+              if [ "$nat" -lt 50000000000000000 ]; then echo "   -> sending 0.05 native to the pool"; tx $(rpc $c) $P --value 50000000000000000; fi
+              if [ "$usd" -lt 500000000 ]; then tx $(rpc $c) $(j $c usd) "mint(address,uint256)" $P 2000000000; fi
+            fi
+          done
           echo "== 1. Launch the same coin on every chain in the race (\$5 first buy on each)"
           for c in $CHAINS; do
             USD=$(j $c usd)
