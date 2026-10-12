@@ -64,6 +64,7 @@ const launched = parseAbiItem(
 );
 const transferEvt = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const hubAbi = parseAbi([
+  "error LZ_InsufficientFee(uint256 requiredNative, uint256 suppliedNative, uint256 requiredLzToken, uint256 suppliedLzToken)",
   "function freeze(bytes32 coin, bytes options) payable",
   "function finalize(bytes32 coin, uint256 feePerChain, bytes options) payable",
   "function preview(bytes32 coin) view returns (bool ready, bool graduate, uint32 winner, uint256 total, uint256 poolTokens)",
@@ -87,11 +88,13 @@ const builderPcsAbi = parseAbi([
   "function races(address coin) view returns (address seat, address creator, uint8 feeMode, uint64 launchedAt, uint8 state, uint32 winnerEid, int24 launchLower, int24 launchUpper)",
 ]);
 const consAbi = parseAbi([
+  "error LZ_InsufficientFee(uint256 requiredNative, uint256 suppliedNative, uint256 requiredLzToken, uint256 suppliedLzToken)",
   "function pendingPool(bytes32) view returns (uint256)",
   "function pendingBuyback(bytes32) view returns (uint256)",
   "function forward(bytes32 coin) payable",
 ]);
 const coinAbi = parseAbi([
+  "error LZ_InsufficientFee(uint256 requiredNative, uint256 suppliedNative, uint256 requiredLzToken, uint256 suppliedLzToken)",
   "function bridgeOpen() view returns (bool)",
   "function balanceOf(address) view returns (uint256)",
   "function isPlainAccount(address) view returns (bool)",
@@ -146,11 +149,25 @@ async function scan(pub, args, from, to) {
   return { logs: out, next: start };
 }
 
-async function send(c, what, params) {
+// LayerZero fees differ per chain and per day. When the endpoint says the native fee we sent
+// is too low it tells us the required amount: `bump(required)` returns the params to retry
+// with (default: the same call with 20% over the required fee).
+async function send(c, what, params, bump) {
   log(`${DRY ? "[dry] " : ""}${c.chainId}: ${what}`);
   if (DRY) return true;
   try {
-    const sim = await c.pub.simulateContract({ account, ...params });
+    let sim;
+    try {
+      sim = await c.pub.simulateContract({ account, ...params });
+    } catch (e) {
+      const d = e?.cause?.data ?? e?.data;
+      if (d?.errorName !== "LZ_InsufficientFee" || params.value === undefined) throw e;
+      const required = BigInt(d.args[0]);
+      const retry = bump ? bump(required) : { ...params, value: (required * 12n) / 10n };
+      log(`   LayerZero fee: sent ${params.value}, needs ${required}; retrying with ${retry.value}`);
+      params = retry;
+      sim = await c.pub.simulateContract({ account, ...params });
+    }
     const hash = await c.wallet.writeContract(sim.request);
     const r = await c.pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
     if (r.status !== "success") throw new Error(`reverted ${hash}`);
@@ -269,9 +286,10 @@ async function main() {
       const [ready, graduate, winner] = await coord.pub.readContract({ address: coord.hub, abi: hubAbi, functionName: "preview", args: [id] });
       if (ready) {
         const remotes = coin.eids.filter((e) => e !== coord.eid).length;
-        await send(coord, `finalize ${coin.name}: ${graduate ? `winner ${winner}` : "no winner (reopen)"}`, {
-          address: coord.hub, abi: hubAbi, functionName: "finalize", args: [id, lzFee(coord), lzOptions(900_000)], value: lzFee(coord) * BigInt(remotes),
+        const fin = (perChain) => ({
+          address: coord.hub, abi: hubAbi, functionName: "finalize", args: [id, perChain, lzOptions(900_000)], value: perChain * BigInt(remotes),
         });
+        await send(coord, `finalize ${coin.name}: ${graduate ? `winner ${winner}` : "no winner (reopen)"}`, fin(lzFee(coord)), (req) => fin((req * 12n) / 10n));
       }
       continue;
     }
@@ -299,9 +317,8 @@ async function main() {
       ]);
       if (pool + bb > 0n) {
         const msgs = (pool > 0n ? 1n : 0n) + (bb > 0n ? 1n : 0n);
-        const ok = await send(r.c, `forward ${coin.name}: ${pool} pool + ${bb} buyback to ${winnerEid}`, {
-          address: r.c.consolidator, abi: consAbi, functionName: "forward", args: [id], value: lzFee(r.c) * msgs,
-        });
+        const fwd = (per) => ({ address: r.c.consolidator, abi: consAbi, functionName: "forward", args: [id], value: per * msgs });
+        const ok = await send(r.c, `forward ${coin.name}: ${pool} pool + ${bb} buyback to ${winnerEid}`, fwd(lzFee(r.c)), (req) => fwd((req * 12n) / 10n));
         if (!ok) allHandedOver = false;
       }
     }
@@ -331,9 +348,8 @@ async function main() {
       for (let i = 0; i < movable.length; i += 100) {
         const batch = movable.slice(i, i + 100);
         const gas = 120_000 + 45_000 * batch.length;
-        const ok = await send(r.c, `move ${batch.length} holders of ${coin.name} to ${winnerEid}`, {
-          address: coin.coin, abi: coinAbi, functionName: "moveBatch", args: [batch, lzOptions(gas)], value: lzFee(r.c) * 2n,
-        });
+        const mv = (v) => ({ address: coin.coin, abi: coinAbi, functionName: "moveBatch", args: [batch, lzOptions(gas)], value: v });
+        const ok = await send(r.c, `move ${batch.length} holders of ${coin.name} to ${winnerEid}`, mv(lzFee(r.c) * 2n), (req) => mv((req * 12n) / 10n));
         if (!ok) allMoved = false;
       }
     }
