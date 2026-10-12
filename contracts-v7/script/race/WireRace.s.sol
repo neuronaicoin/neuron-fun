@@ -8,11 +8,12 @@ import {OmniHub} from "../../src/omni/OmniHub.sol";
 import {AcrossUsdBridge} from "../../src/omni/AcrossUsdBridge.sol";
 import {OftUsdBridge} from "../../src/omni/OftUsdBridge.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
+import {TestUsdV7} from "../../src/race/testnet/TestnetSupport.sol";
 
 /**
  * @notice Connects this chain's v7 contracts to the same contracts on the other chains
  * (after DeployRace ran everywhere). Safe to run again: it only (re)sets links.
- * The test dollar's own links (an OFT) were set up with v6 and are not touched.
+ * On testnets the v7 test dollar (an OFT) gets its own links here too.
  *
  * Env: REMOTE_CHAIN_IDS (comma list; their deployments/race/<id>.json must exist), this
  * chain's LayerZero SEND_LIB, RECEIVE_LIB, EXECUTOR, DVNS (comma list, sorted),
@@ -32,6 +33,7 @@ contract WireRace is Script {
         uint32 eid;
         uint256 chainId;
         bool across;
+        bool usdIsTest;
     }
 
     function _load(uint256 chainId) internal view returns (Local memory l) {
@@ -45,6 +47,7 @@ contract WireRace is Script {
         l.eid = uint32(vm.parseJsonUint(j, ".eid"));
         l.chainId = vm.parseJsonUint(j, ".chainId");
         l.across = keccak256(bytes(vm.parseJsonString(j, ".bridgeKind"))) == keccak256("across");
+        l.usdIsTest = vm.keyExistsJson(j, ".usdIsTest") && vm.parseJsonBool(j, ".usdIsTest");
     }
 
     function run() external {
@@ -75,6 +78,12 @@ contract WireRace is Script {
             require(r.across == me.across, "every chain must use the same bridge kind");
             OmniHub(payable(me.hub)).setPeer(r.eid, bytes32(uint256(uint160(r.hub))));
             _route(ep, me.hub, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
+            if (me.usdIsTest) {
+                // Testnet: the v7 test dollar is itself an OFT and needs its own LayerZero link.
+                require(r.usdIsTest, "every testnet must use the v7 test dollar");
+                TestUsdV7(me.usd).setPeer(r.eid, bytes32(uint256(uint160(r.usd))));
+                _route(ep, me.usd, r.eid, sendLib, receiveLib, execCfg, ulnCfg);
+            }
             RaceFactory(me.factory).setRoute(r.eid, RaceFactory.Route(sendLib, receiveLib, execCfg, ulnCfg));
             eids[i] = r.eid;
             twins[i] = bytes32(uint256(uint160(r.bridge)));
