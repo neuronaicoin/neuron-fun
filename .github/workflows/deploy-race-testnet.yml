@@ -1,174 +1,135 @@
-name: deploy-race-testnet
+name: race-smoke-v7
 
-# sasa v7 (five-minute race, native pairs) on testnets. Two steps, each run once per chain:
-#   1. step = deploy  on base-sepolia, robinhood-testnet, bsc-testnet, arc-testnet
-#   2. step = wire    on each of them (connects the chains)
-# Each chain gets its own pair: coin/ETH (Base Sepolia, Robinhood testnet, Uniswap v4),
-# coin/BNB (BNB testnet, PancakeSwap Infinity), coin/USDC (Arc testnet, Uniswap v4).
-# A fresh v7 test dollar (faucet: $100 a day) and, where there is no Chainlink, a test
-# price feed are deployed too; the test dollar pools are created and seeded by the deployer.
-# Each deploy saves contracts-v7/deployments/race/<chainid>.json and commits it.
-#
-# Needs: secret DEPLOYER_PRIVATE_KEY (with test ETH/BNB on every chain: ~0.02 for the
-# contracts + 0.02 to seed the dollar pool) and secret RACE_FACTORY_KEY (a NEW wallet, never
-# used on any chain, with a little test ETH/BNB on every chain). v6 is not touched.
+# One full v7 race on the FOUR real testnets, run the way mainnet will run: the coin is
+# launched on Base Sepolia, Robinhood testnet, BNB testnet and Arc testnet (native pairs,
+# $5 first buy on each), an extra $15 buy goes through the BNB trade router (USDC -> BNB ->
+# coin, so BNB Chain should win), and then the KEEPER (keeper/race.mjs) drives the race:
+# reports after five minutes, the on-chain verdict, the losing pools' hand-over (BNB/ETH ->
+# dollars at a fair price), the dollars crossing to the winner, and holders' coins moving.
+# Finally the winner is traded once more and a loser is shown to refuse trades.
+# Uses the deployer wallet (DEPLOYER_PRIVATE_KEY) for everything; it is the keeper too.
+# Takes 20-45 minutes (5 minutes of race + LayerZero messages on four testnets).
 
 on:
   workflow_dispatch:
     inputs:
-      network:
-        description: "Chain"
+      winner:
+        description: "Chain that gets the extra $15 buy (should win)"
         type: choice
+        default: bsc-testnet
         options:
+          - bsc-testnet
           - base-sepolia
           - robinhood-testnet
-          - bsc-testnet
           - arc-testnet
-      step:
-        description: "deploy (first, on every chain) or wire (after all chains are deployed)"
-        type: choice
-        options:
-          - deploy
-          - wire
-      broadcast:
-        description: "Actually send transactions (leave unticked for a free dry run)"
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
-
-concurrency:
-  group: deploy-race-testnet
-  cancel-in-progress: false
 
 jobs:
-  race:
+  smoke:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts-v7
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          # pinned: the exact compiler build is needed to verify the contracts later
           version: v1.3.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the keeper
+        working-directory: keeper
+        run: npm install --no-audit --no-fund
 
-      - name: Get libraries
-        run: |
-          mkdir -p lib
-          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
-          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
-          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
-          cd lib/v4-periphery
-          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
-          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
-          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
-          cd ../../../..
-          cp -r ../contracts/lib/layerzero lib/layerzero
-          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
-          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
-
-      - name: Chain settings and LayerZero addresses
-        env:
-          NETWORK: ${{ inputs.network }}
-        run: |
-          case "$NETWORK" in
-            base-sepolia) CHAIN_ID=84532; RPC="https://sepolia.base.org"; KIND=eth
-              PM=0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408; POSM=0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80
-              FEED=0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1 ;;   # Chainlink ETH / USD (checked by the script)
-            robinhood-testnet) CHAIN_ID=46630; RPC="https://rpc.testnet.chain.robinhood.com/rpc"; KIND=eth
-              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x58daec3116aae6D93017bAAea7749052E8a04fA7
-              FEED= ;;                                               # no Chainlink here: a test feed
-            bsc-testnet) CHAIN_ID=97; RPC="https://bsc-testnet-rpc.publicnode.com"; KIND=pcs
-              VAULT=0x2CdB3EC82EE13d341Dc6E73637BE0Eab79cb79dD; CLPM=0x36A12c70c9Cf64f24E89ee132BF93Df2DCD199d4
-              WNATIVE=0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd
-              FEED=0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526 ;;   # Chainlink BNB / USD (checked by the script)
-            arc-testnet) CHAIN_ID=5042002; RPC="https://rpc.testnet.arc.network"; KIND=usdc
-              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x6049c9a0e26405C0985f9E3685C87d0aE917f82B
-              FEED= ;;
-            *) echo "unknown network $NETWORK"; exit 1 ;;
-          esac
-          GOT_ID=$(cast chain-id --rpc-url "$RPC")
-          if [ "$GOT_ID" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT_ID, expected $CHAIN_ID"; exit 1; fi
-          # The coordinator (where races are decided) lives on Base Sepolia, as in v6.
-          COORD_EID=40245
-          curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lz.json
-          CHAIN=$(jq -c --argjson id "$CHAIN_ID" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|endswith("-testnet")))][0].value' /tmp/lz.json)
-          if [ "$CHAIN" = "null" ] || [ -z "$CHAIN" ]; then echo "LayerZero has no testnet entry for chain $CHAIN_ID"; exit 1; fi
-          V2=$(echo "$CHAIN" | jq -c '[.deployments[] | select(.version == 2)][0]')
-          EID=$(echo "$V2" | jq -r '.eid')
-          ENDPOINT=$(echo "$V2" | jq -r '.endpointV2.address')
-          SEND_LIB=$(echo "$V2" | jq -r '.sendUln302.address')
-          RECEIVE_LIB=$(echo "$V2" | jq -r '.receiveUln302.address')
-          EXECUTOR=$(echo "$V2" | jq -r '.executor.address')
-          DVNS=$(echo "$CHAIN" | jq -r '[.dvns | to_entries[] | select(.value.id == "layerzero-labs" and (.value.deprecated|not) and (.value.lzReadCompatible|not)) | .key] | sort | join(",")')
-          for v in EID ENDPOINT SEND_LIB RECEIVE_LIB EXECUTOR DVNS; do
-            eval "val=\$$v"; if [ -z "$val" ] || [ "$val" = "null" ]; then echo "missing $v"; exit 1; fi; echo "$v=$val"
-          done
-          GOT=$(cast call "$ENDPOINT" "eid()(uint32)" --rpc-url "$RPC" | awk '{print $1}')
-          if [ "$GOT" != "$EID" ]; then echo "endpoint says eid $GOT, expected $EID"; exit 1; fi
-          {
-            echo "CHAIN_ID=$CHAIN_ID"; echo "RPC=$RPC"; echo "BUILDER_KIND=$KIND"; echo "TESTNET=true"
-            echo "POOL_MANAGER=${PM:-}"; echo "POSITION_MANAGER=${POSM:-}"; echo "DOLLAR_FEE=500"; echo "DOLLAR_SPACING=10"
-            echo "VAULT=${VAULT:-}"; echo "CL_POOL_MANAGER=${CLPM:-}"; echo "WNATIVE=${WNATIVE:-}"; echo "PRICE_FEED=${FEED:-}"
-            echo "COORD_EID=$COORD_EID"; echo "LOCAL_EID=$EID"; echo "LZ_ENDPOINT=$ENDPOINT"
-            echo "SEND_LIB=$SEND_LIB"; echo "RECEIVE_LIB=$RECEIVE_LIB"; echo "EXECUTOR=$EXECUTOR"; echo "DVNS=$DVNS"
-          } >> "$GITHUB_ENV"
-
-      - name: Drop deployment files of the earlier v7 layout (USDC pools only)
-        run: |
-          for f in deployments/race/*.json; do
-            [ -f "$f" ] || continue
-            if ! jq -e '.builderKind' "$f" >/dev/null 2>&1; then echo "removing old $f"; rm -f "$f"; fi
-          done
-
-      - name: Build
-        run: forge build
-
-      - name: Run
+      - name: Run the whole race
+        working-directory: contracts-v7
         env:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
-          RAW_FKEY: ${{ secrets.RACE_FACTORY_KEY }}
-          STEP: ${{ inputs.step }}
-          BROADCAST: ${{ inputs.broadcast }}
+          WINNER: ${{ inputs.winner }}
+          RPC_84532: https://sepolia.base.org
+          RPC_46630: https://rpc.testnet.chain.robinhood.com/rpc
+          RPC_97: https://bsc-testnet-rpc.publicnode.com
+          RPC_5042002: https://rpc.testnet.arc.network
+          # Arc pays gas in USDC (18 decimals natively): 0.5 USDC per LayerZero message, the rest is refunded
+          LZ_FEE_WEI_5042002: "500000000000000000"
         run: |
-          norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
-          KEY=$(norm "$RAW_KEY"); echo "::add-mask::$KEY"; export PRIVATE_KEY="$KEY"
-          if [ "$KEY" = "0x" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
-          export MIN_DVNS=1 CONFIRMATIONS=2 START_MC=3000000000 MIN_FIRST_BUY=5000000
-          # test ETH/BNB put into the test dollar pool (testnet faucets are stingy: 0.02 is enough for $5 races)
-          export SEED_WEI=20000000000000000
-          # Robinhood testnet's faucet gives 0.01 a day: a smaller seed there (deepen later)
-          if [ "$CHAIN_ID" = "46630" ]; then export SEED_WEI=5000000000000000; fi
-          FLAGS="--rpc-url $RPC -vv"
-          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
-          if [ "$STEP" = "deploy" ]; then
-            FKEY=$(norm "$RAW_FKEY"); echo "::add-mask::$FKEY"
-            if [ "$FKEY" = "0x" ]; then echo "RACE_FACTORY_KEY secret is missing (a new, never-used wallet)"; exit 1; fi
-            export RACE_FACTORY_KEY="$FKEY"
-            forge script script/race/DeployRace.s.sol $FLAGS
-          else
-            OTHERS=""
-            for f in deployments/race/*.json; do
-              id=$(basename "$f" .json); [ "$id" = "$CHAIN_ID" ] && continue
-              OTHERS="${OTHERS:+$OTHERS,}$id"
-            done
-            if [ ! -f "deployments/race/$CHAIN_ID.json" ] || [ -z "$OTHERS" ]; then
-              echo "Deploy on every chain first (missing deployments/race files)"; exit 1
-            fi
-            export REMOTE_CHAIN_IDS="$OTHERS" LOCK_BRIDGE=true OPEN_LAUNCHES=true
-            forge script script/race/WireRace.s.sol $FLAGS
-          fi
+          set -euo pipefail
+          trap 'echo "❌ FAILED at line $LINENO: $BASH_COMMAND"' ERR
+          K="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$K" in 0x*) ;; *) K="0x$K" ;; esac
+          echo "::add-mask::$K"
+          export PRIVATE_KEY="$K"
+          ME=$(cast wallet address "$K")
+          j() { jq -r ".$2" "deployments/race/$1.json"; }
+          rpc() { eval "echo \$RPC_$1"; }
+          name() { case $1 in 84532) echo "Base Sepolia";; 46630) echo "Robinhood testnet";; 97) echo "BNB testnet";; 5042002) echo "Arc testnet";; esac; }
+          case "$WINNER" in bsc-testnet) W=97;; base-sepolia) W=84532;; robinhood-testnet) W=46630;; arc-testnet) W=5042002;; esac
+          CHAINS="84532 46630 97 5042002"
+          for c in $CHAINS; do [ -f deployments/race/$c.json ] || { echo "missing deployments/race/$c.json: deploy + wire first"; exit 1; }; done
+          FAC=$(j 84532 factory)
+          for c in $CHAINS; do [ "$(j $c factory)" = "$FAC" ] || { echo "factory differs on $c"; exit 1; }; done
+          tx() { local rpc=$1; shift; echo "   -> $(echo "$1" | cut -c1-10)… $2"; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --json "$@" 2>&1) && break; if echo "$out" | grep -qiE "underpriced|nonce|already known"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out"; exit 1; fi; done; st=$(echo "$out" | jq -r .status 2>/dev/null || echo "?"); [ "$st" = "0x1" ] || { echo "FAILED (status $st): $*"; echo "$out"; exit 1; }; sleep 2; }
+          field() { local rpc=$1 n=$2; shift 2; cast call --rpc-url "$rpc" "$@" 2>/dev/null | sed -n "${n}p" | awk '{print $1}' || true; }
+          has_code() { for i in $(seq 1 20); do c=$(cast code --rpc-url "$1" "$2" 2>/dev/null || echo 0x); [ ${#c} -gt 10 ] && return 0; sleep 3; done; return 1; }
+          # the race state of a coin on a chain: 1 racing, 2 won, 3 lost
+          rstate() { local c=$1; if [ "$(j $c builderKind)" = "pcs" ]; then field $(rpc $c) 5 $(j $c builder) "races(address)(address,address,uint8,uint64,uint8,uint32,int24,int24)" $COIN; else field $(rpc $c) 6 $(j $c builder) "races(address)(uint256,address,address,uint8,uint64,uint8,uint32)" $COIN; fi; }
 
-      - name: Save addresses to the repo
-        if: inputs.step == 'deploy' && inputs.broadcast
-        run: |
-          git config user.name "sasa-deploy"
-          git config user.email "deploy@sasapad.fun"
-          git add -A deployments/race
-          git commit -m "v7 race deployed on ${{ inputs.network }}" || echo "nothing to commit"
-          git pull --rebase
-          git push
+          KEY=$(cast keccak "race-smoke-v7-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          ID=$(cast call --rpc-url $(rpc 84532) $FAC "coinIdOf(address,bytes32)(bytes32)" $ME $KEY)
+          COIN=$(cast call --rpc-url $(rpc 84532) $FAC "coinAddress(address,bytes32)(address)" $ME $KEY)
+          EIDS=$(for c in $CHAINS; do j $c eid; done | sort -n | paste -sd, -)
+          echo "me: $ME  factory: $FAC  coin: $COIN  eids: [$EIDS]  expected winner: $(name $W)"
+
+          echo "== 1. Launch the same coin on all four chains (\$5 first buy on each)"
+          for c in $CHAINS; do
+            USD=$(j $c usd)
+            bal=$(cast call --rpc-url $(rpc $c) $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+            echo "  $(name $c): test dollars $bal"
+            if [ "$bal" -lt 30000000 ]; then tx $(rpc $c) $USD "faucet(address)" $ME; fi
+            tx $(rpc $c) $USD "approve(address,uint256)" $FAC 5000000
+            tx $(rpc $c) $FAC "launch((string,string,string,string,bytes32,uint32[],uint8,uint256,uint256))" \
+              "(\"Race Smoke\",\"RACE\",\"\",\"v7 smoke test\",$KEY,[$EIDS],0,5000000,0)"
+            has_code $(rpc $c) $COIN || { echo "coin missing on $(name $c)"; exit 1; }
+          done
+          echo "   ✅ same coin address on all four chains: $COIN"
+          LAUNCHED=$(date +%s)
+
+          echo "== 2. An extra \$15 buy on $(name $W) through its trade router (dollars -> native -> coin)"
+          tx $(rpc $W) $(j $W usd) "approve(address,uint256)" $(j $W router) 15000000
+          tx $(rpc $W) $(j $W router) "buy(address,uint256,uint256,address,uint256)" $COIN 15000000 1 $ME $(( $(date +%s) + 600 ))
+          for c in $CHAINS; do echo "   $(name $c) pool: $(field $(rpc $c) 1 $(j $c builder) 'poolAmounts(address)(uint256,uint256)' $COIN) (native wei or 6-dec dollars)"; done
+
+          echo "== 3. Wait for the five-minute race to end"
+          left=$(( LAUNCHED + 320 - $(date +%s) )); [ $left -gt 0 ] && { echo "   waiting ${left}s"; sleep $left; }
+
+          echo "== 4. The keeper drives the race (report -> verdict -> hand-over -> cross -> move holders)"
+          export DEPLOYMENTS=../contracts-v7/deployments/race STATE_FILE=/tmp/race-smoke-state.json DRY_RUN=false BUDGET_MS=300000
+          for i in $(seq 1 40); do
+            echo "--- keeper pass $i ($(date -u +%H:%M:%S))"
+            (cd ../keeper && node race.mjs) || echo "   (pass failed, retrying)"
+            st=""; for c in $CHAINS; do st="$st $(name $c)=$(rstate $c)"; done
+            echo "   states:$st"
+            if grep -q '"finished": true' /tmp/race-smoke-state.json 2>/dev/null; then echo "   ✅ the keeper reports the race finished (after pass $i)"; break; fi
+            [ $i = 40 ] && { echo "   ❌ the race did not finish in 40 passes"; cat /tmp/race-smoke-state.json; exit 1; }
+            sleep 30
+          done
+
+          echo "== 5. Check the verdict"
+          [ "$(rstate $W)" = "2" ] || { echo "❌ $(name $W) did not win (state $(rstate $W))"; exit 1; }
+          for c in $CHAINS; do [ $c = $W ] && continue; [ "$(rstate $c)" = "3" ] || { echo "❌ $(name $c) did not lose (state $(rstate $c))"; exit 1; }; done
+          echo "   ✅ $(name $W) won, the other three lost"
+          for c in $CHAINS; do
+            [ $c = $W ] && continue
+            echo "   $(name $c): pool now $(field $(rpc $c) 1 $(j $c builder) 'poolAmounts(address)(uint256,uint256)' $COIN), waiting to cross $(field $(rpc $c) 1 $(j $c consolidator) 'pendingPool(bytes32)(uint256)' $ID)"
+            if cast call --rpc-url $(rpc $c) $(j $c router) "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME 9999999999 --from $ME >/dev/null 2>&1; then echo "   ❌ $(name $c)'s router still trades the coin"; exit 1; fi
+          done
+          echo "   ✅ losing pools refuse trades"
+          if [ "$(j $W builderKind)" = "pcs" ]; then ex=$(cast call --rpc-url $(rpc $W) $(j $W builder) "extraPositions(address)((int24,int24)[])" $COIN 2>/dev/null || echo "?"); else ex=$(cast call --rpc-url $(rpc $W) $(j $W builder) "extraPositions(address)(uint256[])" $COIN 2>/dev/null || echo "?"); fi
+          echo "   winner's extra positions (money that crossed): $ex"
+          echo "   winner's pending dollars: $(field $(rpc $W) 1 $(j $W builder) 'pendingDollars(address)(uint256)' $COIN 2>/dev/null || echo n/a)"
+
+          echo "== 6. The winner keeps trading"
+          before=$(cast call --rpc-url $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          tx $(rpc $W) $(j $W usd) "approve(address,uint256)" $(j $W router) 1000000
+          tx $(rpc $W) $(j $W router) "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME $(( $(date +%s) + 600 ))
+          after=$(cast call --rpc-url $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          echo "   ✅ bought on $(name $W) after the race: $(echo "($after - $before) / 10^18" | bc) coins for \$1"
+          echo "   my coins on the winner: $(echo "$after / 10^18" | bc) (losing chains' coins were moved here by the keeper)"
+          echo "== ALL DONE: a v7 race ran across four real testnets. Coin: $COIN"
