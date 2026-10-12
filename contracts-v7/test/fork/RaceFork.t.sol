@@ -18,8 +18,9 @@ abstract contract RaceForkBase is RaceFlow {
     function _real() internal view returns (address pm, address posm) {
         if (block.chainid == 8453) return (0x498581fF718922c3f8e6A244956aF099B2652b2b, 0x7C5f5A4bBd8fD63184577525326123B519429bDc);
         if (block.chainid == 4663) return (0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x58daec3116aae6D93017bAAea7749052E8a04fA7);
-        // Arc: the same Uniswap deployer and addresses as Robinhood Chain (checked by test_fork_arcUniswap)
-        if (block.chainid == 5042) return (0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x58daec3116aae6D93017bAAea7749052E8a04fA7);
+        // Arc: the PoolManager has the same address as on Robinhood Chain; its own PositionManager
+        // (both checked on the chain by test_fork_arcUniswap)
+        if (block.chainid == 5042) return (0x8366a39CC670B4001A1121B8F6A443A643e40951, 0x6049c9a0e26405C0985f9E3685C87d0aE917f82B);
         return (address(0), address(0));
     }
 
