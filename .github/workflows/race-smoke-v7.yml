@@ -46,6 +46,24 @@ jobs:
       - name: Install the keeper
         working-directory: keeper
         run: npm install --no-audit --no-fund
+      - name: Get libraries (for the testnet pool rebalancer script)
+        working-directory: contracts-v7
+        run: |
+          mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
+          cd lib/v4-periphery
+          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
+          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
+          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
+          cd ../../../..
+          cp -r ../contracts/lib/layerzero lib/layerzero
+          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
+          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
+      - name: Build
+        working-directory: contracts-v7
+        run: forge build
 
       - name: Run the whole race
         working-directory: contracts-v7
@@ -90,6 +108,13 @@ jobs:
           echo "== 0. Keep the test price feeds fresh (testnets without Chainlink; builders refuse a stale feed)"
           for c in $CHAINS; do
             if [ "$(j $c feedIsTest)" = "true" ]; then echo "  $(name $c):"; tx $(rpc $c) $(j $c feed) "touch()"; fi
+          done
+          echo "== 0a. Put the test ETH/dollar v4 pools back at the feed price (tiny pools drift; mainnet pools are arbitraged)"
+          for c in $CHAINS; do
+            if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then
+              echo "  $(name $c):"
+              if ETH_BUDGET_WEI=15000000000000000 forge script script/race/RebalanceTestPool.s.sol --rpc-url $(rpc $c) --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH" /tmp/rebalance-$c.log | sed 's/^/   /'; else echo "   ❌ rebalance failed:"; tail -30 /tmp/rebalance-$c.log; exit 1; fi
+            fi
           done
           echo "== 0b. Top up the test dollar pools (stand-ins for the real USDC/WBNB pool; mainnet pools are deep)"
           for c in $CHAINS; do
