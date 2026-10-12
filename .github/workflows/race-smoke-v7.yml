@@ -1,6 +1,6 @@
 name: race-smoke-v7
 
-# One full v7 race on the FOUR real testnets, run the way mainnet will run: the coin is
+# One full v7 race on the real testnets (three at a time: testnet LayerZero has no Robinhood<->Arc path), run the way mainnet will run: the coin is
 # launched on Base Sepolia, Robinhood testnet, BNB testnet and Arc testnet (native pairs,
 # $5 first buy on each), an extra $15 buy goes through the BNB trade router (USDC -> BNB ->
 # coin, so BNB Chain should win), and then the KEEPER (keeper/race.mjs) drives the race:
@@ -22,6 +22,14 @@ on:
           - base-sepolia
           - robinhood-testnet
           - arc-testnet
+      chains:
+        description: "Chains in the race (testnet LayerZero has no Robinhood<->Arc path, so pick a trio)"
+        type: choice
+        default: base-bsc-robinhood
+        options:
+          - base-bsc-robinhood
+          - base-bsc-arc
+          - all-four
 
 jobs:
   smoke:
@@ -44,6 +52,7 @@ jobs:
         env:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
           WINNER: ${{ inputs.winner }}
+          CHAINSET: ${{ inputs.chains }}
           RPC_84532: https://sepolia.base.org
           RPC_46630: https://rpc.testnet.chain.robinhood.com/rpc
           RPC_97: https://bsc-testnet-rpc.publicnode.com
@@ -61,7 +70,8 @@ jobs:
           rpc() { eval "echo \$RPC_$1"; }
           name() { case $1 in 84532) echo "Base Sepolia";; 46630) echo "Robinhood testnet";; 97) echo "BNB testnet";; 5042002) echo "Arc testnet";; esac; }
           case "$WINNER" in bsc-testnet) W=97;; base-sepolia) W=84532;; robinhood-testnet) W=46630;; arc-testnet) W=5042002;; esac
-          CHAINS="84532 46630 97 5042002"
+          case "$CHAINSET" in base-bsc-robinhood) CHAINS="84532 46630 97";; base-bsc-arc) CHAINS="84532 97 5042002";; *) CHAINS="84532 46630 97 5042002";; esac
+          case " $CHAINS " in *" $W "*) ;; *) echo "winner $(name $W) is not in the chain set $CHAINSET"; exit 1;; esac
           for c in $CHAINS; do [ -f deployments/race/$c.json ] || { echo "missing deployments/race/$c.json: deploy + wire first"; exit 1; }; done
           FAC=$(j 84532 factory)
           for c in $CHAINS; do [ "$(j $c factory)" = "$FAC" ] || { echo "factory differs on $c"; exit 1; }; done
@@ -77,7 +87,7 @@ jobs:
           EIDS=$(for c in $CHAINS; do j $c eid; done | sort -n | paste -sd, -)
           echo "me: $ME  factory: $FAC  coin: $COIN  eids: [$EIDS]  expected winner: $(name $W)"
 
-          echo "== 1. Launch the same coin on all four chains (\$5 first buy on each)"
+          echo "== 1. Launch the same coin on every chain in the race (\$5 first buy on each)"
           for c in $CHAINS; do
             USD=$(j $c usd)
             bal=$(cast call --rpc-url $(rpc $c) $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
@@ -88,7 +98,7 @@ jobs:
               "(\"Race Smoke\",\"RACE\",\"\",\"v7 smoke test\",$KEY,[$EIDS],0,5000000,0)"
             has_code $(rpc $c) $COIN || { echo "coin missing on $(name $c)"; exit 1; }
           done
-          echo "   ✅ same coin address on all four chains: $COIN"
+          echo "   ✅ same coin address on every chain: $COIN"
           LAUNCHED=$(date +%s)
 
           echo "== 2. An extra \$15 buy on $(name $W) through its trade router (dollars -> native -> coin)"
@@ -114,7 +124,7 @@ jobs:
           echo "== 5. Check the verdict"
           [ "$(rstate $W)" = "2" ] || { echo "❌ $(name $W) did not win (state $(rstate $W))"; exit 1; }
           for c in $CHAINS; do [ $c = $W ] && continue; [ "$(rstate $c)" = "3" ] || { echo "❌ $(name $c) did not lose (state $(rstate $c))"; exit 1; }; done
-          echo "   ✅ $(name $W) won, the other three lost"
+          echo "   ✅ $(name $W) won, the others lost"
           for c in $CHAINS; do
             [ $c = $W ] && continue
             echo "   $(name $c): pool now $(field $(rpc $c) 1 $(j $c builder) 'poolAmounts(address)(uint256,uint256)' $COIN), waiting to cross $(field $(rpc $c) 1 $(j $c consolidator) 'pendingPool(bytes32)(uint256)' $ID)"
