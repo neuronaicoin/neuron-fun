@@ -126,6 +126,10 @@ jobs:
               if [ "$usd" -lt 500000000 ]; then tx $(rpc $c) $(j $c usd) "mint(address,uint256)" $P 2000000000; fi
             fi
           done
+          # the keeper starts scanning from here (a fresh scan from the deploy block hits public RPC limits)
+          STATE_FILE=/tmp/race-smoke-state.json
+          cur="{"; for c in 84532 46630 97 5042002; do b=$(cast block-number --rpc-url $(rpc $c)); cur="$cur\"$c\": \"$((b - 5))\","; done; cur="${cur%,}}"
+          echo "{\"cursor\": $cur, \"coins\": {}}" > $STATE_FILE; echo "   keeper scan starts at: $cur"
           echo "== 1. Launch the same coin on every chain in the race (\$5 first buy on each)"
           for c in $CHAINS; do
             USD=$(j $c usd)
@@ -155,7 +159,7 @@ jobs:
             (cd ../keeper && node race.mjs) || echo "   (pass failed, retrying)"
             st=""; for c in $CHAINS; do st="$st $(name $c)=$(rstate $c)"; done
             echo "   states:$st"
-            if grep -q '"finished": true' /tmp/race-smoke-state.json 2>/dev/null; then echo "   ✅ the keeper reports the race finished (after pass $i)"; break; fi
+            if [ "$(jq -r --arg id "$ID" '.coins[$id].finished // false' /tmp/race-smoke-state.json 2>/dev/null)" = "true" ]; then echo "   ✅ the keeper reports this race finished (after pass $i)"; break; fi
             [ $i = 40 ] && { echo "   ❌ the race did not finish in 40 passes"; cat /tmp/race-smoke-state.json; exit 1; }
             sleep 30
           done
