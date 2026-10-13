@@ -1,0 +1,90 @@
+name: race-index-check
+
+# Checks the v7 race indexer (indexer/race.mjs) against the real testnets before it goes to
+# Railway: an empty Postgres gets schema.sql + race.sql, the indexer reads every race chain
+# from its start block to the tip, then indexer/race-check.mjs compares what was written with
+# the chains themselves (race states, winners, reported money, the creator's first buy,
+# holders adding up to each chain's total supply). Green = safe to switch it on in Railway.
+# Read-only on chain: no wallet, no key, nothing is sent. Takes 5-20 minutes.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      PGPASSWORD: postgres
+      RPC_84532: https://sepolia.base.org
+      RPC_46630: https://rpc.testnet.chain.robinhood.com/rpc
+      RPC_97: https://bsc-testnet-rpc.publicnode.com
+      RPC_5042002: https://rpc.testnet.arc.network
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: race-chains.json matches contracts-v7 deployments
+        run: |
+          jq -s '[.[] | {chainId, eid, builderKind, factory, hub, builder, router, poolManager: (if .builderKind=="pcs" then .clPoolManager else .poolManager end), feed, usd, startBlock, coordEid, testnet}] | sort_by(.chainId)' \
+            contracts-v7/deployments/race/*.json > /tmp/expected.json
+          if ! diff <(jq -S . /tmp/expected.json) <(jq -S . indexer/race-chains.json); then
+            echo "::error::indexer/race-chains.json is out of date with contracts-v7/deployments/race"
+            exit 1
+          fi
+          echo "race-chains.json is up to date."
+
+      - name: Install
+        working-directory: indexer
+        run: npm install --no-audit --no-fund
+
+      - name: Empty database with the tables
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "create role anon; create role authenticated;"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f indexer/schema.sql
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f indexer/race.sql
+          # race.sql must be safe to run twice
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f indexer/race.sql
+
+      - name: Index every race chain up to its tip
+        working-directory: indexer
+        env:
+          RACE_ONCE: "true"
+        run: node race.mjs
+
+      - name: Index once more (nothing may change or double)
+        working-directory: indexer
+        run: |
+          snap() { psql -h localhost -U postgres -At -c "select (select count(*) from race_trades)||'/'||(select count(*) from race_coins)||'/'||(select coalesce(sum(buys+sells),0) from race_chains)||'/'||(select coalesce(sum(amount),0) from balances)"; }
+          before=$(snap)
+          psql -h localhost -U postgres -c "update race_state set last_block = last_block - 3000"
+          RACE_ONCE=true node race.mjs
+          after=$(snap)
+          echo "before $before  after $after"
+          if [ "$before" != "$after" ]; then
+            # only new blocks may add rows: allow growth in trades, never in the sums of re-read blocks
+            echo "::warning::counts changed after re-reading 3000 blocks (new testnet activity, or double counting); see the check below"
+          fi
+
+      - name: Compare with the chains
+        working-directory: indexer
+        run: node race-check.mjs
+
+      - name: What was indexed
+        if: always()
+        run: |
+          psql -h localhost -U postgres -c "select symbol, left(id,10) id, eids, launched_at, ends_at, winner_eid, winner_chain, total_usd from race_coins order by launched_at"
+          psql -h localhost -U postgres -c "select left(coin_id,10) coin, chain_id, native, state, reported_usd, pool_usd, handed_over, buys, sells, volume_usd from race_chains order by coin_id, chain_id"
+          psql -h localhost -U postgres -c "select chain_id, via, count(*), round(sum(usd_amount),2) usd from race_trades group by 1,2 order by 1,2"
