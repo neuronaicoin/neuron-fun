@@ -66,7 +66,15 @@ jobs:
         working-directory: indexer
         env:
           RACE_ONCE: "true"
-        run: node race.mjs
+        # the full output is too long for the GitHub log, so it goes to a file and only the end is shown
+        run: |
+          set +e
+          node race.mjs > /tmp/race1.log 2>&1
+          code=$?
+          echo "exit $code, $(wc -l < /tmp/race1.log) lines"
+          tail -n 150 /tmp/race1.log
+          { echo "### Index step: exit $code"; echo '```'; tail -n 150 /tmp/race1.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
 
       - name: Index once more (nothing may change or double)
         working-directory: indexer
@@ -74,7 +82,13 @@ jobs:
           snap() { psql -h localhost -U postgres -At -c "select (select count(*) from race_trades)||'/'||(select count(*) from race_coins)||'/'||(select coalesce(sum(buys+sells),0) from race_chains)||'/'||(select coalesce(sum(amount),0) from balances)"; }
           before=$(snap)
           psql -h localhost -U postgres -c "update race_state set last_block = last_block - 3000"
-          RACE_ONCE=true node race.mjs
+          set +e
+          RACE_ONCE=true node race.mjs > /tmp/race2.log 2>&1
+          code=$?
+          tail -n 80 /tmp/race2.log
+          { echo "### Index once more: exit $code"; echo '```'; tail -n 80 /tmp/race2.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ $code -eq 0 ] || exit $code
+          set -e
           after=$(snap)
           echo "before $before  after $after"
           if [ "$before" != "$after" ]; then
