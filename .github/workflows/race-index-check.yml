@@ -31,6 +31,8 @@ jobs:
       RPC_5042002: https://rpc.testnet.arc.network
       # the public Arc RPC allows only a few calls per second
       RACE_RPC_GAP_MS_5042002: "400"
+      # and refuses log queries that ask for several events at once ("range too large")
+      RACE_LOG_MODE_5042002: single
     steps:
       - uses: actions/checkout@v4
 
