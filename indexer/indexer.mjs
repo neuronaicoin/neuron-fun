@@ -31,6 +31,7 @@ import { pointsLoop } from "./points.mjs";
 import { badgesLoop } from "./badges.mjs";
 import { marketsLoop } from "./markets.mjs";
 import { seoLoop } from "./seo.mjs";
+import { raceLoop, loadRaceChains } from "./race.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
 const env = (n, d) => {
@@ -65,7 +66,8 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
 
 const pool = new pg.Pool({
   connectionString: env("DATABASE_URL"),
-  max: CHAINS.length + 2,
+  // + the v7 race chains (race.mjs) and its live-money reader
+  max: CHAINS.length + 3 + loadRaceChains(() => {}).chains.length,
   ssl: /localhost|127\.0\.0\.1/.test(env("DATABASE_URL")) ? false : { rejectUnauthorized: false },
 });
 
@@ -517,6 +519,8 @@ async function main() {
     badgesLoop(pool, log),
     marketsLoop(pool, log),
     seoLoop(pool, log),
+    // v7 five-minute races (race.sql, race-chains.json, RPC_<chainId>); off when no race RPC is set
+    raceLoop(pool, log),
   ]);
 }
 

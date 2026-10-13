@@ -1,0 +1,62 @@
+[
+  {
+    "chainId": 97,
+    "eid": 40102,
+    "builderKind": "pcs",
+    "factory": "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    "hub": "0x1044fe554262C92F06D0838b5dE320e12e54ea5D",
+    "builder": "0x58068303Ca51EbB8FC25B594361186a52D6071E5",
+    "router": "0xfF8f34C09cd042A52275BE1B30Eb377b5370cAB6",
+    "poolManager": "0x36A12c70c9Cf64f24E89ee132BF93Df2DCD199d4",
+    "feed": "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526",
+    "usd": "0x00cB1E0bC065C821481411a95c0A2e1afA432919",
+    "startBlock": 136316128,
+    "coordEid": 40245,
+    "testnet": true
+  },
+  {
+    "chainId": 46630,
+    "eid": 40451,
+    "builderKind": "eth",
+    "factory": "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    "hub": "0xBde9bFA7169301Ba50d9324847e8f59A8E14a8FA",
+    "builder": "0xEb9b5443c94BAEe122CA80CE439027FeB6b7F660",
+    "router": "0x1360d3E3e71C65ff9185afebBFe7c7e83D06c8B0",
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "feed": "0x845641B7D5c253C082Fc5B69093923d9561FCb41",
+    "usd": "0x6B0d23F84666EA6C8b16789879CE1B6e090E66Da",
+    "startBlock": 133494372,
+    "coordEid": 40245,
+    "testnet": true
+  },
+  {
+    "chainId": 84532,
+    "eid": 40245,
+    "builderKind": "eth",
+    "factory": "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    "hub": "0x19a5889eadb6b73513512b18a42dF213599F4a6A",
+    "builder": "0x2D1C8FEF53a6B11db0abcCcE41BD5e61168E0418",
+    "router": "0x940a770eb4e1B8BE83749695666B8c635A37D89C",
+    "poolManager": "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
+    "feed": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+    "usd": "0xc3C80f46cD6911A2082B8744E92a69664f4F3560",
+    "startBlock": 48009547,
+    "coordEid": 40245,
+    "testnet": true
+  },
+  {
+    "chainId": 5042002,
+    "eid": 40434,
+    "builderKind": "usdc",
+    "factory": "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    "hub": "0x00cB1E0bC065C821481411a95c0A2e1afA432919",
+    "builder": "0x74aE321cD971f92E07CD734E4C9fA3643F60c28c",
+    "router": "0x1044fe554262C92F06D0838b5dE320e12e54ea5D",
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "feed": "0x0000000000000000000000000000000000000000",
+    "usd": "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9",
+    "startBlock": 66782878,
+    "coordEid": 40245,
+    "testnet": true
+  }
+]
