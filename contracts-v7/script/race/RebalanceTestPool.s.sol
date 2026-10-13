@@ -56,7 +56,9 @@ contract RebalanceTestPool is Script {
         uint256 key = vm.envUint("PRIVATE_KEY");
         address me = vm.addr(key);
         uint256 budget = vm.envOr("ETH_BUDGET_WEI", uint256(0.03 ether));
-        if (budget > me.balance / 2) budget = me.balance / 2; // never spend the gas money
+        // never spend the gas money: keep RESERVE_WEI (default 0.003) for the race itself
+        uint256 reserve = vm.envOr("RESERVE_WEI", uint256(0.003 ether));
+        budget = me.balance > reserve + budget ? budget : (me.balance > reserve ? me.balance - reserve : 0);
         vm.startBroadcast(key);
         address rb = vm.envOr("REBALANCER", address(0));
         if (rb == address(0)) rb = address(new TestPoolRebalancer(pm));
