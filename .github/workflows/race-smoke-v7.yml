@@ -126,7 +126,7 @@ jobs:
           # pcs kind:         races() = (seat, creator, feeMode, launchedAt, state, winnerEid, launchLower, launchUpper) -> state is value 5
           rstate() { local c=$1; if [ "$(j $c builderKind)" = "pcs" ]; then field $(rpc $c) 5 $(j $c builder) "races(address)(address,address,uint8,uint64,uint8,uint32,int24,int24)" $COIN; else field $(rpc $c) 6 $(j $c builder) "races(address)(uint256,address,address,uint8,uint64,uint8,uint32)" $COIN; fi; }
           # how much gas money a chain needs for one race (launch + freeze + forward + moveBatch LayerZero fees, with margin)
-          need_native() { case $1 in 97) echo 20000000000000000;; 5042002) echo 20000000000000000000;; *) echo 4000000000000000;; esac; }  # 0.02 BNB, 20 USDC (moveBatch sends 2 x 8 USDC), 0.004 ETH
+          need_native() { case $1 in 97) echo 20000000000000000;; 5042002) echo 20000000000000000000;; *) echo 3000000000000000;; esac; }  # 0.02 BNB, 20 USDC (moveBatch sends 2 x 8 USDC), 0.003 ETH (the rebalancer keeps this much)
 
           echo "== Pre-flight: every chain in the race must be reachable, funded and fresh BEFORE anything is launched"
           SHORT=""; short() { echo "   ❌ $1"; SHORT="$SHORT"$'\n'"  - $1"; }
@@ -141,7 +141,6 @@ jobs:
             bal=$(retry cast balance --rpc-url "$R" "$ME" || echo "")
             gp=$(retry cast gas-price --rpc-url "$R" || echo 0)
             need=$(max "$(need_native $c)" "$(echo "${gp:-0} * 5000000" | bc)")
-            if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then need=$(echo "$need * 2" | bc); fi   # the pool rebalance may sell up to half the balance
             if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
               P=$(j $c dollarPool); pnat=$(call1 "$R" $(j $c wnative) "balanceOf(address)(uint256)" $P || echo ""); if lt "$pnat" 50000000000000000; then need=$(echo "$need + 50000000000000000" | bc); fi
             fi
