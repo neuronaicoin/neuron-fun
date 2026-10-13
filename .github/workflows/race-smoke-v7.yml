@@ -135,7 +135,7 @@ jobs:
             USD=$(j $c usd)
             bal=$(cast call --rpc-url $(rpc $c) $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
             echo "  $(name $c): test dollars $bal"
-            if [ "$bal" -lt 30000000 ]; then tx $(rpc $c) $USD "faucet(address)" $ME; fi
+            if [ "$bal" -lt 30000000 ]; then tx $(rpc $c) $USD "mint(address,uint256)" $ME 100000000; fi   # the deployer owns the test dollar
             tx $(rpc $c) $USD "approve(address,uint256)" $FAC 5000000
             tx $(rpc $c) $FAC "launch((string,string,string,string,bytes32,uint32[],uint8,uint256,uint256))" \
               "(\"Race Smoke\",\"RACE\",\"\",\"v7 smoke test\",$KEY,[$EIDS],0,5000000,0)"
