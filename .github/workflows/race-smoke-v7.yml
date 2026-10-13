@@ -8,7 +8,11 @@ name: race-smoke-v7
 # dollars at a fair price), the dollars crossing to the winner, and holders' coins moving.
 # Finally the winner is traded once more and a loser is shown to refuse trades.
 # Uses the deployer wallet (DEPLOYER_PRIVATE_KEY) for everything; it is the keeper too.
-# Takes 20-45 minutes (5 minutes of race + LayerZero messages on four testnets).
+#
+# A PRE-FLIGHT runs first and stops the run (exit 1, plain-language list of what to top up)
+# BEFORE anything is launched, so a run never spends the five-minute race on a chain that is
+# unreachable, out of gas, out of test dollars, or whose price feed / test pool is stale.
+# Takes 20-90 minutes (5 minutes of race + LayerZero testnet messages, 5-15 min per hop).
 
 on:
   workflow_dispatch:
@@ -34,7 +38,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: foundry-rs/foundry-toolchain@v1
@@ -75,8 +79,14 @@ jobs:
           RPC_46630: https://rpc.testnet.chain.robinhood.com/rpc
           RPC_97: https://bsc-testnet-rpc.publicnode.com
           RPC_5042002: https://rpc.testnet.arc.network
-          # Arc pays gas in USDC (18 decimals natively): 0.5 USDC per LayerZero message, the rest is refunded
-          LZ_FEE_WEI_5042002: "500000000000000000"
+          # Arc pays gas in USDC (18 decimals natively) and a LayerZero message costs ~6.4 USDC there:
+          # send 8 USDC per message so the keeper needs no fee round trip (the unused part is refunded)
+          LZ_FEE_WEI_5042002: "8000000000000000000"
+          # the testnet ETH/dollar pool rebalancer may sell up to this much ETH (capped at half the balance by the script)
+          ETH_BUDGET_WEI: "30000000000000000"
+          # the keeper loop: at most this many passes, and at most this many minutes, after the race
+          KEEPER_PASSES: "60"
+          KEEPER_MINUTES: "65"
         run: |
           set -euo pipefail
           trap 'echo "❌ FAILED at line $LINENO: $BASH_COMMAND"' ERR
@@ -84,59 +94,136 @@ jobs:
           echo "::add-mask::$K"
           export PRIVATE_KEY="$K"
           ME=$(cast wallet address "$K")
+          MEL=$(echo "$ME" | tr 'A-Z' 'a-z')
           j() { jq -r ".$2" "deployments/race/$1.json"; }
           rpc() { eval "echo \$RPC_$1"; }
           name() { case $1 in 84532) echo "Base Sepolia";; 46630) echo "Robinhood testnet";; 97) echo "BNB testnet";; 5042002) echo "Arc testnet";; esac; }
+          gasname() { case $1 in 97) echo "BNB";; 5042002) echo "USDC (Arc gas)";; *) echo "ETH";; esac; }
           case "$WINNER" in bsc-testnet) W=97;; base-sepolia) W=84532;; robinhood-testnet) W=46630;; arc-testnet) W=5042002;; esac
           case "$CHAINSET" in base-bsc-robinhood) CHAINS="84532 46630 97";; base-bsc-arc) CHAINS="84532 97 5042002";; *) CHAINS="84532 46630 97 5042002";; esac
           case " $CHAINS " in *" $W "*) ;; *) echo "winner $(name $W) is not in the chain set $CHAINSET"; exit 1;; esac
           for c in $CHAINS; do [ -f deployments/race/$c.json ] || { echo "missing deployments/race/$c.json: deploy + wire first"; exit 1; }; done
           FAC=$(j 84532 factory)
           for c in $CHAINS; do [ "$(j $c factory)" = "$FAC" ] || { echo "factory differs on $c"; exit 1; }; done
-          # send, then wait for the receipt ourselves (public testnet RPCs can take minutes to confirm)
-          tx() { local rpc=$1; shift; echo "   -> $(echo "$1" | cut -c1-10)… $2"; local hash=""; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --async "$@" 2>&1) && { hash=$(echo "$out" | grep -oE "0x[0-9a-fA-F]{64}" | tail -1); break; }; if echo "$out" | grep -qiE "underpriced|nonce|already known|timeout|timed out"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out"; exit 1; fi; done; [ -n "$hash" ] || { echo "FAILED (no tx hash): $*"; echo "$out"; exit 1; }; local st=""; for i in $(seq 1 120); do st=$(cast receipt --rpc-url "$rpc" "$hash" status 2>/dev/null || true); [ -n "$st" ] && [ "$st" != "null" ] && break; sleep 5; done; case "$st" in 1|0x1|*success*) ;; *) echo "FAILED (status '$st') $hash: $*"; exit 1;; esac; sleep 2; }
-          field() { local rpc=$1 n=$2; shift 2; cast call --rpc-url "$rpc" "$@" 2>/dev/null | sed -n "${n}p" | awk '{print $1}' || true; }
-          has_code() { for i in $(seq 1 20); do c=$(cast code --rpc-url "$1" "$2" 2>/dev/null || echo 0x); [ ${#c} -gt 10 ] && return 0; sleep 3; done; return 1; }
-          # the race state of a coin on a chain: 1 racing, 2 won, 3 lost
+          # ---------- helpers
+          # big-number compare with bc (bash integers overflow at 9.2e18: Arc balances are 18-decimal USDC). Empty/garbage counts as "short".
+          lt() { case "${1:-}" in ''|*[!0-9]*) return 0;; esac; [ "$(echo "$1 < $2" | bc)" = 1 ]; }
+          max() { if lt "$1" "$2"; then echo "$2"; else echo "$1"; fi; }
+          eth() { cast to-unit "${1:-0}" ether 2>/dev/null || echo "${1:-?}"; }       # 18-dec -> human
+          usd6() { echo "scale=2; ${1:-0} / 1000000" | bc 2>/dev/null || echo "${1:-?}"; }  # 6-dec -> human
+          # cast call with retries (public RPCs time out / rate-limit); a revert is not retried. Prints cast's raw lines.
+          rcall() { local rpc=$1; shift; local out="" try; for try in 1 2 3 4 5; do if out=$(cast call --rpc-url "$rpc" "$@" 2>&1); then printf '%s\n' "$out"; return 0; fi; case "$out" in *evert*|*"error code 3"*) break;; esac; sleep 4; done; echo "      (read failed: $(echo "$out" | head -1 | cut -c1-160))" >&2; return 1; }
+          call1() { rcall "$@" | awk 'NR==1{print $1}'; }                           # first word of the first return value
+          field() { local rpc=$1 n=$2; shift 2; rcall "$rpc" "$@" 2>/dev/null | sed -n "${n}p" | awk '{print $1}' || true; }  # n-th return value, empty on failure
+          retry() { local try out=""; for try in 1 2 3 4 5; do if out=$("$@" 2>&1); then printf '%s\n' "$out"; return 0; fi; sleep 4; done; echo "      ($* failed: $(echo "$out" | head -1 | cut -c1-160))" >&2; return 1; }
+          # send, then wait for the receipt ourselves (public testnet RPCs can take minutes to confirm).
+          # Exits the run on failure, unless TX_SOFT=1 (then it returns 1 and the caller decides).
+          tx() { local rpc=$1; shift; echo "   -> $(echo "$1" | cut -c1-10)… $2"; local hash="" out="" try; for try in 1 2 3 4 5 6; do out=$(cast send --rpc-url "$rpc" --private-key "$K" --async "$@" 2>&1) && { hash=$(echo "$out" | grep -oE "0x[0-9a-fA-F]{64}" | tail -1); break; }; if echo "$out" | grep -qiE "underpriced|nonce|already known|timeout|timed out|connection|429|rate limit"; then echo "      (node is behind, retry $try in 6s)"; sleep 6; else echo "FAILED: $*"; echo "$out" | head -5; [ "${TX_SOFT:-}" = 1 ] && return 1; exit 1; fi; done; [ -n "$hash" ] || { echo "FAILED (no tx hash): $*"; echo "$out" | head -5; [ "${TX_SOFT:-}" = 1 ] && return 1; exit 1; }; local st="" i; for i in $(seq 1 120); do st=$(cast receipt --rpc-url "$rpc" "$hash" status 2>/dev/null || true); [ -n "$st" ] && [ "$st" != "null" ] && break; sleep 5; done; case "$st" in 1|0x1|*success*) ;; *) echo "FAILED (status '$st') $hash: $*"; [ "${TX_SOFT:-}" = 1 ] && return 1; exit 1;; esac; sleep 2; }
+          soft_tx() { TX_SOFT=1 tx "$@"; }
+          has_code() { local i code; for i in $(seq 1 20); do code=$(cast code --rpc-url "$1" "$2" 2>/dev/null || echo 0x); [ ${#code} -gt 10 ] && return 0; sleep 3; done; return 1; }
+          # the race state of a coin on a chain: 1 racing, 2 won, 3 lost.
+          # eth + usdc kinds: races() = (positionId, seat, creator, feeMode, launchedAt, state, winnerEid) -> state is value 6
+          # pcs kind:         races() = (seat, creator, feeMode, launchedAt, state, winnerEid, launchLower, launchUpper) -> state is value 5
           rstate() { local c=$1; if [ "$(j $c builderKind)" = "pcs" ]; then field $(rpc $c) 5 $(j $c builder) "races(address)(address,address,uint8,uint64,uint8,uint32,int24,int24)" $COIN; else field $(rpc $c) 6 $(j $c builder) "races(address)(uint256,address,address,uint8,uint64,uint8,uint32)" $COIN; fi; }
+          # how much gas money a chain needs for one race (launch + freeze + forward + moveBatch LayerZero fees, with margin)
+          need_native() { case $1 in 97) echo 20000000000000000;; 5042002) echo 20000000000000000000;; *) echo 4000000000000000;; esac; }  # 0.02 BNB, 20 USDC (moveBatch sends 2 x 8 USDC), 0.004 ETH
+
+          echo "== Pre-flight: every chain in the race must be reachable, funded and fresh BEFORE anything is launched"
+          SHORT=""; short() { echo "   ❌ $1"; SHORT="$SHORT"$'\n'"  - $1"; }
+          TABLE="chain|gas money|needed|test dollars|feed age|dollar pool|rebalance"
+          for c in $CHAINS; do
+            N=$(name $c); R=$(rpc $c); own=""; row_feed="-"; row_pool="-"; row_reb="-"; row_usd="-"
+            echo "  $N:"
+            # a) the RPC answers and is the right chain
+            cid=$(retry cast chain-id --rpc-url "$R" || echo "?")
+            if [ "$cid" != "$c" ]; then short "$N: the RPC $R does not answer (or is chain '$cid', not $c). Fix RPC_$c in the workflow."; TABLE="$TABLE"$'\n'"$N|RPC down|||||"; continue; fi
+            # b) gas money: the fixed estimate, or 5M gas at today's gas price if that is more
+            bal=$(retry cast balance --rpc-url "$R" "$ME" || echo "")
+            gp=$(retry cast gas-price --rpc-url "$R" || echo 0)
+            need=$(max "$(need_native $c)" "$(echo "${gp:-0} * 5000000" | bc)")
+            if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then need=$(echo "$need * 2" | bc); fi   # the pool rebalance may sell up to half the balance
+            if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
+              P=$(j $c dollarPool); pnat=$(call1 "$R" $(j $c wnative) "balanceOf(address)(uint256)" $P || echo ""); if lt "$pnat" 50000000000000000; then need=$(echo "$need + 50000000000000000" | bc); fi
+            fi
+            echo "   gas money: $(eth "$bal") $(gasname $c), needs $(eth "$need") (gas price $gp)"
+            if lt "$bal" "$need"; then short "$N: send at least $(eth "$(echo "$need - ${bal:-0}" | bc)") more $(gasname $c) to the deployer $ME (has $(eth "$bal"), needs $(eth "$need"))"; fi
+            # c) test dollars: the deployer owns the test dollar on a testnet (mint); otherwise the faucet / Circle faucet
+            USD=$(j $c usd); ubal=$(call1 "$R" $USD "balanceOf(address)(uint256)" $ME || echo "")
+            target=30000000; [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ] && target=200000000   # the rebalance may spend dollars too
+            if [ "$(j $c usdIsTest)" = "true" ]; then
+              own=$(call1 "$R" $USD "owner()(address)" 2>/dev/null | tr 'A-Z' 'a-z' || echo "")
+              if lt "$ubal" "$target"; then
+                if [ "$own" = "$MEL" ]; then tx "$R" $USD "mint(address,uint256)" $ME $(( target * 3 )); ubal=$(call1 "$R" $USD "balanceOf(address)(uint256)" $ME || echo "");
+                else echo "   (deployer is not the test dollar's owner: trying the daily faucet)"; soft_tx "$R" $USD "faucet(address)" $ME || true; ubal=$(call1 "$R" $USD "balanceOf(address)(uint256)" $ME || echo ""); fi
+              fi
+              if lt "$ubal" "$target"; then short "$N: the deployer has only \$$(usd6 "$ubal") test dollars, needs \$$(usd6 $target); the test dollar $USD is owned by ${own:-?} (not the deployer), so ask its owner to mint, or wait for the faucet (one \$100 per day)"; fi
+            else
+              if lt "$ubal" "$target"; then short "$N: the deployer has only \$$(usd6 "$ubal") USDC ($USD), needs \$$(usd6 $target): get USDC from the Circle faucet (faucet.circle.com)"; fi
+            fi
+            row_usd="\$$(usd6 "$ubal")"; echo "   test dollars: $row_usd"
+            # d) the price feed: our TestFeed is touched when older than maxFeedAge/2; a real Chainlink feed must simply be fresh
+            FEED=$(j $c feed); MAXAGE=$(j $c maxFeedAge); [ "$MAXAGE" != "null" ] || MAXAGE=7200
+            if [ "$FEED" != "0x0000000000000000000000000000000000000000" ] && [ "$FEED" != "null" ]; then
+              upd=$(field "$R" 4 $FEED "latestRoundData()(uint80,int256,uint256,uint256,uint80)"); ans=$(field "$R" 2 $FEED "latestRoundData()(uint80,int256,uint256,uint256,uint80)")
+              age=$(( $(date +%s) - ${upd:-0} ))
+              if [ "$(j $c feedIsTest)" = "true" ]; then
+                if [ -z "$upd" ] || [ $age -gt $(( MAXAGE / 2 )) ]; then echo "   test feed is ${age}s old: touching it"; tx "$R" $FEED "touch()"; age=0; fi
+              else
+                if [ -z "$upd" ] || [ $age -gt $(( MAXAGE - 600 )) ]; then short "$N: the Chainlink feed $FEED is ${age}s old (builders refuse anything older than ${MAXAGE}s). Nothing to top up: wait for Chainlink to update and run again."; fi
+              fi
+              case "${ans:-0}" in 0|-*) short "$N: the price feed $FEED reports price '${ans:-}' (must be > 0)";; esac
+              row_feed="${age}s"; echo "   feed: $FEED price $ans, ${age}s old (max ${MAXAGE}s)"
+            fi
+            # e) the test ETH/dollar v4 pool must sit at the feed price (tiny pools drift; mainnet pools are arbitraged)
+            if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then
+              if forge script script/race/RebalanceTestPool.s.sol --rpc-url "$R" --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then
+                grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH|WARNING" /tmp/rebalance-$c.log | sed 's/^/   /' || true
+                left=$(grep -oE "still off by \(bps\): *[0-9]+" /tmp/rebalance-$c.log | grep -oE "[0-9]+$" | tail -1 || true)
+                if [ -n "$left" ] && [ "$left" -gt 150 ]; then short "$N: the test ETH/dollar pool is still $left bps (sqrt) off the feed after the rebalance (limit 150): send more test $(gasname $c) to the deployer $ME and run again"; row_reb="$left bps ❌"; else row_reb="ok"; fi
+              else
+                echo "   ❌ rebalance script failed:"; tail -15 /tmp/rebalance-$c.log | sed 's/^/   /'
+                short "$N: the test ETH/dollar pool rebalance failed (see the log above): usually the deployer lacks test $(gasname $c) or test dollars"; row_reb="failed"
+              fi
+              bal=$(retry cast balance --rpc-url "$R" "$ME" || echo "")
+              if lt "$bal" "$(need_native $c)"; then short "$N: after the pool rebalance the deployer has only $(eth "$bal") $(gasname $c) left, needs $(eth "$(need_native $c)"): send more"; fi
+            fi
+            # f) the test dollar pool (stand-in for the real USDC/WBNB pool) needs both sides: native for the buys, dollars for the losers' hand-over
+            if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
+              P=$(j $c dollarPool); pnat=$(call1 "$R" $(j $c wnative) "balanceOf(address)(uint256)" $P || echo ""); pusd=$(call1 "$R" $USD "balanceOf(address)(uint256)" $P || echo "")
+              echo "   test dollar pool $P: $(eth "$pnat") native, \$$(usd6 "$pusd") dollars"
+              if lt "$pnat" 50000000000000000; then echo "   -> sending 0.05 native to the pool"; tx "$R" $P --value 50000000000000000; pnat=$(call1 "$R" $(j $c wnative) "balanceOf(address)(uint256)" $P || echo ""); fi
+              if lt "$pusd" 500000000; then
+                if [ "$(j $c usdIsTest)" = "true" ] && [ "${own:-}" = "$MEL" ]; then tx "$R" $USD "mint(address,uint256)" $P 2000000000; pusd=$(call1 "$R" $USD "balanceOf(address)(uint256)" $P || echo ""); fi
+              fi
+              if lt "$pnat" 50000000000000000; then short "$N: the test dollar pool $P has only $(eth "$pnat") native (needs 0.05): the top-up did not land"; fi
+              if lt "$pusd" 500000000; then short "$N: the test dollar pool $P has only \$$(usd6 "$pusd") test dollars (needs \$500) and the deployer cannot mint: ask the test dollar's owner"; fi
+              row_pool="$(eth "$pnat")/\$$(usd6 "$pusd")"
+            fi
+            TABLE="$TABLE"$'\n'"$N|$(eth "$bal") $(gasname $c)|$(eth "$need")|$row_usd|$row_feed|$row_pool|$row_reb"
+          done
+          echo; { echo "$TABLE" | column -t -s '|' 2>/dev/null || echo "$TABLE"; } | sed 's/^/   /'; echo
+          if [ -n "$SHORT" ]; then echo "❌ PRE-FLIGHT FAILED. Nothing was launched. Fix these and run again:$SHORT"; exit 1; fi
+          echo "   ✅ pre-flight passed on: $(for c in $CHAINS; do name $c; done | paste -sd, -)"
 
           KEY=$(cast keccak "race-smoke-v7-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
-          ID=$(cast call --rpc-url $(rpc 84532) $FAC "coinIdOf(address,bytes32)(bytes32)" $ME $KEY)
-          COIN=$(cast call --rpc-url $(rpc 84532) $FAC "coinAddress(address,bytes32)(address)" $ME $KEY)
+          ID=$(call1 $(rpc 84532) $FAC "coinIdOf(address,bytes32)(bytes32)" $ME $KEY)
+          COIN=$(call1 $(rpc 84532) $FAC "coinAddress(address,bytes32)(address)" $ME $KEY)
+          [ -n "$ID" ] && [ -n "$COIN" ] || { echo "❌ could not read the coin id/address from the factory on Base Sepolia"; exit 1; }
           EIDS=$(for c in $CHAINS; do j $c eid; done | sort -n | paste -sd, -)
           echo "me: $ME  factory: $FAC  coin: $COIN  eids: [$EIDS]  expected winner: $(name $W)"
 
-          echo "== 0. Keep the test price feeds fresh (testnets without Chainlink; builders refuse a stale feed)"
-          for c in $CHAINS; do
-            if [ "$(j $c feedIsTest)" = "true" ]; then echo "  $(name $c):"; tx $(rpc $c) $(j $c feed) "touch()"; fi
-          done
-          echo "== 0a. Put the test ETH/dollar v4 pools back at the feed price (tiny pools drift; mainnet pools are arbitraged)"
-          for c in $CHAINS; do
-            if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then
-              echo "  $(name $c):"
-              if forge script script/race/RebalanceTestPool.s.sol --rpc-url $(rpc $c) --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH" /tmp/rebalance-$c.log | sed 's/^/   /'; else echo "   ❌ rebalance failed:"; tail -30 /tmp/rebalance-$c.log; exit 1; fi
-            fi
-          done
-          echo "== 0b. Top up the test dollar pools (stand-ins for the real USDC/WBNB pool; mainnet pools are deep)"
-          for c in $CHAINS; do
-            if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
-              P=$(j $c dollarPool); nat=$(cast call --rpc-url $(rpc $c) $(j $c wnative) "balanceOf(address)(uint256)" $P | awk '{print $1}'); usd=$(cast call --rpc-url $(rpc $c) $(j $c usd) "balanceOf(address)(uint256)" $P | awk '{print $1}')
-              echo "  $(name $c): pool has $nat wei native, $usd test dollars"
-              if [ "$nat" -lt 50000000000000000 ]; then echo "   -> sending 0.05 native to the pool"; tx $(rpc $c) $P --value 50000000000000000; fi
-              if [ "$usd" -lt 500000000 ]; then tx $(rpc $c) $(j $c usd) "mint(address,uint256)" $P 2000000000; fi
-            fi
-          done
-          # the keeper starts scanning from here (a fresh scan from the deploy block hits public RPC limits)
+          # the keeper starts scanning from here (a fresh scan from the deploy block hits public RPC limits); chains not in the race are hidden from it
           STATE_FILE=/tmp/race-smoke-state.json
-          cur="{"; for c in 84532 46630 97 5042002; do b=$(cast block-number --rpc-url $(rpc $c)); cur="$cur\"$c\": \"$((b - 5))\","; done; cur="${cur%,}}"
+          cur="{"; for c in $CHAINS; do b=$(retry cast block-number --rpc-url $(rpc $c)) || { echo "❌ $(name $c): cannot read the block number"; exit 1; }; cur="$cur\"$c\": \"$((b - 5))\","; done; cur="${cur%,}}"
           echo "{\"cursor\": $cur, \"coins\": {}}" > $STATE_FILE; echo "   keeper scan starts at: $cur"
+          for c in 84532 46630 97 5042002; do case " $CHAINS " in *" $c "*) ;; *) unset RPC_$c;; esac; done
+
           echo "== 1. Launch the same coin on every chain in the race (\$5 first buy on each)"
           for c in $CHAINS; do
             USD=$(j $c usd)
-            bal=$(cast call --rpc-url $(rpc $c) $USD "balanceOf(address)(uint256)" $ME | awk '{print $1}')
-            echo "  $(name $c): test dollars $bal"
-            if [ "$bal" -lt 30000000 ]; then tx $(rpc $c) $USD "mint(address,uint256)" $ME 100000000; fi   # the deployer owns the test dollar
+            echo "  $(name $c): test dollars \$$(usd6 "$(call1 $(rpc $c) $USD "balanceOf(address)(uint256)" $ME || echo 0)")"
             tx $(rpc $c) $USD "approve(address,uint256)" $FAC 5000000
+            tx $(rpc $c) $USD "approve(address,uint256)" $(j $c router) 1000000   # so the "losers refuse trades" check in step 5 is a real one
             tx $(rpc $c) $FAC "launch((string,string,string,string,bytes32,uint32[],uint8,uint256,uint256))" \
               "(\"Race Smoke\",\"RACE\",\"\",\"v7 smoke test\",$KEY,[$EIDS],0,5000000,0)"
             has_code $(rpc $c) $COIN || { echo "coin missing on $(name $c)"; exit 1; }
@@ -145,7 +232,7 @@ jobs:
           LAUNCHED=$(date +%s)
 
           echo "== 2. An extra \$15 buy on $(name $W) through its trade router (dollars -> native -> coin)"
-          tx $(rpc $W) $(j $W usd) "approve(address,uint256)" $(j $W router) 15000000
+          tx $(rpc $W) $(j $W usd) "approve(address,uint256)" $(j $W router) 16000000
           tx $(rpc $W) $(j $W router) "buy(address,uint256,uint256,address,uint256)" $COIN 15000000 1 $ME $(( $(date +%s) + 600 ))
           for c in $CHAINS; do echo "   $(name $c) pool: $(field $(rpc $c) 1 $(j $c builder) 'poolAmounts(address)(uint256,uint256)' $COIN) (native wei or 6-dec dollars)"; done
 
@@ -153,20 +240,22 @@ jobs:
           left=$(( LAUNCHED + 320 - $(date +%s) )); [ $left -gt 0 ] && { echo "   waiting ${left}s"; sleep $left; }
 
           echo "== 4. The keeper drives the race (report -> verdict -> hand-over -> cross -> move holders)"
+          echo "   (two LayerZero hops must land before the hand-over: report -> coordinator, verdict -> every chain; 5-15 min each on testnets)"
           export DEPLOYMENTS=../contracts-v7/deployments/race STATE_FILE=/tmp/race-smoke-state.json DRY_RUN=false BUDGET_MS=300000
-          for i in $(seq 1 40); do
+          DEADLINE=$(( $(date +%s) + KEEPER_MINUTES * 60 ))
+          for i in $(seq 1 $KEEPER_PASSES); do
             echo "--- keeper pass $i ($(date -u +%H:%M:%S))"
-            (cd ../keeper && node race.mjs) || echo "   (pass failed, retrying)"
+            (cd ../keeper && timeout 900 node race.mjs) || echo "   (pass failed, retrying)"
             st=""; for c in $CHAINS; do st="$st $(name $c)=$(rstate $c)"; done
             echo "   states:$st"
             if [ "$(jq -r --arg id "$ID" '.coins[$id].finished // false' /tmp/race-smoke-state.json 2>/dev/null)" = "true" ]; then echo "   ✅ the keeper reports this race finished (after pass $i)"; break; fi
-            [ $i = 40 ] && { echo "   ❌ the race did not finish in 40 passes"; cat /tmp/race-smoke-state.json; exit 1; }
+            if [ $i = $KEEPER_PASSES ] || [ $(date +%s) -gt $DEADLINE ]; then echo "   ❌ the race did not finish in $i passes / $KEEPER_MINUTES minutes (LayerZero testnet delivery can be slow: check https://testnet.layerzeroscan.com for the hub/consolidator messages)"; cat /tmp/race-smoke-state.json; exit 1; fi
             sleep 30
           done
 
           echo "== 5. Check the verdict"
-          [ "$(rstate $W)" = "2" ] || { echo "❌ $(name $W) did not win (state $(rstate $W))"; exit 1; }
-          for c in $CHAINS; do [ $c = $W ] && continue; [ "$(rstate $c)" = "3" ] || { echo "❌ $(name $c) did not lose (state $(rstate $c))"; exit 1; }; done
+          [ "$(rstate $W)" = "2" ] || { echo "❌ $(name $W) did not win (state '$(rstate $W)')"; exit 1; }
+          for c in $CHAINS; do [ $c = $W ] && continue; [ "$(rstate $c)" = "3" ] || { echo "❌ $(name $c) did not lose (state '$(rstate $c)')"; exit 1; }; done
           echo "   ✅ $(name $W) won, the others lost"
           for c in $CHAINS; do
             [ $c = $W ] && continue
@@ -174,15 +263,17 @@ jobs:
             if cast call --rpc-url $(rpc $c) $(j $c router) "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME 9999999999 --from $ME >/dev/null 2>&1; then echo "   ❌ $(name $c)'s router still trades the coin"; exit 1; fi
           done
           echo "   ✅ losing pools refuse trades"
+          # extraPositions: pcs returns (int24,int24)[] ranges; eth and usdc (RaceBuilder) return uint256[] position ids
           if [ "$(j $W builderKind)" = "pcs" ]; then ex=$(cast call --rpc-url $(rpc $W) $(j $W builder) "extraPositions(address)((int24,int24)[])" $COIN 2>/dev/null || echo "?"); else ex=$(cast call --rpc-url $(rpc $W) $(j $W builder) "extraPositions(address)(uint256[])" $COIN 2>/dev/null || echo "?"); fi
-          echo "   winner's extra positions (money that crossed): $ex"
-          echo "   winner's pending dollars: $(field $(rpc $W) 1 $(j $W builder) 'pendingDollars(address)(uint256)' $COIN 2>/dev/null || echo n/a)"
+          echo "   winner's extra positions (money that crossed so far): ${ex:-?}"
+          # pendingDollars exists on the eth and pcs builders only (RaceBuilder's pools are in dollars already)
+          pd=$(field $(rpc $W) 1 $(j $W builder) 'pendingDollars(address)(uint256)' $COIN); echo "   winner's pending dollars: ${pd:-n/a}"
 
           echo "== 6. The winner keeps trading"
-          before=$(cast call --rpc-url $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
+          before=$(call1 $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME || echo 0)
           tx $(rpc $W) $(j $W usd) "approve(address,uint256)" $(j $W router) 1000000
           tx $(rpc $W) $(j $W router) "buy(address,uint256,uint256,address,uint256)" $COIN 1000000 1 $ME $(( $(date +%s) + 600 ))
-          after=$(cast call --rpc-url $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME | awk '{print $1}')
-          echo "   ✅ bought on $(name $W) after the race: $(echo "($after - $before) / 10^18" | bc) coins for \$1"
-          echo "   my coins on the winner: $(echo "$after / 10^18" | bc) (losing chains' coins were moved here by the keeper)"
-          echo "== ALL DONE: a v7 race ran across four real testnets. Coin: $COIN"
+          after=$(call1 $(rpc $W) $COIN "balanceOf(address)(uint256)" $ME || echo 0)
+          echo "   ✅ bought on $(name $W) after the race: $(echo "($after - $before) / 10^18" | bc 2>/dev/null || echo "?") coins for \$1"
+          echo "   my coins on the winner: $(echo "$after / 10^18" | bc 2>/dev/null || echo "?") (losing chains' coins were moved here by the keeper)"
+          echo "== ALL DONE: a v7 race ran across the real testnets. Coin: $COIN"
