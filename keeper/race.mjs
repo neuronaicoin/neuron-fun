@@ -11,7 +11,7 @@
 //   4. the winner has dollars that arrived but could not be
 //      swapped into its pool yet (convertPending)              -> convert
 //   5. holders on losing chains                                -> move their coins
-//   6. after the race, on the winner: collect fees, buybacks
+//   6. after the race, on the winner: collect fees (every 30 min if it traded), buybacks
 //
 // The keeper cannot pick a winner or move money anywhere else: the coordinator decides
 // on-chain, and money/coins can only go to the places fixed in the contracts.
@@ -25,6 +25,7 @@
 //   LZ_FEE_WEI     native sent per LayerZero message; the unused part is refunded (default 0.0003);
 //                  LZ_FEE_WEI_<chainId> overrides it for one chain
 //   LOOP_SECONDS   run forever, one pass every N seconds (default: one pass, then exit)
+//   COLLECT_MINUTES / IDLE_COLLECT_HOURS   fee collection pace on the winner (default 30 / 24)
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,7 +48,12 @@ const STATE_FILE = env("STATE_FILE", "./race-state.json");
 const LZ_FEE_DEFAULT = BigInt(env("LZ_FEE_WEI", "300000000000000"));
 // per chain: LZ_FEE_WEI_<chainId> (Arc pays gas in USDC, 18 decimals natively: its fee differs)
 const lzFee = (c) => BigInt(process.env[`LZ_FEE_WEI_${c.chainId}`] || LZ_FEE_DEFAULT);
-const COLLECT_MS = Number(env("COLLECT_HOURS", "6")) * 3_600_000;
+// Pool fees are collected every COLLECT_MINUTES (default 30) for coins that traded since the
+// last collection; a coin with no trades is skipped (no new fees, no gas spent), with one
+// catch-all collection every IDLE_COLLECT_HOURS (default 24) in case trading happened outside
+// the launch position's range.
+const COLLECT_MS = Number(env("COLLECT_MINUTES", "30")) * 60_000;
+const IDLE_COLLECT_MS = Number(env("IDLE_COLLECT_HOURS", "24")) * 3_600_000;
 const BUDGET_MS = Number(env("BUDGET_MS", String(9 * 60_000)));
 const RACE_SECONDS = 300;
 let STARTED = Date.now();
@@ -77,6 +83,7 @@ const builderAbi = parseAbi([
   "function races(address coin) view returns (uint256 positionId, address seat, address creator, uint8 feeMode, uint64 launchedAt, uint8 state, uint32 winnerEid)",
   "function buybackFunds(address coin) view returns (uint256)",
   "function collectFees(address coin) returns (uint256, uint256)",
+  "function poolAmounts(address coin) view returns (uint256, uint256)",
   "function buyback(address coin) returns (uint256 spent, uint256 burned)",
   "function pendingDollars(address coin) view returns (uint256)",
   "function convertPending(address coin)",
@@ -265,11 +272,20 @@ async function main() {
   async function handleCoin(id, coin) {
     const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
 
-    // ---- after the race: fees and buybacks on the winner, every COLLECT_HOURS
+    // ---- after the race: fees and buybacks on the winner, every COLLECT_MINUTES if it traded
     if (coin.finished) {
-      if (win && Date.now() - (coin.lastCollect ?? 0) > COLLECT_MS) {
-        await send(win, `collect pool fees of ${coin.name}`, { address: win.builder, abi: builderAbi, functionName: "collectFees", args: [coin.coin] });
-        if (!DRY) coin.lastCollect = Date.now();
+      const since = Date.now() - (coin.lastCollect ?? 0);
+      if (win && since > COLLECT_MS) {
+        // Any trade moves the pool's price, so the launch position's amounts change.
+        const [a, b] = await win.pub.readContract({ address: win.builder, abi: builderAbi, functionName: "poolAmounts", args: [coin.coin] });
+        const snap = `${a}:${b}`;
+        if (snap !== coin.lastPoolSnap || since > IDLE_COLLECT_MS) {
+          await send(win, `collect pool fees of ${coin.name}`, { address: win.builder, abi: builderAbi, functionName: "collectFees", args: [coin.coin] });
+          if (!DRY) {
+            coin.lastCollect = Date.now();
+            coin.lastPoolSnap = snap;
+          }
+        }
       }
       if (win && coin.feeMode === 1) {
         const bb = await win.pub.readContract({ address: win.builder, abi: builderAbi, functionName: "buybackFunds", args: [coin.coin] });
