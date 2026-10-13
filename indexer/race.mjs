@@ -175,6 +175,7 @@ export function loadRaceChains(log = console.log) {
         createPublicClient({ chain, transport: http(rpcs[0], { retryCount: 3, timeout: 20_000 }) }),
         Number(env(`RACE_RPC_GAP_MS_${d.chainId}`, env("RACE_RPC_GAP_MS", "150")))
       ),
+      logMode: MODES.includes(env(`RACE_LOG_MODE_${d.chainId}`, "")) ? env(`RACE_LOG_MODE_${d.chainId}`, "") : "split",
       usdDecimals: null,
       feedDecimals: null,
       priceCache: { at: 0, usd: 0 },
@@ -237,6 +238,23 @@ const sig = (x) => (Number.isFinite(x) && x > 0 ? x.toPrecision(15) : "0");
 
 // ------------------------------------------------------------------ one batch of blocks
 
+const MODES = ["combined", "split", "single"];
+
+async function readGroups(c, groups, from, to) {
+  const out = [];
+  const q = (address, events) => c.pub.getLogs({ address, events, strict: true, fromBlock: from, toBlock: to });
+  if (c.logMode === "combined") {
+    const addrs = groups.flatMap((x) => x.address);
+    const events = [...new Map(groups.flatMap((x) => x.events).map((e) => [e.name + e.inputs.length, e])).values()];
+    for (let i = 0; i < addrs.length; i += 200) out.push(...(await q(addrs.slice(i, i + 200), events)));
+  } else if (c.logMode === "split") {
+    for (const gr of groups) out.push(...(await q(gr.address, gr.events)));
+  } else {
+    for (const gr of groups) for (const e of gr.events) out.push(...(await q(gr.address, [e])));
+  }
+  return out;
+}
+
 /**
  * Reads one batch of blocks from the chain (as few RPC calls as possible: one for all of
  * sasa's own contracts and the known coins, one for the coins' pool swaps, plus block times
@@ -252,14 +270,21 @@ export async function raceRange(pool, c, byEid, from, to) {
     [c.chainId]
   );
   const knownTokens = before.rows.map((r) => getAddress(r.coin));
-  const own = [c.factory, c.hub, c.builder, c.router];
-  const abi = [launchedEvt, ...hubEvts, ...builderEvts[c.kind], ...routerEvts, transferEvt];
-  // own contracts + known coins in one call (in groups of 200 addresses), filtered to the events
-  // we read: some public RPCs (publicnode) refuse a log query that names no event at all
-  let decoded = [];
-  const addrs = [...own, ...knownTokens];
-  for (let i = 0; i < addrs.length; i += 200)
-    decoded.push(...(await pub.getLogs({ address: addrs.slice(i, i + 200), events: abi, strict: true, fromBlock: from, toBlock: to })));
+  // What to read: each of sasa's contracts with its own events, and the coins' transfers.
+  // RPCs differ in what they accept, so a chain reads them in one of three ways (c.logMode):
+  //   combined  everything in one query (fewest calls)
+  //   split     one query per contract (default; publicnode refuses queries naming no event)
+  //   single    one query per contract and event (Arc's public RPC answers "range too large"
+  //             to anything wider, even for ten blocks)
+  // A chain that keeps failing on small ranges steps down to the next way by itself.
+  const groups = [
+    { address: [c.factory], events: [launchedEvt] },
+    { address: [c.hub], events: hubEvts },
+    { address: [c.builder], events: builderEvts[c.kind] },
+    { address: [c.router], events: routerEvts },
+  ];
+  for (let i = 0; i < knownTokens.length; i += 200) groups.push({ address: knownTokens.slice(i, i + 200), events: [transferEvt] });
+  const decoded = await readGroups(c, groups, from, to);
   const at = (a, name) => (l) => lc(l.address) === lc(a) && (Array.isArray(name) ? name.includes(l.eventName) : l.eventName === name);
 
   const launches = decoded.filter(at(c.factory, "Launched"));
@@ -274,8 +299,7 @@ export async function raceRange(pool, c, byEid, from, to) {
   const knownSet = new Set(knownTokens.map(lc));
   const fresh = launchInfo.map((x) => x.coin).filter((a) => !knownSet.has(lc(a)));
   if (fresh.length) {
-    const more = await pub.getLogs({ address: fresh, event: transferEvt, fromBlock: from, toBlock: to });
-    decoded = decoded.concat(more);
+    decoded.push(...(await readGroups(c, [{ address: fresh, events: [transferEvt] }], from, to)));
   }
   const allTokens = new Set([...knownSet, ...fresh.map(lc)]);
   const hubLogsRaw = decoded.filter((l) => lc(l.address) === lc(c.hub) && ["ReportIn", "Decided", "Settled"].includes(l.eventName));
@@ -506,6 +530,13 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
       const msg = [e.shortMessage, e.details, e.message, e.cause?.details].filter(Boolean).join(" ");
       const rateLimited = /rate limit|429|too many|exceeds defined limit|limit exceeded/i.test(msg);
       if (!rateLimited || range > 500n) range = range > 10n ? range / 4n : 10n;
+      // still failing on a tiny range for a reason other than a rate limit: read in smaller queries
+      if (!rateLimited && range <= 40n && fails >= 3 && c.logMode !== "single") {
+        c.logMode = MODES[MODES.indexOf(c.logMode) + 1];
+        range = MAX_RANGE;
+        fails = 0;
+        log(`race ${c.chainId}: switching to "${c.logMode}" log reads`);
+      }
       log(`race ${c.chainId}: ${e.shortMessage ?? e.message} (${rateLimited && range <= 500n ? "waiting, then" : "retrying with"} ${range} blocks)`);
       if (once && fails > 60) throw e;
       await sleep(Math.min(2_000 * fails, 20_000));
