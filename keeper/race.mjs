@@ -143,7 +143,8 @@ async function scan(pub, args, from, to) {
       if (step < 50_000n) step *= 2n;
     } catch (e) {
       // a rate limit is about requests per second, not the range: wait and try the same chunk again
-      if (/rate limit|limit exceeded|429|too many/i.test(e.shortMessage || e.message || "")) {
+      const msg = [e.shortMessage, e.details, e.message, e.cause?.details].filter(Boolean).join(" ");
+      if (/rate limit|limit exceeded|exceeds defined limit|429|too many/i.test(msg)) {
         await new Promise((r) => setTimeout(r, 3_000));
         if ((e._tries = (e._tries || 0) + 1) < 5 || step <= 100n) continue;
       }
