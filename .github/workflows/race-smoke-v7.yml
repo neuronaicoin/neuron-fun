@@ -175,7 +175,8 @@ jobs:
             fi
             # e) the test ETH/dollar v4 pool must sit at the feed price (tiny pools drift; mainnet pools are arbitraged)
             if [ "$(j $c builderKind)" = "eth" ] && [ "$(j $c testnet)" = "true" ]; then
-              if forge script script/race/RebalanceTestPool.s.sol --rpc-url "$R" --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then
+              rebal_ok=false; for try in 1 2 3; do if forge script script/race/RebalanceTestPool.s.sol --rpc-url "$R" --broadcast --slow -vv > /tmp/rebalance-$c.log 2>&1; then rebal_ok=true; break; fi; echo "   (rebalance attempt $try failed on the public RPC, retrying in 10s)"; sleep 10; done
+              if $rebal_ok; then
                 grep -E "sqrt price|off by|close enough|rebalancer:|deployer ETH|WARNING" /tmp/rebalance-$c.log | sed 's/^/   /' || true
                 left=$(grep -oE "still off by \(bps\): *[0-9]+" /tmp/rebalance-$c.log | grep -oE "[0-9]+$" | tail -1 || true)
                 if [ -n "$left" ] && [ "$left" -gt 150 ]; then short "$N: the test ETH/dollar pool is still $left bps (sqrt) off the feed after the rebalance (limit 150): send more test $(gasname $c) to the deployer $ME and run again"; row_reb="$left bps ❌"; else row_reb="ok"; fi
