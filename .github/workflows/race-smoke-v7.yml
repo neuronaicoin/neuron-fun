@@ -184,7 +184,8 @@ jobs:
                 short "$N: the test ETH/dollar pool rebalance failed (see the log above): usually the deployer lacks test $(gasname $c) or test dollars"; row_reb="failed"
               fi
               bal=$(retry cast balance --rpc-url "$R" "$ME" || echo "")
-              if lt "$bal" "$(need_native $c)"; then short "$N: after the pool rebalance the deployer has only $(eth "$bal") $(gasname $c) left, needs $(eth "$(need_native $c)"): send more"; fi
+              keep=$(echo "$(need_native $c) * 9 / 10" | bc)   # the rebalancer keeps the reserve minus its own gas
+              if lt "$bal" "$keep"; then short "$N: after the pool rebalance the deployer has only $(eth "$bal") $(gasname $c) left, needs $(eth "$keep"): send more"; fi
             fi
             # f) the test dollar pool (stand-in for the real USDC/WBNB pool) needs both sides: native for the buys, dollars for the losers' hand-over
             if [ "$(j $c dollarPoolIsTest)" = "true" ]; then
