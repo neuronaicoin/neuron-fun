@@ -142,6 +142,11 @@ async function scan(pub, args, from, to) {
       start = end + 1n;
       if (step < 50_000n) step *= 2n;
     } catch (e) {
+      // a rate limit is about requests per second, not the range: wait and try the same chunk again
+      if (/rate limit|limit exceeded|429|too many/i.test(e.shortMessage || e.message || "")) {
+        await new Promise((r) => setTimeout(r, 3_000));
+        if ((e._tries = (e._tries || 0) + 1) < 5 || step <= 100n) continue;
+      }
       if (step <= 100n) throw e;
       step /= 4n;
     }
@@ -217,26 +222,46 @@ async function main() {
   const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
 
   // Discover launches (each chain lists the coins launched there).
+  // One chain's RPC being down or rate-limited must not stop the others: skip it this pass.
   for (const c of chains) {
-    const latest = await c.pub.getBlockNumber();
-    const from = BigInt(state.cursor[c.chainId] ?? c.startBlock);
-    if (from > latest) continue;
-    const { logs, next } = await scan(c.pub, { address: c.factory, event: launched }, from, latest);
-    for (const l of logs) {
-      const id = l.args.coinId;
-      const coin = (state.coins[id] ||= { coin: l.args.coin, eids: l.args.eids.map(Number), name: l.args.name, creator: l.args.creator, feeMode: Number(l.args.feeMode), launchedAt: null, chains: {} });
-      coin.chains[c.eid] = { seat: l.args.seat, block: Number(l.blockNumber) };
+    try {
+      const latest = await c.pub.getBlockNumber();
+      const from = BigInt(state.cursor[c.chainId] ?? c.startBlock);
+      if (from > latest) continue;
+      const { logs, next } = await scan(c.pub, { address: c.factory, event: launched }, from, latest);
+      for (const l of logs) {
+        const id = l.args.coinId;
+        const coin = (state.coins[id] ||= { coin: l.args.coin, eids: l.args.eids.map(Number), name: l.args.name, creator: l.args.creator, feeMode: Number(l.args.feeMode), launchedAt: null, chains: {} });
+        coin.chains[c.eid] = { seat: l.args.seat, block: Number(l.blockNumber) };
+      }
+      state.cursor[c.chainId] = next.toString();
+      if (logs.length) log(`${c.chainId}: ${logs.length} launches found`);
+    } catch (e) {
+      log(`${c.chainId}: launch scan failed this pass (${e.shortMessage || e.message}); continuing with the other chains`);
     }
-    state.cursor[c.chainId] = next.toString();
-    if (logs.length) log(`${c.chainId}: ${logs.length} launches found`);
   }
   log(`${Object.keys(state.coins).length} v7 coins known`);
 
-  const coord = byEid.get(Number(await chains[0].pub.readContract({ address: chains[0].hub, abi: hubAbi, functionName: "coordEid" })));
-  if (!coord) throw new Error("the coordinator chain is not configured");
+  let coordEid = null;
+  for (const c of chains) {
+    try { coordEid = Number(await c.pub.readContract({ address: c.hub, abi: hubAbi, functionName: "coordEid" })); break; } catch {}
+  }
+  const coord = coordEid === null ? null : byEid.get(coordEid);
+  if (!coord) throw new Error("the coordinator chain is not configured (or no RPC answered)");
 
   for (const [id, coin] of Object.entries(state.coins)) {
     if (!timeLeft()) { log("time budget spent; the next run continues"); break; }
+    try {
+      await handleCoin(id, coin);
+    } catch (e) {
+      log(`${coin.name} (${id.slice(0, 10)}): skipped this pass: ${e.shortMessage || e.message}`);
+    }
+  }
+  if (!DRY) writeFileSync(STATE_FILE, JSON.stringify(state, null, 1));
+  log("pass done");
+
+  // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.
+  async function handleCoin(id, coin) {
     const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
 
     // ---- after the race: fees and buybacks on the winner, every COLLECT_HOURS
@@ -249,11 +274,11 @@ async function main() {
         const bb = await win.pub.readContract({ address: win.builder, abi: builderAbi, functionName: "buybackFunds", args: [coin.coin] });
         if (bb > 0n) await send(win, `buyback ${coin.name} (${bb} waiting)`, { address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin] });
       }
-      continue;
+      return;
     }
 
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
-    if (here.length !== coin.eids.length) continue; // not launched (or not configured) on every chain yet
+    if (here.length !== coin.eids.length) return; // not launched (or not configured) on every chain yet
     const reads = await Promise.all(
       here.map(async (e) => {
         const c = byEid.get(e);
@@ -291,7 +316,7 @@ async function main() {
         });
         await send(coord, `finalize ${coin.name}: ${graduate ? `winner ${winner}` : "no winner (reopen)"}`, fin(lzFee(coord)), (req) => fin((req * 12n) / 10n));
       }
-      continue;
+      return;
     }
 
     // the verdict: winner from any settled seat
@@ -362,8 +387,6 @@ async function main() {
     }
   }
 
-  if (!DRY) writeFileSync(STATE_FILE, JSON.stringify(state, null, 1));
-  log("pass done");
 }
 
 const LOOP_SECONDS = Number(env("LOOP_SECONDS", "0"));
