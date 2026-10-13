@@ -15,6 +15,8 @@
 //   CONFIRMATIONS       blocks to stay behind the tip (default 3)
 //   RACE_MAX_RANGE      blocks per batch (default 2000)
 //   RACE_LIVE_MS        how often live race money is read during a race (default 3000)
+//   RACE_RPC_GAP_MS     least time between two calls to one chain's RPC (default 150);
+//                       RACE_RPC_GAP_MS_<chainId> for one chain (public Arc RPC: 400)
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -30,6 +32,7 @@ import {
   keccak256,
   parseAbi,
   parseAbiItem,
+  parseEventLogs,
 } from "viem";
 
 const env = (n, d) => {
@@ -117,6 +120,25 @@ const erc20Abi = parseAbi(["function decimals() view returns (uint8)"]);
 
 // ------------------------------------------------------------------ chains
 
+/**
+ * Public RPCs limit requests per second (Arc answers "Request exceeds defined limit" even for a
+ * few blocks when called too fast). Every call to one chain waits its turn, at least `gapMs` apart.
+ */
+function throttled(pub, gapMs) {
+  let queue = Promise.resolve();
+  let last = 0;
+  const wrap = (name) => (...args) => {
+    const turn = queue.then(async () => {
+      const wait = last + gapMs - Date.now();
+      if (wait > 0) await sleep(wait);
+      last = Date.now();
+    });
+    queue = turn.catch(() => {});
+    return turn.then(() => pub[name](...args));
+  };
+  return Object.fromEntries(["getLogs", "readContract", "getBlock", "getTransaction", "getBlockNumber"].map((n) => [n, wrap(n)]));
+}
+
 export function loadRaceChains(log = console.log) {
   const file = env("RACE_CHAINS_FILE", join(HERE, "race-chains.json"));
   let all;
@@ -150,7 +172,10 @@ export function loadRaceChains(log = console.log) {
       feed: d.feed && d.feed !== ZERO ? getAddress(d.feed) : null,
       usd: getAddress(d.usd),
       startBlock: BigInt(d.startBlock),
-      pub: createPublicClient({ chain, transport: http(rpcs[0], { retryCount: 3, timeout: 20_000 }) }),
+      pub: throttled(
+        createPublicClient({ chain, transport: http(rpcs[0], { retryCount: 3, timeout: 20_000 }) }),
+        Number(env(`RACE_RPC_GAP_MS_${d.chainId}`, env("RACE_RPC_GAP_MS", "150")))
+      ),
       usdDecimals: null,
       feedDecimals: null,
       priceCache: { at: 0, usd: 0 },
@@ -211,27 +236,78 @@ const dollars6 = (v) => formatUnits(v, 6);
 const fixed = (x) => (Number.isFinite(x) ? x.toFixed(6) : "0");
 const sig = (x) => (Number.isFinite(x) && x > 0 ? x.toPrecision(15) : "0");
 
-async function chunkedLogs(pub, base, key, values, size = 50) {
-  const out = [];
-  for (let i = 0; i < values.length; i += size) out.push(...(await pub.getLogs({ ...base, args: { [key]: values.slice(i, i + size) } })));
-  return out;
-}
-
 // ------------------------------------------------------------------ one batch of blocks
 
+/**
+ * Reads one batch of blocks from the chain (as few RPC calls as possible: one for all of
+ * sasa's own contracts and the known coins, one for the coins' pool swaps, plus block times
+ * and senders when needed), then writes it all in one database transaction.
+ */
 export async function raceRange(pool, c, byEid, from, to) {
   const { pub } = c;
   await prepare(c);
 
-  // 1. Launches on this chain (read what the contracts need before opening the transaction).
-  const launches = await pub.getLogs({ address: c.factory, event: launchedEvt, fromBlock: from, toBlock: to });
+  // ---- RPC phase (no database transaction open while waiting on the chain)
+  const before = await pool.query(
+    `select r.coin_id, r.pool_id, k.coin, k.creator from race_chains r join race_coins k on k.id = r.coin_id where r.chain_id = $1`,
+    [c.chainId]
+  );
+  const knownTokens = before.rows.map((r) => getAddress(r.coin));
+  const own = [c.factory, c.hub, c.builder, c.router];
+  const abi = [launchedEvt, ...hubEvts, ...builderEvts[c.kind], ...routerEvts, transferEvt];
+  const raw = [];
+  // own contracts + known coins in one call (in groups of 200 addresses)
+  const addrs = [...own, ...knownTokens];
+  for (let i = 0; i < addrs.length; i += 200) raw.push(...(await pub.getLogs({ address: addrs.slice(i, i + 200), fromBlock: from, toBlock: to })));
+  let decoded = parseEventLogs({ abi, logs: raw, strict: true });
+  const at = (a, name) => (l) => lc(l.address) === lc(a) && (Array.isArray(name) ? name.includes(l.eventName) : l.eventName === name);
+
+  const launches = decoded.filter(at(c.factory, "Launched"));
   const launchInfo = [];
   for (const l of launches) {
     const coin = getAddress(l.args.coin);
-    const [poolId, launchedAt] = await Promise.all([poolIdOf(c, coin), launchedAtOf(c, coin)]);
+    const poolId = await poolIdOf(c, coin);
+    const launchedAt = await launchedAtOf(c, coin);
     launchInfo.push({ l, coin, poolId, launchedAt });
   }
+  // coins launched in this very batch: their transfers too
+  const knownSet = new Set(knownTokens.map(lc));
+  const fresh = launchInfo.map((x) => x.coin).filter((a) => !knownSet.has(lc(a)));
+  if (fresh.length) {
+    const more = await pub.getLogs({ address: fresh, event: transferEvt, fromBlock: from, toBlock: to });
+    decoded = decoded.concat(more);
+  }
+  const allTokens = new Set([...knownSet, ...fresh.map(lc)]);
+  const hubLogsRaw = decoded.filter((l) => lc(l.address) === lc(c.hub) && ["ReportIn", "Decided", "Settled"].includes(l.eventName));
+  const builderLogs = decoded.filter((l) => lc(l.address) === lc(c.builder) && builderEvts[c.kind].some((e) => e.name === l.eventName));
+  const routerLogs = decoded.filter((l) => lc(l.address) === lc(c.router) && ["Bought", "Sold", "PoolTrade"].includes(l.eventName));
+  const transferLogs = decoded.filter((l) => l.eventName === "Transfer" && allTokens.has(lc(l.address)));
 
+  // swaps in the coins' pools: the pool manager is shared by every pool on the chain, so ask by pool id
+  const poolIds = [...new Set([...before.rows.filter((r) => r.pool_id).map((r) => r.pool_id), ...launchInfo.map((x) => x.poolId)])];
+  const swapLogs = [];
+  const evt = c.kind === "pcs" ? swapEvt.pcs : swapEvt.v4;
+  for (let i = 0; i < poolIds.length; i += 50)
+    swapLogs.push(...(await pub.getLogs({ address: c.poolManager, event: evt, args: { id: poolIds.slice(i, i + 50) }, fromBlock: from, toBlock: to })));
+  swapLogs.sort((x, y) => (x.blockNumber === y.blockNumber ? x.logIndex - y.logIndex : x.blockNumber < y.blockNumber ? -1 : 1));
+
+  // block times (launch, verdict, won/lost, swaps) and who sent swaps that didn't come through our router
+  const needTime = [
+    ...launches, ...hubLogsRaw.filter((l) => l.eventName === "Decided"),
+    ...builderLogs.filter((l) => l.eventName === "RaceWon" || l.eventName === "RaceLost"), ...swapLogs,
+  ].map((l) => l.blockNumber);
+  const times = await blockTimes(pub, needTime);
+  const viaRouter = new Map(routerLogs.map((r) => [lc(r.transactionHash), lc(r.args.buyer ?? r.args.seller ?? r.args.trader)]));
+  const launchTx = new Map(launches.map((l) => [lc(l.transactionHash), lc(l.args.creator)]));
+  const senders = new Map();
+  for (const l of swapLogs) {
+    const tx = lc(l.transactionHash);
+    if (launchTx.has(tx) || viaRouter.has(tx) || lc(l.args.sender) === lc(c.builder) || senders.has(tx)) continue;
+    senders.set(tx, lc((await pub.getTransaction({ hash: l.transactionHash })).from));
+  }
+  const usdPer = swapLogs.length ? await usdPerNative(c) : 1;
+
+  // ---- database phase: everything in one transaction with the checkpoint
   const db = await pool.connect();
   try {
     await db.query("begin");
@@ -264,18 +340,14 @@ export async function raceRange(pool, c, byEid, from, to) {
     const byCoin = new Map(known.rows.map((r) => [r.coin, r]));
     const byPool = new Map(known.rows.filter((r) => r.pool_id).map((r) => [r.pool_id, r]));
     const ids = new Set(known.rows.map((r) => r.coin_id));
-    const launchTx = new Map(launches.map((l) => [lc(l.transactionHash), lc(l.args.creator)]));
 
     // 2. Hub: chain reports, the verdict, each chain's settlement. The verdict is on the
     //    coordinator's chain, which need not be in the race: match coins known on any chain.
     //    (A row another chain hasn't indexed yet is filled in by RaceWon/RaceLost below.)
-    const hubRaw = await pub.getLogs({ address: c.hub, events: hubEvts, fromBlock: from, toBlock: to });
-    if (hubRaw.length) {
-      const seen = await db.query("select id from race_coins where id = any($1)", [[...new Set(hubRaw.map((l) => lc(l.args.coin)))]]);
+    if (hubLogsRaw.length) {
+      const seen = await db.query("select id from race_coins where id = any($1)", [[...new Set(hubLogsRaw.map((l) => lc(l.args.coin)))]]);
       const anyIds = new Set(seen.rows.map((r) => r.id));
-      const hubLogs = hubRaw.filter((l) => anyIds.has(lc(l.args.coin)));
-      const ht = await blockTimes(pub, hubLogs.filter((l) => l.eventName === "Decided").map((l) => l.blockNumber));
-      for (const l of hubLogs) {
+      for (const l of hubLogsRaw.filter((x) => anyIds.has(lc(x.args.coin)))) {
         const a = l.args;
         const id = lc(a.coin);
         if (l.eventName === "ReportIn") {
@@ -285,7 +357,7 @@ export async function raceRange(pool, c, byEid, from, to) {
         } else if (l.eventName === "Decided") {
           await db.query(
             "update race_coins set winner_eid = $2, winner_chain = $3, total_usd = $4, decided_at = $5 where id = $1",
-            [id, Number(a.winner), byEid.get(Number(a.winner)) ?? null, dollars6(a.total), ht.get(String(l.blockNumber))]
+            [id, Number(a.winner), byEid.get(Number(a.winner)) ?? null, dollars6(a.total), times.get(String(l.blockNumber))]
           );
         } else if (l.eventName === "Settled" && ids.has(id)) {
           await db.query("update race_chains set state = $3, updated_at = now() where coin_id = $1 and chain_id = $2", [id, c.chainId, a.isWinner ? WON : LOST]);
@@ -294,125 +366,100 @@ export async function raceRange(pool, c, byEid, from, to) {
     }
 
     // 3. Builder: report (this chain's own number), won / lost, hand-over, fees.
-    if (byCoin.size) {
-      const bl = (await pub.getLogs({ address: c.builder, events: builderEvts[c.kind], fromBlock: from, toBlock: to })).filter((l) => byCoin.has(lc(l.args.coin)));
-      const nd = nativeDecimals(c);
-      const bt = await blockTimes(pub, bl.filter((l) => l.eventName === "RaceWon" || l.eventName === "RaceLost").map((l) => l.blockNumber));
-      for (const l of bl) {
-        const k = byCoin.get(lc(l.args.coin));
-        const a = l.args;
-        if (l.eventName === "RaceReported") {
-          const usd = c.kind === "usdc" ? formatUnits(a.poolUsdc, c.usdDecimals) : dollars6(a.dollars);
-          const nat = c.kind === "usdc" ? usd : human(c.kind === "eth" ? a.poolEth : a.poolBnb, 18);
-          await db.query(
-            "update race_chains set reported_usd = coalesce(reported_usd, $3), pool_native = $4, pool_usd = $3, updated_at = now() where coin_id = $1 and chain_id = $2",
-            [k.coin_id, c.chainId, usd, nat]
-          );
-        } else if (l.eventName === "RaceWon" || l.eventName === "RaceLost") {
-          // Every chain of the race learns the winner: fill it in if the verdict isn't indexed yet.
-          const w = Number(a.winnerEid);
-          await db.query(
-            "update race_coins set winner_eid = $2, winner_chain = $3, decided_at = coalesce(decided_at, $4) where id = $1 and winner_eid is null",
-            [k.coin_id, w, byEid.get(w) ?? null, bt.get(String(l.blockNumber))]
-          );
-        }
-        if (l.eventName === "RaceWon") {
-          await db.query("update race_chains set state = $3, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, WON]);
-        } else if (l.eventName === "RaceLost") {
-          await db.query("update race_chains set state = $3, pool_native = 0, pool_usd = 0, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, LOST]);
-          if (c.kind === "usdc") await db.query("update race_chains set handed_over = true where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
-        } else if (l.eventName === "HandedOver") {
-          await db.query("update race_chains set handed_over = true, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
-        } else if (l.eventName === "FeesCollected") {
-          const f = c.kind === "eth" ? a.ethFees : c.kind === "pcs" ? a.bnbFees : a.usdcFees;
-          const ins = await db.query(
-            `insert into race_fees (chain_id, tx_hash, log_index, coin_id, native_amount, coin_amount) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1`,
-            [c.chainId, lc(l.transactionHash), l.logIndex, k.coin_id, human(f, nd), human(a.coinFees, 18)]
-          );
-          if (ins.rowCount)
-            await db.query("update race_chains set fees_native = fees_native + $3 where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, human(f, nd)]);
-        }
+    const nd = nativeDecimals(c);
+    for (const l of builderLogs.filter((x) => byCoin.has(lc(x.args.coin)))) {
+      const k = byCoin.get(lc(l.args.coin));
+      const a = l.args;
+      if (l.eventName === "RaceReported") {
+        const usd = c.kind === "usdc" ? formatUnits(a.poolUsdc, c.usdDecimals) : dollars6(a.dollars);
+        const nat = c.kind === "usdc" ? usd : human(c.kind === "eth" ? a.poolEth : a.poolBnb, 18);
+        await db.query(
+          "update race_chains set reported_usd = coalesce(reported_usd, $3), pool_native = $4, pool_usd = $3, updated_at = now() where coin_id = $1 and chain_id = $2",
+          [k.coin_id, c.chainId, usd, nat]
+        );
+      } else if (l.eventName === "RaceWon" || l.eventName === "RaceLost") {
+        // Every chain of the race learns the winner: fill it in if the verdict isn't indexed yet.
+        const w = Number(a.winnerEid);
+        await db.query(
+          "update race_coins set winner_eid = $2, winner_chain = $3, decided_at = coalesce(decided_at, $4) where id = $1 and winner_eid is null",
+          [k.coin_id, w, byEid.get(w) ?? null, times.get(String(l.blockNumber))]
+        );
+      }
+      if (l.eventName === "RaceWon") {
+        await db.query("update race_chains set state = $3, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, WON]);
+      } else if (l.eventName === "RaceLost") {
+        await db.query("update race_chains set state = $3, pool_native = 0, pool_usd = 0, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, LOST]);
+        if (c.kind === "usdc") await db.query("update race_chains set handed_over = true where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
+      } else if (l.eventName === "HandedOver") {
+        await db.query("update race_chains set handed_over = true, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
+      } else if (l.eventName === "FeesCollected") {
+        const f = c.kind === "eth" ? a.ethFees : c.kind === "pcs" ? a.bnbFees : a.usdcFees;
+        const ins = await db.query(
+          `insert into race_fees (chain_id, tx_hash, log_index, coin_id, native_amount, coin_amount) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1`,
+          [c.chainId, lc(l.transactionHash), l.logIndex, k.coin_id, human(f, nd), human(a.coinFees, 18)]
+        );
+        if (ins.rowCount)
+          await db.query("update race_chains set fees_native = fees_native + $3 where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, human(f, nd)]);
       }
     }
 
     // 4. Swaps in the coins' pools (every router and bot), with the trader from our router when it was ours.
     let swaps = 0;
-    const poolIds = [...byPool.keys()];
-    if (poolIds.length) {
-      const evt = c.kind === "pcs" ? swapEvt.pcs : swapEvt.v4;
-      const logs = await chunkedLogs(pub, { address: c.poolManager, event: evt, fromBlock: from, toBlock: to }, "id", poolIds);
-      if (logs.length) {
-        const rl = await pub.getLogs({ address: c.router, events: routerEvts, fromBlock: from, toBlock: to });
-        const viaRouter = new Map(); // tx -> trader
-        for (const r of rl) viaRouter.set(lc(r.transactionHash), lc(r.args.buyer ?? r.args.seller ?? r.args.trader));
-        const times = await blockTimes(pub, logs.map((l) => l.blockNumber));
-        const usdPer = await usdPerNative(c);
-        const nd = nativeDecimals(c);
-        const senders = new Map();
-        logs.sort((x, y) => (x.blockNumber === y.blockNumber ? x.logIndex - y.logIndex : x.blockNumber < y.blockNumber ? -1 : 1));
-        for (const l of logs) {
-          const k = byPool.get(lc(l.args.id));
-          const tx = lc(l.transactionHash);
-          // currency0 is the native coin on ETH/BNB pools; on dollar pools it is whichever address is lower.
-          const nativeIs0 = c.kind !== "usdc" || BigInt(c.usd) < BigInt(k.coin);
-          const dn = nativeIs0 ? l.args.amount0 : l.args.amount1;
-          const dc = nativeIs0 ? l.args.amount1 : l.args.amount0;
-          if (dn === 0n || dc === 0n) continue;
-          const isBuy = dn < 0n; // the swapper paid native in
-          const nat = Number(human(dn, nd));
-          const tok = Number(human(dc, 18));
-          const usd = nat * usdPer;
-          const price = tok > 0 ? usd / tok : 0;
-          let trader, via;
-          if (launchTx.has(tx)) {
-            trader = launchTx.get(tx); via = "launch";
-          } else if (viaRouter.has(tx)) {
-            trader = viaRouter.get(tx); via = "sasa";
-          } else if (lc(l.args.sender) === lc(c.builder)) {
-            trader = lc(c.builder); via = "system";
-          } else {
-            if (!senders.has(tx)) senders.set(tx, lc((await pub.getTransaction({ hash: l.transactionHash })).from));
-            trader = senders.get(tx); via = "pool";
-          }
-          const ins = await db.query(
-            `insert into race_trades (chain_id, tx_hash, log_index, block_number, ts, coin_id, trader, is_buy, native_amount, token_amount, usd_amount, price_usd, via)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) on conflict do nothing returning 1`,
-            [c.chainId, tx, l.logIndex, l.blockNumber.toString(), times.get(String(l.blockNumber)), k.coin_id, trader, isBuy,
-             human(dn, nd), human(dc, 18), fixed(usd), sig(price), via]
-          );
-          if (ins.rowCount && via !== "system") {
-            await db.query(
-              `update race_chains set buys = buys + $3, sells = sells + $4, volume_usd = volume_usd + $5, price_usd = $6, updated_at = now()
-               where coin_id = $1 and chain_id = $2`,
-              [k.coin_id, c.chainId, isBuy ? 1 : 0, isBuy ? 0 : 1, fixed(usd), sig(price)]
-            );
-          }
-          swaps++;
-        }
+    for (const l of swapLogs) {
+      const k = byPool.get(lc(l.args.id));
+      if (!k) continue;
+      const tx = lc(l.transactionHash);
+      // currency0 is the native coin on ETH/BNB pools; on dollar pools it is whichever address is lower.
+      const nativeIs0 = c.kind !== "usdc" || BigInt(c.usd) < BigInt(k.coin);
+      const dn = nativeIs0 ? l.args.amount0 : l.args.amount1;
+      const dc = nativeIs0 ? l.args.amount1 : l.args.amount0;
+      if (dn === 0n || dc === 0n) continue;
+      const isBuy = dn < 0n; // the swapper paid native in
+      const nat = Number(human(dn, nd));
+      const tok = Number(human(dc, 18));
+      const usd = nat * usdPer;
+      const price = tok > 0 ? usd / tok : 0;
+      let trader, via;
+      if (launchTx.has(tx)) {
+        trader = launchTx.get(tx); via = "launch";
+      } else if (viaRouter.has(tx)) {
+        trader = viaRouter.get(tx); via = "sasa";
+      } else if (lc(l.args.sender) === lc(c.builder)) {
+        trader = lc(c.builder); via = "system";
+      } else {
+        trader = senders.get(tx); via = "pool";
       }
+      const ins = await db.query(
+        `insert into race_trades (chain_id, tx_hash, log_index, block_number, ts, coin_id, trader, is_buy, native_amount, token_amount, usd_amount, price_usd, via)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) on conflict do nothing returning 1`,
+        [c.chainId, tx, l.logIndex, l.blockNumber.toString(), times.get(String(l.blockNumber)), k.coin_id, trader, isBuy,
+         human(dn, nd), human(dc, 18), fixed(usd), sig(price), via]
+      );
+      if (ins.rowCount && via !== "system") {
+        await db.query(
+          `update race_chains set buys = buys + $3, sells = sells + $4, volume_usd = volume_usd + $5, price_usd = $6, updated_at = now()
+           where coin_id = $1 and chain_id = $2`,
+          [k.coin_id, c.chainId, isBuy ? 1 : 0, isBuy ? 0 : 1, fixed(usd), sig(price)]
+        );
+      }
+      swaps++;
     }
 
     // 5. Coin transfers -> balances (holders). Each transfer is applied once.
-    const tokens = [...byCoin.keys()].map((a) => getAddress(a));
-    let transfers = 0;
-    for (let i = 0; i < tokens.length; i += 200) {
-      const tl = await pub.getLogs({ address: tokens.slice(i, i + 200), event: transferEvt, fromBlock: from, toBlock: to });
-      for (const l of tl) {
-        const a = l.args;
-        const ins = await db.query(
-          `insert into transfers (chain_id, tx_hash, log_index, token, from_addr, to_addr, amount) values ($1,$2,$3,$4,$5,$6,$7) on conflict do nothing returning 1`,
-          [c.chainId, l.transactionHash, l.logIndex, lc(l.address), lc(a.from), lc(a.to), a.value.toString()]
+    for (const l of transferLogs) {
+      const a = l.args;
+      const ins = await db.query(
+        `insert into transfers (chain_id, tx_hash, log_index, token, from_addr, to_addr, amount) values ($1,$2,$3,$4,$5,$6,$7) on conflict do nothing returning 1`,
+        [c.chainId, l.transactionHash, l.logIndex, lc(l.address), lc(a.from), lc(a.to), a.value.toString()]
+      );
+      if (!ins.rowCount || a.value === 0n) continue;
+      for (const [holder, delta] of [[lc(a.from), `-${a.value}`], [lc(a.to), a.value.toString()]]) {
+        if (holder === ZERO) continue;
+        await db.query(
+          `insert into balances (chain_id, token, holder, amount) values ($1,$2,$3,$4)
+           on conflict (chain_id, token, holder) do update set amount = balances.amount + excluded.amount`,
+          [c.chainId, lc(l.address), holder, delta]
         );
-        transfers++;
-        if (!ins.rowCount || a.value === 0n) continue;
-        for (const [holder, delta] of [[lc(a.from), `-${a.value}`], [lc(a.to), a.value.toString()]]) {
-          if (holder === ZERO) continue;
-          await db.query(
-            `insert into balances (chain_id, token, holder, amount) values ($1,$2,$3,$4)
-             on conflict (chain_id, token, holder) do update set amount = balances.amount + excluded.amount`,
-            [c.chainId, lc(l.address), holder, delta]
-          );
-        }
       }
     }
 
@@ -421,7 +468,7 @@ export async function raceRange(pool, c, byEid, from, to) {
       [c.chainId, to.toString()]
     );
     await db.query("commit");
-    return { launches: launches.length, swaps, transfers };
+    return { launches: launches.length, swaps, transfers: transferLogs.length };
   } catch (e) {
     await db.query("rollback").catch(() => {});
     throw e;
@@ -453,12 +500,15 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
       if (range < MAX_RANGE) range = range * 2n > MAX_RANGE ? MAX_RANGE : range * 2n;
       if (to === tip && !once) await sleep(POLL_MS);
     } catch (e) {
-      // Too many logs, a rate limit or a flaky RPC: smaller steps, wait, try again.
-      range = range > 10n ? range / 4n : 10n;
+      // A rate limit (some RPCs word it "exceeds defined limit" even for a few blocks): wait and
+      // try the same blocks again. Anything else at a wide range: too many logs, take smaller steps.
       fails++;
-      log(`race ${c.chainId}: ${e.shortMessage ?? e.message} (retrying with ${range} blocks)`);
-      if (once && fails > 40) throw e;
-      await sleep(Math.min(2_000 * fails, 15_000));
+      const msg = [e.shortMessage, e.details, e.message, e.cause?.details].filter(Boolean).join(" ");
+      const rateLimited = /rate limit|429|too many|exceeds defined limit|limit exceeded/i.test(msg);
+      if (!rateLimited || range > 500n) range = range > 10n ? range / 4n : 10n;
+      log(`race ${c.chainId}: ${e.shortMessage ?? e.message} (${rateLimited && range <= 500n ? "waiting, then" : "retrying with"} ${range} blocks)`);
+      if (once && fails > 60) throw e;
+      await sleep(Math.min(2_000 * fails, 20_000));
     }
   }
 }
