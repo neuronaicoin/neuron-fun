@@ -32,7 +32,6 @@ import {
   keccak256,
   parseAbi,
   parseAbiItem,
-  parseEventLogs,
 } from "viem";
 
 const env = (n, d) => {
@@ -255,11 +254,12 @@ export async function raceRange(pool, c, byEid, from, to) {
   const knownTokens = before.rows.map((r) => getAddress(r.coin));
   const own = [c.factory, c.hub, c.builder, c.router];
   const abi = [launchedEvt, ...hubEvts, ...builderEvts[c.kind], ...routerEvts, transferEvt];
-  const raw = [];
-  // own contracts + known coins in one call (in groups of 200 addresses)
+  // own contracts + known coins in one call (in groups of 200 addresses), filtered to the events
+  // we read: some public RPCs (publicnode) refuse a log query that names no event at all
+  let decoded = [];
   const addrs = [...own, ...knownTokens];
-  for (let i = 0; i < addrs.length; i += 200) raw.push(...(await pub.getLogs({ address: addrs.slice(i, i + 200), fromBlock: from, toBlock: to })));
-  let decoded = parseEventLogs({ abi, logs: raw, strict: true });
+  for (let i = 0; i < addrs.length; i += 200)
+    decoded.push(...(await pub.getLogs({ address: addrs.slice(i, i + 200), events: abi, strict: true, fromBlock: from, toBlock: to })));
   const at = (a, name) => (l) => lc(l.address) === lc(a) && (Array.isArray(name) ? name.includes(l.eventName) : l.eventName === name);
 
   const launches = decoded.filter(at(c.factory, "Launched"));
