@@ -1,0 +1,128 @@
+name: mainnet-readiness
+
+# Read-only check before the race mainnet deploy. No keys, no transactions.
+# For Base, BNB Chain, Robinhood Chain and Arc it checks that every address the deploy will
+# use really is that contract on that chain (code, symbol, decimals, Chainlink feed name and
+# freshness, pool fee and liquidity), finds what is still unknown (Chainlink ETH/USD on
+# Robinhood, Uniswap v4 on Arc), and asks Across which token routes exist between the chains.
+# Everything goes into the run's Summary page.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check
+        run: |
+          set -uo pipefail
+          S="$GITHUB_STEP_SUMMARY"
+          declare -A RPC
+          RPC[8453]="https://mainnet.base.org"
+          RPC[56]="https://bsc-rpc.publicnode.com"
+          RPC[4663]="https://rpc.mainnet.chain.robinhood.com"
+          RPC[5042]="https://rpc.mainnet.arc.io"
+          c() { for i in 1 2 3 4 5; do out=$(cast "$@" 2>/dev/null) && { echo "$out"; return 0; }; sleep 3; done; echo "ERR"; }
+          code() { local n; n=$(c code "$1" --rpc-url "$2"); if [ "$n" = "ERR" ]; then echo "rpc error"; elif [ ${#n} -gt 4 ]; then echo "yes ($(( (${#n}-2)/2 )) bytes)"; else echo "**NO CODE**"; fi; }
+          row() { echo "| $1 | $2 | \`$3\` | $4 |" >> "$S"; }
+
+          echo "## 1. Chains answer" >> "$S"
+          echo "| chain | rpc chain id |" >> "$S"; echo "|---|---|" >> "$S"
+          for id in 8453 56 4663 5042; do echo "| $id | $(c chain-id --rpc-url "${RPC[$id]}") |" >> "$S"; done
+
+          echo "" >> "$S"; echo "## 2. Contracts the deploy will use" >> "$S"
+          echo "| chain | what | address | check |" >> "$S"; echo "|---|---|---|---|" >> "$S"
+          tok() { # chain, label, address
+            local r="${RPC[$1]}"; local sym dec
+            sym=$(c call "$3" "symbol()(string)" --rpc-url "$r"); dec=$(c call "$3" "decimals()(uint8)" --rpc-url "$r")
+            row "$1" "$2" "$3" "code $(code "$3" "$r"); symbol $sym; decimals $dec"
+          }
+          has() { row "$1" "$2" "$3" "code $(code "$3" "${RPC[$1]}")"; }
+          feed() { # chain, label, address
+            local r="${RPC[$1]}"; local d dec rd upd age
+            d=$(c call "$3" "description()(string)" --rpc-url "$r"); dec=$(c call "$3" "decimals()(uint8)" --rpc-url "$r")
+            rd=$(c call "$3" "latestRoundData()(uint80,int256,uint256,uint256,uint80)" --rpc-url "$r")
+            if [ "$rd" = "ERR" ]; then row "$1" "$2" "$3" "description $d; **latestRoundData failed**"; return; fi
+            upd=$(echo "$rd" | sed -n 4p | awk '{print $1}'); age=$(( $(date +%s) - upd ))
+            row "$1" "$2" "$3" "description $d; decimals $dec; answer $(echo "$rd" | sed -n 2p | awk '{print $1}'); updated ${age}s ago"
+          }
+          P2=0x000000000022D473030F116dDEE9F6B43aC78BA3
+          # Base
+          tok 8453 "USDC" 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+          has 8453 "Across SpokePool" 0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
+          has 8453 "Uniswap v4 PoolManager" 0x498581fF718922c3f8e6A244956aF099B2652b2b
+          has 8453 "Uniswap v4 PositionManager" 0x7C5f5A4bBd8fD63184577525326123B519429bDc
+          has 8453 "Permit2" $P2
+          feed 8453 "Chainlink ETH/USD (candidate)" 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70
+          # BNB Chain
+          tok 56 "USDC (Binance-Peg)" 0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d
+          tok 56 "WBNB" 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c
+          has 56 "Across SpokePool" 0x4e8E101924eDE233C13e2D8622DC8aED2872d505
+          has 56 "PancakeSwap Infinity Vault" 0x238a358808379702088667322f80aC48bAd5e6c4
+          has 56 "PancakeSwap Infinity CLPoolManager" 0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b
+          reg=$(c call 0x238a358808379702088667322f80aC48bAd5e6c4 "isAppRegistered(address)(bool)" 0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b --rpc-url "${RPC[56]}")
+          row 56 "Vault knows CLPoolManager" "isAppRegistered" "$reg"
+          feed 56 "Chainlink BNB/USD (candidate)" 0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE
+          PL=0xf2688fb5b81049dfb7703ada5e770543770612c4
+          t0=$(c call $PL "token0()(address)" --rpc-url "${RPC[56]}"); t1=$(c call $PL "token1()(address)" --rpc-url "${RPC[56]}")
+          fee=$(c call $PL "fee()(uint24)" --rpc-url "${RPC[56]}"); liq=$(c call $PL "liquidity()(uint128)" --rpc-url "${RPC[56]}")
+          row 56 "PancakeSwap v3 USDC/WBNB pool (candidate)" $PL "token0 $t0; token1 $t1; fee $fee; liquidity $liq"
+          # Robinhood Chain
+          tok 4663 "USDG" 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
+          has 4663 "Across SpokePool" 0xD29C85F15DF544bA632C9E25829fd29d767d7978
+          has 4663 "Uniswap v4 PoolManager" 0x8366a39CC670B4001A1121B8F6A443A643e40951
+          has 4663 "Uniswap v4 PositionManager" 0x58daec3116aae6D93017bAAea7749052E8a04fA7
+          has 4663 "Permit2" $P2
+          # Arc
+          tok 5042 "USDC (ERC-20 interface)" 0x3600000000000000000000000000000000000000
+          has 5042 "Across SpokePool" 0x9b4A302A548c7e313c2b74C461db7b84d3074A84
+          has 5042 "Permit2" $P2
+
+          echo "" >> "$S"; echo "## 3. Uniswap v4 dollar pools (ETH / dollar, no hook)" >> "$S"
+          echo "Pool state read from the PoolManager (slot0 non-zero = pool exists)." >> "$S"
+          echo "| chain | fee / spacing | pool id | price set | liquidity |" >> "$S"; echo "|---|---|---|---|---|" >> "$S"
+          v4pool() { # chain, poolManager, dollar
+            local r="${RPC[$1]}"
+            for fs in "100 1" "500 10" "3000 60" "10000 200"; do
+              set -- "$1" "$2" "$3" $fs
+              local enc id st s0 lq
+              enc=$(cast abi-encode "f(address,address,uint24,int24,address)" 0x0000000000000000000000000000000000000000 "$3" "$4" "$5" 0x0000000000000000000000000000000000000000)
+              id=$(cast keccak "$enc")
+              st=$(cast keccak "$(cast abi-encode "f(bytes32,uint256)" "$id" 6)")
+              s0=$(c call "$2" "extsload(bytes32)(bytes32)" "$st" --rpc-url "$r")
+              lslot=$(python3 -c "print(hex(int('$st',16)+3))")
+              lq=$(c call "$2" "extsload(bytes32)(bytes32)" "$lslot" --rpc-url "$r")
+              [ "$s0" = "0x0000000000000000000000000000000000000000000000000000000000000000" ] && set_=no || set_=yes
+              echo "| $1 | $4 / $5 | \`${id:0:18}…\` | $set_ | $(cast to-dec "$lq" 2>/dev/null || echo "$lq") |" >> "$S"
+            done
+          }
+          v4pool 8453 0x498581fF718922c3f8e6A244956aF099B2652b2b 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+          v4pool 4663 0x8366a39CC670B4001A1121B8F6A443A643e40951 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
+
+          echo "" >> "$S"; echo "## 4. Still unknown: looked up from public lists" >> "$S"
+          echo "### Uniswap v4 on Arc (5042), from Uniswap's sdk-core address list" >> "$S"
+          curl -fsSL https://raw.githubusercontent.com/Uniswap/sdk-core/main/src/addresses.ts -o /tmp/addr.ts && {
+            if grep -n -i "arc\|5042" /tmp/addr.ts > /tmp/arc.txt; then echo '```' >> "$S"; head -40 /tmp/arc.txt >> "$S"; echo '```' >> "$S"; else echo "Not in Uniswap's sdk-core list yet." >> "$S"; fi
+          } || echo "Couldn't download sdk-core addresses." >> "$S"
+          echo "### Chainlink ETH/USD and BNB/USD, from Chainlink's public feed lists" >> "$S"
+          for n in ethereum-mainnet-base-1 bsc-mainnet ethereum-mainnet-robinhood-1 robinhood-mainnet arbitrum-mainnet-robinhood-1 ethereum-mainnet-robinhood-chain-1 arc-mainnet; do
+            if curl -fsSL "https://reference-data-directory.vercel.app/feeds-$n.json" -o /tmp/f.json 2>/dev/null; then
+              hits=$(jq -r '.[] | select((.name=="ETH / USD") or (.name=="BNB / USD") or (.name=="USDC / USD")) | "\(.name) proxy=\(.proxyAddress) heartbeat=\(.heartbeat)s deviation=\(.threshold)%"' /tmp/f.json 2>/dev/null)
+              echo "- **$n**: ${hits:-(no ETH/BNB/USDC USD feed listed)}" | tr '\n' ';' >> "$S"; echo "" >> "$S"
+            else echo "- $n: list not found" >> "$S"; fi
+          done
+
+          echo "" >> "$S"; echo "## 5. Across routes between the four chains" >> "$S"
+          echo "| from | to | tokens Across moves (input → output) |" >> "$S"; echo "|---|---|---|" >> "$S"
+          for a in 8453 56 4663 5042; do for b in 8453 56 4663 5042; do
+            [ "$a" = "$b" ] && continue
+            if curl -fsSL "https://app.across.to/api/available-routes?originChainId=$a&destinationChainId=$b" -o /tmp/r.json 2>/dev/null; then
+              t=$(jq -r '[.[] | select((.originTokenSymbol|test("USD")) or (.destinationTokenSymbol|test("USD"))) | "\(.originTokenSymbol) \(.originToken[0:8])… → \(.destinationTokenSymbol) \(.destinationToken[0:8])…"] | join("; ")' /tmp/r.json 2>/dev/null)
+              echo "| $a | $b | ${t:-**no dollar route**} |" >> "$S"
+            else echo "| $a | $b | API error |" >> "$S"; fi
+          done; done
+          echo "" >> "$S"; echo "Done. Nothing was sent; this run only read public data." >> "$S"
