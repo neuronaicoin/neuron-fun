@@ -505,15 +505,24 @@ export async function raceRange(pool, c, byEid, from, to) {
 
 // ------------------------------------------------------------------ loops
 
-/** Follows one chain. `once`: stop when caught up with the tip. */
+/**
+ * Follows one chain. `once`: stop when caught up with the tip as it was at the start (a
+ * fast chain like Arc makes new blocks faster than a rate-limited RPC can be read, so
+ * chasing the moving tip would never end).
+ */
 async function runRaceChain(pool, c, byEid, log, once = false) {
   let range = c.maxRange;
   let fails = 0;
+  let target = null;
   for (;;) {
     try {
       const st = await pool.query("select last_block from race_state where chain_id = $1", [c.chainId]);
       const from = st.rowCount ? BigInt(st.rows[0].last_block) + 1n : c.startBlock;
-      const tip = (await c.pub.getBlockNumber()) - CONFIRMATIONS;
+      let tip = (await c.pub.getBlockNumber()) - CONFIRMATIONS;
+      if (once) {
+        if (target === null) target = tip;
+        if (tip > target) tip = target;
+      }
       if (from > tip) {
         if (once) return;
         await sleep(POLL_MS);
