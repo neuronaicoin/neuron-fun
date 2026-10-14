@@ -27,6 +27,18 @@ import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { createBundlerClient, toSimple7702SmartAccount } from "viem/account-abstraction";
 
+/** A load-balanced public node may not have the newest block yet: ask again for a while. */
+async function retry<T>(fn: () => Promise<T>, tries = 12): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+}
+
 const USDC: Address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"; // Circle USDC on Base Sepolia
 const PAYMASTER: Address = "0x3BA9A96eE3eFf3A69E2B18886AcF52027EFF8966"; // Circle Paymaster v0.8, Base Sepolia
 const RPC = process.env.RPC_URL || "https://sepolia.base.org";
@@ -121,9 +133,9 @@ async function main() {
   console.log(`mined in tx ${receipt.receipt.transactionHash} (success: ${receipt.success})`);
   // read at the block the operation landed in: a load-balanced public node can still be a block behind
   const at = receipt.receipt.blockNumber;
-  const after = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at });
-  const ethAfter = await client.getBalance({ address: account.address });
-  const beforeAt = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at - 1n });
+  const after = await retry(() => client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at }));
+  const ethAfter = await retry(() => client.getBalance({ address: account.address, blockNumber: at }));
+  const beforeAt = await retry(() => client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at - 1n }));
   const fee = beforeAt - after;
   void before;
   console.log(`network fee paid in USDC: ${formatUnits(fee, 6)} · ETH still ${formatUnits(ethAfter, 18)}`);

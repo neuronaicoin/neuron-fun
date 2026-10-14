@@ -9,13 +9,25 @@ import { privateKeyToAccount } from "viem/accounts";
 import { gasUsdcOf, sendWithUsdcGas } from "../lib/usdcgas";
 import { call } from "../lib/tx";
 
+/** A load-balanced public node may not have the newest block yet: ask again for a while. */
+async function retry<T>(fn: () => Promise<T>, tries = 12): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+}
+
 const owner = privateKeyToAccount(keccak256(toHex("sasa paymaster proof test, Base Sepolia only")));
 const usdc = gasUsdcOf(baseSepolia.id)!;
 const client = createPublicClient({ chain: baseSepolia, transport: http() });
 const bal = () => client.readContract({ address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [owner.address] });
 
-const before = await bal();
-console.log(`account ${owner.address}: USDC ${formatUnits(before, 6)}, ETH ${formatUnits(await client.getBalance({ address: owner.address }), 18)}`);
+const before = await retry(bal);
+console.log(`account ${owner.address}: USDC ${formatUnits(before, 6)}, ETH ${formatUnits(await retry(() => client.getBalance({ address: owner.address })), 18)}`);
 const tx = await sendWithUsdcGas(
   baseSepolia,
   owner,
@@ -24,11 +36,11 @@ const tx = await sendWithUsdcGas(
   (m) => console.log(`   ${m}`)
 );
 // read at the block the transaction landed in (a load-balanced public node can lag a block)
-const { blockNumber: at } = await client.waitForTransactionReceipt({ hash: tx });
-const balAt = (blockNumber: bigint) => client.readContract({ address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [owner.address], blockNumber });
+const { blockNumber: at } = await retry(() => client.waitForTransactionReceipt({ hash: tx }));
+const balAt = (blockNumber: bigint) => retry(() => client.readContract({ address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [owner.address], blockNumber }));
 const after = await balAt(at);
 const beforeAt = await balAt(at - 1n);
-const eth = await client.getBalance({ address: owner.address, blockNumber: at });
+const eth = await retry(() => client.getBalance({ address: owner.address, blockNumber: at }));
 void before;
 console.log(`tx ${tx}\nnetwork fee in USDC: ${formatUnits(beforeAt - after, 6)} · ETH ${formatUnits(eth, 18)}`);
 if (!(beforeAt - after > 0n && beforeAt - after < 2_000_000n) || eth !== 0n) {
