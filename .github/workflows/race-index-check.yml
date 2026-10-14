@@ -30,7 +30,9 @@ jobs:
       RPC_97: https://bsc-testnet-rpc.publicnode.com
       RPC_5042002: https://rpc.testnet.arc.network
       # the public Arc RPC allows only a few calls per second
-      RACE_RPC_GAP_MS_5042002: "400"
+      RACE_RPC_GAP_MS_5042002: "1000"
+      # and fewer, wider reads: 10,000 blocks per query instead of 2,000
+      RACE_MAX_RANGE_5042002: "10000"
       # and refuses log queries that ask for several events at once ("range too large")
       RACE_LOG_MODE_5042002: single
     steps:
