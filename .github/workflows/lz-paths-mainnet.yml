@@ -1,0 +1,73 @@
+name: lz-paths-mainnet
+
+# Read-only check, no keys: does LayerZero connect every pair of sasa's four mainnet chains
+# (Base, BNB Chain, Robinhood Chain, Arc)? For each direction A -> B it checks, on chain A:
+# the send and receive libraries support B, the LayerZero Labs DVN serves B, and the
+# executor serves B. Same rule the race wiring script uses (WireRace.s.sol).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check every pair
+        run: |
+          set -uo pipefail
+          curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lz.json
+          declare -A RPC NAME EID SEND RECV EXEC DVN
+          CHAINS="8453 56 4663 5042"
+          RPC[8453]="https://mainnet.base.org";              NAME[8453]="Base"
+          RPC[56]="https://bsc-rpc.publicnode.com";           NAME[56]="BNB Chain"
+          RPC[4663]="https://rpc.mainnet.chain.robinhood.com"; NAME[4663]="Robinhood Chain"
+          RPC[5042]="https://rpc.mainnet.arc.io";             NAME[5042]="Arc"
+
+          # retries for flaky public nodes
+          c() { for i in 1 2 3 4 5; do out=$(cast "$@" 2>/dev/null) && { echo "$out"; return 0; }; sleep 3; done; echo "ERR"; }
+
+          echo "## LayerZero on each chain" >> "$GITHUB_STEP_SUMMARY"
+          echo "| chain | chain id answers | eid | endpoint eid() | LayerZero Labs DVN |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for id in $CHAINS; do
+            E=$(jq -c --argjson id "$id" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|test("testnet|sepolia")|not))][0].value' /tmp/lz.json)
+            if [ "$E" = "null" ] || [ -z "$E" ]; then echo "| ${NAME[$id]} | - | NOT IN LAYERZERO | - | - |" >> "$GITHUB_STEP_SUMMARY"; continue; fi
+            V2=$(echo "$E" | jq -c '[.deployments[] | select(.version == 2)][0]')
+            EID[$id]=$(echo "$V2" | jq -r '.eid')
+            EP=$(echo "$V2" | jq -r '.endpointV2.address')
+            SEND[$id]=$(echo "$V2" | jq -r '.sendUln302.address')
+            RECV[$id]=$(echo "$V2" | jq -r '.receiveUln302.address')
+            EXEC[$id]=$(echo "$V2" | jq -r '.executor.address')
+            DVN[$id]=$(echo "$E" | jq -r '[.dvns | to_entries[] | select(.value.id == "layerzero-labs" and (.value.deprecated|not) and (.value.lzReadCompatible|not)) | .key][0] // ""')
+            GOTID=$(c chain-id --rpc-url "${RPC[$id]}")
+            GOTEID=$(c call "$EP" "eid()(uint32)" --rpc-url "${RPC[$id]}" | awk '{print $1}')
+            echo "${NAME[$id]}: eid ${EID[$id]} endpoint $EP send ${SEND[$id]} recv ${RECV[$id]} exec ${EXEC[$id]} dvn ${DVN[$id]:-none}"
+            echo "| ${NAME[$id]} | $GOTID | ${EID[$id]} | $GOTEID | ${DVN[$id]:-none} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          # a dstConfig whose first word is zero means "doesn't serve that chain"
+          served() { local raw; raw=$(c call "$1" "dstConfig(uint32)" "$2" --rpc-url "$3"); [ "$raw" != "ERR" ] && [ "${raw:2:64}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; }
+          yes() { [ "$1" = "true" ] && echo ok || echo NO; }
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Every direction (checked on the sending chain)" >> "$GITHUB_STEP_SUMMARY"
+          echo "| from | to | send lib | receive lib | DVN | executor | path |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          bad=0
+          for a in $CHAINS; do for b in $CHAINS; do
+            [ "$a" = "$b" ] && continue
+            if [ -z "${EID[$a]:-}" ] || [ -z "${EID[$b]:-}" ]; then echo "| ${NAME[$a]} | ${NAME[$b]} | - | - | - | - | NO (not in LayerZero) |" >> "$GITHUB_STEP_SUMMARY"; bad=1; continue; fi
+            s=$(c call "${SEND[$a]}" "isSupportedEid(uint32)(bool)" "${EID[$b]}" --rpc-url "${RPC[$a]}")
+            r=$(c call "${RECV[$a]}" "isSupportedEid(uint32)(bool)" "${EID[$b]}" --rpc-url "${RPC[$a]}")
+            if [ -n "${DVN[$a]}" ] && served "${DVN[$a]}" "${EID[$b]}" "${RPC[$a]}"; then d=ok; else d=NO; fi
+            if served "${EXEC[$a]}" "${EID[$b]}" "${RPC[$a]}"; then x=ok; else x=NO; fi
+            p=OK; for v in "$(yes "$s")" "$(yes "$r")" "$d" "$x"; do [ "$v" = ok ] || p=NO; done
+            [ "$p" = OK ] || bad=1
+            echo "${NAME[$a]} -> ${NAME[$b]}: send $(yes "$s") receive $(yes "$r") dvn $d executor $x => $p"
+            echo "| ${NAME[$a]} | ${NAME[$b]} | $(yes "$s") | $(yes "$r") | $d | $x | **$p** |" >> "$GITHUB_STEP_SUMMARY"
+          done; done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$bad" = 0 ]; then echo "All 12 directions are connected." | tee -a "$GITHUB_STEP_SUMMARY"; else echo "Some directions are missing (see NO above)." | tee -a "$GITHUB_STEP_SUMMARY"; fi
