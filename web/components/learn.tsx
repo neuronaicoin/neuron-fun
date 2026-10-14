@@ -41,7 +41,7 @@ export function LearnFooter() {
  */
 export function Rich({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
-  const re = /\[([^\]]+)\]\(((?:\/|https:\/\/)[^)\s]+)\)/g;
+  const re = /\[([^\]]+)\]\(((?:\/|https:\/\/)[^)\s]*)\)/g; // "(/)" (the home page) counts too
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {

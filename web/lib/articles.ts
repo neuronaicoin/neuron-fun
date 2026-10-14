@@ -9,6 +9,10 @@ import { V7_ARTICLES_A } from "./articles-v7a";
 import { V7_ARTICLES_B } from "./articles-v7b";
 import { V7_ARTICLES_C } from "./articles-v7c";
 import { IS_TESTNET } from "./config";
+import { MAINNET_BASE_ARTICLES } from "./articles-mainnet-base";
+import { MAINNET_MORE_ARTICLES } from "./articles-mainnet-more";
+import { MAINNET_NEW_ARTICLES } from "./articles-mainnet-new";
+import { MAINNET_SEO_ARTICLES } from "./articles-mainnet-seo";
 
 export type Block =
   | { h2: string }
@@ -176,12 +180,21 @@ const BASE_ARTICLES: Article[] = [
 
 // Newest first on the Learn page; the first three guides come from launch week.
 /**
- * The 30 guides for the 5-minute race (v7). They describe mainnet, so they go live
- * by themselves when the site switches to mainnet (lib/config.ts NETWORK), not before.
+ * Testnet: the original guides. Mainnet (lib/config.ts NETWORK): the 30 guides for the
+ * 5-minute race plus the original guides rewritten for it (articles-mainnet-*.ts, same
+ * slugs). The switch happens by itself on the mainnet build.
  */
-const RACE_ARTICLES: Article[] = IS_TESTNET ? [] : [...V7_ARTICLES_A, ...V7_ARTICLES_B, ...V7_ARTICLES_C];
-
-export const ARTICLES: Article[] = [...RACE_ARTICLES, ...SEO_ARTICLES, ...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES];
+export const ARTICLES: Article[] = IS_TESTNET
+  ? [...SEO_ARTICLES, ...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES]
+  : [
+      ...V7_ARTICLES_A,
+      ...V7_ARTICLES_B,
+      ...V7_ARTICLES_C,
+      ...MAINNET_SEO_ARTICLES,
+      ...MAINNET_NEW_ARTICLES,
+      ...MAINNET_MORE_ARTICLES,
+      ...MAINNET_BASE_ARTICLES,
+    ];
 
 export const articleBySlug = (slug: string) => ARTICLES.find((a) => a.slug === slug);
 export const SITE_URL = "https://sasapad.fun";
