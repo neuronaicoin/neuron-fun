@@ -53,6 +53,8 @@ function unlinkedText(ids: number[], links: Map<number, Set<number> | null>): st
     }
   return "";
 }
+/** First buy we suggest on each chain; smaller is allowed (down to the contract's minimum) with a note. */
+const RECOMMENDED_BUY = 5;
 const cleanSym = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
 
 export default function RaceLaunchPage() {
@@ -64,7 +66,7 @@ export default function RaceLaunchPage() {
   const [description, setDescription] = useState("");
   const [feeMode, setFeeMode] = useState<0 | 1>(0);
   const [chains, setChains] = useState<number[]>(RACE_CHAINS.map((c) => c.chainId));
-  const [firstBuy, setFirstBuy] = useState("5");
+  const [firstBuy, setFirstBuy] = useState("10");
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -406,21 +408,39 @@ export default function RaceLaunchPage() {
             </div>
           </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-[0.8125rem] text-ink-3">Your first buy on each chain (USDC, at least ${minUsd})</span>
-            <div className="relative">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[0.8125rem] text-ink-3">Buy some yourself, on each chain (USDC)</span>
+            <div className="grid grid-cols-3 gap-2">
+              {["10", "50", "100"].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setFirstBuy(v)}
+                  aria-pressed={firstBuy === v}
+                  className={"h-11 rounded-xl border font-semibold text-[0.9375rem] " + (firstBuy === v ? "border-ink ring-1 ring-ink" : "border-line text-ink-2")}
+                >
+                  ${v}
+                </button>
+              ))}
+            </div>
+            <label className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-3">$</span>
               <input
                 inputMode="decimal"
                 value={firstBuy}
                 onChange={(e) => setFirstBuy(e.target.value.replace(",", ".").replace(/[^0-9.]/g, ""))}
+                placeholder="Or type any amount"
+                aria-label="Your first buy on each chain, in dollars"
                 className={input + " pl-8"}
               />
-            </div>
+            </label>
+            {Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && buyN >= minUsd && (
+              <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more on each chain, so your coin starts with some weight.</span>
+            )}
             <span className="text-[0.8125rem] text-ink-3">
               Total ${Number.isFinite(buyN) ? (buyN * picked.length).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"} across {picked.length} chains. Your first buy pays the 2% floor fee.
             </span>
-          </label>
+          </div>
         </div>
 
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">

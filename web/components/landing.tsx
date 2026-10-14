@@ -36,7 +36,7 @@ export function Landing() {
         </a>
         <nav className="sasa-nav">
           <a href="/explore/" className="sasa-learn">Explore</a>
-          <a href="/create/" className="sasa-learn">Create</a>
+          <a href="/race/launch/" className="sasa-learn">Create</a>
           <a href="/learn/" className="sasa-learn sasa-hide-s">Learn</a>
           <a href={X_URL} className="sasa-follow" target="_blank" rel="noreferrer">
           <span className="sasa-follow-t">Follow on</span>
@@ -64,7 +64,7 @@ export function Landing() {
         </p>
         <div className="sasa-actions">
           <a href="/explore/" className="sasa-btn">Trade coins</a>
-          <a href="/create/" className="sasa-btn sasa-btn-2">Create a coin</a>
+          <a href="/race/launch/" className="sasa-btn sasa-btn-2">Create a coin</a>
         </div>
         <ul className="sasa-chains" aria-label="Chains">
           {CHAINS.map((c) => (
@@ -75,7 +75,7 @@ export function Landing() {
           ))}
         </ul>
         </div>
-        <a href="/create/" className="sasa-hero-art" aria-label="Create a coin or trade one on sasa">
+        <a href="/race/launch/" className="sasa-hero-art" aria-label="Create a coin or trade one on sasa">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/hero-phones.png" alt="sasa on a phone: the Create a coin screen and a Buy screen" width={560} height={620} />
         </a>

@@ -190,7 +190,7 @@ export default function MePage() {
         {data && data.created.length === 0 && (
           <div className="mt-1 text-center py-8 border border-dashed border-line rounded-2xl">
             <p className="text-ink-2">You haven&apos;t created a coin yet.</p>
-            <Link href="/create/" className="inline-flex mt-3 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
+            <Link href="/race/launch/" className="inline-flex mt-3 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
           </div>
         )}
       </section>

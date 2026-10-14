@@ -69,6 +69,7 @@ export function PriceChart({
   const failRef = useRef(onFail);
   failRef.current = onFail;
   const box = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
   const [mode, setMode] = useState<Mode>("line");
   const [frame, setFrame] = useState<number>(60);
   const [empty, setEmpty] = useState(false);
@@ -110,7 +111,10 @@ export function PriceChart({
         rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
         timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 3, barSpacing: 8, minBarSpacing: 2 },
         crosshair: { mode: 1 },
-        handleScroll: { vertTouchDrag: false },
+        // phones: vertical swipes keep scrolling the page; pinch, the buttons and sideways drags zoom and pan
+        handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
+        // mouse wheel zooms, dragging the price or time axis stretches it, double-click on an axis resets it
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
         localization: { priceFormatter: (p: number) => fmtPrice(p) },
       });
       const priceFormat = { type: "custom" as const, minMove: 1e-12, formatter: (p: number) => fmtPrice(p) };
@@ -137,6 +141,7 @@ export function PriceChart({
           priceLineVisible: false,
         });
       }
+      chartRef.current = chart;
       chart.subscribeCrosshairMove((p) => {
         if (!alive) return;
         const d = p.time !== undefined ? (p.seriesData.get(series) as { value?: number; close?: number } | undefined) : undefined;
@@ -191,6 +196,7 @@ export function PriceChart({
 
     return () => {
       alive = false;
+      chartRef.current = null;
       stopTrade?.();
       if (timer) clearInterval(timer);
       const c = chart;
@@ -201,6 +207,22 @@ export function PriceChart({
       });
     };
   }, [cacheKey, tradeCoinId, refreshMs, frame, mode]);
+
+  /** Zoom buttons: keep the newest candle on the right edge, show fewer or more candles. */
+  const zoom = (k: "in" | "out" | "reset") => {
+    const c = chartRef.current;
+    if (!c) return;
+    const ts = c.timeScale();
+    if (k === "reset") {
+      ts.fitContent();
+      c.priceScale("right").applyOptions({ autoScale: true });
+      return;
+    }
+    const r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    const width = Math.max(10, (r.to - r.from) * (k === "in" ? 0.6 : 1.6));
+    ts.setVisibleLogicalRange({ from: r.to - width, to: r.to });
+  };
 
   return (
     <div className="flex flex-col gap-3 min-w-0">
@@ -234,6 +256,24 @@ export function PriceChart({
               aria-pressed={frame === f.sec}
             >
               {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex bg-night rounded-full p-1" role="group" aria-label="Zoom">
+          {[
+            { k: "out", label: "−", title: "Zoom out" },
+            { k: "in", label: "+", title: "Zoom in" },
+            { k: "reset", label: "⟲", title: "Reset zoom" },
+          ].map((b) => (
+            <button
+              key={b.k}
+              type="button"
+              title={b.title}
+              aria-label={b.title}
+              onClick={() => zoom(b.k as "in" | "out" | "reset")}
+              className="h-8 w-8 rounded-full text-[1rem] font-semibold text-ink-2 hover:bg-paper hover:text-ink"
+            >
+              {b.label}
             </button>
           ))}
         </div>

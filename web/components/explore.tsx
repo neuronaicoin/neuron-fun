@@ -269,7 +269,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 Clear filters
               </button>
             ) : (
-              <Link href="/create/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
+              <Link href="/race/launch/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
             )}
           </div>
         )}

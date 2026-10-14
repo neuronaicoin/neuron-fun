@@ -61,7 +61,7 @@ export default function HowItWorks() {
       <div className="mt-10 bg-night text-ink rounded-3xl p-7 text-center">
         <h2 className="font-display font-semibold text-[1.5rem]">Ready?</h2>
         <p className="text-[#a9bab3] mt-2">It takes about a minute.</p>
-        <Link href="/create/" className="inline-flex mt-5 h-12 px-7 rounded-xl bg-mint text-on-accent font-semibold items-center">
+        <Link href="/race/launch/" className="inline-flex mt-5 h-12 px-7 rounded-xl bg-mint text-on-accent font-semibold items-center">
           Create a coin
         </Link>
       </div>

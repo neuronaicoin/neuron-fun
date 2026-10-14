@@ -218,7 +218,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 const NAV = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
-  { href: "/create/", label: "Create a coin", from: "md" },
+  { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "Your coins", from: "lg" },
   // in "More" on computers too: a short, calm top bar
   { href: "/traders/", label: "Traders", from: "never" },
