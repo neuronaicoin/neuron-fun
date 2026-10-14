@@ -44,7 +44,31 @@ const ok = (cond: boolean, msg: string) => {
 async function send(to: Address, data: Hex) {
   const hash = await wallet.sendTransaction({ to, data, account: me, chain });
   const r = await pub.waitForTransactionReceipt({ hash });
-  if (r.status !== "success") throw new Error(`reverted: ${hash}`);
+  if (r.status !== "success") {
+    // why: the call tree of the failed transaction (anvil), and gas used against the limit
+    const tx = await pub.getTransaction({ hash });
+    console.log(`   reverted ${hash}: gas used ${r.gasUsed} of limit ${tx.gas}`);
+    try {
+      const trace = (await pub.request({ method: "debug_traceTransaction" as never, params: [hash, { tracer: "callTracer" }] as never })) as Record<string, unknown>;
+      const walk = (n: Record<string, unknown>, depth: number) => {
+        if (depth > 6) return;
+        if (n.error || n.revertReason)
+          console.log(`   ${"  ".repeat(depth)}${n.type} ${n.to} gas ${n.gas} used ${n.gasUsed}: ${n.error ?? ""} ${n.revertReason ?? ""} ${String(n.output ?? "").slice(0, 138)}`);
+        for (const k of (n.calls as Record<string, unknown>[] | undefined) ?? []) walk(k, depth + 1);
+      };
+      walk(trace, 0);
+    } catch (e) {
+      console.log(`   (no trace: ${(e as Error).message.split("\n")[0]})`);
+    }
+    // the same call again on the state after that block, for a decoded reason
+    try {
+      await pub.call({ account: me, to, data, blockNumber: r.blockNumber });
+      console.log("   the same call succeeds on the next state: likely an out-of-gas or timing failure");
+    } catch (e) {
+      console.log(`   replay: ${(e as { shortMessage?: string }).shortMessage ?? (e as Error).message.split("\n")[0]}`);
+    }
+    throw new Error(`reverted: ${hash}`);
+  }
   return r;
 }
 const bal = (token: Address) => pub.readContract({ address: token, abi: raceErc20Abi, functionName: "balanceOf", args: [me.address] }) as Promise<bigint>;
