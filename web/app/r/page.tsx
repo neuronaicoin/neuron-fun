@@ -7,6 +7,9 @@ import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
 import { RaceTradeBox } from "@/components/racetrade";
 import { CreatorKit, RaceShareButton } from "@/components/raceshare";
+import { RacePick } from "@/components/racepick";
+import { RaceChat } from "@/components/racechat";
+import { RaceReplay } from "@/components/racereplay";
 import { compactUsd, shortAddr } from "@/lib/format";
 import { onTrade } from "@/lib/live";
 import {
@@ -162,6 +165,20 @@ function RacePage() {
           </div>
 
           <RaceLanes coin={coin} phase={phase} now={now} />
+
+          <RacePick
+            coin={coin}
+            now={now}
+            onBack={(chainId) => {
+              setPick(chainId);
+              // phones: the trade box is lower on the page; desktop: it's already in view
+              document.getElementById("trade")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+
+          {phase === "decided" && coin.winner && <RaceReplay coin={coin} />}
+
+          <RaceChat coin={coin} now={now} />
 
           <CreatorKit coin={coin} now={now} />
 

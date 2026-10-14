@@ -543,3 +543,20 @@ export async function fetchRaceStats(): Promise<RaceStats> {
     mostTraders: statCoin(d.most_traders as Record<string, unknown> | null),
   };
 }
+
+/** Every buy and sell of a race coin in order (for the race replay); hand-over moves left out. */
+export async function fetchRaceFlow(coinId: string, limit = 5000): Promise<{ chainId: number; ts: number; usd: number }[]> {
+  const { data, error } = await db
+    .from("race_trades")
+    .select("chain_id,ts,is_buy,usd_amount,via")
+    .eq("coin_id", coinId.toLowerCase())
+    .neq("via", "system")
+    .order("ts", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    chainId: Number(r.chain_id),
+    ts: new Date(r.ts as string).getTime(),
+    usd: (r.is_buy ? 1 : -1) * Number(r.usd_amount || 0),
+  }));
+}

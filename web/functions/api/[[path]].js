@@ -21,6 +21,7 @@
  *   POST   /api/push               { endpoint, keys: { p256dh, auth } }
  *   DELETE /api/push               { endpoint }
  *   /api/forum/*                   see edge/forum-api.js
+ *   POST   /api/racechat           { coinId, body } (live race chat, edge/racechat-api.js)
  *
  * Optional env: FORUM_ADMINS  comma-separated wallet addresses that can moderate every forum board
  */
@@ -29,6 +30,7 @@ import { forumRoute } from "../../edge/forum-api.js";
 import { socialRoute } from "../../edge/social-api.js";
 import { admins } from "../../edge/forum-core.js";
 import { aiRoute } from "../../edge/ai-api.js";
+import { raceChatRoute } from "../../edge/racechat-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -391,6 +393,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "forum") return await forumRoute(ctx, me, parts, method, body, url);
     if (parts[0] === "social") return await socialRoute(ctx, me, parts, method, body);
     if (parts[0] === "ai") return await aiRoute(ctx, me, parts, method, body);
+    if (parts[0] === "racechat") return await raceChatRoute(env, me, parts, method, body);
     if (parts[0] === "push" && parts.length === 1) {
       if (method === "POST") return await savePush(env, me, body);
       if (method === "DELETE") return await deletePush(env, me, body);
