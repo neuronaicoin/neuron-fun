@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "sasa stats: launches, volume and graduations",
-  description: "Live on-chain numbers for sasa: coins launched, trading volume, graduations, creator earnings and holders across every chain.",
+  title: "sasa stats: races, launches and volume",
+  description: "Live on-chain numbers for sasa: races and the chain league, coins launched, trading volume, graduations, creator earnings and holders across every chain.",
   alternates: { canonical: "/stats/" },
 };
 

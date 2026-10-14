@@ -114,6 +114,70 @@ language sql stable as $$
   limit greatest(1, least(p_limit, 2000));
 $$;
 
+-- Numbers for the Stats page and the race wall, in one call. p_since: start of "recent"
+-- (the page sends 24 hours ago). Every figure comes from the indexed chain data.
+create index if not exists race_trades_ts_idx on race_trades (ts desc);
+
+create or replace function race_stats(p_since timestamptz)
+returns json
+language sql stable as $$
+  select json_build_object(
+    -- chain league: races each chain took part in, races it won, its race volume and traders
+    'league', (
+      select coalesce(json_agg(x order by x.wins desc, x.volume desc), '[]'::json)
+      from (
+        select c.chain_id,
+               count(*)                              as races,
+               count(*) filter (where c.state = 2)   as wins,
+               coalesce(sum(c.volume_usd), 0)        as volume,
+               (select count(distinct t.trader) from race_trades t where t.chain_id = c.chain_id and t.via <> 'system') as traders
+        from race_chains c
+        group by c.chain_id
+      ) x
+    ),
+    'recent', json_build_object(
+      'races',   (select count(*) from race_coins where launched_at >= p_since),
+      'volume',  (select coalesce(sum(usd_amount), 0) from race_trades where ts >= p_since and via <> 'system'),
+      'trades',  (select count(*) from race_trades where ts >= p_since and via <> 'system'),
+      'traders', (select count(distinct trader) from race_trades where ts >= p_since and via <> 'system'),
+      'new_traders', (
+        select count(*) from (
+          select trader from race_trades where via <> 'system' group by trader having min(ts) >= p_since
+        ) n
+      )
+    ),
+    'all', json_build_object(
+      'races',   (select count(*) from race_coins),
+      'decided', (select count(*) from race_coins where winner_chain is not null),
+      'volume',  (select coalesce(sum(usd_amount), 0) from race_trades where via <> 'system'),
+      'trades',  (select count(*) from race_trades where via <> 'system'),
+      'traders', (select count(distinct trader) from race_trades where via <> 'system')
+    ),
+    'biggest_race', (
+      select row_to_json(r) from (
+        select id, name, symbol, logo, total_usd as usd, winner_chain as chain_id
+        from race_coins where total_usd is not null order by total_usd desc limit 1
+      ) r
+    ),
+    'biggest_buy', (
+      select row_to_json(b) from (
+        select c.id, c.name, c.symbol, c.logo, t.usd_amount as usd, t.chain_id
+        from race_trades t join race_coins c on c.id = t.coin_id
+        where t.is_buy and t.via <> 'system' order by t.usd_amount desc limit 1
+      ) b
+    ),
+    'most_traders', (
+      select row_to_json(m) from (
+        select c.id, c.name, c.symbol, c.logo, count(distinct t.trader) as traders
+        from race_trades t join race_coins c on c.id = t.coin_id
+        where t.via <> 'system'
+        group by c.id, c.name, c.symbol, c.logo
+        order by count(distinct t.trader) desc limit 1
+      ) m
+    )
+  );
+$$;
+
 -- ------------------------------------------------------------------ access (read-only for the site)
 
 alter table race_state  enable row level security;
@@ -134,5 +198,6 @@ begin
 end $$;
 revoke all on race_state from anon, authenticated;
 grant execute on function race_candles(text, integer, integer, integer) to anon, authenticated;
+grant execute on function race_stats(timestamptz) to anon, authenticated;
 
 notify pgrst, 'reload schema';

@@ -7,6 +7,7 @@ import { BarChart, Donut, Panel, Sparkline, short, type Slice } from "@/componen
 import { CHAINS, chainById } from "@/lib/config";
 import { coinHref, fetchStats, type FeeMode, type Leader, type LeaderKind } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
+import { RaceStatsSection } from "@/components/racestats";
 
 type Stats = Awaited<ReturnType<typeof fetchStats>>;
 
@@ -95,7 +96,10 @@ export default function StatsPage() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+      <RaceStatsSection />
+
+      <h2 className="mt-8 font-display font-bold text-[1.25rem] sm:text-[1.5rem] tracking-tight">Coins</h2>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Chain">
           {[{ id: null as number | null, label: "All chains" }, ...CHAINS.map((c) => ({ id: c.chain.id as number | null, label: c.short }))].map((c) => (
             <button

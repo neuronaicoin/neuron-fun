@@ -493,3 +493,53 @@ export function clock(msLeft: number): string {
   const s = Math.max(0, Math.ceil(msLeft / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+
+// ------------------------------------------------------------------ stats (race.sql: race_stats)
+
+export type RaceStatCoin = { id: string; name: string; symbol: string; logo: string; usd?: number; traders?: number; chain: RaceChain | null };
+export type RaceStats = {
+  league: { chain: RaceChain; races: number; wins: number; volume: number; traders: number }[];
+  recent: { races: number; volume: number; trades: number; traders: number; newTraders: number };
+  all: { races: number; decided: number; volume: number; trades: number; traders: number };
+  biggestRace: RaceStatCoin | null;
+  biggestBuy: RaceStatCoin | null;
+  mostTraders: RaceStatCoin | null;
+};
+
+function statCoin(r: Record<string, unknown> | null | undefined): RaceStatCoin | null {
+  if (!r) return null;
+  return {
+    id: r.id as string,
+    name: (r.name as string) ?? "",
+    symbol: (r.symbol as string) ?? "",
+    logo: (r.logo as string) ?? "",
+    usd: r.usd === undefined || r.usd === null ? undefined : Number(r.usd),
+    traders: r.traders === undefined ? undefined : Number(r.traders),
+    chain: r.chain_id ? (raceChain(Number(r.chain_id)) ?? null) : null,
+  };
+}
+
+/** Everything the Stats page shows about races; "recent" is the last 24 hours. */
+export async function fetchRaceStats(): Promise<RaceStats> {
+  const { data, error } = await db.rpc("race_stats", { p_since: new Date(Date.now() - 24 * 3600e3).toISOString() });
+  if (error) throw error;
+  const d = (data ?? {}) as Record<string, Record<string, unknown> | Record<string, unknown>[] | null>;
+  const rec = (d.recent ?? {}) as Record<string, unknown>;
+  const all = (d.all ?? {}) as Record<string, unknown>;
+  const league = ((d.league ?? []) as Record<string, unknown>[])
+    .map((l) => {
+      const chain = raceChain(Number(l.chain_id));
+      return chain ? { chain, races: Number(l.races), wins: Number(l.wins), volume: Number(l.volume), traders: Number(l.traders) } : null;
+    })
+    .filter((l): l is RaceStats["league"][number] => l !== null);
+  // chains with no race yet still get a row, so the league always shows every chain
+  for (const c of RACE_CHAINS) if (!league.some((l) => l.chain.chainId === c.chainId)) league.push({ chain: c, races: 0, wins: 0, volume: 0, traders: 0 });
+  return {
+    league,
+    recent: { races: Number(rec.races ?? 0), volume: Number(rec.volume ?? 0), trades: Number(rec.trades ?? 0), traders: Number(rec.traders ?? 0), newTraders: Number(rec.new_traders ?? 0) },
+    all: { races: Number(all.races ?? 0), decided: Number(all.decided ?? 0), volume: Number(all.volume ?? 0), trades: Number(all.trades ?? 0), traders: Number(all.traders ?? 0) },
+    biggestRace: statCoin(d.biggest_race as Record<string, unknown> | null),
+    biggestBuy: statCoin(d.biggest_buy as Record<string, unknown> | null),
+    mostTraders: statCoin(d.most_traders as Record<string, unknown> | null),
+  };
+}
