@@ -6,26 +6,23 @@ import { useState } from "react";
 import { sessionToken } from "@/lib/alerts";
 
 const FAQ: { q: string; a: string }[] = [
-  { q: "Does sasa have a token?", a: "No. sasa has no token. Any coin using the sasa or Sasapad name or logo, on any chain, is not made by us. Never buy a “sasa token” from anyone; we only announce news from @sasapadfun on X." },
+  { q: "Does sasa have a token?", a: "No. sasa has no token and no airdrop. Any coin using the sasa or Sasapad name or logo, on any chain, is not made by us. We only announce news from @sasapadfun on X and t.me/sasapadfun on Telegram." },
   ...(IS_TESTNET
     ? [
-        { q: "Is this real money?", a: "Not yet. sasa runs on testnet: the USDC here is free test money with no value. Tap “Get $100” to try everything for free." },
-        { q: "How do I get test USDC?", a: "Tap your balance or “Deposit”, then “Get $100”. You can do it once a day on each chain." },
+        { q: "Is this real money?", a: "Not yet. sasa runs on testnets: the USDC here is free test money with no value. Tap your balance or “Deposit”, then “Get $100 free test USDC” to try everything." },
+        { q: "How do I get test USDC?", a: "Tap “Deposit”, then “Get $100 free test USDC”. On a race page you can also get $100 of test USDC on that chain. Each faucet works once a day." },
       ]
     : [
-        { q: "How do I add money?", a: "Tap “＋” next to your balance (or “Deposit”). Send USDC on Base or USDG on Robinhood Chain to your address for free, or bring another coin from any chain and it’s turned into dollars." },
-        { q: "How do I take money out?", a: "Tap your balance, then “Withdraw”. Send USDC on Base or USDG on Robinhood Chain to any wallet or exchange. On the exchange, pick the same network." },
+        { q: "How do I add money?", a: "Tap “＋” next to your balance. Send USDC on the Base network to the address shown (or scan the QR code). Only USDC on Base: other coins or networks can be lost." },
+        { q: "How do I take money out?", a: "Tap “↑” next to your balance (or “Withdraw”). Paste a Base address, choose the amount and confirm. On an exchange, pick USDC on the Base network." },
       ]),
-  { q: "Do I need to pick a chain?", a: "No. sasa picks the best price for you when you buy and sells everywhere you hold, in one tap." },
+  { q: "How does a launch race work?", a: "A new coin goes live on Base, BNB Chain, Robinhood Chain and Arc at the same time, with the same contract address. For five minutes anyone can buy on any chain. Then the chain with the most money wins: the other pools close, their money moves into the winner's pool (minus a 2% hand-over fee), everyone's coins move to the winning chain automatically, and that pool is locked forever." },
+  { q: "Which chain should I buy on?", a: "During a race, any chain you like: buying on a chain helps it win. If your chain loses, you don't lose your coins: they are moved to the winning chain automatically. After the race the coin trades on the winning chain." },
+  { q: "What are sasa's fees?", a: "Race coins: 2% per trade, of which 30% goes to the coin's creator (or to buybacks that burn the coin, if the creator chose that) and 70% to sasa. Right after launch the fee starts higher and falls to 2% within the first few minutes, to slow down sniper bots. When a race ends, the losing pools' money pays a 2% hand-over fee. Coins from other DEXs: 0.7% per trade. Deposits and withdrawals: no sasa fee." },
+  { q: "Do I pay network fees?", a: "Yes, they are small (usually cents). Signed in with email or Google, they are paid in USDC from your balance, so you never need ETH or BNB. With your own wallet (like MetaMask) you pay them in the chain's own coin." },
+  { q: "What does it cost to create a coin?", a: "A first buy on each chain of the race, in USDC (we recommend $5 or more per chain), plus a few cents of network fees per chain. The creator then earns 30% of every trading fee on the winning pool, forever." },
+  { q: "Can the creator pull the money out?", a: "No. Nobody can: not the creator, not sasa. The winning pool is locked forever by the contracts. The creator can sell coins they bought, like anyone else, and their buys are labeled “Creator” in the trades list." },
   { q: "My trade says it failed but my balance changed.", a: "Sometimes the network confirms slowly. Refresh the page after a few seconds; your balance and trades will show the real result." },
-  { q: "What does “graduation” mean?", a: "When a coin raises its target across all chains, it moves to a trading pool with liquidity locked forever. The chain that raised the most wins; the others close and holders there can always sell." },
-  { q: "What is a creator lock?", a: "A creator can lock their own coins for 1 or 24 hours at launch. Nobody can lift it early. Locked coins get a “Dev locked” badge." },
-  { q: "How do invite rewards work?", a: "Share your invite link from the Points page. Friends start with 100 points, and you earn points plus 25% of sasa’s fees from their trades for a year, paid daily." },
-  {
-    q: "What are sasa's fees?",
-    a: "Trading: 1% per trade (0.3% to the coin's creator, 0.7% to sasa), on the launch curve and in the pool after graduation. Graduation: 2% of the money that goes into the pool. Moving coins between chains after graduation: 0.1%. Other DEXs' coins: 0.7%. Deposits from another coin or chain: 0.25% plus network costs; sending USDC or USDG straight in is free. Copied trades: 0.2%. Boost: $10 for 6 hours or $20 for 24 hours. Launching a coin and withdrawing are free.",
-  },
-  { q: "Do I pay network fees?", a: "Signed in with email: no, sasa pays them. With your own wallet (like MetaMask) you need a little of the chain’s coin for fees." },
 ];
 
 export default function HelpPage() {

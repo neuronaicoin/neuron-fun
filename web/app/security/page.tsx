@@ -3,7 +3,7 @@ import { LegalPage } from "@/components/legal";
 
 export const metadata: Metadata = {
   title: "Security · sasa",
-  description: "How sasa's smart contracts were reviewed: three rounds of independent review, findings and how each was resolved.",
+  description: "How sasa's smart contracts are secured: the independent review of the multi-chain contracts, the launch race contracts, and what the code guarantees.",
   alternates: { canonical: "/security/" },
 };
 
@@ -21,24 +21,33 @@ export default function Security() {
   return (
     <LegalPage title="Security">
       <div className="rounded-2xl border border-up/40 bg-up/10 p-4">
-        <p className="font-display font-bold text-[1.125rem] text-ink">Independently reviewed</p>
+        <p className="font-display font-bold text-[1.125rem] text-ink">Core contracts independently reviewed</p>
         <p className="mt-1">
-          sasa&apos;s smart contracts went through <b>three rounds of independent review</b>. No critical, high or open medium findings remain; the
-          reviewer found the code ready for production after the final round.
+          sasa&apos;s multi-chain core (the contracts that launch a coin on every chain with one address and decide the winning chain) went through{" "}
+          <b>three rounds of independent review</b>. No critical, high or open medium findings remain.
         </p>
         <a href="/security-review.pdf" target="_blank" rel="noopener" className="inline-flex mt-3 h-11 px-4 rounded-xl bg-ink text-paper font-bold items-center">
           Read the review (PDF)
         </a>
       </div>
 
-      <h2>What was reviewed</h2>
+      <h2>The launch race contracts</h2>
       <p>
-        About 2,100 lines of Solidity: the contracts that launch coins on every chain, run the bonding curves, decide the winning chain, move money
+        The five-minute race is built on that reviewed core: the same hub counts every chain&apos;s money and decides the winner. New contracts open each
+        chain&apos;s pool (Uniswap v4 on Base and Robinhood Chain, PancakeSwap Infinity on BNB Chain, a USDC pool on Arc), run the launch fee, and move the
+        losing pools&apos; money and holders to the winner. These race contracts have been tested end to end on the testnets of all four chains;{" "}
+        <b>their independent review is still to come</b>, and we will publish it here.
+      </p>
+
+      <h2>What the review covered</h2>
+      <p>
+        The review was done on sasa&apos;s first multi-chain version, which launched coins on bonding curves; the race keeps its core (one address on
+        every chain, the hub that decides the winner). About 2,100 lines of Solidity: the contracts that launch coins on every chain, run the bonding curves, decide the winning chain, move money
         between chains, open the locked Uniswap pools, and run auto orders. Code version: commit <code className="font-mono text-[0.8125rem] break-all">bdb63168</code>{" "}
         with the round 2 and 3 fixes.
       </p>
 
-      <h2>Findings and how they were resolved</h2>
+      <h2>Findings in that review and how they were resolved</h2>
       <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-[0.8125rem]">
           <thead className="bg-paper text-ink">
@@ -65,16 +74,17 @@ export default function Security() {
       <h2>What the contracts guarantee</h2>
       <ul>
         <li>Money can only end up in a coin&apos;s own locked pool, as the published fees, or burned through buybacks. No admin can take it.</li>
-        <li>A coin&apos;s supply can never exceed 1,000,000,000 across all chains.</li>
-        <li>Pool liquidity is locked forever.</li>
-        <li>The winning chain is decided by on-chain math from every chain&apos;s report.</li>
-        <li>Fees have hard caps in the contracts, and selling can never be paused.</li>
+        <li>A coin&apos;s supply can never exceed 1,000,000,000 across all chains, and it has the same address on every chain.</li>
+        <li>The winning pool&apos;s liquidity is locked forever.</li>
+        <li>The winning chain is decided by on-chain math from every chain&apos;s report, with dollar values from Chainlink prices.</li>
+        <li>Holders on the losing chains are moved to the winning chain automatically; nobody has to claim anything.</li>
+        <li>Fees are fixed in the contracts: 2% per trade after the opening minutes, 30% of it to the creator.</li>
       </ul>
 
       <h2>Remaining risks</h2>
       <ul>
-        <li>sasa depends on LayerZero, Across, Uniswap v4 and the issuers of USDC and USDG.</li>
-        <li>Money held by the launch curves is capped per chain at first and raised gradually.</li>
+        <li>sasa depends on LayerZero (messages between chains), Chainlink (prices), Uniswap v4, PancakeSwap Infinity and Circle (USDC).</li>
+        <li>The race contracts&apos; independent review is still to come (see above).</li>
         <li>A review lowers risk but can&apos;t prove there are no bugs. Meme coins themselves are very risky; see <a href="/risk/" className="text-emerald">Risks</a>.</li>
       </ul>
       <p className="text-[0.8125rem] text-ink-3">

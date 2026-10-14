@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal";
 
-export const metadata: Metadata = { title: "Privacy · sasa", alternates: { canonical: "/privacy/" } };
+export const metadata: Metadata = {
+  title: "Privacy · sasa",
+  description: "What sasa collects and why: your wallet address, what you choose to add, basic usage data, and the services that help run sasa.",
+  alternates: { canonical: "/privacy/" },
+};
 
 export default function Privacy() {
   return (
@@ -12,7 +16,8 @@ export default function Privacy() {
       <ul>
         <li><b>Wallet address</b> and your public on-chain activity (trades, launches). This is public on the blockchain anyway.</li>
         <li><b>Sign-in details</b> if you sign in with email or Google: handled by our wallet provider; we receive your wallet address and, for email sign-in, your email.</li>
-        <li><b>What you choose to add</b>: profile name, picture, bio, links, comments, forum posts, watchlist, alerts and messages to support.</li>
+        <li><b>What you choose to add</b>: profile name, picture, bio, links, comments, forum posts, race chat messages, watchlist, alerts and messages to support.</li>
+        <li><b>Support requests</b>: your name, email and message, your wallet address if you are signed in, and a one-way scrambled form of your IP address to stop spam.</li>
         <li><b>Basic usage data</b>: pages visited, device type and how you found sasa, measured with Google Analytics with its advertising features turned off, to keep sasa working and improve it. In the EU, UK and Switzerland it sets no analytics cookies.</li>
         <li><b>Push notifications</b>: if you turn them on, a technical address your browser gives us to send them.</li>
       </ul>
@@ -25,8 +30,9 @@ export default function Privacy() {
 
       <h2>Who helps us run sasa</h2>
       <p>
-        Hosting, database, wallet sign-in, gas sponsorship, email, analytics (Google Analytics) and blockchain data providers process data for us so sasa
-        can work. They may be in other countries.
+        Hosting (Cloudflare), database (Supabase), wallet sign-in (Privy), network-fee services (Circle&apos;s paymaster and a transaction bundler),
+        email, analytics (Google Analytics), fonts (Google Fonts on the forum pages) and blockchain data providers process data for us so sasa can work.
+        They may be in other countries.
       </p>
 
       <h2>Your choices</h2>

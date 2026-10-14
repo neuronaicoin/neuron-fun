@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal";
 
-export const metadata: Metadata = { title: "Terms of Service · sasa", alternates: { canonical: "/terms/" } };
+export const metadata: Metadata = {
+  title: "Terms of Service · sasa",
+  description: "The terms for using sasa: who may use it, your wallet, the five-minute launch race, fees, and the limits of what sasa is responsible for.",
+  alternates: { canonical: "/terms/" },
+};
 
 export default function Terms() {
   return (
@@ -33,6 +37,11 @@ export default function Terms() {
         in with email or Google (provided by a third-party wallet service). You are responsible for keeping your login and devices safe. Blockchain
         transactions can&apos;t be reversed: funds sent to a wrong address or on a wrong network may be lost.
       </p>
+      <p>
+        Deposits and withdrawals in the sasa app are USDC on the Base network only. Sending any other token, or USDC on another network, may lose it.
+        You pay the network fees of your transactions. With a wallet created for you, they are paid in USDC from your balance through a third-party
+        service (Circle&apos;s paymaster); with your own wallet, in the chain&apos;s own coin.
+      </p>
 
       <h2>4. Coins on sasa</h2>
       <p>
@@ -41,26 +50,35 @@ export default function Terms() {
         are provided as-is and may be wrong or delayed.
       </p>
 
-      <h2>5. Fees</h2>
+      <h2>5. The launch race</h2>
+      <p>
+        A coin created on sasa launches on several chains (Base, BNB Chain, Robinhood Chain and Arc) with the same contract address, each with its own
+        pool. For five minutes anyone can buy on any of them. Then the smart contracts compare each chain&apos;s money in dollars, using Chainlink prices,
+        and the chain with the most money wins. The other chains&apos; pools close; their money is converted at the Chainlink price and moved into the
+        winning pool, minus a hand-over fee; holders&apos; coins on those chains are moved to the winning chain. The winning pool is locked forever. These
+        steps are carried out by the smart contracts and the services they use, and can be delayed by them. By buying a coin during a race you accept
+        that it may end up on a different chain than the one you bought on.
+      </p>
+
+      <h2>6. Fees</h2>
       <ul>
-        <li>Trading: 1% of each trade (0.3% to the coin&apos;s creator, 0.7% to sasa), on the launch curve and in the pool after graduation.</li>
-        <li>Graduation: 2% of the money that goes into the coin&apos;s pool.</li>
-        <li>Moving coins between chains after graduation: 0.1%.</li>
+        <li>Trading in a race coin&apos;s pool: 2% of each trade. 30% of it goes to the coin&apos;s creator (or buys back and burns the coin, if the creator chose that); 70% goes to sasa.</li>
+        <li>Opening fee: right after launch the pool fee is higher and falls to 2% within the first few minutes.</li>
+        <li>End of a race: 2% of the money moved from the losing pools into the winning pool.</li>
         <li>Coins from other exchanges: 0.7% per trade.</li>
-        <li>Deposits from another coin or chain: 0.25%, plus network and conversion costs. Sending USDC or USDG straight to your address is free.</li>
-        <li>Copied trades: 0.2%.</li>
-        <li>Boost (paid placement): as shown when you buy it.</li>
-        <li>Launching a coin and withdrawing are free. Network fees may apply where sasa doesn&apos;t pay them for you.</li>
+        <li>Creating a coin: no sasa fee; the creator makes a first buy on each chain, which pays the trading fee.</li>
+        <li>Deposits and withdrawals: no sasa fee.</li>
+        <li>Network fees: paid by you, as described in section 3.</li>
       </ul>
       <p>Fees are taken automatically by the smart contracts or services involved and may change; the current fees are always shown here.</p>
 
-      <h2>6. Third-party services</h2>
+      <h2>7. Third-party services</h2>
       <p>
-        sasa relies on blockchains and on services run by others (for example wallets, bridges, exchanges and data providers). sasa is not responsible for
+        sasa relies on blockchains and on services run by others (for example wallet providers, LayerZero, Chainlink, Circle, Uniswap, PancakeSwap and data providers). sasa is not responsible for
         them, and their own terms apply.
       </p>
 
-      <h2>7. Things you may not do</h2>
+      <h2>8. Things you may not do</h2>
       <ul>
         <li>Break the law, including laws on fraud, market manipulation, money laundering and sanctions.</li>
         <li>Launch coins that impersonate others, infringe rights, or are made to deceive buyers.</li>
@@ -69,23 +87,28 @@ export default function Terms() {
       </ul>
       <p>sasa may hide coins, content or accounts in its interface, and may stop offering features, at its discretion.</p>
 
-      <h2>8. No warranty</h2>
+      <h2>9. No warranty</h2>
       <p>
         sasa is provided &quot;as is&quot; and &quot;as available&quot;. Smart contracts and software can have bugs, and blockchains can fail, be congested or
         change. You use sasa at your own risk.
       </p>
 
-      <h2>9. Limitation of liability</h2>
+      <h2>10. Limitation of liability</h2>
       <p>
         To the fullest extent the law allows, sasa and the people behind it are not liable for any indirect or consequential loss, or for any loss of funds,
         profits or data arising from your use of sasa, coins, smart contracts, blockchains or third-party services.
       </p>
 
-      <h2>10. Taxes</h2>
+      <h2>11. Taxes</h2>
       <p>You are responsible for any taxes on your activity.</p>
 
-      <h2>11. Changes</h2>
+      <h2>12. Changes</h2>
       <p>These terms may change. The date at the top shows the latest version; using sasa after a change means you accept it.</p>
+
+      <h2>13. Contact</h2>
+      <p>
+        Questions about these terms: write to us from the <a href="/help/" className="text-emerald">Help</a> page.
+      </p>
     </LegalPage>
   );
 }
