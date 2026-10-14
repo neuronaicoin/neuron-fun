@@ -22,3 +22,6 @@ jobs:
       - name: Pay gas in USDC
         working-directory: web
         run: npx -y tsx scripts/paymaster-poc.mts send
+      - name: The site's own USDC-gas code
+        working-directory: web
+        run: npx -y tsx scripts/usdcgas-check.mts
