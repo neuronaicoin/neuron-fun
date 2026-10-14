@@ -176,6 +176,8 @@ export function loadRaceChains(log = console.log) {
         Number(env(`RACE_RPC_GAP_MS_${d.chainId}`, env("RACE_RPC_GAP_MS", "150")))
       ),
       logMode: MODES.includes(env(`RACE_LOG_MODE_${d.chainId}`, "")) ? env(`RACE_LOG_MODE_${d.chainId}`, "") : "split",
+      // widest block range the RPC accepts; lowered for good when it names its own limit
+      maxRange: BigInt(env(`RACE_MAX_RANGE_${d.chainId}`, MAX_RANGE.toString())),
       usdDecimals: null,
       feedDecimals: null,
       priceCache: { at: 0, usd: 0 },
@@ -505,7 +507,7 @@ export async function raceRange(pool, c, byEid, from, to) {
 
 /** Follows one chain. `once`: stop when caught up with the tip. */
 async function runRaceChain(pool, c, byEid, log, once = false) {
-  let range = MAX_RANGE;
+  let range = c.maxRange;
   let fails = 0;
   for (;;) {
     try {
@@ -521,27 +523,59 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
       const r = await raceRange(pool, c, byEid, from, to);
       if (r.launches || r.swaps) log(`race ${c.chainId} ${from}-${to}: ${r.launches} launches, ${r.swaps} swaps, ${r.transfers} transfers`);
       fails = 0;
-      if (range < MAX_RANGE) range = range * 2n > MAX_RANGE ? MAX_RANGE : range * 2n;
+      if (range < c.maxRange) range = range * 2n > c.maxRange ? c.maxRange : range * 2n;
       if (to === tip && !once) await sleep(POLL_MS);
     } catch (e) {
-      // A rate limit (some RPCs word it "exceeds defined limit" even for a few blocks): wait and
-      // try the same blocks again. Anything else at a wide range: too many logs, take smaller steps.
       fails++;
-      const msg = [e.shortMessage, e.details, e.message, e.cause?.details].filter(Boolean).join(" ");
-      const rateLimited = /rate limit|429|too many|exceeds defined limit|limit exceeded/i.test(msg);
-      if (!rateLimited || range > 500n) range = range > 10n ? range / 4n : 10n;
+      const { rateLimited, rangeCap } = classifyRpcError(e);
+      if (rangeCap) {
+        // the RPC named its block-range limit ("eth_getLogs is limited to a 200 range"): keep under it from now on
+        if (rangeCap < c.maxRange) {
+          c.maxRange = rangeCap;
+          log(`race ${c.chainId}: RPC allows ${rangeCap} blocks per log query, reading in steps of ${rangeCap}`);
+        }
+        range = range > c.maxRange ? c.maxRange : range / 2n > 10n ? range / 2n : 10n;
+      } else if (!rateLimited || range > 500n) {
+        // A rate limit (some RPCs word it "exceeds defined limit" even for a few blocks): wait and
+        // try the same blocks again. Anything else at a wide range: too many logs, take smaller steps.
+        range = range > 10n ? range / 4n : 10n;
+      }
       // still failing on a tiny range for a reason other than a rate limit: read in smaller queries
       if (!rateLimited && range <= 40n && fails >= 3 && c.logMode !== "single") {
         c.logMode = MODES[MODES.indexOf(c.logMode) + 1];
-        range = MAX_RANGE;
+        range = c.maxRange;
         fails = 0;
         log(`race ${c.chainId}: switching to "${c.logMode}" log reads`);
       }
-      log(`race ${c.chainId}: ${e.shortMessage ?? e.message} (${rateLimited && range <= 500n ? "waiting, then" : "retrying with"} ${range} blocks)`);
+      log(`race ${c.chainId}: ${e.shortMessage ?? e.message} ${e.details ?? ""} (${rateLimited ? "waiting, then" : "retrying with"} ${range} blocks)`);
       if (once && fails > 60) throw e;
       await sleep(Math.min(2_000 * fails, 20_000));
     }
   }
+}
+
+/**
+ * What an RPC error means for the next try. Only the RPC's own words and HTTP status are read,
+ * never the echoed request (its hex block numbers can contain "429").
+ */
+export function classifyRpcError(e) {
+  const parts = [];
+  const statuses = [];
+  for (let x = e, i = 0; x && i < 6; x = x.cause, i++) {
+    if (typeof x.details === "string") parts.push(x.details);
+    if (typeof x.shortMessage === "string") parts.push(x.shortMessage);
+    if (typeof x.status === "number") statuses.push(x.status);
+  }
+  const msg = parts.join(" | ");
+  const rateLimited =
+    statuses.includes(429) ||
+    /rate.?limit|too many requests|\b429\b|exceeds defined limit|limit exceeded/i.test(msg);
+  const m =
+    msg.match(/limited to (?:a |an )?(\d+)(?:[- ]block)? range/i) ||
+    msg.match(/(?:block range|range).{0,40}?(?:max(?:imum)?|limit(?:ed)?|up to|exceed(?:s|ed)?)\D{0,20}(\d+)/i) ||
+    msg.match(/(\d+)\s*block range/i);
+  const n = m ? BigInt(m[1]) : 0n;
+  return { rateLimited, rangeCap: n >= 10n && n <= 100000n ? n : 0n };
 }
 
 /** During a race: each chain's pool money, read straight from the builder every few seconds. */
