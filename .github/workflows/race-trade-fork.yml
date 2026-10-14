@@ -1,0 +1,42 @@
+name: race-trade-fork
+
+# Checks the race coin page's buy and sell (web/components/racetrade.tsx) on a fork of every
+# race testnet: same addresses, same ABIs, same steps as the page (faucet, approve, dry run,
+# trade with 5% slippage, sell, fee after five minutes). Runs on anvil forks: nothing is sent
+# to a real network and no key is used (anvil's public test account).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { chain: 84532, rpc: "https://sepolia.base.org" }
+          - { chain: 97, rpc: "https://bsc-testnet-rpc.publicnode.com" }
+          - { chain: 46630, rpc: "https://rpc.testnet.chain.robinhood.com/rpc" }
+          - { chain: 5042002, rpc: "https://rpc.testnet.arc.network" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install the site
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Fork ${{ matrix.chain }}
+        run: |
+          anvil --fork-url "${{ matrix.rpc }}" --port 8545 --retries 10 --fork-retry-backoff 2000 --compute-units-per-second 40 --silent &
+          for i in $(seq 1 60); do cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && break; sleep 2; done
+          cast chain-id --rpc-url http://127.0.0.1:8545
+
+      - name: Buy and sell like the page does
+        working-directory: web
+        run: npx -y tsx scripts/race-trade-fork.mts ${{ matrix.chain }} http://127.0.0.1:8545
