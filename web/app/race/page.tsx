@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { RaceTeaser } from "@/components/racepromo";
+import { IS_TESTNET } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "The 5-minute race: one coin, one CA, every chain · sasa",
@@ -28,6 +30,13 @@ export default function RacePage() {
           </div>
         ))}
       </section>
+      {IS_TESTNET && (
+        <div className="flex justify-center px-4 pb-12">
+          <Link href="/race/launch/" className="inline-flex items-center h-12 px-6 rounded-full bg-emerald text-on-accent font-bold">
+            Try it on testnet: launch a race
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

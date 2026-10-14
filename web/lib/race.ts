@@ -17,6 +17,10 @@ export type RaceChain = {
   short: string;
   color: string;
   chain: Chain;
+  /** RaceFactory: launches the coin on this chain (same address on every chain). */
+  factory: Address;
+  /** Where to get this chain's gas coin on testnet. */
+  gasFaucet?: string;
   /** RaceTradeEth / RaceTradePcs / UsdPoolRouter: buy(coin, usdIn, minOut, to, deadline) */
   router: Address;
   /** The dollar the coin trades in on this chain (USDC; a test dollar on testnets). */
@@ -70,6 +74,8 @@ const TESTNET: RaceChain[] = [
     short: "Base",
     color: "#2f6bff",
     chain: baseSepolia,
+    factory: "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    gasFaucet: "https://www.alchemy.com/faucets/base-sepolia",
     router: "0x940a770eb4e1B8BE83749695666B8c635A37D89C",
     usd: "0xc3C80f46cD6911A2082B8744E92a69664f4F3560",
     system: [
@@ -89,6 +95,8 @@ const TESTNET: RaceChain[] = [
     short: "BNB",
     color: "#f0b90b",
     chain: bscTestnet,
+    factory: "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    gasFaucet: "https://www.bnbchain.org/en/testnet-faucet",
     router: "0xfF8f34C09cd042A52275BE1B30Eb377b5370cAB6",
     usd: "0x00cB1E0bC065C821481411a95c0A2e1afA432919",
     system: [
@@ -109,6 +117,8 @@ const TESTNET: RaceChain[] = [
     short: "Robinhood",
     color: "#1fd15a",
     chain: robinhoodTestnet,
+    factory: "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    gasFaucet: "https://faucet.testnet.chain.robinhood.com",
     router: "0x1360d3E3e71C65ff9185afebBFe7c7e83D06c8B0",
     usd: "0x6B0d23F84666EA6C8b16789879CE1B6e090E66Da",
     system: [
@@ -128,6 +138,8 @@ const TESTNET: RaceChain[] = [
     short: "Arc",
     color: "#19b3e6",
     chain: arcTestnet,
+    factory: "0x12D1f65b5d4c11d8059Cc6739aC3cC321Eb42a9D",
+    gasFaucet: "https://faucet.circle.com",
     router: "0x1044fe554262C92F06D0838b5dE320e12e54ea5D",
     usd: "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9",
     system: [
@@ -162,6 +174,20 @@ export const raceRouterAbi = parseAbi([
   "error Slippage(uint256 got, uint256 minimum)",
   "error RaceLostPoolShut()",
 ]);
+export const raceFactoryAbi = parseAbi([
+  "struct Launch { string name; string symbol; string logo; string description; bytes32 launchKey; uint32[] eids; uint8 feeMode; uint256 firstBuy; uint256 minCoinsOut; }",
+  "function launch(Launch l) returns (address coin, address seat)",
+  "function coinAddress(address creator, bytes32 launchKey) view returns (address)",
+  "function coinIdOf(address creator, bytes32 launchKey) pure returns (bytes32)",
+  "function minFirstBuy() view returns (uint256)",
+  "function launchesOpen() view returns (bool)",
+  "error LaunchesClosed()",
+  "error BadChains()",
+  "error NoRoute(uint32 eid)",
+  "error FirstBuyTooSmall(uint256 minimum)",
+  "error BadConfig()",
+]);
+
 export const raceErc20Abi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",

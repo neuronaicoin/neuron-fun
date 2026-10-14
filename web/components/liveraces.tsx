@@ -45,6 +45,9 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
             {live} live
           </span>
         )}
+        <Link href="/race/launch/" className="ml-auto text-[0.875rem] font-semibold text-emerald-dark shrink-0">
+          Launch a race →
+        </Link>
       </div>
       <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 snap-x">
         {races.map((r) => (

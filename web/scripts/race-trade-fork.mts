@@ -15,14 +15,13 @@ import {
   http,
   keccak256,
   maxUint256,
-  parseAbi,
   toHex,
   type Address,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { call } from "../lib/tx";
-import { raceChain, raceErc20Abi, raceRouterAbi } from "../lib/race";
+import { RACE_CHAINS, raceChain, raceErc20Abi, raceFactoryAbi, raceRouterAbi } from "../lib/race";
 
 const [chainIdArg, rpc] = process.argv.slice(2);
 const c = raceChain(Number(chainIdArg));
@@ -35,12 +34,7 @@ const chain = { ...c.chain, rpcUrls: { default: { http: [rpc] } } };
 const pub = createPublicClient({ chain, transport: http(rpc) });
 const wallet = createWalletClient({ account: me, chain, transport: http(rpc) });
 
-const factoryAbi = parseAbi([
-  "struct Launch { string name; string symbol; string logo; string description; bytes32 launchKey; uint32[] eids; uint8 feeMode; uint256 firstBuy; uint256 minCoinsOut; }",
-  "function launch(Launch l) returns (address coin, address seat)",
-  "function coinAddress(address creator, bytes32 launchKey) view returns (address)",
-  "function minFirstBuy() view returns (uint256)",
-]);
+const factoryAbi = raceFactoryAbi;
 
 let failures = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -77,6 +71,7 @@ async function main() {
   ok(dep.router.toLowerCase() === c!.router.toLowerCase(), "lib/race.ts router matches contracts-v7 deployment");
   ok(dep.usd.toLowerCase() === c!.usd.toLowerCase(), "lib/race.ts dollar matches contracts-v7 deployment");
   ok(dep.eid === c!.eid, "lib/race.ts eid matches contracts-v7 deployment");
+  ok(dep.factory.toLowerCase() === c!.factory.toLowerCase(), "lib/race.ts factory matches contracts-v7 deployment");
   for (const k of ["poolManager", "clPoolManager", "vault", "builder", "hook", "consolidator", "bridge"]) {
     const a = dep[k] as string;
     if (a && a !== "0x0000000000000000000000000000000000000000")
@@ -97,7 +92,7 @@ async function main() {
   const ap = call(c!.usd, raceErc20Abi, "approve", [dep.factory, minFirst]);
   await send(ap.to, ap.data);
   const ln = call(dep.factory, factoryAbi as never, "launch", [
-    { name: "Fork Test", symbol: "FORK", logo: "", description: "", launchKey: key, eids: [c!.eid], feeMode: 0, firstBuy: minFirst, minCoinsOut: 0n },
+    { name: "Fork Test", symbol: "FORK", logo: "", description: "", launchKey: key, eids: RACE_CHAINS.map((x) => x.eid).sort((a, b) => a - b), feeMode: 0, firstBuy: minFirst, minCoinsOut: 0n },
   ]);
   await send(ln.to, ln.data);
   const firstCoins = await bal(coin);
