@@ -7,6 +7,7 @@ import {IVault} from "infinity-core/src/interfaces/IVault.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 import {IPriceFeedPcs, IPancakeV3PoolMin} from "../../src/race/RaceBuilderPcs.sol";
 import {PcsRaceBase, IMintBurn, IWBNBTest} from "../RacePcsFlow.t.sol";
+import {AcrossBridgeForkBase} from "./AcrossBridgeFork.t.sol";
 
 /// Gives / takes a real token with forge's `deal` (real USDC can't be minted).
 contract DealMinter is StdCheats {
@@ -116,4 +117,20 @@ contract RacePcsForkTest is PcsRaceBase {
 
 interface IERC20Decimals {
     function decimals() external view returns (uint8);
+}
+
+/// BNB Chain USDC (18 decimals) -> Base USDC (6) through the REAL Across SpokePool
+/// (lives here so the BNB Chain CI step, which runs this file, covers it).
+contract AcrossBridgeBnbForkTest is AcrossBridgeForkBase {
+    function setUp() public {
+        if (block.chainid != 56) {
+            vm.skip(true);
+            return;
+        }
+        vm.createSelectFork(vm.rpcUrl("bsc"));
+    }
+
+    function test_bnbToBase() public {
+        _depositInto(BNB_SPOKE, BNB_USDC, 8453, BASE_USDC, 6, 1_000e18, 999e6);
+    }
 }

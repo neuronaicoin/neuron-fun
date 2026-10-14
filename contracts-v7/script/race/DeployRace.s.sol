@@ -371,6 +371,7 @@ contract DeployRace is Script {
         vm.serializeBool(j, "testnet", c.testnet);
         vm.serializeString(j, "bridgeKind", across ? "across" : "oft");
         vm.serializeAddress(j, "usd", c.usd);
+        vm.serializeUint(j, "usdDecimals", IERC20Metadata(c.usd).decimals());
         vm.serializeBool(j, "usdIsTest", c.usdIsTest);
         vm.serializeAddress(j, "feed", c.feed);
         vm.serializeBool(j, "feedIsTest", c.feedIsTest);

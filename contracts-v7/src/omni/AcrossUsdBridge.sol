@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -30,14 +31,18 @@ interface IMigratorReceiveAcross {
 
 /**
  * @title AcrossUsdBridge
- * @notice Mainnet dollar route for v6: moves a losing chain's money to the winning chain's
- * migrator with Across (Base USDC <-> Robinhood USDG, converted by Across, ~2 s fills).
+ * @notice Mainnet dollar route: moves a losing chain's money to the winning chain's
+ * migrator with Across (Base, BNB Chain, Robinhood Chain and Arc dollars, ~2 s fills).
  * One per chain.
  *
  * Sending side: only the consolidator may send. The money goes to this bridge's twin on the
  * winning chain (fixed per route at setup), tagged with the coin. Across takes its fee out of
  * the money (no native token needed): the deposit asks for `amount * (1 - feeBps)` on arrival,
  * and feeBps can never exceed MAX_FEE_BPS (0.5%).
+ *
+ * Dollars differ in decimals between chains (USDC on BNB Chain has 18, on Base and Arc 6, USDG
+ * on Robinhood Chain 6): each route knows its token's decimals and the amount asked for on
+ * arrival is converted to them. Across fills a deposit only when the output amount is right.
  *
  * Receiving side: Across's SpokePool pays the twin and calls `handleV3AcrossMessage`; the
  * money is passed to the local migrator for that coin. Anyone could send money here through
@@ -54,6 +59,7 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
         uint256 chainId; // EVM chain id of the destination
         address outputToken; // its dollar (USDC / USDG)
         address twin; // the AcrossUsdBridge there
+        uint8 outputDecimals; // decimals of outputToken
     }
 
     struct Sent {
@@ -69,6 +75,8 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
 
     IAcrossSpokePool public immutable spokePool;
     IERC20 public immutable token;
+    /// @notice Decimals of `token` (this chain's dollar).
+    uint8 public immutable tokenDecimals;
 
     address public consolidator;
     address public migrator;
@@ -95,6 +103,7 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
         if (address(spokePool_) == address(0) || address(token_) == address(0)) revert BadAddress();
         spokePool = spokePool_;
         token = token_;
+        tokenDecimals = IERC20Metadata(address(token_)).decimals();
     }
 
     // ------------------------------------------------------------ setup (once)
@@ -110,6 +119,7 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
         for (uint256 i; i < eids.length; ++i) {
             Route calldata r = routes_[i];
             if (r.chainId == 0 || r.outputToken == address(0) || r.twin == address(0)) revert BadAddress();
+            if (r.outputDecimals == 0 || r.outputDecimals > 36) revert BadAddress();
             routes[eids[i]] = r;
         }
     }
@@ -181,13 +191,27 @@ contract AcrossUsdBridge is IUsdcBridge, Ownable, ReentrancyGuard {
     function _deposit(uint256 id, uint32 dstEid, bytes32 coin, uint256 amount, bool buyback, uint256 bps) internal {
         Route memory r = routes[dstEid];
         if (r.twin == address(0)) revert UnknownRoute();
-        uint256 out = (amount * (10_000 - bps)) / 10_000;
+        // the fee comes off in this chain's units, then the rest is expressed in the destination's
+        uint256 out = convertDecimals((amount * (10_000 - bps)) / 10_000, tokenDecimals, r.outputDecimals);
+        // Less than one unit of the destination's dollar (under $0.000001): nothing to ask for.
+        // It stays here as dust instead of blocking the rest of the move.
+        if (out == 0) {
+            emit Sent_(id, dstEid, coin, amount, 0, buyback);
+            return;
+        }
         token.forceApprove(address(spokePool), amount);
         spokePool.depositV3Now(
             address(this), r.twin, address(token), r.outputToken, amount, out, r.chainId, address(0), FILL_WINDOW, 0, abi.encode(coin, buyback)
         );
         token.forceApprove(address(spokePool), 0);
         emit Sent_(id, dstEid, coin, amount, out, buyback);
+    }
+
+    /// @notice `amount` with `from` decimals expressed with `to` decimals (rounded down).
+    function convertDecimals(uint256 amount, uint8 from, uint8 to) public pure returns (uint256) {
+        if (from == to) return amount;
+        if (from > to) return amount / (10 ** (from - to));
+        return amount * (10 ** (to - from));
     }
 
     function sendsCount() external view returns (uint256) {

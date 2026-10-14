@@ -38,6 +38,7 @@ contract WireRace is Script {
         uint256 chainId;
         bool across;
         bool usdIsTest;
+        uint8 usdDecimals;
     }
 
     function _load(uint256 chainId) internal view returns (Local memory l) {
@@ -52,6 +53,8 @@ contract WireRace is Script {
         l.chainId = vm.parseJsonUint(j, ".chainId");
         l.across = keccak256(bytes(vm.parseJsonString(j, ".bridgeKind"))) == keccak256("across");
         l.usdIsTest = vm.keyExistsJson(j, ".usdIsTest") && vm.parseJsonBool(j, ".usdIsTest");
+        // files written before decimals were recorded are 6-decimal dollars (testnets, Base, Robinhood)
+        l.usdDecimals = vm.keyExistsJson(j, ".usdDecimals") ? uint8(vm.parseJsonUint(j, ".usdDecimals")) : 6;
     }
 
     function run() external {
@@ -109,10 +112,14 @@ contract WireRace is Script {
         bool bridgeLocked;
         if (me.across) {
             AcrossUsdBridge ab = AcrossUsdBridge(me.bridge);
-            AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](remotes.length);
-            for (uint256 i; i < remotes.length; ++i) {
-                Local memory r = _load(remotes[i]);
-                rs[i] = AcrossUsdBridge.Route(r.chainId, r.usd, r.bridge);
+            // one route per linked chain, in the same order as `eids`
+            AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](eids.length);
+            for (uint256 i; i < eids.length; ++i) {
+                for (uint256 k; k < remotes.length; ++k) {
+                    Local memory r = _load(remotes[k]);
+                    if (r.eid == eids[i]) rs[i] = AcrossUsdBridge.Route(r.chainId, r.usd, r.bridge, r.usdDecimals);
+                }
+                require(rs[i].twin != address(0), "route for a linked chain not found");
             }
             if (!ab.locked()) {
                 ab.setup(me.consolidator, me.builder, eids, rs);

@@ -197,6 +197,9 @@ contract DeployRaceTest is Test, DeployPermit2 {
         new DeployRace().run();
         RaceBuilder b = RaceBuilder(_read("builder"));
         assertEq(b.factory(), _read("factory"));
+        // the wiring step reads the dollar's decimals from here (Across routes need them)
+        string memory j = vm.readFile(string.concat(dir, vm.toString(block.chainid), ".json"));
+        assertEq(vm.parseJsonUint(j, ".usdDecimals"), 6);
         _launch(_read("factory"), _read("usd"));
     }
 
