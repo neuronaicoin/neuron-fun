@@ -91,6 +91,29 @@ create table if not exists race_fees (
 );
 create index if not exists race_fees_coin_idx on race_fees (coin_id);
 
+-- ------------------------------------------------------------------ chart
+
+-- Price candles of one race coin, dollars per coin. p_chain_id null = every chain together
+-- (before the verdict each chain has its own pool and price, so the page asks per chain).
+create or replace function race_candles(p_coin_id text, p_chain_id integer, p_bucket integer, p_limit integer default 500)
+returns table (t timestamptz, open numeric, high numeric, low numeric, close numeric, volume numeric)
+language sql stable as $$
+  select
+    to_timestamp(floor(extract(epoch from ts) / greatest(p_bucket, 1)) * greatest(p_bucket, 1)) as t,
+    (array_agg(price_usd order by ts, chain_id, log_index))[1] as open,
+    max(price_usd) as high,
+    min(price_usd) as low,
+    (array_agg(price_usd order by ts desc, chain_id desc, log_index desc))[1] as close,
+    sum(usd_amount) as volume
+  from race_trades
+  where coin_id = lower(p_coin_id)
+    and (p_chain_id is null or chain_id = p_chain_id)
+    and price_usd > 0
+  group by 1
+  order by 1 desc
+  limit greatest(1, least(p_limit, 2000));
+$$;
+
 -- ------------------------------------------------------------------ access (read-only for the site)
 
 alter table race_state  enable row level security;
@@ -110,5 +133,6 @@ begin
   end loop;
 end $$;
 revoke all on race_state from anon, authenticated;
+grant execute on function race_candles(text, integer, integer, integer) to anon, authenticated;
 
 notify pgrst, 'reload schema';
