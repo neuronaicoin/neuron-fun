@@ -20,9 +20,16 @@ export default function LoginPage() {
 }
 
 function safeNext(v: string | null): string {
-  // Only our own pages, never another site.
-  if (!v || !v.startsWith("/") || v.startsWith("//") || v.includes("\\")) return "/forum/";
-  return v;
+  // Only our own pages, never another site. Browsers drop tabs and newlines from URLs
+  // ("/\t/evil.com" becomes "//evil.com"), so the address is resolved and its origin checked.
+  if (!v || !v.startsWith("/")) return "/forum/";
+  try {
+    const u = new URL(v, window.location.origin);
+    if (u.origin !== window.location.origin) return "/forum/";
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return "/forum/";
+  }
 }
 
 function Login() {

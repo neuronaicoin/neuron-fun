@@ -122,7 +122,9 @@ export async function onRequestGet(ctx) {
     `<p>${html(coin.name)} was launched on sasa, a multi-chain meme coin launchpad. Buy and sell it with USDC in one tap, see its live chart, holder map and first buyers on this page.</p>` +
     `<p><a href="${board}">${html(coin.name)} forum</a> · <a href="${SITE}/explore/">Explore coins on sasa</a> · <a href="${SITE}/top/">Top meme coins today</a> · <a href="${SITE}/top/robinhood-chain-meme-coins/">Top Robinhood Chain meme coins</a> · <a href="${SITE}/top/base-meme-coins/">Top Base meme coins</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
   rw = rw.on("body", { element: (e) => e.append(summary, { html: true }) });
-  const ldTag = `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\u003c")}</script><link rel="alternate" href="${board}" title="${String(coin.name).replace(/"/g, "&quot;")} forum">`;
+  // JSON inside <script>: <, > and & become \u escapes so a coin name can never close the tag.
+  const ldJson = JSON.stringify(ld).replace(/[<>&]/g, (c) => ({ "<": "\\u003c", ">": "\\u003e", "&": "\\u0026" })[c]);
+  const ldTag = `<script type="application/ld+json">${ldJson}</script><link rel="alternate" href="${html(board)}" title="${html(coin.name)} forum">`;
   rw = rw.on("head", { element: (e) => e.append(ldTag, { html: true }) });
   const out = rw.transform(res);
   const headers = new Headers(out.headers);

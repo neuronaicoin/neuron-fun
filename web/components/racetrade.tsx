@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
+import { usdcGasChain } from "@/lib/usdcgas";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { call } from "@/lib/tx";
@@ -333,7 +334,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
             </button>
           )}
           <p className="text-[0.75rem] text-ink-3 text-center">
-            You pay the {chain.short} network fee in {chain.chain.nativeCurrency.symbol}. Early buys pay a higher pool fee: 30% at the start, falling to 2% after five minutes.
+            You pay the {chain.short} network fee{w.embedded && usdcGasChain(chain.chainId) ? " in USDC" : ` in ${chain.chain.nativeCurrency.symbol}`}. Right after launch the pool fee is higher and falls to 2% within the first few minutes.
           </p>
         </>
       )}

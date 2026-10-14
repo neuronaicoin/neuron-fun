@@ -12,7 +12,12 @@ export async function onRequestGet(ctx) {
   const m = /^\/u\/([^/]+)\/?$/.exec(url.pathname);
   if (!m) return ctx.next();
   if (!url.pathname.endsWith("/")) return Response.redirect(`${url.origin}${url.pathname}/${url.search}`, 301);
-  const key = decodeURIComponent(m[1]).toLowerCase();
+  let key = "";
+  try {
+    key = decodeURIComponent(m[1]).toLowerCase();
+  } catch {
+    // a broken %-escape: treat it like any unknown profile (404 below)
+  }
   const shell = await ctx.env.ASSETS.fetch(new Request(new URL("/u/", url.origin), ctx.request));
   if (!/^(0x[0-9a-f]{40}|[a-z0-9_]{3,20})$/.test(key)) return new Response(shell.body, { status: 404, headers: shell.headers });
 

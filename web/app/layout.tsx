@@ -15,12 +15,11 @@ const SITE = "https://sasapad.fun";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  alternates: { canonical: "/" },
   title: "sasa — Launch once. Live on every chain.",
   description:
     IS_TESTNET
       ? "sasa launches your coin on every chain at the same time. Testnet live, mainnet coming soon."
-      : "sasa launches your coin on every chain at the same time. Buy any coin in USDC in one tap: no wallet, no gas, no bridge.",
+      : "sasa launches your coin on Base, BNB Chain, Robinhood Chain and Arc at once. Buy any coin with USDC in one tap: no wallet to set up, no bridge.",
   icons: {
     icon: [
       { url: "/sasa-icon.svg", type: "image/svg+xml" },
@@ -34,7 +33,6 @@ export const metadata: Metadata = {
   openGraph: {
     title: "sasa — Launch once. Live on every chain.",
     description: IS_TESTNET ? "The multi-chain launchpad. Testnet live, mainnet coming soon." : "The multi-chain launchpad. Launch once, live on every chain.",
-    url: SITE,
     siteName: "sasa",
     type: "website",
     images: [

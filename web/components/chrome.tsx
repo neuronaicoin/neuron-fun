@@ -96,7 +96,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
           >
             Continue with email or Google
           </button>
-          <p className="text-[0.75rem] text-ink-3 mt-2 text-center">No wallet needed. No network fees.</p>
+          <p className="text-[0.75rem] text-ink-3 mt-2 text-center">No wallet needed. Network fees are paid from your USDC.</p>
           <div className="flex items-center gap-3 my-5 text-[0.75rem] text-ink-3" aria-hidden="true">
             <span className="h-px flex-1 bg-line" />
             or use your own wallet

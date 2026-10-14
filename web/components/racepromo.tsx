@@ -16,7 +16,7 @@ const CHAINS = [
 
 const POINTS: [string, string][] = [
   ["One coin, one CA", "The same contract address on every chain you pick, live at the same moment."],
-  ["No bonding curve", "Live on Uniswap from the first second, on DexScreener in seconds."],
+  ["No bonding curve", "Live in a real DEX pool from the first second, on DexScreener in seconds."],
   ["Five-minute race", "Buyers pick a chain. The chain with the most money wins."],
   ["One deep pool", "All the money from every chain lands in the winner's pool, locked forever."],
 ];
@@ -44,7 +44,7 @@ export function RaceTeaser({ headingLevel = 2 }: { headingLevel?: 1 | 2 }) {
         <span className="race-soon">Coming soon</span>
         <H id="race-title" className="race-title">One coin. One CA.<br /><em>Every chain.</em></H>
         <p className="race-lead">
-          Launch once and your coin goes live on Uniswap on every chain at the same moment, with the same contract address.
+          Launch once and your coin goes live in a DEX pool on every chain you pick (Uniswap, PancakeSwap), with the same contract address.
           Then the chains race for five minutes, and the winner takes all the money into one deep pool.
         </p>
         <ul className="race-points">
@@ -81,7 +81,7 @@ export function RaceBanner() {
       <div className="race-banner-text">
         <span className="race-soon">Coming soon</span>
         <strong>One coin. One CA. Every chain.</strong>
-        <span className="race-banner-sub">Live on Uniswap everywhere at once, then a five-minute race. One winner.</span>
+        <span className="race-banner-sub">Live in DEX pools on every chain, then a five-minute race. One winner.</span>
       </div>
       <RaceBars compact />
       <span className="race-banner-go">See how →</span>

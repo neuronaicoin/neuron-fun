@@ -152,7 +152,7 @@ function DoneCard({ race }: { race: RaceCoin }) {
           🏆 {race.winner.short}
         </span>
       ) : (
-        <span className="shrink-0 text-[0.6875rem] font-semibold text-ink-3">No winner</span>
+        <span className="shrink-0 text-[0.6875rem] font-semibold text-ink-3">Deciding…</span>
       )}
     </Link>
   );

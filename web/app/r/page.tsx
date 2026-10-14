@@ -64,6 +64,7 @@ function RacePage() {
   const [coin, setCoin] = useState<RaceCoin | null>(null);
   const [missing, setMissing] = useState(false);
   const [pick, setPick] = useState<number | null>(null);
+  const [failures, setFailures] = useState(0);
 
   const load = useCallback(async () => {
     if (!valid) return;
@@ -74,8 +75,10 @@ function RacePage() {
         setCoin(c);
         setMissing(false);
       }
+      setFailures(0);
     } catch {
       // keep what we have; the next refresh may work
+      setFailures((n) => n + 1);
     }
   }, [id, valid]);
 
@@ -97,13 +100,21 @@ function RacePage() {
       <div className="max-w-3xl mx-auto px-4 py-16 text-center flex flex-col gap-3 items-center">
         <h1 className="text-[1.5rem] font-bold">Race not found</h1>
         <p className="text-ink-2">The link may be wrong, or the race is a few seconds old and not indexed yet.</p>
-        <Link href="/" className="text-emerald font-semibold">
+        <Link href="/explore/" className="text-emerald font-semibold">
           Back to Explore
         </Link>
       </div>
     );
   }
-  if (!coin) return <PageSkeleton />;
+  if (!coin)
+    return failures >= 3 ? (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center flex flex-col gap-3 items-center">
+        <h1 className="text-[1.5rem] font-bold">Can&apos;t reach the race data</h1>
+        <p className="text-ink-2">The connection is slow right now. This page keeps trying by itself.</p>
+      </div>
+    ) : (
+      <PageSkeleton />
+    );
 
   const phase = racePhase(coin, now);
   const lead = leadLane(coin);
@@ -117,7 +128,7 @@ function RacePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-12 flex flex-col gap-5 sm:gap-6 min-w-0">
-      <Link href="/" className="text-[0.9375rem] text-ink-2 self-start">
+      <Link href="/explore/" className="text-[0.9375rem] text-ink-2 self-start">
         ‹ Explore
       </Link>
 
@@ -307,6 +318,8 @@ function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }
   const [trades, setTrades] = useState<RaceTrade[] | null>(null);
   const [holders, setHolders] = useState<RaceHolder[] | null>(null);
   const holderLane = coin.winner ? coin.lanes.find((l) => l.chain.chainId === coin.winner!.chainId) : lane;
+  // the page refreshes the coin every few seconds: key the holders on the chain, not the object
+  const holderChainId = holderLane?.chain.chainId ?? null;
 
   useEffect(() => {
     let alive = true;
@@ -334,7 +347,8 @@ function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }
     return () => {
       alive = false;
     };
-  }, [tab, holderLane, coin.coin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, holderChainId, coin.coin]);
 
   const tabBtn = (k: "trades" | "holders", label: string) => (
     <button

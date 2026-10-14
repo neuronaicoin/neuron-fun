@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "How it works — sasa" };
+export const metadata = { title: "How it works · sasa", alternates: { canonical: "/how-it-works/" } };
 
 const FAQ: [string, string][] = [
   [

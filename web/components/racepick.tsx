@@ -43,7 +43,7 @@ export function RacePick({ coin, now, onBack, compact = false }: { coin: RaceCoi
     return (
       <section className={"rounded-2xl border p-4 flex flex-col gap-2 min-w-0 " + (won ? "border-emerald/50 bg-emerald-soft/40" : "border-line")}>
         <div className="font-bold text-[1rem]">
-          {won ? `Your pick won ✓ ${picked.chain.short} took the race` : `${coin.winner ? coin.winner.short : "Another chain"} won. Your pick was ${picked.chain.short}.`}
+          {won ? `Your pick won ✓ ${picked.chain.short} took the race.` : `${coin.winner ? coin.winner.short : "Another chain"} won. Your pick was ${picked.chain.short}.`}
         </div>
         {won && (
           <button

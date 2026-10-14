@@ -129,8 +129,6 @@ export function renderDay(chain, day, rows, now = new Date()) {
   const canonical = `${SITE}/races/${chain.slug}/${key}/`;
   const title = `${chain.name} meme coin races on ${label}: ${races.length} ${races.length === 1 ? "launch" : "launches"}, ${s.wins} won · sasa`;
   const description = lead(chain, label, races, s).slice(0, 300);
-  const prev = dayKey(new Date(day.getTime() - DAY));
-  const next = dayKey(new Date(day.getTime() + DAY));
   const faq = [
     { q: `How many meme coins launched on ${chain.name} on ${label}?`, a: `${races.length} coins raced on ${chain.name} that day, each launched on four chains at once through sasa's five-minute launch race.` },
     { q: `How often did ${chain.name} win?`, a: `${chain.name} won ${s.wins} of ${races.length} races on ${label}. A coin's winning chain keeps its pool, locked forever, and receives the other chains' money minus a 2% hand-over fee.` },
@@ -148,7 +146,7 @@ ${crumbs([["sasa", "/"], ["Races", "/races/"], [chain.name, `/races/${chain.slug
 <p class="lead">${esc(lead(chain, label, races, s))}</p>
 ${chainTabs(chain, key)}
 <div class="wrap"><table><thead><tr><th>Time</th><th>Coin</th><th>On ${esc(chain.name)}</th><th class="h">Whole race</th><th class="h">Trades</th><th class="h">Result</th></tr></thead><tbody>${races.map((r) => raceRow(r, chain)).join("")}</tbody></table></div>
-<p style="display:flex;justify-content:space-between;gap:12px;font-size:14px"><a href="/races/${chain.slug}/${prev}/">← ${esc(dateLabel(new Date(prev)))}</a>${new Date(next).getTime() <= now.getTime() ? `<a href="/races/${chain.slug}/${next}/">${esc(dateLabel(new Date(next)))} →</a>` : ""}</p>
+<p style="font-size:14px"><a href="/races/${chain.slug}/">← Every day of ${esc(chain.name)} races</a></p>
 ${HOW}
 <h2>Questions</h2>
 <dl class="faq">${faq.map((f) => `<dt>${esc(f.q)}</dt><dd>${esc(f.a)}</dd>`).join("")}</dl>

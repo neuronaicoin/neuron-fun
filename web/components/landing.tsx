@@ -54,7 +54,7 @@ export function Landing() {
           {IS_TESTNET ? "Testnet live · Mainnet coming soon" : "Live now on Base, BNB Chain, Robinhood Chain and Arc"}
         </div>
         <h1>
-          <span className="sasa-nowrap">No wallet.</span> <span className="sasa-nowrap">No gas.</span>
+          <span className="sasa-nowrap">No wallet.</span> <span className="sasa-nowrap">No bridge.</span>
           <br />
           <span className="sasa-nowrap">No bridge.</span> <em className="sasa-nowrap">Just buy.</em>
         </h1>

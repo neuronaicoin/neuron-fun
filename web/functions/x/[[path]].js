@@ -29,7 +29,7 @@ export async function onRequestGet(ctx) {
   const url = new URL(ctx.request.url);
   const network = url.searchParams.get("n") || "";
   const address = (url.searchParams.get("a") || "").toLowerCase();
-  if (!NETS[network] || !/^0x[0-9a-f]{40}$/.test(address)) return res;
+  if (!Object.prototype.hasOwnProperty.call(NETS, network) || !/^0x[0-9a-f]{40}$/.test(address)) return res;
 
   let c = null;
   try {
