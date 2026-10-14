@@ -64,6 +64,8 @@ jobs:
 
       - name: Index every race chain up to its tip
         working-directory: indexer
+        # stops after 40 minutes; the step "Where each chain got to" then shows which chain was slow
+        timeout-minutes: 40
         env:
           RACE_ONCE: "true"
         # the full output is too long for the GitHub log, so it goes to a file and only the end is shown
@@ -99,6 +101,31 @@ jobs:
       - name: Compare with the chains
         working-directory: indexer
         run: node race-check.mjs
+
+      - name: Where each chain got to
+        if: always()
+        run: |
+          set +e
+          {
+          echo "### Where each chain got to"
+          echo '```'
+          printf "%-9s %12s %12s %12s %6s\n" chain start indexed tip done
+          for row in $(jq -r '.[] | "\(.chainId):\(.startBlock)"' indexer/race-chains.json); do
+            id=${row%%:*}; start=${row##*:}
+            rpc_var="RPC_$id"; rpc=${!rpc_var}
+            last=$(psql -h localhost -U postgres -At -c "select last_block from race_state where chain_id=$id" 2>/dev/null || true)
+            tip=$(curl -s -m 15 -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' "$rpc" | jq -r .result 2>/dev/null || true)
+            tip=$((tip)) 2>/dev/null || tip=0
+            [ -z "$last" ] && last=$start
+            pct=$([ "$tip" -gt "$start" ] && echo $(( (last - start) * 100 / (tip - start) )) || echo "?")
+            printf "%-9s %12s %12s %12s %5s%%\n" "$id" "$start" "$last" "$tip" "$pct"
+          done
+          echo '```'
+          echo "### Last 120 lines of the indexer"
+          echo '```'
+          tail -n 120 /tmp/race1.log 2>/dev/null || echo "(no log)"
+          echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: What was indexed
         if: always()
