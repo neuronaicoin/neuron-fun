@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
 import { RaceTradeBox } from "@/components/racetrade";
+import { CreatorKit, RaceShareButton } from "@/components/raceshare";
 import { compactUsd, shortAddr } from "@/lib/format";
 import { onTrade } from "@/lib/live";
 import {
@@ -130,6 +131,7 @@ function RacePage() {
             </span>
             <span>{timeAgo(new Date(coin.launchedAt).toISOString())}</span>
             <PhaseBadge coin={coin} phase={phase} now={now} />
+            <RaceShareButton coin={coin} />
           </div>
         </div>
       </header>
@@ -160,6 +162,8 @@ function RacePage() {
           </div>
 
           <RaceLanes coin={coin} phase={phase} now={now} />
+
+          <CreatorKit coin={coin} now={now} />
 
           {/* phones: the trade box comes before the activity lists */}
           <div className="lg:hidden scroll-mt-24" id="trade">

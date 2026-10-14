@@ -367,3 +367,150 @@ export async function extCardLoop(pool, log) {
     await new Promise((r) => setTimeout(r, every));
   }
 }
+
+// ---------------------------------------------------------------- race coins (v7)
+// A card per race: the coin, every chain's money as a bar, and the winner once decided.
+// File r-<coin id>.png; the /r/ page's Cloudflare function points link previews at it.
+
+const RACE_CHAIN = {
+  84532: { name: "Base", color: "#2F6BFF" },
+  8453: { name: "Base", color: "#2F6BFF" },
+  97: { name: "BNB", color: "#F0B90B" },
+  56: { name: "BNB", color: "#F0B90B" },
+  46630: { name: "Robinhood", color: "#1FD15A" },
+  4663: { name: "Robinhood", color: "#1FD15A" },
+  5042002: { name: "Arc", color: "#19B3E6" },
+  5042: { name: "Arc", color: "#19B3E6" },
+};
+const RACE_ORDER = ["Base", "BNB", "Robinhood", "Arc"];
+
+export const raceCardName = (coinId) => `r-${String(coinId).toLowerCase().replace(/[^0-9a-z]/g, "-")}.png`;
+
+/** What a race card shows, from one race_coins row with its lanes. */
+export function raceCardFacts(row, logo) {
+  const lanes = (row.lanes ?? [])
+    .map((l) => {
+      const c = RACE_CHAIN[Number(l.chain_id)] ?? { name: `Chain ${l.chain_id}`, color: "#8F7F73" };
+      const usd = Number(l.reported_usd ?? l.pool_usd ?? 0);
+      return { name: c.name, color: c.color, state: Number(l.state), usd: Number.isFinite(usd) && usd > 0 ? usd : 0 };
+    })
+    .sort((a, b) => RACE_ORDER.indexOf(a.name) - RACE_ORDER.indexOf(b.name));
+  const winner = row.winner_chain ? (RACE_CHAIN[Number(row.winner_chain)]?.name ?? null) : null;
+  const total = Number(row.total_usd) > 0 ? Number(row.total_usd) : lanes.reduce((s, l) => s + l.usd, 0);
+  const decided = !!(row.winner_chain || row.decided_at);
+  return { name: String(row.name || row.symbol || "?"), symbol: String(row.symbol || "?"), logo, lanes, winner, total, decided };
+}
+
+/** Redrawn when the winner, a chain's state or any chain's money moves about 5%. */
+export function raceCardSignature(f) {
+  const step = (v) => (v ? Math.round(Math.log(v) / Math.log(1.05)) : 0);
+  return createHash("sha1")
+    .update(JSON.stringify([f.name, f.symbol, !!f.logo, f.winner, f.decided, step(f.total), f.lanes.map((l) => `${l.name}${l.state}:${step(l.usd)}`)]))
+    .digest("hex");
+}
+
+export function raceCardSvg(f) {
+  const W = 1200, H = 630;
+  const pic = f.logo
+    ? `<image href="${f.logo}" x="80" y="150" width="300" height="300" preserveAspectRatio="xMidYMid slice" clip-path="url(#pic)"/>`
+    : `<rect x="80" y="150" width="300" height="300" rx="40" fill="url(#art)"/><text x="230" y="335" text-anchor="middle" font-family="Sora" font-weight="700" font-size="120" fill="#FFF4EC" fill-opacity="0.92">${esc((f.symbol || "?").slice(0, 2).toUpperCase())}</text>`;
+  const n = [...f.name].length;
+  const nameSize = n <= 12 ? 56 : n <= 17 ? 46 : 38;
+  const nameMax = nameSize === 38 ? 24 : 17;
+  const win = f.winner ? f.lanes.find((l) => l.name === f.winner) : null;
+  const status = f.winner ? `Won on ${f.winner}` : f.decided ? "Race over" : "Racing now";
+  const statusColor = win ? win.color : f.decided ? "#4A3C31" : "#FFB020";
+  const statusW = Math.round(30 + status.length * 11.5);
+
+  // one bar per chain, longest = the chain with the most money
+  const max = Math.max(1, ...f.lanes.map((l) => l.usd));
+  const bx = 600, bw = 380, top = 320, gap = 52;
+  const rows = f.lanes
+    .slice(0, 4)
+    .map((l, i) => {
+      const y = top + i * gap;
+      const w = Math.max(10, Math.round((l.usd / max) * bw));
+      const out = l.state === 3;
+      const isWin = f.winner === l.name;
+      return `<text x="440" y="${y + 15}" font-family="Sora" font-weight="${isWin ? 700 : 600}" font-size="22" fill="${out ? "#6F6157" : "#FFF4EC"}">${esc(l.name)}</text>
+<rect x="${bx}" y="${y}" width="${bw}" height="18" rx="9" fill="#2A2019"/>
+<rect x="${bx}" y="${y}" width="${w}" height="18" rx="9" fill="${l.color}" fill-opacity="${out ? 0.35 : 1}"/>
+<text x="1120" y="${y + 16}" text-anchor="end" font-family="IBM Plex Mono" font-size="21" fill="${out ? "#6F6157" : "#D8C9BC"}">${esc(money(l.usd))}</text>`;
+    })
+    .join("\n");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<defs>
+<radialGradient id="glow" cx="85%" cy="15%" r="70%"><stop offset="0%" stop-color="#FF6B1A" stop-opacity="0.30"/><stop offset="100%" stop-color="#FF6B1A" stop-opacity="0"/></radialGradient>
+<linearGradient id="art" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF8A3D"/><stop offset="100%" stop-color="#8A2E07"/></linearGradient>
+<clipPath id="pic"><rect x="80" y="150" width="300" height="300" rx="40"/></clipPath>
+</defs>
+<rect width="${W}" height="${H}" fill="#0B0806"/><rect width="${W}" height="${H}" fill="url(#glow)"/>
+${mark(80, 56, 52)}
+<text x="146" y="94" font-family="Sora" font-weight="700" font-size="32" fill="#FFF4EC">sasa</text>
+<text x="1120" y="92" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">sasapad.fun</text>
+<rect x="78" y="148" width="304" height="304" rx="42" fill="none" stroke="#2E231A" stroke-width="2"/>
+${pic}
+<text x="440" y="200" font-family="Sora" font-weight="700" font-size="${nameSize}" fill="#FFF4EC">${esc(clip(f.name, nameMax))}</text>
+<text x="442" y="244" font-family="IBM Plex Mono" font-size="24" fill="#A8978A">$${esc(clip(f.symbol, 12))} · ${esc(money(f.total))} raised</text>
+<g transform="translate(${1120 - statusW},216)"><rect width="${statusW}" height="40" rx="20" fill="${statusColor}"/><text x="${statusW / 2}" y="27" text-anchor="middle" font-family="Sora" font-weight="700" font-size="19" fill="${f.decided && !win ? "#FFF4EC" : "#0B0806"}">${esc(status)}</text></g>
+<line x1="440" y1="280" x2="1120" y2="280" stroke="#2E231A" stroke-width="2"/>
+${rows}
+<text x="80" y="590" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">One coin. Four chains. <tspan fill="#FF6B1A">Five minutes to win.</tspan></text>
+</svg>`;
+}
+
+export function renderRaceCard(f) {
+  const r = new Resvg(raceCardSvg(f), {
+    fitTo: { mode: "width", value: 1200 },
+    font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: "Sora" },
+  });
+  return r.render().asPng();
+}
+
+/** Coin picture for a race card: a data: image as it is, an https one downloaded. */
+async function raceLogo(logo) {
+  if (typeof logo === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(logo) && logo.length < 800_000) return logo;
+  return picture(logo);
+}
+
+/** Cards for the newest races, redrawn while they run and once more when decided. */
+export async function raceCardLoop(pool, log) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return;
+  const every = Number(process.env.RACE_CARD_EVERY_MS ?? "30000");
+  for (;;) {
+    try {
+      const { rows } = await pool.query(
+        `select c.id, c.name, c.symbol, c.logo, c.winner_chain, c.total_usd, c.decided_at, s.sig,
+                coalesce(json_agg(json_build_object('chain_id', r.chain_id, 'state', r.state, 'pool_usd', r.pool_usd, 'reported_usd', r.reported_usd))
+                         filter (where r.chain_id is not null), '[]') as lanes
+         from race_coins c
+         left join race_chains r on r.coin_id = c.id
+         left join card_state s on s.coin_id = 'r:' || c.id
+         group by c.id, s.sig
+         order by c.launched_at desc
+         limit 200`
+      );
+      let drawn = 0;
+      for (const row of rows) {
+        const pre = raceCardFacts(row, row.logo ? "x" : null);
+        const sig = raceCardSignature(pre);
+        if (sig === row.sig) continue;
+        const f = raceCardFacts(row, await raceLogo(row.logo));
+        await upload(url, key, raceCardName(row.id), renderRaceCard(f));
+        await pool.query(
+          `insert into card_state (coin_id, sig, drawn_at) values ($1, $2, now())
+           on conflict (coin_id) do update set sig = excluded.sig, drawn_at = excluded.drawn_at`,
+          [`r:${row.id}`, sig]
+        );
+        drawn++;
+      }
+      if (drawn) log(`share cards (races): drew ${drawn}`);
+    } catch (e) {
+      if (!/does not exist/.test(e.message)) log(`share cards (races): ${e.message}`);
+    }
+    await new Promise((r) => setTimeout(r, every));
+  }
+}

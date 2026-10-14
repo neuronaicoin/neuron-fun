@@ -22,7 +22,7 @@
 //   Price alerts and web push: see alerts.mjs
 
 import pg from "pg";
-import { cardLoop, extCardLoop } from "./cards.mjs";
+import { cardLoop, extCardLoop, raceCardLoop } from "./cards.mjs";
 import { alertLoop } from "./alerts.mjs";
 import { safetyLoop } from "./safety.mjs";
 import { copyLoop } from "./copy.mjs";
@@ -511,6 +511,7 @@ async function main() {
     refreshLoop(),
     cardLoop(pool, log),
     extCardLoop(pool, log),
+    raceCardLoop(pool, log),
     alertLoop(pool, log),
     safetyLoop(pool, chains, log),
     copyLoop(pool, log),
