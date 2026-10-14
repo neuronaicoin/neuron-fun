@@ -16,6 +16,8 @@ import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { postOnX } from "@/components/share";
 import { extHref } from "@/lib/extcoins";
+import { PriceChart } from "@/components/racechart";
+import { fetchExtCandles } from "@/lib/extchart";
 
 const EXPLORER: Record<string, string> = {
   base: "https://basescan.org/token/",
@@ -30,6 +32,7 @@ const FEE = 0.007;
 export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink?: boolean }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
+  const [chartFailed, setChartFailed] = useState(false);
   const [light, setLight] = useState(false);
   useEffect(() => {
     const read = () => setLight(document.documentElement.dataset.theme === "light");
@@ -102,7 +105,19 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
             </div>
           </section>
 
-          {coin.pool && (
+          {coin.pool && !chartFailed && (
+            <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5 min-w-0">
+              <PriceChart
+                cacheKey={`ext:${coin.network}:${coin.pool}`}
+                load={(frame) => fetchExtCandles(coin.network, coin.pool!, coin.address, frame)}
+                refreshMs={30_000}
+                emptyText="No trades in this period yet."
+                onFail={() => setChartFailed(true)}
+              />
+            </section>
+          )}
+          {coin.pool && chartFailed && (
+            // our chart's data source didn't answer: fall back to GeckoTerminal's own chart
             <section className="rounded-3xl border border-line bg-surface overflow-hidden">
               <iframe
                 key={light ? "l" : "d"}

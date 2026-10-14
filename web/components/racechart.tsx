@@ -5,6 +5,8 @@ import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { fetchRaceCandles, fmtPrice, type RaceCandle } from "@/lib/race";
 import { onTrade } from "@/lib/live";
 
+export type Candle = RaceCandle;
+
 /** Time frames: label and candle size in seconds. */
 const FRAMES = [
   { label: "1m", sec: 60 },
@@ -17,7 +19,7 @@ const FRAMES = [
 type Mode = "line" | "candles";
 const PREFS = "sasa-race-chart";
 
-const CACHE = new Map<string, RaceCandle[]>();
+const CACHE = new Map<string, Candle[]>();
 
 function cssVar(name: string, fallback: string) {
   if (typeof window === "undefined") return fallback;
@@ -30,6 +32,42 @@ function cssVar(name: string, fallback: string) {
  * Draws from the cache at once, then refreshes every 5 s and right after the user trades.
  */
 export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; chainId: number | null; height?: number }) {
+  return (
+    <PriceChart
+      cacheKey={`${coinId}:${chainId ?? "all"}`}
+      load={(frame) => fetchRaceCandles(coinId, chainId, frame)}
+      tradeCoinId={coinId}
+      height={height}
+    />
+  );
+}
+
+/**
+ * sasa's own price chart, for any coin: `load` returns the candles of one time frame
+ * (seconds), oldest first. Refreshes every `refreshMs`; `onFail` is called when the
+ * first load fails (the caller can show something else instead).
+ */
+export function PriceChart({
+  cacheKey,
+  load: loadCandles,
+  tradeCoinId,
+  height = 360,
+  refreshMs = 5_000,
+  emptyText = "No trades yet. The first one draws the chart.",
+  onFail,
+}: {
+  cacheKey: string;
+  load: (frameSec: number) => Promise<Candle[]>;
+  tradeCoinId?: string;
+  height?: number;
+  refreshMs?: number;
+  emptyText?: string;
+  onFail?: () => void;
+}) {
+  const loadRef = useRef(loadCandles);
+  loadRef.current = loadCandles;
+  const failRef = useRef(onFail);
+  failRef.current = onFail;
   const box = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>("line");
   const [frame, setFrame] = useState<number>(60);
@@ -55,8 +93,8 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
     let chart: IChartApi | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
     let stopTrade: (() => void) | null = null;
-    const key = `${coinId}:${chainId ?? "all"}:${frame}`;
-    const first = fetchRaceCandles(coinId, chainId, frame).catch(() => null);
+    const key = `${cacheKey}:${frame}`;
+    const first = loadRef.current(frame).catch(() => null);
 
     (async () => {
       const lc = await import("lightweight-charts");
@@ -106,7 +144,7 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
         setHover(v !== undefined && p.time !== undefined ? { price: v, time: Number(p.time) } : null);
       });
       let fitted = false;
-      const apply = (rows: RaceCandle[]) => {
+      const apply = (rows: Candle[]) => {
         setEmpty(rows.length === 0);
         if (mode === "line") {
           (series as ISeriesApi<"Area">).setData(rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.close })));
@@ -126,10 +164,14 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
           fitted = true;
         }
       };
-      const load = async (pending?: Promise<RaceCandle[] | null>) => {
+      const load = async (pending?: Promise<Candle[] | null>) => {
         try {
-          const rows = pending ? await pending : await fetchRaceCandles(coinId, chainId, frame);
-          if (!alive || !rows) return;
+          const rows = pending ? await pending : await loadRef.current(frame);
+          if (!alive) return;
+          if (!rows) {
+            if (pending && !CACHE.get(key)) failRef.current?.();
+            return;
+          }
           CACHE.set(key, rows);
           apply(rows);
         } catch {
@@ -139,11 +181,12 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
       const cached = CACHE.get(key);
       if (cached) apply(cached);
       await load(first);
-      timer = setInterval(() => void load(), 5_000);
-      stopTrade = onTrade((s) => {
-        if (s.coinId.toLowerCase() !== coinId.toLowerCase()) return;
-        [1200, 3000, 6000].forEach((d) => setTimeout(() => alive && void load(), d));
-      });
+      timer = setInterval(() => void load(), refreshMs);
+      if (tradeCoinId)
+        stopTrade = onTrade((s) => {
+          if (s.coinId.toLowerCase() !== tradeCoinId.toLowerCase()) return;
+          [1200, 3000, 6000].forEach((d) => setTimeout(() => alive && void load(), d));
+        });
     })();
 
     return () => {
@@ -157,7 +200,7 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
         } catch {}
       });
     };
-  }, [coinId, chainId, frame, mode]);
+  }, [cacheKey, tradeCoinId, refreshMs, frame, mode]);
 
   return (
     <div className="flex flex-col gap-3 min-w-0">
@@ -203,7 +246,7 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
       <div className="relative w-full" style={{ height }}>
         <div ref={box} className="absolute inset-0" />
         {empty && (
-          <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">No trades yet. The first one draws the chart.</div>
+          <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">{emptyText}</div>
         )}
       </div>
     </div>
