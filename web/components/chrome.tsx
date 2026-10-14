@@ -293,6 +293,7 @@ const MORE = [
   { href: "/copy/", label: "Copy trading", note: "Signals from traders you copy" },
   { href: "/points/", label: "Points", note: "Quests, invites, leaderboard" },
   { href: "/swipe/", label: "Swipe", note: "Discover coins fast" },
+  { href: "/play/", label: "Play", note: "Chain Run and Pump Tower" },
   { href: "/forum/", label: "Forum", note: "Every coin's community", plain: true },
   { href: "/stats/", label: "Stats", note: "Volume, fees, graduations" },
   { href: "/how-it-works/", label: "How it works", note: "sasa in 2 minutes" },

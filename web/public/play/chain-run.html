@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Chain Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the track runs into the screen with the four-chain race bar on top; notes beside it on desktop, under it on phones. */
+:root {
+  --bg: #0f0e0d; --surface: #1a1816; --line: #2c2925; --ink: #f4f2ef; --ink2: #c9c4bd; --ink3: #807970;
+  --amber: #ffb020; --orange: #ff6b1a; --down: #e2463f;
+  --base: #2f6bff; --bnb: #f0b90b; --arc: #19b3e6; --rh: #1fd15a;
+  --display: "Sora", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--display); margin: 0; padding: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+header { max-width: 1120px; margin: 0 auto 18px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.word { font-weight: 800; font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.02em; background: linear-gradient(90deg, var(--amber), var(--orange)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+header p { color: var(--ink3); font-family: var(--mono); font-size: 13px; margin: 0; }
+.stage { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 4; touch-action: none; }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,14,13,.82); text-align: center; padding: 24px; }
+.overlay h2 { margin: 0 0 6px; font-size: 26px; text-wrap: balance; }
+.overlay p { margin: 0 auto 16px; color: var(--ink2); max-width: 36ch; line-height: 1.5; }
+.pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: min(340px, 100%); margin: 0 auto 12px; }
+.pick button { font: 700 15px var(--display); color: var(--ink); background: transparent; border: 2px solid var(--c); border-radius: 12px; padding: 12px 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pick button:hover, .pick button:focus-visible { background: color-mix(in srgb, var(--c) 22%, transparent); outline: none; }
+.pick i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); display: block; }
+.btn { font: 700 16px var(--display); color: var(--bg); background: linear-gradient(90deg, var(--amber), var(--orange)); border: 0; border-radius: 999px; padding: 12px 26px; cursor: pointer; }
+.btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.keys { margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink3); }
+.places { display: grid; gap: 6px; margin: 4px auto 16px; width: min(280px, 100%); font-family: var(--mono); font-size: 13px; text-align: left; font-variant-numeric: tabular-nums; }
+.places div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 8px; }
+.places .you { background: rgba(255,255,255,.06); }
+aside { display: grid; gap: 16px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.card p, .card li { color: var(--ink2); line-height: 1.55; font-size: 14px; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.label { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin-bottom: 8px; }
+.items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 6px; justify-items: start; }
+.item i { width: 22px; height: 22px; border-radius: 50%; display: block; }
+.item small { font-family: var(--mono); color: var(--ink3); font-size: 12px; line-height: 1.4; }
+.chip { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+</style>
+
+<div class="wrap">
+  <div class="stage">
+    <canvas id="c" width="600" height="800" aria-label="Chain Run game"></canvas>
+    <div class="overlay" id="start">
+      <div>
+        <h2>Pick your chain</h2>
+        <p>Four chains race to the finish. Run in your chain's lane and grab what pushes it forward. Every other lane helps a rival.</p>
+        <div class="pick" id="pick"></div>
+        <div class="keys">← → change lane · ↑ / space jump · swipe on phone</div>
+      </div>
+    </div>
+    <div class="overlay" id="end" hidden>
+      <div>
+        <h2 id="endTitle"></h2>
+        <p id="endText"></p>
+        <div class="places" id="places"></div>
+        <button class="btn" id="again">Race again</button>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="label">How it plays</div>
+      <ul>
+        <li>You back one chain. Its runner is on the race bar at the top, next to three rivals.</li>
+        <li>A coin you grab pushes the runner of the lane you're in. Stay in your lane to help your chain, or slip into a rival's lane to dodge, at a price.</li>
+        <li>A red candle knocks that lane's runner back. A rug hole trips the runner for a moment. Jump both.</li>
+        <li>The crowd buys too: rivals move on their own, and now and then a whale pushes one forward.</li>
+        <li>First runner over the line wins. No score, no points, just which chain took it.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="label">On the track</div>
+      <div class="items">
+        <div class="item"><i style="background:var(--amber)"></i><b>Coin</b><small>pushes this lane's chain forward</small></div>
+        <div class="item"><i style="background:var(--down);border-radius:3px"></i><b>Red candle</b><small>knocks this lane's chain back</small></div>
+        <div class="item"><i style="background:#000;border:2px dashed var(--down)"></i><b>Rug hole</b><small>The runner trips and stops for a second</small></div>
+        <div class="item"><i style="background:linear-gradient(90deg,var(--amber),var(--orange))"></i><b>Whale</b><small>a random rival surges</small></div>
+      </div>
+    </div>
+</aside>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById("c"), g = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const LANES = [
+    { name: "Base", col: css("--base") }, { name: "BNB Chain", col: css("--bnb") },
+    { name: "Arc", col: css("--arc") }, { name: "Robinhood", col: css("--rh") },
+  ];
+  const AMBER = css("--amber"), ORANGE = css("--orange"), DOWN = css("--down"), SURF = css("--surface"), LINE = css("--line"), INK3 = css("--ink3"), MONO = css("--mono"), DISPLAY = css("--display");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const BAR_H = 150, HORIZON = BAR_H + 70, BOTTOM = H - 30;
+  const yAt = (z) => BOTTOM - (BOTTOM - HORIZON) * (1 - Math.pow(1 - z, 2.2));
+  const scaleAt = (z) => 1 - z * 0.82;
+  const laneX = (lane, z) => { const w = 520 * scaleAt(z); return W / 2 - w / 2 + w * (lane + 0.5) / 4; };
+
+  let st, raf = 0, last = 0, mine = 0;
+  function reset() {
+    st = { lane: mine, laneX: mine, jump: 0, trip: 0, items: [], spawn: 0, speed: 0.4, prog: [0, 0, 0, 0], kick: [0, 0, 0, 0], whale: null, whaleIn: 4 + Math.random() * 4, t: 0, scroll: 0, running: true };
+  }
+  function spawn() {
+    const lane = Math.floor(Math.random() * 4);
+    const r = Math.random();
+    const kind = r < 0.6 ? "coin" : r < 0.85 ? "candle" : "hole";
+    st.items.push({ lane, z: 1, kind, done: false });
+    if (kind === "coin" && Math.random() < 0.5) st.items.push({ lane, z: 1.08, kind: "coin", done: false });
+  }
+  const push = (lane, d) => { st.prog[lane] = Math.max(0, Math.min(1, st.prog[lane] + d)); st.kick[lane] = d > 0 ? 0.3 : -0.3; };
+  function step(dt) {
+    st.t += dt;
+    st.speed = 0.4 + Math.min(0.3, st.t * 0.006);
+    st.scroll = (st.scroll + dt * st.speed) % 0.1;
+    st.laneX += (st.lane - st.laneX) * Math.min(1, dt * 14);
+    if (st.jump > 0) st.jump = Math.max(0, st.jump - dt);
+    if (st.trip > 0) st.trip = Math.max(0, st.trip - dt);
+    // the crowd: every chain drifts forward a little; rivals a bit more than yours so you have to work
+    for (let l = 0; l < 4; l++) push(l, dt * (l === mine ? 0.004 : 0.0085) * (0.6 + Math.random() * 0.8));
+    // whales
+    st.whaleIn -= dt;
+    if (st.whaleIn <= 0) {
+      const rivals = [0, 1, 2, 3].filter((l) => l !== mine);
+      const l = rivals[Math.floor(Math.random() * rivals.length)];
+      push(l, 0.05); st.whale = { lane: l, t: 1.4 }; st.whaleIn = 6 + Math.random() * 6;
+    }
+    if (st.whale && (st.whale.t -= dt) <= 0) st.whale = null;
+    for (let l = 0; l < 4; l++) st.kick[l] *= Math.pow(0.02, dt);
+    st.spawn -= dt;
+    if (st.spawn <= 0) { spawn(); st.spawn = 0.4 / (st.speed / 0.4); }
+    const here = Math.round(st.laneX);
+    for (const it of st.items) {
+      it.z -= dt * st.speed;
+      if (!it.done && it.z < 0.05 && it.z > -0.04 && here === it.lane) {
+        const air = st.jump > 0.12;
+        if (it.kind === "coin") { push(it.lane, 0.022); it.done = true; }
+        else if (it.kind === "candle" && !air) { push(it.lane, -0.035); it.done = true; }
+        else if (it.kind === "hole" && !air) { st.trip = 0.9; it.done = true; }
+      }
+    }
+    st.items = st.items.filter((i) => i.z > -0.1 && !(i.done && i.kind === "coin"));
+    if (st.prog.some((p) => p >= 1)) finish();
+  }
+
+  function drawBar() {
+    g.fillStyle = SURF; g.fillRect(0, 0, W, BAR_H + 10);
+    g.font = "500 12px " + MONO; g.textAlign = "left"; g.fillStyle = INK3;
+    g.fillText("RACE TO THE FINISH", 24, 26);
+    const x0 = 120, x1 = W - 40;
+    // finish line
+    g.fillStyle = "rgba(255,255,255,0.08)"; g.fillRect(x1, 36, 4, BAR_H - 36);
+    for (let l = 0; l < 4; l++) {
+      const y = 50 + l * 26, L = LANES[l];
+      g.font = (l === mine ? "700 13px " : "500 12px ") + (l === mine ? DISPLAY : MONO);
+      g.fillStyle = l === mine ? L.col : INK3; g.textAlign = "left";
+      g.fillText(l === mine ? L.name + " (you)" : L.name, 20, y + 4);
+      g.fillStyle = "rgba(255,255,255,0.06)"; g.fillRect(x0, y - 3, x1 - x0, 6);
+      const px = x0 + (x1 - x0) * st.prog[l];
+      g.fillStyle = L.col; g.fillRect(x0, y - 3, px - x0, 6);
+      // mini Dash on the bar
+      const bob = reduce ? 0 : Math.sin(performance.now() / 90 + l) * 1.5;
+      const k = 0.42 + Math.abs(st.kick[l]) * 0.6;
+      g.lineCap = "round"; g.lineWidth = 4;
+      g.strokeStyle = L.col; g.beginPath(); g.moveTo(px - 8 * k * 2, y + 2 + bob); g.lineTo(px, y - 6 * k * 2 + bob); g.lineTo(px + 8 * k * 2, y + 2 + bob); g.stroke();
+      g.fillStyle = L.col; g.beginPath(); g.arc(px, y - 12 * k * 2 + bob, 3.2, 0, Math.PI * 2); g.fill();
+      if (st.whale && st.whale.lane === l) { g.font = "700 11px " + MONO; g.fillStyle = AMBER; g.textAlign = "left"; g.fillText("WHALE BUY", px + 14, y - 6); }
+    }
+  }
+  function drawTrack() {
+    g.fillStyle = SURF; g.fillRect(0, BAR_H + 10, W, H);
+    const sky = g.createLinearGradient(0, BAR_H, 0, HORIZON + 40);
+    sky.addColorStop(0, "rgba(255,107,26,0.16)"); sky.addColorStop(1, "rgba(255,107,26,0)");
+    g.fillStyle = sky; g.fillRect(0, BAR_H, W, HORIZON - BAR_H + 40);
+    for (let l = 0; l < 4; l++) {
+      const wA = 520 * scaleAt(0), wB = 520 * scaleAt(1);
+      const xA0 = W / 2 - wA / 2 + wA * l / 4, xA1 = xA0 + wA / 4, xB0 = W / 2 - wB / 2 + wB * l / 4, xB1 = xB0 + wB / 4;
+      g.beginPath(); g.moveTo(xA0, yAt(0)); g.lineTo(xA1, yAt(0)); g.lineTo(xB1, yAt(1)); g.lineTo(xB0, yAt(1)); g.closePath();
+      g.fillStyle = l % 2 ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.045)"; g.fill();
+      const grad = g.createLinearGradient(0, yAt(0), 0, yAt(0.55));
+      grad.addColorStop(0, LANES[l].col + (l === mine ? "55" : "26")); grad.addColorStop(1, LANES[l].col + "00");
+      g.fillStyle = grad; g.fill();
+    }
+    g.strokeStyle = LINE; g.lineWidth = 2;
+    for (let z = 0.1 - st.scroll; z < 1; z += 0.1) {
+      const w = 520 * scaleAt(z), y = yAt(z);
+      g.globalAlpha = 1 - z; g.beginPath(); g.moveTo(W / 2 - w / 2, y); g.lineTo(W / 2 + w / 2, y); g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.font = "600 13px " + MONO; g.textAlign = "center";
+    for (let l = 0; l < 4; l++) { g.fillStyle = LANES[l].col; g.fillText(LANES[l].name.toUpperCase(), laneX(l, 0.97), HORIZON - 12); }
+  }
+  function drawItems() {
+    for (const it of [...st.items].sort((a, b) => b.z - a.z)) {
+      if (it.z > 1 || it.z < -0.05 || it.done) continue;
+      const z = Math.max(0, it.z), s = scaleAt(z), x = laneX(it.lane, z), y = yAt(z);
+      if (it.kind === "coin") {
+        g.fillStyle = AMBER; g.beginPath(); g.ellipse(x, y - 26 * s, 15 * s, 15 * s, 0, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = ORANGE; g.lineWidth = 3 * s; g.stroke();
+      } else if (it.kind === "candle") {
+        g.fillStyle = DOWN; g.fillRect(x - 10 * s, y - 70 * s, 20 * s, 56 * s); g.fillRect(x - 2 * s, y - 86 * s, 4 * s, 86 * s);
+      } else {
+        g.fillStyle = "#050404"; g.beginPath(); g.ellipse(x, y, 60 * s, 14 * s, 0, 0, Math.PI * 2); g.fill();
+        g.setLineDash([6 * s, 5 * s]); g.strokeStyle = DOWN; g.lineWidth = 2; g.stroke(); g.setLineDash([]);
+      }
+    }
+  }
+  function drawDash() {
+    const x = W / 2 - 260 + 520 * (st.laneX + 0.5) / 4;
+    const jumpH = st.jump > 0 ? Math.sin((st.jump / 0.6) * Math.PI) * 70 : 0;
+    const y = BOTTOM - 26 - jumpH;
+    const bob = reduce || st.trip > 0 ? 0 : Math.sin(performance.now() / 70) * 3;
+    const tilt = st.trip > 0 ? 0.5 : 0, k = 1.1;
+    g.fillStyle = "rgba(0,0,0,0.45)"; g.beginPath(); g.ellipse(x, BOTTOM - 6, 30, 8, 0, 0, Math.PI * 2); g.fill();
+    g.save(); g.translate(x, y); g.rotate(tilt);
+    g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = 11 * k;
+    g.strokeStyle = AMBER; g.beginPath(); g.moveTo(-24 * k, -22 * k + bob); g.lineTo(0, -40 * k + bob); g.lineTo(24 * k, -22 * k + bob); g.stroke();
+    g.strokeStyle = ORANGE; g.beginPath(); g.moveTo(-24 * k, -bob); g.lineTo(0, -18 * k - bob); g.lineTo(24 * k, -bob); g.stroke();
+    g.fillStyle = AMBER; g.beginPath(); g.arc(0, -58 * k, 7.5 * k, 0, Math.PI * 2); g.fill();
+    g.fillStyle = LANES[Math.round(st.laneX)].col; g.beginPath(); g.arc(0, -58 * k, 3 * k, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+  const draw = () => { drawTrack(); drawItems(); drawDash(); drawBar(); };
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (st.running) step(dt);
+    draw();
+    if (st.running) raf = requestAnimationFrame(frame);
+  }
+  function finish() {
+    st.running = false; draw();
+    const order = [0, 1, 2, 3].sort((a, b) => st.prog[b] - st.prog[a]);
+    const win = order[0], place = order.indexOf(mine) + 1;
+    document.getElementById("endTitle").textContent = win === mine ? `${LANES[win].name} wins. You carried it.` : `${LANES[win].name} takes the race`;
+    document.getElementById("endText").textContent = win === mine ? "Your chain crossed first." : `${LANES[mine].name} finished ${["", "1st", "2nd", "3rd", "4th"][place]}.`;
+    document.getElementById("places").innerHTML = order.map((l, i) =>
+      `<div class="${l === mine ? "you" : ""}"><span><span class="chip" style="background:${LANES[l].col}"></span>${i + 1}. ${LANES[l].name}</span><span>${Math.round(st.prog[l] * 100)}%</span></div>`).join("");
+    document.getElementById("end").hidden = false;
+  }
+  function start(lane) {
+    if (lane !== undefined) mine = lane;
+    reset(); cancelAnimationFrame(raf);
+    document.getElementById("start").hidden = true; document.getElementById("end").hidden = true;
+    last = performance.now(); raf = requestAnimationFrame(frame);
+  }
+  const move = (d) => { if (st?.running && st.trip === 0) st.lane = Math.max(0, Math.min(3, st.lane + d)); };
+  const jump = () => { if (st?.running && st.jump === 0 && st.trip === 0) st.jump = 0.6; };
+  addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { move(-1); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { move(1); e.preventDefault(); }
+    else if (e.key === "ArrowUp" || e.key === " ") { jump(); e.preventDefault(); }
+  });
+  let sx = 0, sy = 0;
+  cv.addEventListener("pointerdown", (e) => { sx = e.clientX; sy = e.clientY; });
+  cv.addEventListener("pointerup", (e) => {
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) jump();
+    else if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1);
+    else if (dy < 0) jump();
+  });
+  const pick = document.getElementById("pick");
+  LANES.forEach((L, i) => {
+    const b = document.createElement("button");
+    b.style.setProperty("--c", L.col); b.innerHTML = `<i></i>${L.name}`; b.onclick = () => start(i);
+    pick.appendChild(b);
+  });
+  document.getElementById("again").onclick = () => { document.getElementById("end").hidden = true; document.getElementById("start").hidden = false; };
+  // resting frame
+  reset(); st.running = false;
+  st.items = [{ lane: 0, z: 0.55, kind: "coin" }, { lane: 1, z: 0.35, kind: "candle" }, { lane: 2, z: 0.7, kind: "hole" }, { lane: 3, z: 0.25, kind: "coin" }, { lane: 1, z: 0.8, kind: "coin" }];
+  st.prog = [0.42, 0.61, 0.28, 0.35];
+  draw();
+})();
+</script>
+

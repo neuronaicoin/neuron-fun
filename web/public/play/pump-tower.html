@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Pump Tower</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: four pool towers side by side, one big PUMP button under them; notes beside on desktop, under on phones. */
+:root {
+  --bg: #0f0e0d; --surface: #1a1816; --line: #2c2925; --ink: #f4f2ef; --ink2: #c9c4bd; --ink3: #807970;
+  --amber: #ffb020; --orange: #ff6b1a; --down: #e2463f;
+  --base: #2f6bff; --bnb: #f0b90b; --arc: #19b3e6; --rh: #1fd15a;
+  --display: "Sora", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--display); margin: 0; padding: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+header { max-width: 1120px; margin: 0 auto 18px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.word { font-weight: 800; font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.02em; background: linear-gradient(90deg, var(--amber), var(--orange)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+header p { color: var(--ink3); font-family: var(--mono); font-size: 13px; margin: 0; }
+.stage { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 4; touch-action: manipulation; cursor: pointer; }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,14,13,.84); text-align: center; padding: 24px; }
+.overlay h2 { margin: 0 0 12px; font-size: 26px; text-wrap: balance; }
+.overlay p { margin: 0 auto 16px; color: var(--ink2); max-width: 34ch; line-height: 1.5; }
+.rules { display: grid; gap: 8px; margin: 0 auto 18px; width: min(300px, 100%); text-align: left; font-size: 15px; }
+.rules div { display: flex; gap: 10px; align-items: center; }
+.rules b { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; font-size: 13px; color: var(--bg); }
+.pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: min(340px, 100%); margin: 0 auto; }
+.pick button { font: 700 15px var(--display); color: var(--ink); background: transparent; border: 2px solid var(--c); border-radius: 12px; padding: 12px 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pick button:hover, .pick button:focus-visible { background: color-mix(in srgb, var(--c) 22%, transparent); outline: none; }
+.pick i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); display: block; }
+.btn { font: 700 16px var(--display); color: var(--bg); background: linear-gradient(90deg, var(--amber), var(--orange)); border: 0; border-radius: 999px; padding: 12px 26px; cursor: pointer; }
+.btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+aside { display: grid; gap: 16px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.card p, .card li { color: var(--ink2); line-height: 1.55; font-size: 14px; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.label { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin-bottom: 8px; }
+</style>
+
+<div class="wrap">
+  <div class="stage">
+    <canvas id="c" width="600" height="800" aria-label="Pump Tower game"></canvas>
+    <div class="overlay" id="start">
+      <div>
+        <h2>Pump your chain</h2>
+        <div class="rules">
+          <div><b style="background:var(--amber)">1</b>Pick a chain</div>
+          <div><b style="background:var(--amber)">2</b>Tap as fast as you can</div>
+          <div><b style="background:var(--down)">3</b>Stop when it turns red</div>
+        </div>
+        <div class="pick" id="pick"></div>
+      </div>
+    </div>
+    <div class="overlay" id="end" hidden>
+      <div>
+        <h2 id="endTitle"></h2>
+        <p id="endText"></p>
+        <button class="btn" id="again">Play again</button>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="label">How it plays</div>
+      <ul>
+        <li>Pick a chain. Its pool is the tower marked YOU.</li>
+        <li>Every tap is a buy: your pool grows.</li>
+        <li>Sometimes your pool flashes red: a dump is coming. Tapping while it's red loses you blocks, so hold off for a second.</li>
+        <li>The other chains grow on their own, and a whale sometimes lands a big buy on one of them.</li>
+        <li>After 30 seconds the tallest pool wins. The other three pour into it and it locks, just like the end of a real sasa race.</li>
+      </ul>
+    </div>
+</aside>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById("c"), g = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const CH = [
+    { name: "Base", col: css("--base") }, { name: "BNB Chain", col: css("--bnb") },
+    { name: "Arc", col: css("--arc") }, { name: "Robinhood", col: css("--rh") },
+  ];
+  const AMBER = css("--amber"), ORANGE = css("--orange"), DOWN = css("--down"), SURF = css("--surface"), INK = css("--ink"), INK3 = css("--ink3"), MONO = css("--mono"), DISPLAY = css("--display");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const ROUND = 30, TOP = 120, FLOOR = H - 190, COLW = 112, GAP = (W - COLW * 4) / 5;
+  const BTN = { x: 60, y: H - 120, w: W - 120, h: 84 };
+  const colX = (i) => GAP + i * (COLW + GAP), colMid = (i) => colX(i) + COLW / 2;
+  let BH = 16;
+  const fit = () => { BH = Math.min(16, Math.max(4, (FLOOR - TOP - 50) / Math.max(12, ...st.h))); };
+
+  let st, mine = 0, raf = 0, last = 0;
+  function reset() {
+    st = { t: ROUND, h: [3, 3, 3, 3], red: 0, redIn: 3 + Math.random() * 2, crowdIn: 0.3, whaleIn: 5, banner: null, pops: [], flying: [], phase: "play", end: 0, press: 0, shake: 0 };
+  }
+  function tap() {
+    if (st?.phase !== "play") return;
+    st.press = 0.12;
+    if (st.red > 0) {
+      st.h[mine] = Math.max(0, st.h[mine] - 3); st.shake = 0.3;
+      st.pops.push({ x: colMid(mine), y: FLOOR - st.h[mine] * BH - 20, text: "-3 DUMP", col: DOWN, t: 0.9 });
+    } else {
+      st.h[mine] += 1;
+      st.pops.push({ x: colMid(mine) + (Math.random() - 0.5) * 30, y: FLOOR - st.h[mine] * BH - 20, text: "+1", col: AMBER, t: 0.6 });
+    }
+  }
+  function step(dt) {
+    st.press = Math.max(0, st.press - dt); st.shake = Math.max(0, st.shake - dt);
+    for (const p of st.pops) { p.t -= dt; p.y -= 40 * dt; }
+    st.pops = st.pops.filter((p) => p.t > 0);
+    if (st.phase === "play") {
+      st.t -= dt;
+      // the crowd buys on the other chains: a steady tapper (about 3 taps a second) beats it, a slow one doesn't
+      st.crowdIn -= dt;
+      if (st.crowdIn <= 0) {
+        for (let c = 0; c < 4; c++) if (c !== mine && Math.random() < 0.42) st.h[c] += 1;
+        st.crowdIn = 0.34;
+      }
+      st.whaleIn -= dt;
+      if (st.whaleIn <= 0) {
+        const rivals = [0, 1, 2, 3].filter((c) => c !== mine), c = rivals[Math.floor(Math.random() * 3)];
+        st.h[c] += 6; st.banner = { col: c, t: 1.4 }; st.whaleIn = 6 + Math.random() * 4;
+      }
+      if (st.banner && (st.banner.t -= dt) <= 0) st.banner = null;
+      // red warnings on your pool
+      if (st.red > 0) st.red = Math.max(0, st.red - dt);
+      else if ((st.redIn -= dt) <= 0) { st.red = 0.9 + Math.random() * 0.5; st.redIn = 3 + Math.random() * 3; }
+      if (st.t <= 0) ending();
+    } else if (st.phase === "ending") {
+      st.end += dt;
+      for (const f of st.flying) {
+        f.tt += dt;
+        const k = Math.max(0, Math.min(1, f.tt / 0.7)), e = k * k * (3 - 2 * k);
+        f.x = f.sx + (f.tx - f.sx) * e; f.y = f.sy + (f.ty - f.sy) * e - Math.sin(k * Math.PI) * 130;
+        if (k >= 1 && !f.done) { f.done = true; st.h[st.winner] += 1; }
+      }
+      st.flying = st.flying.filter((f) => !f.done);
+      if (!st.locked && st.flying.length === 0 && st.end > 0.6) { st.locked = true; st.lockAt = st.end; }
+      if (st.locked && st.end - st.lockAt > 1.3) showEnd();
+    }
+  }
+  function ending() {
+    st.phase = "ending"; st.t = 0; st.red = 0; st.banner = null;
+    const max = Math.max(...st.h);
+    st.winner = [0, 1, 2, 3].find((c) => st.h[c] === max); // a tie goes to the first in line, like the contract's fixed rule
+    fit();
+    let delay = 0;
+    for (let c = 0; c < 4; c++) {
+      if (c === st.winner) continue;
+      for (let k = st.h[c] - 1; k >= 0; k--) {
+        st.flying.push({ sx: colMid(c), sy: FLOOR - k * BH, x: colMid(c), y: FLOOR - k * BH, tx: colMid(st.winner), ty: TOP + 30, from: c, tt: -delay });
+        delay += reduce ? 0 : 0.02;
+      }
+      st.h[c] = 0;
+    }
+  }
+  function draw() {
+    fit();
+    g.fillStyle = SURF; g.fillRect(0, 0, W, H);
+    const glow = g.createLinearGradient(0, 0, 0, 180); glow.addColorStop(0, "rgba(255,107,26,.14)"); glow.addColorStop(1, "rgba(255,107,26,0)");
+    g.fillStyle = glow; g.fillRect(0, 0, W, 180);
+    const s = Math.max(0, Math.ceil(st.t));
+    g.textAlign = "center"; g.font = "800 40px " + DISPLAY;
+    g.fillStyle = st.phase === "play" && s <= 5 ? ORANGE : INK;
+    g.fillText(st.phase === "play" ? `0:${String(s).padStart(2, "0")}` : st.locked ? "LOCKED" : "0:00", W / 2, 56);
+    g.font = "500 12px " + MONO; g.fillStyle = INK3;
+    g.fillText(st.phase === "play" ? "TALLEST POOL WINS" : "THE OTHER POOLS POUR INTO THE WINNER", W / 2, 82);
+    for (let c = 0; c < 4; c++) {
+      const x = colX(c), isMine = c === mine, red = isMine && st.red > 0;
+      const sh = isMine && st.shake > 0 && !reduce ? Math.sin(st.shake * 70) * 5 : 0;
+      g.fillStyle = red ? "rgba(226,70,63,.16)" : isMine ? "rgba(255,255,255,.05)" : "rgba(255,255,255,.025)";
+      g.fillRect(x, TOP, COLW, FLOOR - TOP);
+      const win = st.phase !== "play" && c === st.winner;
+      for (let k = 0; k < st.h[c]; k++) {
+        const y = FLOOR - (k + 1) * BH;
+        g.fillStyle = red ? DOWN : CH[c].col; g.globalAlpha = win ? 1 : 0.55 + 0.45 * (k / Math.max(1, st.h[c]));
+        g.fillRect(x + 8 + sh, y + 1, COLW - 16, BH - 2);
+      }
+      g.globalAlpha = 1;
+      g.font = "700 13px " + MONO; g.fillStyle = INK; g.fillText(`$${(st.h[c] * 100).toLocaleString()}`, colMid(c), FLOOR - st.h[c] * BH - 10);
+      g.font = (isMine ? "700 14px " : "500 13px ") + (isMine ? DISPLAY : MONO); g.fillStyle = isMine ? CH[c].col : INK3;
+      g.fillText(CH[c].name, colMid(c), FLOOR + 24);
+      if (isMine) { g.font = "700 11px " + MONO; g.fillText("YOU", colMid(c), FLOOR + 42); }
+      if (red) { g.font = "800 16px " + DISPLAY; g.fillStyle = DOWN; g.fillText("DUMP!", colMid(c), TOP + 24); g.font = "500 11px " + MONO; g.fillText("don't tap", colMid(c), TOP + 42); }
+      if (st.banner && st.banner.col === c) { g.font = "700 12px " + MONO; g.fillStyle = ORANGE; g.fillText("WHALE +6", colMid(c), TOP + 24); }
+      if (win && st.locked) {
+        const y = FLOOR - st.h[c] * BH - 48, lx = colMid(c);
+        g.strokeStyle = AMBER; g.lineWidth = 5; g.beginPath(); g.arc(lx, y - 10, 10, Math.PI, 0); g.stroke();
+        g.fillStyle = AMBER; g.beginPath(); g.roundRect(lx - 15, y - 10, 30, 22, 4); g.fill();
+      }
+    }
+    g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(GAP / 2, FLOOR, W - GAP, 2);
+    for (const f of st.flying) { if (f.tt < 0) continue; g.fillStyle = CH[f.from].col; g.fillRect(f.x - 30, f.y - 6, 60, 12); }
+    for (const p of st.pops) { g.globalAlpha = Math.min(1, p.t * 2); g.font = "800 15px " + DISPLAY; g.fillStyle = p.col; g.fillText(p.text, p.x, p.y); }
+    g.globalAlpha = 1;
+    if (st.phase === "play") {
+      const red = st.red > 0, pr = st.press > 0 ? 4 : 0;
+      const grad = g.createLinearGradient(BTN.x, 0, BTN.x + BTN.w, 0);
+      grad.addColorStop(0, red ? "#5a1f1c" : AMBER); grad.addColorStop(1, red ? "#5a1f1c" : ORANGE);
+      g.fillStyle = grad; g.beginPath(); g.roundRect(BTN.x + pr, BTN.y + pr, BTN.w - pr * 2, BTN.h - pr * 2, 42); g.fill();
+      g.font = "800 30px " + DISPLAY; g.fillStyle = red ? DOWN : "#1a1210";
+      g.fillText(red ? "WAIT" : `PUMP ${CH[mine].name.toUpperCase()}`, W / 2, BTN.y + BTN.h / 2 + 10);
+    }
+  }
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    step(dt); draw();
+    if (st.phase !== "done") raf = requestAnimationFrame(frame);
+  }
+  function showEnd() {
+    st.phase = "done";
+    const w = st.winner;
+    document.getElementById("endTitle").textContent = w === mine ? `${CH[w].name} takes it all` : `${CH[w].name} wins`;
+    document.getElementById("endText").textContent = w === mine
+      ? "Your pool was the tallest. The other three poured into it and it's locked for good."
+      : `${CH[mine].name}'s pool poured into ${CH[w].name}. In a real race your coins would move there too.`;
+    document.getElementById("end").hidden = false;
+  }
+  function start(c) {
+    if (c !== undefined) mine = c;
+    reset(); cancelAnimationFrame(raf);
+    document.getElementById("start").hidden = true; document.getElementById("end").hidden = true;
+    last = performance.now(); raf = requestAnimationFrame(frame);
+  }
+  cv.addEventListener("pointerdown", (e) => { e.preventDefault(); tap(); });
+  addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && st?.phase === "play") { tap(); e.preventDefault(); } });
+  const pick = document.getElementById("pick");
+  CH.forEach((L, i) => {
+    const b = document.createElement("button");
+    b.style.setProperty("--c", L.col); b.innerHTML = `<i></i>${L.name}`; b.onclick = () => start(i);
+    pick.appendChild(b);
+  });
+  document.getElementById("again").onclick = () => { document.getElementById("end").hidden = true; document.getElementById("start").hidden = false; };
+  reset(); st.h = [14, 20, 9, 12]; st.t = 18; draw();
+})();
+</script>
+
