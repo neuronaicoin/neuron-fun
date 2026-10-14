@@ -11,14 +11,14 @@ import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManage
 /// @title RaceLaunchHookPcs (sasa v7, BNB Chain)
 /// @notice The same race hook as RaceLaunchHook, for PancakeSwap Infinity CL pools:
 ///   * pools with this hook can only be opened by sasa's builder;
-///   * opening fee 30% at the first second, sliding linearly to 2% after five minutes, 2% after;
+///   * opening fee 10% at the first second, sliding linearly to 2% after two minutes, 2% after;
 ///     the builder's own swaps (creator's first buy, buybacks) always pay 2%;
 ///   * a pool whose chain lost the race is shut by the builder and refuses all swaps.
 /// It never holds funds and never alters swap amounts.
 contract RaceLaunchHookPcs {
-    uint24 public constant OPENING_FEE = 300_000; // 30%
+    uint24 public constant OPENING_FEE = 100_000; // 10%
     uint24 public constant FLOOR_FEE = 20_000; // 2%
-    uint256 public constant FEE_WINDOW = 300; // five minutes
+    uint256 public constant FEE_WINDOW = 120; // two minutes
     /// @dev beforeInitialize (bit 0) and beforeSwap (bit 6)
     uint16 public constant HOOKS_BITMAP = uint16(1 << 0) | uint16(1 << 6);
 

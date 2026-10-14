@@ -13,7 +13,7 @@ pool's liquidity is locked forever.
 
 ## Layout
 - `src/race/`: the new v7 contracts
-  - `RaceLaunchHook`: pool hook (launch fee 30% → 2% over 5 min, builder-only pool creation, closed pools)
+  - `RaceLaunchHook`: pool hook (launch fee 10% → 2% over 2 min, builder-only pool creation, closed pools)
   - `RaceBuilder`: USDC pools (Arc): opens pools, first buy, race report, losing-chain hand-over, winning-chain deepening, fees 70/30, buyback
   - `RaceBuilderEth` + `RaceTradeEth`: the same for coin/ETH pools on Uniswap v4 (Base, Robinhood Chain), Chainlink ETH/USD
   - `RaceBuilderPcs` + `RaceLaunchHookPcs` + `RaceTradePcs`: the same for coin/BNB pools on PancakeSwap Infinity (BNB Chain), Chainlink BNB/USD

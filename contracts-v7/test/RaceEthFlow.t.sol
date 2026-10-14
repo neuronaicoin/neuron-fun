@@ -349,13 +349,13 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(usdcA.balanceOf(address(eb)), 0, "builder keeps no USDC");
     }
 
-    /// The opening fee applies to ETH buys too: ~30% in the first second, 70% of it to the treasury in ETH.
+    /// The opening fee applies to ETH buys too: ~10% in the first second, 70% of it to the treasury in ETH.
     function test_launchFeeInEth() public {
         address coin = _launchBoth(5 * D, 5 * D, 0);
         uint256 t0 = treasury.balance;
         _buyEth(coin, alice, 1 ether);
         eb.collectFees(coin);
-        assertApproxEqRel(treasury.balance - t0, (0.3 ether * 70) / 100, 0.02e18);
+        assertApproxEqRel(treasury.balance - t0, (0.1 ether * 70) / 100, 0.02e18);
     }
 
     /// ETH chain wins: the USDC chain's pool money crosses and deepens the ETH pool (as ETH).

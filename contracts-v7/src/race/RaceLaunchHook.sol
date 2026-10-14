@@ -12,7 +12,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 /// @notice Hook of every sasa race pool.
 ///   * Pools with this hook can only be opened by sasa's RaceBuilder (never early, never at
 ///     another price).
-///   * Opening fee: 30% at the pool's first second, sliding down linearly to 2% after five
+///   * Opening fee: 10% at the pool's first second, sliding down linearly to 2% after two
 ///     minutes; 2% from then on. Swaps made by the RaceBuilder itself (the creator's first
 ///     buy, buybacks) always pay the 2% floor.
 ///   * A pool whose chain lost the race is shut by the RaceBuilder and refuses all swaps.
@@ -20,9 +20,9 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 contract RaceLaunchHook {
     using PoolIdLibrary for PoolKey;
 
-    uint24 public constant OPENING_FEE = 300_000; // 30%
+    uint24 public constant OPENING_FEE = 100_000; // 10%
     uint24 public constant FLOOR_FEE = 20_000; // 2%
-    uint256 public constant FEE_WINDOW = 300; // five minutes
+    uint256 public constant FEE_WINDOW = 120; // two minutes
 
     address public immutable poolManager;
     address public immutable builder;

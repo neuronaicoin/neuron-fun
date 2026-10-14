@@ -476,23 +476,27 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         assertEq(wbnb.balanceOf(address(pb)), 0, "builder keeps no WBNB");
     }
 
-    /// The 30% opening fee applies to outside BNB buys; 70% of it to the treasury in BNB.
+    /// The 10% opening fee applies to outside BNB buys; 70% of it to the treasury in BNB.
     function test_launchFeeInBnb() public {
         address coin = _launchBoth(5 * U, 5 * D, 0);
         uint256 t0 = treasury.balance;
         _buyBnb(coin, alice, 1 ether);
         pb.collectFees(coin);
-        assertApproxEqRel(treasury.balance - t0, (0.3 ether * 70) / 100, 0.02e18);
+        assertApproxEqRel(treasury.balance - t0, (0.1 ether * 70) / 100, 0.02e18);
     }
 
-    /// The fee slides to 2% after five minutes.
+    /// The fee slides from 10% to 2% over the first two minutes, then stays at 2%.
     function test_feeSlidesToFloor() public {
         address coin = _launchBoth(5 * U, 5 * D, 0);
         PcsKey memory k = pb.poolKeyFor(coin);
-        assertEq(pb.hook().feeNow(k), 300_000);
-        vm.warp(block.timestamp + 150);
-        assertEq(pb.hook().feeNow(k), 160_000);
-        vm.warp(block.timestamp + 200);
+        assertEq(pb.hook().feeNow(k), 100_000);
+        // absolute times: block.timestamp can be cached between warps in one test
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 60);
+        assertEq(pb.hook().feeNow(k), 60_000);
+        vm.warp(t0 + 120);
+        assertEq(pb.hook().feeNow(k), 20_000);
+        vm.warp(t0 + 720);
         assertEq(pb.hook().feeNow(k), 20_000);
     }
 

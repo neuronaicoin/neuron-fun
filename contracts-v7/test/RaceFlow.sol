@@ -276,15 +276,15 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         assertGt(coinsB, (SUPPLY / 2) * 99 / 100);
     }
 
-    /// The launch fee: a buy in the first second pays ~30%, the creator 2%.
+    /// The launch fee: a buy in the first second pays ~10%, the creator 2%.
     function _flow_launchFee() internal {
         (address ca,) = _launch(a, _eids2(), 5 * D, 0);
         uint256 t0 = IERC20(address(a.usdc)).balanceOf(treasury);
         _buy(a, ca, alice, 100 * D);
         a.builder.collectFees(ca);
         uint256 toTreasury = IERC20(address(a.usdc)).balanceOf(treasury) - t0;
-        // ~30% fee on $100 (and 2% on the creator's $5), 70% of it to the treasury
-        assertApproxEqRel(toTreasury, (30 * D + 10 * D / 100) * 70 / 100, 0.02e18);
+        // ~10% fee on $100 (and 2% on the creator's $5), 70% of it to the treasury
+        assertApproxEqRel(toTreasury, (10 * D + 10 * D / 100) * 70 / 100, 0.02e18);
     }
 
     /// Nobody can report before the five minutes are over.
