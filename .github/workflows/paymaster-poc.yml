@@ -1,0 +1,24 @@
+name: paymaster-poc
+
+# Proof test before the site uses it: a throwaway Base Sepolia account pays its network fee
+# in USDC through Circle Paymaster (v0.8, EIP-7702) and never holds ETH.
+# Fund the account first with free test USDC at https://faucet.circle.com (Base Sepolia).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the site
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Pay gas in USDC
+        working-directory: web
+        run: npx -y tsx scripts/paymaster-poc.mts send
