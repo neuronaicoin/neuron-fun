@@ -21,7 +21,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { call } from "../lib/tx";
-import { RACE_CHAINS, raceChain, raceErc20Abi, raceFactoryAbi, raceRouterAbi } from "../lib/race";
+import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceChain, raceErc20Abi, raceFactoryAbi, raceRouterAbi } from "../lib/race";
 
 const [chainIdArg, rpc] = process.argv.slice(2);
 const c = raceChain(Number(chainIdArg));
@@ -85,14 +85,23 @@ async function main() {
   const usd0 = await bal(c!.usd);
   ok(usd0 >= 100n * 10n ** BigInt(dec), `faucet gave $${formatUnits(usd0, dec)}`);
 
-  // 2. launch a coin on this chain only (one-chain race), $5 first buy
+  // 2. launch like the page: the biggest group of linked chains that includes this one, $5 first buy
+  //    (links are read from the real testnets, as the page does)
+  const links = await fetchRaceLinks();
+  const mine = links.get(c!.chainId);
+  ok(!!mine && mine.size > 0, `${c!.short} is linked to: ${[...(mine ?? [])].map((id) => raceChain(id)!.short).join(", ")}`);
+  const group = [c!.chainId, ...RACE_CHAINS.map((x) => x.chainId).filter((id) => id !== c!.chainId && mine?.has(id))];
+  // drop chains until every pair in the group is linked (as bestLinkedGroup does for the page)
+  while (group.length > 2 && !chainsLinked(group, links)) group.pop();
+  ok(chainsLinked(group, links), `racing on ${group.map((id) => raceChain(id)!.short).join(" + ")}`);
+  console.log(`   the page's default group: ${bestLinkedGroup(links).map((id) => raceChain(id)!.short).join(" + ")}`);
   const key = keccak256(toHex(`race-trade-fork-${Date.now()}`));
   const coin = (await pub.readContract({ address: dep.factory, abi: factoryAbi, functionName: "coinAddress", args: [me.address, key] })) as Address;
   const minFirst = (await pub.readContract({ address: dep.factory, abi: factoryAbi, functionName: "minFirstBuy" })) as bigint;
   const ap = call(c!.usd, raceErc20Abi, "approve", [dep.factory, minFirst]);
   await send(ap.to, ap.data);
   const ln = call(dep.factory, factoryAbi as never, "launch", [
-    { name: "Fork Test", symbol: "FORK", logo: "", description: "", launchKey: key, eids: RACE_CHAINS.map((x) => x.eid).sort((a, b) => a - b), feeMode: 0, firstBuy: minFirst, minCoinsOut: 0n },
+    { name: "Fork Test", symbol: "FORK", logo: "", description: "", launchKey: key, eids: group.map((id) => raceChain(id)!.eid).sort((a, b) => a - b), feeMode: 0, firstBuy: minFirst, minCoinsOut: 0n },
   ]);
   await send(ln.to, ln.data);
   const firstCoins = await bal(coin);

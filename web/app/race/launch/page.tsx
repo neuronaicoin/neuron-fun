@@ -11,7 +11,7 @@ import { call } from "@/lib/tx";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 import { isImageUrl } from "@/lib/data";
-import { RACE_CHAINS, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, type RaceChain } from "@/lib/race";
+import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, type RaceChain } from "@/lib/race";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -38,6 +38,20 @@ const saveDraft = (d: Draft | null) => {
   } catch {}
 };
 const newKey = (): Hex => keccak256(toHex(`${Date.now()}-${Math.random()}-${Math.random()}`));
+/** "Robinhood and Arc can't race together yet." for the first pair that isn't linked. */
+function unlinkedText(ids: number[], links: Map<number, Set<number> | null>): string {
+  for (const a of ids)
+    for (const b of ids) {
+      if (a === b) continue;
+      const s = links.get(a);
+      if (!s || !s.has(b)) {
+        const A = RACE_CHAINS.find((c) => c.chainId === a)!;
+        const B = RACE_CHAINS.find((c) => c.chainId === b)!;
+        return s === null ? `Couldn't reach ${A.short}. Try again in a moment.` : `${A.short} and ${B.short} can't race together yet. Untick one of them.`;
+      }
+    }
+  return "";
+}
 const cleanSym = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
 
 export default function RaceLaunchPage() {
@@ -57,6 +71,21 @@ export default function RaceLaunchPage() {
   const [funds, setFunds] = useState<Record<number, Funds | null>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [links, setLinks] = useState<Map<number, Set<number> | null> | null>(null);
+
+  // Which chains can race together; start with the biggest group that can.
+  useEffect(() => {
+    let alive = true;
+    fetchRaceLinks().then((l) => {
+      if (!alive) return;
+      setLinks(l);
+      const best = bestLinkedGroup(l);
+      if (best.length >= 2) setChains(best);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // A launch left half-way by this wallet: offer to finish it.
   useEffect(() => {
@@ -108,6 +137,8 @@ export default function RaceLaunchPage() {
         ? "That picture could not be used."
         : picked.length < 2
           ? "Pick at least two chains: it's a race."
+          : links && !chainsLinked(chains, links)
+            ? unlinkedText(chains, links)
           : !Number.isFinite(buyN) || buyN < minUsd
             ? `The first buy is at least $${minUsd} on each chain.`
             : "";

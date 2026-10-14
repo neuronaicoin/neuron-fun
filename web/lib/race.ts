@@ -181,6 +181,8 @@ export const raceFactoryAbi = parseAbi([
   "function coinIdOf(address creator, bytes32 launchKey) pure returns (bytes32)",
   "function minFirstBuy() view returns (uint256)",
   "function launchesOpen() view returns (bool)",
+  "struct Route { address sendLib; address receiveLib; bytes executorConfig; bytes ulnConfig; }",
+  "function routeOf(uint32 eid) view returns (Route)",
   "error LaunchesClosed()",
   "error BadChains()",
   "error NoRoute(uint32 eid)",
@@ -206,6 +208,56 @@ export function raceClient(c: RaceChain): PublicClient {
     clients.set(c.chainId, p);
   }
   return p;
+}
+
+/**
+ * Which chains can race together. A coin can only race on chains whose factories are linked
+ * by LayerZero both ways (on testnets some pairs have no LayerZero path, e.g. Robinhood ↔ Arc).
+ * Returns, per chain id, the chain ids it is linked to (null = couldn't read that chain).
+ */
+export async function fetchRaceLinks(): Promise<Map<number, Set<number> | null>> {
+  const out = new Map<number, Set<number> | null>();
+  await Promise.all(
+    RACE_CHAINS.map(async (c) => {
+      try {
+        const others = RACE_CHAINS.filter((o) => o.chainId !== c.chainId);
+        const routes = await Promise.all(
+          others.map((o) => raceClient(c).readContract({ address: c.factory, abi: raceFactoryAbi, functionName: "routeOf", args: [o.eid] }))
+        );
+        const set = new Set<number>();
+        others.forEach((o, i) => {
+          const r = routes[i] as { sendLib: string };
+          if (r.sendLib && !/^0x0+$/.test(r.sendLib)) set.add(o.chainId);
+        });
+        out.set(c.chainId, set);
+      } catch {
+        out.set(c.chainId, null);
+      }
+    })
+  );
+  return out;
+}
+
+/** True when every pair of `ids` is linked both ways. */
+export function chainsLinked(ids: number[], links: Map<number, Set<number> | null>): boolean {
+  for (const a of ids)
+    for (const b of ids) {
+      if (a === b) continue;
+      const s = links.get(a);
+      if (!s || !s.has(b)) return false;
+    }
+  return true;
+}
+
+/** The biggest group of chains (in RACE_CHAINS order) that can all race together. */
+export function bestLinkedGroup(links: Map<number, Set<number> | null>): number[] {
+  const ids = RACE_CHAINS.map((c) => c.chainId);
+  let best: number[] = [];
+  for (let mask = 1; mask < 1 << ids.length; mask++) {
+    const g = ids.filter((_, i) => mask & (1 << i));
+    if (g.length > best.length && chainsLinked(g, links)) best = g;
+  }
+  return best;
 }
 
 // ------------------------------------------------------------------ data
