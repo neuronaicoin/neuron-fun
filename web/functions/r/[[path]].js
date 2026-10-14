@@ -8,6 +8,8 @@
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 const SITE = "https://sasapad.fun";
+// Mainnet chains only: races on test networks are not shown to search engines.
+const MAINNET_IDS = [8453, 56, 4663, 5042];
 const CHAIN = { 84532: "Base", 8453: "Base", 97: "BNB Chain", 56: "BNB Chain", 46630: "Robinhood Chain", 4663: "Robinhood Chain", 5042002: "Arc", 5042: "Arc" };
 
 const money = (v) => {
@@ -40,6 +42,7 @@ export async function onRequestGet(ctx) {
   if (!c) return res;
 
   const lanes = c.race_chains || [];
+  const testRace = !lanes.some((l) => MAINNET_IDS.includes(Number(l.chain_id)));
   const chains = [...new Set(lanes.map((l) => CHAIN[l.chain_id]).filter(Boolean))];
   const total = Number(c.total_usd) > 0 ? Number(c.total_usd) : lanes.reduce((s, l) => s + (Number(l.reported_usd ?? l.pool_usd) || 0), 0);
   const winner = c.winner_chain ? CHAIN[c.winner_chain] : null;
@@ -80,7 +83,7 @@ export async function onRequestGet(ctx) {
   const summary =
     `<noscript><article><h1>${html(c.name)} ($${html(c.symbol)})</h1><p>${html(description)}</p>` +
     (c.description ? `<p>${html(String(c.description).slice(0, 500))}</p>` : "") +
-    `<p><a href="${SITE}/explore/">Explore</a> · <a href="${SITE}/race/">How races work</a></p></article></noscript>`;
+    `<p><a href="${SITE}/explore/">Explore</a> · <a href="${SITE}/races/">All races</a> · <a href="${SITE}/race/">How races work</a></p></article></noscript>`;
 
   return new HTMLRewriter()
     .on("title", { element: (e) => e.setInnerContent(title) })
@@ -96,7 +99,10 @@ export async function onRequestGet(ctx) {
     .on('meta[property="og:image:height"]', set("630"))
     .on('meta[property="og:image:alt"]', set(title))
     .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
-    .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>`, { html: true }) })
+    .on("head", {
+      element: (e) =>
+        e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>${testRace ? '<meta name="robots" content="noindex">' : ""}`, { html: true }),
+    })
     .on("body", { element: (e) => e.append(summary, { html: true }) })
     .transform(res);
 }

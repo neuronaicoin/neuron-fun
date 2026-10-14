@@ -42,6 +42,9 @@ export async function onRequestGet(ctx) {
   if (!c) return res;
 
   const chain = NETS[network];
+  // A coin nobody trades any more (no volume today, pool older than 30 days) stays reachable
+  // but is kept out of search results, so thin pages don't drag the rest of the site down.
+  const dead = !(Number(c.vol_24h) > 0) && (!c.pool_created || Date.now() - Date.parse(c.pool_created) > 30 * 86400_000);
   const mc = money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
   const ch = Number(c.change_24h);
   const title = `${c.name} ($${c.symbol}) price, chart and market cap on ${chain} · sasa`;
@@ -74,7 +77,7 @@ export async function onRequestGet(ctx) {
     .on('meta[name="twitter:description"]', set(description))
     .on('meta[property="og:url"]', set(pageUrl))
     .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
-    .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>`, { html: true }) });
+    .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>${dead ? '<meta name="robots" content="noindex">' : ""}`, { html: true }) });
   // Share image: the coin's own card (drawn by the indexer for busy coins), else the plain sasa card.
   // Never the homepage's sample coin.
   const card = `${SUPABASE_URL}/storage/v1/object/public/cards/x-${network}-${address}.png`;

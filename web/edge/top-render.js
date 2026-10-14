@@ -68,7 +68,7 @@ export function cleanCoins(rows, list) {
   return out.slice(0, 50);
 }
 
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const jsonLd = (o) => JSON.stringify(o).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 const num = (v) => {
   const n = Number(v);
@@ -177,14 +177,14 @@ footer div{max-width:1080px;margin:0 auto;padding:20px 16px}
 
 const LOGO = `<svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="24" fill="#1A130D"/><path d="M26 60 L50 38 L74 60" fill="none" stroke="#FFB020" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><path d="M26 80 L50 58 L74 80" fill="none" stroke="#FF6B1A" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="22" r="6" fill="#FFB020"/></svg>`;
 
-function shell({ title, description, canonical, ld, body }) {
+export function shell({ title, description, canonical, ld, body, robots }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${canonical}">
+<title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${canonical}">${robots ? `<meta name="robots" content="${robots}">` : ""}
 <meta property="og:type" content="website"><meta property="og:site_name" content="sasa"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${SITE}/og-plain.png">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@sasapadfun"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(description)}"><meta name="twitter:image" content="${SITE}/og-plain.png">
 <link rel="icon" href="/sasa-icon.svg" type="image/svg+xml"><meta name="theme-color" content="#ffffff">
 <style>${CSS}</style>${ld.map((o) => `<script type="application/ld+json">${jsonLd(o)}</script>`).join("")}</head><body>
-<header class="top"><div class="bar"><a class="brand" href="/">${LOGO}sasa</a><nav><a href="/top/">Top coins</a><a href="/learn/">Learn</a><a class="cta" href="/explore/">Open app</a></nav></div></header>
+<header class="top"><div class="bar"><a class="brand" href="/">${LOGO}sasa</a><nav><a href="/top/">Top coins</a><a href="/races/">Races</a><a href="/learn/">Learn</a><a class="cta" href="/explore/">Open app</a></nav></div></header>
 ${body}
 <footer><div>Meme coins are risky and can lose all their value. Nothing here is financial advice. Data refreshes every 30 minutes from on-chain DEX pools. © ${new Date().getUTCFullYear()} sasa</div></footer>
 </body></html>`;

@@ -482,6 +482,7 @@ export function Footer() {
           <Link href="/risk/" className="text-emerald">Risks</Link>
           <Link href="/security/" className="text-emerald">Security</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>
+          <a href="/races/" className="text-emerald">Race results</a>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
           <a href="https://t.me/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">Telegram</a>
         </nav>
