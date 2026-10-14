@@ -1,5 +1,11 @@
 import type { Metadata, Viewport } from "next";
-// No web fonts: the phone's own system font (fast, native on iPhone and Android).
+// Two self-hosted fonts (no Google request): Sora for headings and numbers, Instrument Sans for text.
+import "@fontsource/sora/600.css";
+import "@fontsource/sora/700.css";
+import "@fontsource/sora/800.css";
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";

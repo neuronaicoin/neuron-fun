@@ -220,13 +220,14 @@ const NAV = [
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/create/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "Your coins", from: "lg" },
-  { href: "/traders/", label: "Traders", from: "lg" },
-  { href: "/copy/", label: "Copy", from: "lg" },
-  { href: "/points/", label: "Points", from: "lg" },
-  { href: "/forum/", label: "Forum", from: "xl" },
-  { href: "/stats/", label: "Stats", from: "xl" },
+  // in "More" on computers too: a short, calm top bar
+  { href: "/traders/", label: "Traders", from: "never" },
+  { href: "/copy/", label: "Copy", from: "never" },
+  { href: "/points/", label: "Points", from: "never" },
+  { href: "/forum/", label: "Forum", from: "never" },
+  { href: "/stats/", label: "Stats", from: "lg" },
 ] as const;
-const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline" } as const;
+const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", never: "hidden" } as const;
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -346,7 +347,7 @@ function HeaderMore() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="hidden md:inline lg:hidden text-ink hover:text-emerald" aria-haspopup="dialog">
+      <button type="button" onClick={() => setOpen(true)} className="hidden md:inline text-ink-3 hover:text-ink" aria-haspopup="dialog">
         More
       </button>
       {open && <MoreSheet onClose={() => setOpen(false)} />}

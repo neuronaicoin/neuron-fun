@@ -22,10 +22,10 @@
   --color-up: #2bc06d;
   --color-warn-bg: #2d2410;
   --color-warn-ink: #f6c56d;
-  /* The phone's own font: looks native on every iPhone and Android, loads instantly. */
-  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Sora for headings and big numbers, Instrument Sans for text; the system font while they load. */
+  --font-display: "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* Calmer corners everywhere. */
   --radius-xl: 0.625rem;
   --radius-2xl: 0.75rem;
@@ -51,22 +51,28 @@ html[data-theme="light"] {
   --color-mist: #ffffff;
   --color-paper: #ffffff;
   --color-surface: #ffffff;
-  --color-line: #ebebe8;
-  --color-ink: #141414;
-  --color-ink-2: #45454a;
-  --color-ink-3: #75757b;
+  --color-line: #eeebe7;
+  --color-ink: #16120f;
+  --color-ink-2: #4c4640;
+  --color-ink-3: #857e77;
   --color-emerald: #f2600c;
   --color-emerald-dark: #d65209;
   --color-emerald-soft: #fff1ea;
   --color-on-accent: #ffffff;
   --color-mint: #c27a00;
-  --color-night: #f6f6f4;
-  --color-night-2: #ededea;
-  --color-night-line: #e0e0dc;
+  --color-night: #f4f1ee;
+  --color-night-2: #ebe7e3;
+  --color-night-line: #e2ddd8;
   --color-danger: #e5484d;
   --color-up: #12a150;
   --color-warn-bg: #fff6dc;
   --color-warn-ink: #8a5a00;
+}
+
+/* Headings in the display font, a touch tighter. */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 body {
