@@ -7,7 +7,8 @@
  */
 import { useEffect, useRef } from "react";
 import type { LocalAccount } from "viem";
-import { PrivyProvider, toViemAccount, usePrivy, useWallets } from "@privy-io/react-auth";
+import { PrivyProvider, toViemAccount, usePrivy, useSign7702Authorization, useWallets } from "@privy-io/react-auth";
+import type { SignAuthorization } from "@/lib/usdcgas";
 import { CHAINS, PRIVY_APP_ID } from "@/lib/config";
 
 export type PrivyState = {
@@ -15,6 +16,8 @@ export type PrivyState = {
   authenticated: boolean;
   address: `0x${string}` | null;
   signer: LocalAccount | null;
+  /** EIP-7702 authorization by the embedded wallet (network fees in USDC, lib/usdcgas.ts). */
+  signAuthorization: SignAuthorization | null;
   email: string | null;
   login: () => void;
   logout: () => Promise<void>;
@@ -55,6 +58,7 @@ export default function PrivyBridge({ onState, loginRequests }: { onState: (s: P
 function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void; loginRequests: number }) {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
+  const { signAuthorization } = useSign7702Authorization();
   const embedded = wallets.find((w) => w.walletClientType === "privy") ?? null;
   const handled = useRef(0);
 
@@ -76,6 +80,13 @@ function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void
         authenticated,
         address: authenticated && embedded ? (embedded.address as `0x${string}`) : null,
         signer,
+        signAuthorization:
+          authenticated && embedded
+            ? async (a) => {
+                const s = await signAuthorization(a, { address: embedded.address });
+                return { ...s, address: s.address, chainId: s.chainId, nonce: s.nonce } as never;
+              }
+            : null,
         email: user?.email?.address ?? user?.google?.email ?? null,
         login,
         logout,

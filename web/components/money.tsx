@@ -1098,7 +1098,7 @@ export function WithdrawSheet({ onClose }: { onClose: () => void }) {
 
 type Detector = { detect: (s: CanvasImageSource) => Promise<{ rawValue: string }[]> };
 
-function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
+export function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const done = useRef(false);

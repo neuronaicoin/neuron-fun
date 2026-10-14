@@ -4,14 +4,12 @@
  * Header balance ("$120.16 | ＋"), the Portfolio sheet (cash, coins, profit
  * and loss, quick sell) and the host that shows Deposit / Withdraw / Sell.
  */
-import { UsdDepositSheet, UsdWithdrawSheet } from "./usdmoney";
-import { MainnetDepositSheet, MainnetWithdrawSheet } from "./mainnetmoney";
+import { BaseDepositSheet, BaseWithdrawSheet } from "./basemoney";
 import { USD_MODE, IS_TESTNET } from "@/lib/config";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Sheet } from "./chrome";
 import { CoinAvatar, SkeletonRows } from "./coins";
-import { DepositSheet, WithdrawSheet } from "./money";
 import { QuickTrade } from "./trade";
 import { useWallet } from "./wallet";
 import { toast } from "./alerts";
@@ -107,9 +105,9 @@ export function MoneyHost() {
   }, [address]);
   if (!address || !sheet) return null;
   // Dollar edition: USDC in and out (the ETH sheets stay for chains without USDC).
-  if (sheet.kind === "deposit")
-    return !IS_TESTNET ? <MainnetDepositSheet onClose={closeMoney} /> : USD_MODE ? <UsdDepositSheet onClose={closeMoney} /> : <DepositSheet onClose={closeMoney} />;
-  if (sheet.kind === "withdraw") return !IS_TESTNET ? <MainnetWithdrawSheet onClose={closeMoney} /> : USD_MODE ? <UsdWithdrawSheet onClose={closeMoney} /> : <WithdrawSheet onClose={closeMoney} />;
+  // Money in and out: USDC on the Base network only (testnet and mainnet alike).
+  if (sheet.kind === "deposit") return <BaseDepositSheet onClose={closeMoney} />;
+  if (sheet.kind === "withdraw") return <BaseWithdrawSheet onClose={closeMoney} />;
   if (sheet.kind === "sell") return <SellSheet coin={sheet.coin} pct={sheet.pct} />;
   return <PortfolioSheet />;
 }

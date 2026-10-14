@@ -9,6 +9,7 @@ import type { Call } from "@/lib/tx";
 import { clientFor } from "@/lib/data";
 import type { PrivyState } from "./privy-bridge";
 import type { SmartWalletClient } from "@alchemy/wallet-apis";
+import { sendWithUsdcGas, usdcGasChain } from "@/lib/usdcgas";
 
 // Email / Google login: its code loads after the page is up, never before.
 const PrivyBridge = dynamic(() => import("./privy-bridge"), { ssr: false });
@@ -322,6 +323,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     async (chain: Chain, calls: Call[], onStep?: (msg: string) => void): Promise<Hex> => {
       if (calls.length === 0) throw new Error("Nothing to send.");
       // Email users: one gasless bundle through Alchemy, signed by their embedded wallet.
+      // Email users on Base: the network fee is paid in USDC from their own account (Circle Paymaster).
+      if (!active && privy?.authenticated && privy.signer && privy.signAuthorization && usdcGasChain(chain.id)) {
+        return sendWithUsdcGas(chain, privy.signer, privy.signAuthorization, calls, onStep);
+      }
       if (!active && privy?.authenticated && privy.signer) {
         const conf = CHAINS.find((c) => c.chain.id === chain.id);
         if (!conf) throw new Error("This network is not supported.");
