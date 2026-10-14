@@ -23,10 +23,15 @@ const tx = await sendWithUsdcGas(
   [call(usdc, erc20Abi as never, "transfer", [owner.address, 100_000n])],
   (m) => console.log(`   ${m}`)
 );
-const after = await bal();
-const eth = await client.getBalance({ address: owner.address });
-console.log(`tx ${tx}\nnetwork fee in USDC: ${formatUnits(before - after, 6)} · ETH ${formatUnits(eth, 18)}`);
-if (!(before - after > 0n && before - after < 2_000_000n) || eth !== 0n) {
+// read at the block the transaction landed in (a load-balanced public node can lag a block)
+const { blockNumber: at } = await client.waitForTransactionReceipt({ hash: tx });
+const balAt = (blockNumber: bigint) => client.readContract({ address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [owner.address], blockNumber });
+const after = await balAt(at);
+const beforeAt = await balAt(at - 1n);
+const eth = await client.getBalance({ address: owner.address, blockNumber: at });
+void before;
+console.log(`tx ${tx}\nnetwork fee in USDC: ${formatUnits(beforeAt - after, 6)} · ETH ${formatUnits(eth, 18)}`);
+if (!(beforeAt - after > 0n && beforeAt - after < 2_000_000n) || eth !== 0n) {
   console.error("❌ unexpected result");
   process.exit(1);
 }

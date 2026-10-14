@@ -110,7 +110,7 @@ async function main() {
   });
 
   const amount = 100_000n; // 0.10 USDC, to itself
-  const before = bal;
+  const before = bal; // re-read at the block before the operation, below
   const hash = await bundler.sendUserOperation({
     account,
     calls: [{ to: USDC, abi: erc20Abi, functionName: "transfer", args: [account.address, amount] }],
@@ -119,9 +119,13 @@ async function main() {
   console.log(`user operation ${hash}`);
   const receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 120_000 });
   console.log(`mined in tx ${receipt.receipt.transactionHash} (success: ${receipt.success})`);
-  const after = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
+  // read at the block the operation landed in: a load-balanced public node can still be a block behind
+  const at = receipt.receipt.blockNumber;
+  const after = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at });
   const ethAfter = await client.getBalance({ address: account.address });
-  const fee = before - after;
+  const beforeAt = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address], blockNumber: at - 1n });
+  const fee = beforeAt - after;
+  void before;
   console.log(`network fee paid in USDC: ${formatUnits(fee, 6)} · ETH still ${formatUnits(ethAfter, 18)}`);
   if (!receipt.success) throw new Error("user operation failed");
   if (ethAfter !== 0n && eth === 0n) throw new Error("account unexpectedly holds ETH");
