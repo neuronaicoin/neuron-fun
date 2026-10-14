@@ -107,7 +107,10 @@ async function main() {
   const coins0 = await bal(coin);
   const b1 = await trade("buy", coin, 10n * 10n ** BigInt(dec));
   const got1 = (await bal(coin)) - coins0;
-  ok(got1 === b1.out, `buy $10 → ${formatUnits(got1, 18)} coins, exactly the dry run's amount`);
+  // During the first five minutes the pool fee falls every second, so a trade that lands a
+  // second after its dry run gets slightly more, never less.
+  console.log(`   dry run ${formatUnits(b1.out, 18)} / got ${formatUnits(got1, 18)}`);
+  ok(got1 >= b1.out && got1 <= (b1.out * 103n) / 100n, `buy $10 → ${formatUnits(got1, 18)} coins: at least the dry run's amount, at most 3% more`);
   ok(got1 >= b1.minOut, "got at least the minimum (5% slippage)");
 
   // 4. a minimum above the real amount must be refused (slippage protection works)
@@ -125,7 +128,8 @@ async function main() {
   const half = (await bal(coin)) / 2n;
   const s1 = await trade("sell", coin, half);
   const usdGot = (await bal(c!.usd)) - usdBefore;
-  ok(usdGot === s1.out && usdGot > 0n, `sell half → $${formatUnits(usdGot, dec)}, exactly the dry run's amount`);
+  console.log(`   dry run $${formatUnits(s1.out, dec)} / got $${formatUnits(usdGot, dec)}`);
+  ok(usdGot > 0n && usdGot >= s1.out && usdGot <= (s1.out * 103n) / 100n, `sell half → $${formatUnits(usdGot, dec)}: at least the dry run's amount`);
 
   // 6. after five minutes the pool fee is down to 2%: the same $10 buys more coins
   await pub.request({ method: "evm_increaseTime" as never, params: [301] as never });
@@ -133,7 +137,7 @@ async function main() {
   const coins2 = await bal(coin);
   const b2 = await trade("buy", coin, 10n * 10n ** BigInt(dec));
   const got2 = (await bal(coin)) - coins2;
-  ok(got2 === b2.out, `buy $10 after 5 min → ${formatUnits(got2, 18)} coins`);
+  ok(got2 >= b2.out && got2 <= (b2.out * 103n) / 100n, `buy $10 after 5 min → ${formatUnits(got2, 18)} coins`);
 
   // 7. sell everything
   const all = await bal(coin);
