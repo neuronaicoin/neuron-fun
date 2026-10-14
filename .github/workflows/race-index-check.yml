@@ -64,8 +64,8 @@ jobs:
 
       - name: Index every race chain up to its tip
         working-directory: indexer
-        # stops after 40 minutes; the step "Where each chain got to" then shows which chain was slow
-        timeout-minutes: 40
+        # stops after 100 minutes; the step "Where each chain got to" then shows which chain was slow
+        timeout-minutes: 100
         env:
           RACE_ONCE: "true"
         # the full output is too long for the GitHub log, so it goes to a file and only the end is shown
