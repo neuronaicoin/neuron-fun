@@ -351,7 +351,7 @@ export default function RaceLaunchPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={280}
-              rows={3}
+              rows={2}
               placeholder="What's the story?"
               className="w-full rounded-xl border border-line bg-paper px-4 py-3 text-[1rem] outline-none focus:border-ink-3 resize-none min-w-0"
             />
@@ -380,7 +380,7 @@ export default function RaceLaunchPage() {
 
           <div className="flex flex-col gap-2">
             <span className="text-[0.8125rem] text-ink-3">Trading fees</span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {[
                 { v: 0 as const, t: "To me", d: "Your share of the fees goes to your wallet" },
                 { v: 1 as const, t: "Buyback & burn", d: "Your share buys the coin back and burns it" },
@@ -393,7 +393,7 @@ export default function RaceLaunchPage() {
                   aria-pressed={feeMode === o.v}
                 >
                   <div className="font-semibold text-[0.9375rem]">{o.t}</div>
-                  <div className="text-[0.8125rem] text-ink-3">{o.d}</div>
+                  <div className="hidden sm:block text-[0.8125rem] text-ink-3">{o.d}</div>
                 </button>
               ))}
             </div>

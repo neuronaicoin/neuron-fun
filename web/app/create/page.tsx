@@ -54,6 +54,8 @@ export default function CreatePage() {
   const { address, send, signMessage } = useWallet();
   // Optional X / Telegram / website, saved once the coin is live.
   const [links, setLinks] = useState<LinkDraft>(EMPTY_DRAFT);
+  // phones: links stay folded until asked for (they can be added later too)
+  const [linksOpen, setLinksOpen] = useState(false);
   const linkBad = draftProblems(links);
   const linksSaved = useRef(false);
   const [name, setName] = useState("");
@@ -422,10 +424,15 @@ export default function CreatePage() {
           </div>
 
           <Field label="Description" hint="optional">
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={280} placeholder="What's the idea? Tell your future holders a little about it." className={input + " h-auto py-3 resize-none"} />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={280} placeholder="What's the idea? Tell your future holders a little about it." className={input + " h-auto py-3 resize-none sm:min-h-[6.5rem]"} />
           </Field>
 
-          <div className="grid gap-2">
+          {!linksOpen && !links.x && !links.telegram && !links.website && (
+            <button type="button" onClick={() => setLinksOpen(true)} className="sm:hidden self-start text-[0.875rem] font-semibold text-ink-2 underline underline-offset-2">
+              + Add links (X, Telegram, website)
+            </button>
+          )}
+          <div className={"gap-2 " + (linksOpen || links.x || links.telegram || links.website ? "grid" : "hidden sm:grid")}>
             <span className="flex items-baseline justify-between text-[0.9375rem] font-bold text-ink">
               <span>
                 Links <span className="text-ink-3 font-normal">optional</span>
@@ -466,7 +473,9 @@ export default function CreatePage() {
               <span className="text-[0.9375rem] font-bold text-ink">Where your fees go</span>
               <span className="text-[0.75rem] text-ink-3">can&apos;t be changed later</span>
             </div>
-            <div className="grid gap-2 mt-2 sm:grid-cols-3" role="radiogroup" aria-label="Where your fees go">
+            {/* phones: one line about the picked mode instead of both descriptions */}
+            <p className="sm:hidden text-[0.75rem] text-ink-3 mt-1.5 leading-snug">{FEE_MODES.find((m) => m.id === feeMode)?.text}</p>
+            <div className="grid grid-cols-2 gap-2 mt-2 sm:grid-cols-3" role="radiogroup" aria-label="Where your fees go">
               {FEE_MODES.map((m) => (
                 <button
                   key={m.key}
@@ -474,10 +483,10 @@ export default function CreatePage() {
                   role="radio"
                   aria-checked={feeMode === m.id}
                   onClick={() => setFeeMode(m.id)}
-                  className={"text-left rounded-2xl border-2 p-3.5 " + (feeMode === m.id ? "border-emerald bg-emerald-soft" : "border-line")}
+                  className={"text-left rounded-2xl border-2 p-3 sm:p-3.5 " + (feeMode === m.id ? "border-emerald bg-emerald-soft" : "border-line")}
                 >
                   <span className="block font-semibold text-[0.875rem]">{m.title}</span>
-                  <span className="block text-[0.75rem] text-ink-3 mt-1 leading-snug">{m.text}</span>
+                  <span className="hidden sm:block text-[0.75rem] text-ink-3 mt-1 leading-snug">{m.text}</span>
                 </button>
               ))}
             </div>
@@ -486,7 +495,7 @@ export default function CreatePage() {
           <div>
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[0.9375rem] font-bold text-ink">Lock your coins</span>
-              <span className="text-[0.75rem] text-ink-3 text-right">optional · shows buyers you won&apos;t dump</span>
+              <span className="text-[0.75rem] text-ink-3 text-right">optional<span className="hidden sm:inline"> · shows buyers you won&apos;t dump</span></span>
             </div>
             <div className="grid grid-cols-3 gap-2 mt-2" role="radiogroup" aria-label="Lock your coins">
               {(
@@ -502,10 +511,10 @@ export default function CreatePage() {
                   role="radio"
                   aria-checked={lock === s}
                   onClick={() => setLock(s)}
-                  className={"text-left rounded-2xl border-2 p-3 sm:p-3.5 " + (lock === s ? "border-emerald bg-emerald-soft" : "border-line")}
+                  className={"text-left rounded-2xl border-2 p-2.5 sm:p-3.5 " + (lock === s ? "border-emerald bg-emerald-soft" : "border-line")}
                 >
                   <span className="block font-semibold text-[0.875rem]">{title}</span>
-                  <span className="block text-[0.6875rem] sm:text-[0.75rem] text-ink-3 mt-1 leading-snug">{text}</span>
+                  <span className="hidden sm:block text-[0.75rem] text-ink-3 mt-1 leading-snug">{text}</span>
                 </button>
               ))}
             </div>
@@ -543,7 +552,7 @@ export default function CreatePage() {
           <div>
             <div className="flex items-baseline justify-between">
               <span className="text-[0.9375rem] font-bold text-ink">Buy some yourself</span>
-              <span className="text-[0.75rem] text-ink-3">optional · lands first, so nobody gets in before you</span>
+              <span className="text-[0.75rem] text-ink-3 text-right">optional<span className="hidden sm:inline"> · lands first, so nobody gets in before you</span></span>
             </div>
             <div className="grid grid-cols-5 gap-2 mt-2">
               {DEV_OPTIONS.map((p) => (
@@ -676,9 +685,12 @@ export default function CreatePage() {
             ))}
           </dl>
 
-          <CurveSim title="What early buyers get" collapsible />
+          {/* phones: the curve explainer and the safety note live on the coin page and /security; keep the form short */}
+          <div className="hidden lg:block">
+            <CurveSim title="What early buyers get" collapsible />
+          </div>
 
-          <div className="rounded-3xl border border-line bg-surface p-4">
+          <div className="hidden lg:block rounded-3xl border border-line bg-surface p-4">
             <p className="font-semibold text-[0.875rem]">Nothing to rug.</p>
             <p className="text-[0.8125rem] text-ink-2 mt-1.5 leading-relaxed">
               Fixed supply, no owner, no minting. Before graduation anyone can sell back at any time; after it, the pool
