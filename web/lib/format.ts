@@ -64,6 +64,7 @@ export function friendlyError(e: unknown): string {
   if (err?.code === 4001 || err?.cause?.code === 4001) return "You cancelled it in your wallet.";
   const msg = err?.shortMessage || err?.message || "Something went wrong.";
   if (msg.includes("GAS_USDC_MISSING")) return "You need a little USDC on Base (a few cents) to pay the network fee. Add some, then try again.";
+  if (msg.includes("NO_ANSWER")) return "It took too long, so we stopped waiting. If you confirmed it, check your balance before trying again.";
   if (msg.includes("SENT_UNCONFIRMED")) return "Sent. The network is slow to confirm it; your balance will update in a moment.";
   if (/insufficient funds/i.test(msg)) return "Not enough ETH in your wallet for this, including the network fee.";
   if (/SlippageExceeded|slippage/i.test(msg)) return "The price moved while you were confirming. Please try again.";

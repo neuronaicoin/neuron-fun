@@ -147,7 +147,13 @@ export async function sendWithUsdcGas(
     ...(authorization ? { authorization } : {}),
   });
   onStep?.("Almost done…");
-  const receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 120_000, pollingInterval: 1_000 });
+  let receipt: Awaited<ReturnType<typeof bundler.waitForUserOperationReceipt>>;
+  try {
+    receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 90_000, pollingInterval: 1_000 });
+  } catch {
+    // sent, but the bundler never confirmed it back: say so instead of "failed"
+    throw new Error("SENT_UNCONFIRMED");
+  }
   if (!receipt.success) throw new Error("The network rejected the transaction.");
   return receipt.receipt.transactionHash;
 }

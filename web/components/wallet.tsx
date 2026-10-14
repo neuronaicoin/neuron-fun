@@ -16,6 +16,20 @@ const PrivyBridge = dynamic(() => import("./privy-bridge"), { ssr: false });
 
 /** Thrown when a bundle was sent but the network never confirmed it back to us. */
 export const SENT_UNCONFIRMED = "SENT_UNCONFIRMED";
+/** Thrown when a wallet (or the sending service) never answered: no endless spinner. */
+export const NO_ANSWER = "NO_ANSWER";
+
+/** Stops waiting after `ms` (the wallet may still answer later; the message says to check). */
+export function within<T>(p: Promise<T>, ms: number, code = NO_ANSWER): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(code)), ms);
+  });
+  return Promise.race([p, stop]).finally(() => clearTimeout(timer));
+}
+const WALLET_MS = 180_000; // a person reading and confirming in their wallet
+const SERVICE_MS = 90_000; // the email-account services, which answer on their own
+const isTimeout = (e: unknown) => /timed? ?out|timeout/i.test(`${(e as Error)?.name ?? ""} ${(e as Error)?.message ?? ""}`);
 
 export type Eip1193 = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
@@ -325,7 +339,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // Email users: one gasless bundle through Alchemy, signed by their embedded wallet.
       // Email users on Base: the network fee is paid in USDC from their own account (Circle Paymaster).
       if (!active && privy?.authenticated && privy.signer && privy.signAuthorization && usdcGasChain(chain.id)) {
-        return sendWithUsdcGas(chain, privy.signer, privy.signAuthorization, calls, onStep);
+        return within(sendWithUsdcGas(chain, privy.signer, privy.signAuthorization, calls, onStep), WALLET_MS);
       }
       if (!active && privy?.authenticated && privy.signer) {
         const conf = CHAINS.find((c) => c.chain.id === chain.id);
@@ -343,9 +357,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           smartClients.current.set(key, client);
         }
         onStep?.("Sending…");
-        const sent = await client.sendCalls({
-          calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
-        });
+        const sent = await within(
+          client.sendCalls({
+            calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
+          }),
+          SERVICE_MS
+        );
         onStep?.("Almost done…");
         // Blocks come every ~0.1-2 s on our chains: ask often. The status check can
         // hit a flaky node after the bundle already landed, so a network hiccup is
@@ -370,16 +387,31 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // Browser wallets: one confirmation per call, each waited for in turn.
       if (!active || !address) throw new Error("Log in or connect a wallet first.");
       onStep?.(`Switching to ${chain.name}…`);
-      await switchTo(chain);
+      await within(switchTo(chain), WALLET_MS);
       const wc = createWalletClient({ account: address, chain, transport: custom(active.provider) });
       const conf = CHAINS.find((c) => c.chain.id === chain.id);
       const pub = conf ? clientFor(conf) : createPublicClient({ chain, transport: http() });
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}: confirm in your wallet…` : "Confirm in your wallet…");
-        last = await wc.sendTransaction({ account: address, chain, to: calls[i].to, data: calls[i].data, value: calls[i].value ?? 0n, ...(calls[i].gas ? { gas: calls[i].gas } : {}) });
+        last = await within(
+          wc.sendTransaction({ account: address, chain, to: calls[i].to, data: calls[i].data, value: calls[i].value ?? 0n, ...(calls[i].gas ? { gas: calls[i].gas } : {}) }),
+          WALLET_MS
+        );
         onStep?.("Almost done…");
-        const r = await pub.waitForTransactionReceipt({ hash: last });
+        // A flaky node is asked again; if it never confirms, say "sent" rather than spin.
+        let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
+        for (let attempt = 0; attempt < 3 && !r; attempt++) {
+          try {
+            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 1_000 });
+          } catch (e) {
+            if (isTimeout(e)) break;
+            const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "");
+            if (!/RPC|HTTP|fetch|network|429|not be found/i.test(m)) throw e;
+            await new Promise((res) => setTimeout(res, 1500));
+          }
+        }
+        if (!r) throw new Error(SENT_UNCONFIRMED);
         if (r.status !== "success") throw new Error("The network rejected the transaction.");
       }
       return last;
@@ -390,11 +422,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const signMessage = useCallback(
     async (message: string): Promise<Hex> => {
       if (!active && privy?.authenticated && privy.signer) {
-        return privy.signer.signMessage({ message });
+        return within(privy.signer.signMessage({ message }), SERVICE_MS);
       }
       if (!active || !address) throw new Error("Log in or connect a wallet first.");
       const wc = createWalletClient({ account: address, transport: custom(active.provider) });
-      return wc.signMessage({ account: address, message });
+      return within(wc.signMessage({ account: address, message }), WALLET_MS);
     },
     [active, address, privy]
   );

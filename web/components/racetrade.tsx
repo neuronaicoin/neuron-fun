@@ -50,11 +50,11 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
   const chain = lane.chain;
   const tradable = lane.state !== 3;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<{ usd: bigint; coin: bigint } | null> => {
     if (!w.address) {
       setUsdBal(null);
       setCoinBal(null);
-      return;
+      return null;
     }
     const pub = raceClient(chain);
     try {
@@ -66,8 +66,10 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       setUsdDec(Number(d));
       setUsdBal(u as bigint);
       setCoinBal(c as bigint);
+      return { usd: u as bigint, coin: c as bigint };
     } catch {
       // the chain's node is busy: keep what we had
+      return null;
     }
   }, [w.address, chain, coin.coin]);
 
@@ -104,7 +106,16 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     try {
       const token = side === "buy" ? chain.usd : coin.coin;
       const amountIn = side === "buy" ? parseUnits(amount, usdDec) : parseUnits(amount, 18);
-      const have = side === "buy" ? usdBal : coinBal;
+      let have = side === "buy" ? usdBal : coinBal;
+      // the balance shown may be from before a trade that just landed (public nodes lag): read it again
+      if (have !== null && amountIn > have) {
+        setStep("Checking your balance…");
+        for (let i = 0; i < 4 && have !== null && amountIn > have; i++) {
+          if (i) await new Promise((r) => setTimeout(r, 1500));
+          const fresh = await refresh();
+          if (fresh) have = side === "buy" ? fresh.usd : fresh.coin;
+        }
+      }
       if (have !== null && amountIn > have) throw new Error(side === "buy" ? "Not enough USDC on this chain." : `You don't have that many ${coin.symbol}.`);
 
       // 1. approval (once per token: the router is a fixed contract with no owner)
@@ -112,6 +123,12 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       const allowance = (await pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [me, chain.router] })) as bigint;
       if (allowance < amountIn) {
         await w.send(chain.chain, [call(token, raceErc20Abi, "approve", [chain.router, maxUint256])], (s) => setStep(`Approve: ${s}`));
+        // the node answering next may be a block behind the approval: wait until it sees it
+        for (let i = 0; i < 8; i++) {
+          const a = (await pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [me, chain.router] }).catch(() => 0n)) as bigint;
+          if (a >= amountIn) break;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
 
       // 2. dry run of the real trade: the exact amount out at this moment
@@ -135,7 +152,8 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       setMsg({ ok: true, text: side === "buy" ? `Bought about ${got}.` : `Sold for about ${got}.`, tx });
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });
       if (side === "sell") setAmount("");
-      void refresh();
+      // public nodes can be a block behind: read the balances again over the next seconds
+      for (const ms of [0, 1_500, 4_000, 8_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const text = /RaceLostPoolShut/.test(String((e as Error)?.message) + JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v)))
         ? "This chain lost the race and its pool is closed."
@@ -154,7 +172,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     try {
       await w.send(chain.chain, [call(chain.usd, raceErc20Abi, "faucet", [w.address])], (s) => setStep(s));
       setMsg({ ok: true, text: `$100 test USDC added on ${chain.short}.` });
-      void refresh();
+      for (const ms of [0, 1_500, 4_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const t = JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v));
       setMsg({ ok: false, text: /TooSoon/.test(t) ? "You already got test USDC today. Come back tomorrow." : friendlyError(e) });

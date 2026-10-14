@@ -10,6 +10,9 @@ import type { LocalAccount } from "viem";
 import { PrivyProvider, toViemAccount, usePrivy, useSign7702Authorization, useWallets } from "@privy-io/react-auth";
 import type { SignAuthorization } from "@/lib/usdcgas";
 import { CHAINS, PRIVY_APP_ID } from "@/lib/config";
+import { RACE_CHAINS } from "@/lib/race";
+import { usdcGasChain } from "@/lib/usdcgas";
+import { base, baseSepolia } from "viem/chains";
 
 export type PrivyState = {
   ready: boolean;
@@ -22,6 +25,12 @@ export type PrivyState = {
   login: () => void;
   logout: () => Promise<void>;
 };
+
+const SUPPORTED = [
+  ...CHAINS.map((c) => c.chain),
+  ...RACE_CHAINS.map((c) => c.chain),
+  ...[base, baseSepolia].filter((c) => usdcGasChain(c.id) && (c.testnet ?? false) === (CHAINS[0].chain.testnet ?? false)),
+].filter((c, i, a) => a.findIndex((x) => x.id === c.id) === i);
 
 export default function PrivyBridge({ onState, loginRequests }: { onState: (s: PrivyState) => void; loginRequests: number }) {
   return (
@@ -47,7 +56,9 @@ export default function PrivyBridge({ onState, loginRequests }: { onState: (s: P
           showWalletUIs: false,
         },
         defaultChain: CHAINS[0].chain,
-        supportedChains: CHAINS.map((c) => c.chain),
+        // Every chain sasa sends on (site chains, race chains, and Base for USDC deposits and
+        // withdrawals). A chain missing here makes email-account transactions hang forever.
+        supportedChains: SUPPORTED,
       }}
     >
       <Reporter onState={onState} loginRequests={loginRequests} />

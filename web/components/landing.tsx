@@ -1,5 +1,6 @@
 import { ARTICLES } from "@/lib/articles";
 import { RaceTeaser } from "@/components/racepromo";
+import { IS_TESTNET } from "@/lib/config";
 
 /**
  * Pre-launch page shown on sasapad.fun (see the host check in layout.tsx).
@@ -50,7 +51,7 @@ export function Landing() {
         <div className="sasa-hero-text">
         <div className="sasa-status">
           <span className="sasa-dot" aria-hidden="true" />
-          Testnet live · Mainnet coming soon
+          {IS_TESTNET ? "Testnet live · Mainnet coming soon" : "Live now on Base, BNB Chain, Robinhood Chain and Arc"}
         </div>
         <h1>
           <span className="sasa-nowrap">No wallet.</span> <span className="sasa-nowrap">No gas.</span>

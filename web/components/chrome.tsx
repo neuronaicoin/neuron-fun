@@ -467,7 +467,8 @@ export function Footer() {
           </p>
           <p className="text-[0.8125rem] leading-relaxed text-ink mt-2 font-semibold">
             sasa has no token. Any coin using the sasa or Sasapad name or logo is not ours. We only announce from{" "}
-            <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">@sasapadfun</a>.
+            <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">@sasapadfun</a> on X and{" "}
+            <a href="https://t.me/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">t.me/sasapadfun</a> on Telegram.
           </p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
@@ -482,6 +483,7 @@ export function Footer() {
           <Link href="/security/" className="text-emerald">Security</Link>
           <Link href="/stats/" className="text-emerald">Stats</Link>
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">X</a>
+          <a href="https://t.me/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">Telegram</a>
         </nav>
       </div>
     </footer>

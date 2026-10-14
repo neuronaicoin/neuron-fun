@@ -11,6 +11,7 @@ import { call } from "@/lib/tx";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 import { isImageUrl } from "@/lib/data";
+import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 
 /**
@@ -157,7 +158,7 @@ export default function RaceLaunchPage() {
         return 0n;
       }
     })();
-    if (f.usd < need) return `Needs $${firstBuy} test USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
+    if (f.usd < need) return `Needs $${firstBuy} ${IS_TESTNET ? "test " : ""}USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
     return null;
   };
 
@@ -203,6 +204,12 @@ export default function RaceLaunchPage() {
         const allowance = (await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "allowance", args: [me, c.factory] })) as bigint;
         if (allowance < amount) {
           await w.send(c.chain, [call(c.usd, raceErc20Abi, "approve", [c.factory, amount])], (m) => set({ state: "working", note: `Approve: ${m}` }));
+          // the node answering next may be a block behind the approval: wait until it sees it
+          for (let i = 0; i < 8; i++) {
+            const a = (await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "allowance", args: [me, c.factory] }).catch(() => 0n)) as bigint;
+            if (a >= amount) break;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
         }
         const launchCall = await withGas(
           pub,
