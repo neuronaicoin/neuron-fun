@@ -21,7 +21,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { call } from "../lib/tx";
-import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceChain, raceErc20Abi, raceFactoryAbi, raceRouterAbi } from "../lib/race";
+import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceChain, raceErc20Abi, raceFactoryAbi, raceRouterAbi, withGas } from "../lib/race";
 
 const [chainIdArg, rpc] = process.argv.slice(2);
 const c = raceChain(Number(chainIdArg));
@@ -41,8 +41,8 @@ const ok = (cond: boolean, msg: string) => {
   console.log(`${cond ? "✅" : "❌"} ${msg}`);
   if (!cond) failures++;
 };
-async function send(to: Address, data: Hex) {
-  const hash = await wallet.sendTransaction({ to, data, account: me, chain });
+async function send(to: Address, data: Hex, gas?: bigint) {
+  const hash = await wallet.sendTransaction({ to, data, account: me, chain, ...(gas ? { gas } : {}) });
   const r = await pub.waitForTransactionReceipt({ hash });
   if (r.status !== "success") {
     // why: the call tree of the failed transaction (anvil), and gas used against the limit
@@ -85,8 +85,9 @@ async function trade(side: "buy" | "sell", coin: Address, amountIn: bigint, slip
   const sim = await pub.simulateContract({ account: me, address: c!.router, abi: raceRouterAbi, functionName: side, args: [coin, amountIn, 0n, me.address, await deadline()] });
   const out = sim.result as bigint;
   const minOut = (out * (10_000n - slipBps)) / 10_000n;
-  const t = call(c!.router, raceRouterAbi, side, [coin, amountIn, minOut, me.address, await deadline()]);
-  await send(t.to, t.data);
+  // the page's gas limit: estimate + 30%
+  const t = await withGas(pub as never, me.address, call(c!.router, raceRouterAbi, side, [coin, amountIn, minOut, me.address, await deadline()]));
+  await send(t.to, t.data, t.gas);
   return { out, minOut };
 }
 
@@ -127,7 +128,8 @@ async function main() {
   const ln = call(dep.factory, factoryAbi as never, "launch", [
     { name: "Fork Test", symbol: "FORK", logo: "", description: "", launchKey: key, eids: group.map((id) => raceChain(id)!.eid).sort((a, b) => a - b), feeMode: 0, firstBuy: minFirst, minCoinsOut: 0n },
   ]);
-  await send(ln.to, ln.data);
+  const lg = await withGas(pub as never, me.address, ln);
+  await send(lg.to, lg.data, lg.gas);
   const firstCoins = await bal(coin);
   ok(firstCoins > 0n, `launched ${coin}, creator holds ${formatUnits(firstCoins, 18)} after the first buy`);
 

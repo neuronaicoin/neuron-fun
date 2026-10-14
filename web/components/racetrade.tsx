@@ -14,6 +14,7 @@ import {
   raceErc20Abi,
   raceExplorerTx,
   raceRouterAbi,
+  withGas,
   type RaceCoin,
   type RaceLane,
 } from "@/lib/race";
@@ -128,7 +129,8 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       const minOut = (out * (10_000n - slip)) / 10_000n;
 
       // 3. the trade
-      const tx = await w.send(chain.chain, [call(chain.router, raceRouterAbi, fn, [coin.coin, amountIn, minOut, me, deadline()])], (s) => setStep(s));
+      const trade = await withGas(pub, me, call(chain.router, raceRouterAbi, fn, [coin.coin, amountIn, minOut, me, deadline()]));
+      const tx = await w.send(chain.chain, [trade], (s) => setStep(s));
       const got = side === "buy" ? `${fmtAmount(Number(formatUnits(out, 18)))} ${coin.symbol}` : `$${fmtAmount(Number(formatUnits(out, usdDec)))}`;
       setMsg({ ok: true, text: side === "buy" ? `Bought about ${got}.` : `Sold for about ${got}.`, tx });
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });

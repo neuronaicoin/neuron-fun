@@ -372,7 +372,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}: confirm in your wallet…` : "Confirm in your wallet…");
-        last = await wc.sendTransaction({ account: address, chain, to: calls[i].to, data: calls[i].data, value: calls[i].value ?? 0n });
+        last = await wc.sendTransaction({ account: address, chain, to: calls[i].to, data: calls[i].data, value: calls[i].value ?? 0n, ...(calls[i].gas ? { gas: calls[i].gas } : {}) });
         onStep?.("Almost done…");
         const r = await pub.waitForTransactionReceipt({ hash: last });
         if (r.status !== "success") throw new Error("The network rejected the transaction.");

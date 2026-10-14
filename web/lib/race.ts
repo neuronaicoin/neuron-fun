@@ -260,6 +260,24 @@ export function bestLinkedGroup(links: Map<number, Set<number> | null>): number[
   return best;
 }
 
+/**
+ * The call with a gas limit 30% above the node's estimate. A bare estimate is the exact
+ * minimum; Uniswap's nested calls can then run out of gas on the way back (seen on BNB:
+ * "not enough gas for reentrancy sentry"), so the trade would fail and still cost the fee.
+ */
+export async function withGas<T extends { to: Address; data: `0x${string}`; value?: bigint }>(pub: PublicClient, from: Address, c: T): Promise<T & { gas: bigint }> {
+  // right after an approve, a public node can lag a block behind: ask again before giving up
+  for (let i = 0; ; i++) {
+    try {
+      const est = await pub.estimateGas({ account: from, to: c.to, data: c.data, value: c.value ?? 0n });
+      return { ...c, gas: (est * 13n) / 10n + 20_000n };
+    } catch (e) {
+      if (i >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+}
+
 // ------------------------------------------------------------------ data
 
 /** 1 racing, 2 won, 3 lost (race_chains.state). */

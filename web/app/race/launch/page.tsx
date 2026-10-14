@@ -11,7 +11,7 @@ import { call } from "@/lib/tx";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 import { isImageUrl } from "@/lib/data";
-import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, type RaceChain } from "@/lib/race";
+import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -200,10 +200,13 @@ export default function RaceLaunchPage() {
         }
         const dec = Number(await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "decimals" }));
         const amount = parseUnits(d.firstBuy, dec);
-        const calls = [];
         const allowance = (await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "allowance", args: [me, c.factory] })) as bigint;
-        if (allowance < amount) calls.push(call(c.usd, raceErc20Abi, "approve", [c.factory, amount]));
-        calls.push(
+        if (allowance < amount) {
+          await w.send(c.chain, [call(c.usd, raceErc20Abi, "approve", [c.factory, amount])], (m) => set({ state: "working", note: `Approve: ${m}` }));
+        }
+        const launchCall = await withGas(
+          pub,
+          me,
           call(c.factory, raceFactoryAbi as never, "launch", [
             {
               name: d.name,
@@ -219,7 +222,7 @@ export default function RaceLaunchPage() {
             },
           ])
         );
-        const tx = await w.send(c.chain, calls, (m) => set({ state: "working", note: m }));
+        const tx = await w.send(c.chain, [launchCall], (m) => set({ state: "working", note: m }));
         set({ state: "done", note: "Live", tx });
       } catch (e) {
         failed = true;
