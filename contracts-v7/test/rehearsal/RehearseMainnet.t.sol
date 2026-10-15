@@ -7,7 +7,8 @@ import {DeployRace} from "../../script/race/DeployRace.s.sol";
 import {WireRace} from "../../script/race/WireRace.s.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {AcrossUsdBridge} from "../../src/omni/AcrossUsdBridge.sol";
-import {RaceCross} from "../../src/race/RaceCross.sol";
+import {RaceCross, IRaceRouter} from "../../src/race/RaceCross.sol";
+import {AutoOrders} from "../../src/auto/AutoOrders.sol";
 
 /**
  * Mainnet dress rehearsal, nothing is sent anywhere: copies of the four REAL chains (Base, BNB
@@ -214,6 +215,7 @@ contract RehearseMainnetTest is Test {
         assertTrue(okBnb, "BNB Chain launch");
         _crossTrade(3, coinBnb); // right away: BNB Chain's public nodes forget old state quickly
         _crossLaunch(3, eids);
+        _autoSell(3, coinBnb); // take profit on BNB Chain through the real race router
 
         // 2. wire and launch on the other three
         for (uint256 i; i < 3; ++i) _wire(i);
@@ -238,6 +240,7 @@ contract RehearseMainnetTest is Test {
         assertEq(vm.parseJsonAddress(_json(8453), ".cross"), address(0), "no cross contract on Base itself");
         _crossTrade(1, coinBnb); // Robinhood Chain
         _crossLaunch(1, eids);
+        _autoDipCross(coinBnb); // buy the dip from Base for the coin on Robinhood Chain, through the real SpokePool
         console2.log("REHEARSAL OK: chains deployed 4, wired 4, coin launched on", launched);
     }
 
@@ -301,6 +304,62 @@ contract RehearseMainnetTest is Test {
         assertEq(IERC20(c.usd).balanceOf(address(x)), 0, "cross contract keeps nothing");
         assertLt(used, 9_000_000, "a launch fill fits easily in a block");
         console2.log("cross launch ok on chain", c.id, "fill gas", used);
+    }
+
+
+    /// A take profit order on a real chain: the user signs, the keeper executes through the race
+    /// router, the user gets at least the minimum, the keeper the 0.1% fee, the contract nothing.
+    function _autoSell(uint256 i, address coin) internal {
+        Net memory c = chains[i];
+        vm.selectFork(forks[i]);
+        AutoOrders ao = AutoOrders(vm.parseJsonAddress(_json(c.id), ".autoOrders"));
+        address router = vm.parseJsonAddress(_json(c.id), ".router");
+        assertTrue(ao.allowedTarget(router), "race router allowed");
+        uint256 pk = uint256(keccak256(abi.encode("sasa rehearsal: auto user", c.id)));
+        address user = vm.addr(pk);
+        deal(c.usd, user, 10 * _unit(c));
+        vm.startPrank(user);
+        IERC20(c.usd).approve(router, type(uint256).max);
+        uint256 coins = IRaceRouter(router).buy(coin, 10 * _unit(c), 1, user, block.timestamp);
+        IERC20(coin).approve(address(ao), type(uint256).max);
+        vm.stopPrank();
+        AutoOrders.Order memory o = AutoOrders.Order(user, coin, c.usd, coins, 1, 0, 0, 0, block.timestamp + 1 days, 1);
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(pk, ao.digest(o));
+        AutoOrders.Route memory route =
+            AutoOrders.Route(router, router, abi.encodeCall(IRaceRouter.sell, (coin, coins, 0, address(ao), block.timestamp + 60)), 0);
+        uint256 fee0 = IERC20(c.usd).balanceOf(ao.feeTo());
+        vm.prank(vm.addr(DEPLOYER_KEY)); // the rehearsal's keeper
+        uint256 out = ao.execute(o, abi.encodePacked(r, s_, v), route);
+        assertEq(IERC20(c.usd).balanceOf(user), out, "sold for the user");
+        assertGt(out, 7 * _unit(c), "most of the $10 back (opening fee aside)");
+        assertApproxEqAbs(IERC20(c.usd).balanceOf(ao.feeTo()) - fee0, (out * 10) / 9_990, 1, "0.1% fee to the keeper");
+        assertEq(IERC20(c.usd).balanceOf(address(ao)), 0, "nothing kept");
+        console2.log("auto order (take profit) ok on chain", c.id);
+    }
+
+    /// Buy the dip from Base for a coin raced on Robinhood Chain: the dollars go into Base's real
+    /// SpokePool, bound for Robinhood Chain's RaceCross.
+    function _autoDipCross(address coin) internal {
+        Net memory c = chains[0];
+        vm.selectFork(forks[0]);
+        AutoOrders ao = AutoOrders(vm.parseJsonAddress(_json(c.id), ".autoOrders"));
+        address hoodCross = vm.parseJsonAddress(_json(4663), ".cross");
+        assertEq(ao.crossRouteOf(4663).raceCross, hoodCross, "dip buys to Robinhood Chain wired");
+        uint256 pk = uint256(keccak256("sasa rehearsal: auto dip user"));
+        address user = vm.addr(pk);
+        deal(c.usd, user, 20 * _unit(c));
+        vm.prank(user);
+        IERC20(c.usd).approve(address(ao), type(uint256).max);
+        AutoOrders.Order memory o = AutoOrders.Order(user, c.usd, coin, 20 * _unit(c), 1, 2, 4663, _unit(c), block.timestamp + 1 days, 2);
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(pk, ao.digest(o));
+        uint256 spoke0 = IERC20(c.usd).balanceOf(c.across);
+        vm.prank(vm.addr(DEPLOYER_KEY));
+        ao.execute(o, abi.encodePacked(r, s_, v), AutoOrders.Route(address(0), address(0), "", _unit(c) / 20));
+        uint256 sent = 20 * _unit(c) - (20 * _unit(c) * 10) / 10_000;
+        assertEq(IERC20(c.usd).balanceOf(c.across) - spoke0, sent, "dollars handed to Across for Robinhood Chain");
+        assertEq(IERC20(c.usd).balanceOf(user), 0);
+        assertEq(IERC20(c.usd).balanceOf(address(ao)), 0, "nothing kept");
+        console2.log("auto order (dip buy via Across) ok from Base");
     }
 
     function _checkRoutes(uint32[] memory) internal {

@@ -6,6 +6,7 @@ import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {OmniHub} from "../../src/omni/OmniHub.sol";
 import {AcrossUsdBridge} from "../../src/omni/AcrossUsdBridge.sol";
+import {AutoOrders} from "../../src/auto/AutoOrders.sol";
 import {OftUsdBridge} from "../../src/omni/OftUsdBridge.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {TestUsdV7} from "../../src/race/testnet/TestnetSupport.sol";
@@ -43,6 +44,8 @@ contract WireRace is Script {
         bool across;
         bool usdIsTest;
         uint8 usdDecimals;
+        address cross;
+        address autoOrders;
     }
 
     function _load(uint256 chainId) internal view returns (Local memory l) {
@@ -59,6 +62,8 @@ contract WireRace is Script {
         l.usdIsTest = vm.keyExistsJson(j, ".usdIsTest") && vm.parseJsonBool(j, ".usdIsTest");
         // files written before decimals were recorded are 6-decimal dollars (testnets, Base, Robinhood)
         l.usdDecimals = vm.keyExistsJson(j, ".usdDecimals") ? uint8(vm.parseJsonUint(j, ".usdDecimals")) : 6;
+        l.cross = vm.keyExistsJson(j, ".cross") ? vm.parseJsonAddress(j, ".cross") : address(0);
+        l.autoOrders = vm.keyExistsJson(j, ".autoOrders") ? vm.parseJsonAddress(j, ".autoOrders") : address(0);
     }
 
     function run() external {
@@ -135,6 +140,17 @@ contract WireRace is Script {
             bridgeLocked = br.locked();
         }
         RaceFactory(me.factory).setLaunchesOpen(openLaunches);
+        // home chain: dip buys for race coins on the other chains go to their RaceCross (set once)
+        if (me.autoOrders != address(0)) {
+            AutoOrders ao = AutoOrders(me.autoOrders);
+            for (uint256 k; k < remotes.length; ++k) {
+                Local memory r = _load(remotes[k]);
+                if (r.cross == address(0) || ao.crossRouteOf(r.chainId).raceCross != address(0)) continue;
+                if (ao.homeChainId() != block.chainid) continue; // only the home chain buys elsewhere
+                ao.setCrossRoute(r.chainId, AutoOrders.CrossRoute(r.cross, r.usd, r.usdDecimals, (30 * 10 ** r.usdDecimals) / 100));
+                console2.log("auto orders: dip buys to chain", r.chainId);
+            }
+        }
         vm.stopBroadcast();
         console2.log("bridge locked:", bridgeLocked, " launches open:", openLaunches);
     }

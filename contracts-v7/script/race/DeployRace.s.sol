@@ -36,6 +36,7 @@ import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {RaceTradeEth, IRaceBuilderEthPools} from "../../src/race/RaceTradeEth.sol";
 import {RaceTradePcs, IRaceBuilderPcsPools} from "../../src/race/RaceTradePcs.sol";
 import {RaceCrossEth, RaceCrossPcs, RaceCrossUsdc, IRaceRouter} from "../../src/race/RaceCross.sol";
+import {AutoOrders} from "../../src/auto/AutoOrders.sol";
 import {TestUsdV7, TestFeed, TestDollarPool, ITestFeedPrice} from "../../src/race/testnet/TestnetSupport.sol";
 
 interface IFeedDescription {
@@ -106,6 +107,7 @@ contract DeployRace is Script {
         address factory;
         address coinDeployer;
         address cross; // trades here with dollars kept on Base (not on Base itself)
+        address autoOrders; // take profit / stop loss / buy the dip (mainnet)
     }
 
     function run() external {
@@ -267,6 +269,7 @@ contract DeployRace is Script {
         if (owner != c.deployer) factory.transferOwnership(owner);
         vm.stopBroadcast();
         require(factory.launcher() == o.cross, "launcher");
+        o.autoOrders = _auto(key, c, o, spoke, keeper, owner);
 
         _write(c, o, localEid, coordEid, across, startMc, minFirstBuy);
         console2.log("--- sasa v7 (race) ---");
@@ -280,6 +283,40 @@ contract DeployRace is Script {
         console2.log("Trade router:   ", o.router);
         if (o.cross != address(0)) console2.log("Cross trades:   ", o.cross);
         console2.log("RaceFactory:    ", o.factory, "(same on every chain)");
+    }
+
+    /**
+     * @dev AutoOrders (mainnet, where Across runs): the keeper executes signed take profit / stop
+     * loss / buy the dip orders and gets the 0.1% fee for its network fees. Routers it may use:
+     * this chain's race router, and Relay's (RELAY_ROUTERS, whitelisted only where they exist).
+     * BUY_CROSS routes to the other chains' RaceCross are set by WireRace on the home chain.
+     */
+    function _auto(uint256 key, Cfg memory c, Out memory o, address spoke, address keeper, address owner) internal returns (address a) {
+        if (spoke == address(0) && !vm.envOr("AUTO_ORDERS", false)) return address(0);
+        uint256 home = vm.envOr("CROSS_HOME_CHAIN_ID", block.chainid);
+        address homeUsdc = home == block.chainid ? c.usd : vm.envAddress("CROSS_HOME_USDC");
+        uint8 homeDec = home == block.chainid ? IERC20Metadata(c.usd).decimals() : uint8(vm.envOr("CROSS_HOME_DECIMALS", uint256(6)));
+        address[] memory relay = vm.envOr(
+            "RELAY_ROUTERS", ",", _defaultRelay()
+        );
+        vm.startBroadcast(key);
+        AutoOrders ao = new AutoOrders(c.deployer, IERC20(c.usd), IAcrossSpokePool(spoke), home, IERC20(homeUsdc), homeDec, keeper);
+        ao.setKeeper(keeper, true);
+        ao.setRouter(o.router, true, true);
+        for (uint256 i; i < relay.length; ++i) {
+            if (relay[i].code.length > 0) ao.setRouter(relay[i], true, true);
+            else console2.log("Relay contract not on this chain, skipped:", relay[i]);
+        }
+        if (owner != c.deployer) ao.transferOwnership(owner);
+        vm.stopBroadcast();
+        a = address(ao);
+        console2.log("Auto orders:    ", a);
+    }
+
+    function _defaultRelay() internal pure returns (address[] memory r) {
+        r = new address[](2);
+        r[0] = 0xBBbfD134E9b44BfB5123898BA36b01dE7ab93d98; // Relay ApprovalProxy
+        r[1] = 0xF5042e6ffaC5a625D4E7848e0b01373D8eB9e222; // Relay Router
     }
 
     /**
@@ -427,6 +464,7 @@ contract DeployRace is Script {
         vm.serializeAddress(j, "consolidator", o.consolidator);
         vm.serializeAddress(j, "router", o.router);
         vm.serializeAddress(j, "cross", o.cross);
+        vm.serializeAddress(j, "autoOrders", o.autoOrders);
         vm.serializeAddress(j, "coinDeployer", o.coinDeployer);
         vm.serializeUint(j, "startMarketCap", startMc);
         vm.serializeUint(j, "minFirstBuy", minFirstBuy);

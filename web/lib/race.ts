@@ -33,6 +33,8 @@ export type RaceChain = {
   spoke?: Address;
   /** RaceCross here (mainnet, not on Base): sasa accounts buy, sell and launch with their Base dollars. */
   cross?: Address;
+  /** AutoOrders here (mainnet): take profit, stop loss and buy the dip, run by sasa's keeper. */
+  auto?: Address;
 };
 
 const robinhoodTestnet = defineChain({

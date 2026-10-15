@@ -22,6 +22,7 @@
  *   DELETE /api/push               { endpoint }
  *   /api/forum/*                   see edge/forum-api.js
  *   POST   /api/racechat           { coinId, body } (live race chat, edge/racechat-api.js)
+ *   /api/auto                      auto orders (edge/auto-api.js)
  *
  * Optional env: FORUM_ADMINS  comma-separated wallet addresses that can moderate every forum board
  */
@@ -31,6 +32,8 @@ import { socialRoute } from "../../edge/social-api.js";
 import { admins } from "../../edge/forum-core.js";
 import { aiRoute } from "../../edge/ai-api.js";
 import { raceChatRoute } from "../../edge/racechat-api.js";
+import { autoRoute } from "../../edge/auto-api.js";
+import { extTradeRoute } from "../../edge/exttrade-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -375,6 +378,9 @@ export async function onRequest(ctx) {
 
     if (parts[0] === "session" && parts.length === 1 && method === "POST") return await session(env, request, body);
 
+    // trades of other DEXs' coins: checked on chain and with Relay, so no sign-in needed
+    if (parts[0] === "exttrade" && parts.length === 1 && method === "POST") return await extTradeRoute(env, body);
+
     const me = await readToken(env.SESSION_SECRET, request.headers.get("authorization"));
     who = me;
     // The help form works signed out too.
@@ -398,6 +404,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "social") return await socialRoute(ctx, me, parts, method, body);
     if (parts[0] === "ai") return await aiRoute(ctx, me, parts, method, body);
     if (parts[0] === "racechat") return await raceChatRoute(env, me, parts, method, body);
+    if (parts[0] === "auto") return await autoRoute(env, me, parts, method, body);
     if (parts[0] === "push" && parts.length === 1) {
       if (method === "POST") return await savePush(env, me, body);
       if (method === "DELETE") return await deletePush(env, me, body);

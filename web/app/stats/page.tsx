@@ -8,6 +8,7 @@ import { CHAINS, V6, chainById } from "@/lib/config";
 import { coinHref, fetchStats, type FeeMode, type Leader, type LeaderKind } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { RaceStatsSection } from "@/components/racestats";
+import { TotalStatsSection } from "@/components/totalstats";
 
 type Stats = Awaited<ReturnType<typeof fetchStats>>;
 
@@ -92,7 +93,8 @@ export default function StatsPage() {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-10">
         <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Stats</h1>
-        <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">Every race on sasa: chains, winners and volume.</p>
+        <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">Every race and every trade on sasa: chains, winners and volume.</p>
+        <TotalStatsSection />
         <RaceStatsSection />
       </div>
     );

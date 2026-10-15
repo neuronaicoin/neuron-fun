@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { erc20Abi, type Address } from "viem";
+import { erc20Abi, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
 import { toast } from "./alerts";
 import { clientFor } from "@/lib/data";
@@ -9,6 +9,11 @@ import { friendlyError } from "@/lib/format";
 import { refreshPortfolio } from "@/lib/portfolio";
 import { chainForNetwork, quoteCalls, quoteSwap } from "@/lib/extswap";
 import type { Quote } from "@/lib/relay";
+import { crossExtBuy, crossExtSell, extRoute, quoteCrossBuy, quoteCrossSell, type ExtSenders } from "@/lib/extcross";
+import { autoReady, chainForNetwork as autoForNetwork } from "@/lib/auto";
+import { raceClient } from "@/lib/race";
+import { reportExtTrade } from "@/lib/exttrades";
+import { AutoPanel } from "./autopanel";
 
 import { ContractAddress } from "./contract";
 import Link from "next/link";
@@ -183,57 +188,110 @@ function TokenCheck({ coin }: { coin: ExtCoin }) {
 }
 
 function TradeBox({ coin }: { coin: ExtCoin }) {
-  const { address, send } = useWallet();
-  const chain = chainForNetwork(coin.network);
-  const live = !IS_TESTNET && !!chain;
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const w = useWallet();
+  const { address } = w;
+  const route = extRoute(coin.network, !!w.embedded);
+  const cross = route.kind === "cross" ? route : null;
+  const chain = route.kind === "same" ? chainForNetwork(coin.network) : null;
+  const live = !IS_TESTNET && (!!chain || !!cross);
+  const autoChain = autoForNetwork(coin.network);
+  const canAuto = !IS_TESTNET && autoReady(autoChain);
+  const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
   const [usd, setUsd] = useState("25");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
+  const [decimals, setDecimals] = useState<number | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const amount = Number(usd.replace(",", ".")) || 0;
   const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
   const fmt = (t: number) => (t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t.toFixed(2));
+  const token = coin.address as Address;
+  const coinKey = cross ? `x${cross.there.chainId}` : chain ? `s${chain.chain.id}` : "";
 
+  // the user's coins, read on the chain the coin lives on
   const loadHeld = useCallback(async () => {
-    if (!live || !address || !chain) return setHeld(null);
-    const b = (await clientFor(chain)
-      .readContract({ address: coin.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] })
-      .catch(() => 0n)) as bigint;
-    setHeld(b);
-  }, [live, address, chain, coin.address]);
+    if (!address) return setHeld(null);
+    const read = cross
+      ? raceClient(cross.there).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
+      : chain
+        ? clientFor(chain).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
+        : autoChain
+          ? raceClient(autoChain).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
+          : null;
+    if (!read) return setHeld(null);
+    setHeld((await read.catch(() => 0n)) as bigint);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, coinKey, token]);
   useEffect(() => {
     void loadHeld();
   }, [loadHeld]);
+  useEffect(() => {
+    if (side !== "auto" || decimals !== null || !autoChain) return;
+    raceClient(autoChain)
+      .readContract({ address: token, abi: erc20Abi, functionName: "decimals" })
+      .then((d) => setDecimals(Number(d)))
+      .catch(() => setDecimals(null));
+  }, [side, decimals, autoChain, token]);
 
-  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : held !== null ? (held * BigInt(pct)) / 100n : 0n;
+  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : side === "sell" && held !== null ? (held * BigInt(pct)) / 100n : 0n;
   useEffect(() => {
     setQuote(null);
     setError("");
-    if (!live || !address || !chain || raw <= 0n) return;
+    if (!live || !address || raw <= 0n || side === "auto") return;
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      quoteSwap({ chain, account: address, side, token: coin.address as Address, amount: raw, signal: ctrl.signal })
-        .then(setQuote)
-        .catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
+      const q = cross
+        ? side === "buy"
+          ? quoteCrossBuy({ user: address, home: cross.home, there: cross.there, token, amountHome: raw, signal: ctrl.signal })
+          : quoteCrossSell({ user: address, home: cross.home, there: cross.there, token, amount: raw, signal: ctrl.signal })
+        : quoteSwap({ chain: chain!, account: address, side, token, amount: raw, signal: ctrl.signal });
+      q.then(setQuote).catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
     }, 400);
     return () => {
       clearTimeout(t);
       ctrl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, address, side, raw.toString(), coin.address]);
+  }, [live, address, side, raw.toString(), token, coinKey]);
 
   async function go() {
-    if (!quote || !chain) return;
+    if (!quote || !address || side === "auto") return;
     try {
       setBusy(side === "buy" ? "Buying…" : "Selling…");
-      await send(chain.chain, quoteCalls(quote, chain), () => {});
-      toast(side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`);
+      const step = (m: string) => setBusy(m);
+      let tx: Hex;
+      let chainId: number;
+      if (cross) {
+        const s: ExtSenders = {
+          user: address,
+          sendHome: (c, calls, onStep) => w.send(c, calls, onStep),
+          // the coin's chain: email accounts pay the network fee from their own gas there
+          sendThere: (c, calls, onStep) => (w.embedded ? w.sendOwnGas(c, calls, onStep) : w.send(c, calls, onStep)),
+        };
+        if (side === "buy") {
+          const r = await crossExtBuy({ s, home: cross.home, there: cross.there, token, amountHome: raw, onStep: step });
+          tx = r.tx;
+          chainId = cross.home.chainId;
+        } else {
+          const r = await crossExtSell({ s, home: cross.home, there: cross.there, token, amount: raw, onStep: step });
+          tx = r.tx;
+          chainId = cross.there.chainId;
+        }
+        toast(side === "buy" ? `Buying $${coin.symbol}: arriving on ${cross.there.short} in a few seconds ✓` : `Sold $${coin.symbol}: USDC arriving on Base in a few seconds ✓`);
+      } else {
+        // a fresh price for exactly what's on screen now (the shown one can be minutes old)
+        setBusy("Getting the price…");
+        const fresh = await quoteSwap({ chain: chain!, account: address, side, token, amount: raw });
+        setBusy(side === "buy" ? "Buying…" : "Selling…");
+        tx = await w.send(chain!.chain, quoteCalls(fresh, chain!), step);
+        chainId = chain!.chain.id;
+        toast(side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`);
+      }
+      void reportExtTrade({ chainId, tx, network: coin.network, coin: token, side });
       void refreshPortfolio(true);
-      setTimeout(() => void loadHeld(), 1500);
+      for (const ms of [1500, 6000, 15000, 30000]) setTimeout(() => void loadHeld(), ms);
     } catch (e) {
       toast(friendlyError(e));
     } finally {
@@ -241,76 +299,95 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
     }
   }
 
+  const tabs = (canAuto ? ["buy", "sell", "auto"] : ["buy", "sell"]) as ("buy" | "sell" | "auto")[];
   return (
     <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24">
-      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
-        {(["buy", "sell"] as const).map((s) => (
+      <div className={"grid gap-1 p-1 rounded-2xl bg-paper " + (canAuto ? "grid-cols-3" : "grid-cols-2")} role="tablist" aria-label="Buy, sell or auto">
+        {tabs.map((s) => (
           <button
             key={s}
             type="button"
             role="tab"
             aria-selected={side === s}
             onClick={() => setSide(s)}
-            className={"h-11 rounded-xl font-bold " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
+            className={"h-11 rounded-xl font-bold " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : s === "sell" ? "bg-danger text-white" : "bg-ink text-paper") : "text-ink-2")}
           >
-            {s === "buy" ? "Buy" : "Sell"}
+            {s === "buy" ? "Buy" : s === "sell" ? "Sell" : "Auto"}
           </button>
         ))}
       </div>
-      {side === "buy" ? (
-        <>
-          <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
-            <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
-            <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
-          </label>
-          <div className="grid grid-cols-4 gap-1.5 mt-2">
-            {[10, 25, 50, 100].map((v) => (
-              <button key={v} type="button" aria-pressed={amount === v} onClick={() => setUsd(String(v))} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (amount === v ? "border-emerald text-emerald" : "border-line")}>
-                ${v}
-              </button>
-            ))}
-          </div>
-        </>
+      {side === "auto" && autoReady(autoChain) ? (
+        <AutoPanel
+          coin={{ address: token, symbol: coin.symbol, decimals: decimals ?? 18, kind: "ext", network: coin.network }}
+          coinChain={autoChain}
+          priceUsd={coin.priceUsd ?? null}
+          holdings={held}
+        />
       ) : (
-        <div className="grid grid-cols-4 gap-1.5 mt-4">
-          {[25, 50, 75, 100].map((v) => (
-            <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
-              {v === 100 ? "All" : `${v}%`}
-            </button>
-          ))}
-        </div>
+        <>
+          {side === "buy" ? (
+            <>
+              <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+                <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
+                <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
+              </label>
+              <div className="grid grid-cols-4 gap-1.5 mt-2">
+                {[10, 25, 50, 100].map((v) => (
+                  <button key={v} type="button" aria-pressed={amount === v} onClick={() => setUsd(String(v))} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (amount === v ? "border-emerald text-emerald" : "border-line")}>
+                    ${v}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-4 gap-1.5 mt-4">
+              {[25, 50, 75, 100].map((v) => (
+                <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
+                  {v === 100 ? "All" : `${v}%`}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
+            <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
+            <b className="font-mono">
+              {quote
+                ? side === "buy"
+                  ? `${quote.outAmount ? fmt(Number(quote.outAmount)) : "—"} $${coin.symbol}`
+                  : `$${Number(quote.outAmount).toFixed(2)}`
+                : side === "buy"
+                  ? estimate !== null
+                    ? `${fmt(estimate)} $${coin.symbol}`
+                    : "—"
+                  : "—"}
+            </b>
+          </div>
+          {live && side === "sell" && held !== null && (
+            <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}{cross ? ` on ${cross.there.short}` : ""}</p>
+          )}
+          <button
+            type="button"
+            disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
+            onClick={() => void go()}
+            className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+          >
+            {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
+          </button>
+          {error && <p className="mt-2 text-[0.8125rem] text-danger">{error}</p>}
+          {IS_TESTNET && (
+            <p className="mt-3 rounded-xl bg-emerald-soft border border-emerald/40 p-3 text-[0.8125rem]">Test version: prices and charts are live; trading these coins opens at mainnet.</p>
+          )}
+          {!IS_TESTNET && route.kind === "none" && <p className="mt-3 text-[0.8125rem] text-ink-3">{route.why}</p>}
+          {cross && (
+            <p className="text-[0.6875rem] text-ink-3 mt-2">
+              {side === "buy"
+                ? `Paid with your USDC on Base; the coin arrives on ${cross.there.short}. If you have almost no ${cross.there.chain.nativeCurrency.symbol} there, 30 cents of it come along so you can sell later.`
+                : `Your USDC arrives on Base. The network fee on ${cross.there.short} is paid in ${cross.there.chain.nativeCurrency.symbol}.`}
+            </p>
+          )}
+          <p className="text-[0.6875rem] text-ink-3 mt-2">Best price across DEXs, paid in USDC.</p>
+        </>
       )}
-      <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
-        <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
-        <b className="font-mono">
-          {quote
-            ? side === "buy"
-              ? `${quote.outAmount ? fmt(Number(quote.outAmount)) : "—"} $${coin.symbol}`
-              : `$${Number(quote.outAmount).toFixed(2)}`
-            : side === "buy"
-              ? estimate !== null
-                ? `${fmt(estimate)} $${coin.symbol}`
-                : "—"
-              : "—"}
-        </b>
-      </div>
-      {live && side === "sell" && held !== null && (
-        <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>
-      )}
-      <button
-        type="button"
-        disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
-        onClick={() => void go()}
-        className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
-      >
-        {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
-      </button>
-      {error && <p className="mt-2 text-[0.8125rem] text-danger">{error}</p>}
-      {IS_TESTNET && (
-        <p className="mt-3 rounded-xl bg-emerald-soft border border-emerald/40 p-3 text-[0.8125rem]">Test version: prices and charts are live; trading these coins opens at mainnet.</p>
-      )}
-      {!IS_TESTNET && !chain && <p className="mt-3 text-[0.8125rem] text-ink-3">Trading coins on this chain is coming soon.</p>}
-      <p className="text-[0.6875rem] text-ink-3 mt-2">Best price across DEXs, paid in USDC.</p>
     </aside>
   );
 }

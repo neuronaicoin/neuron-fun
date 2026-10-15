@@ -172,6 +172,12 @@ export async function authedPost<T>(sign: SignFn, path: string, body: unknown): 
   return api<T>(path, { method: "POST", body });
 }
 
+/** A signed-in DELETE to /api/<path> (signs in first if needed). */
+export async function authedDelete<T>(sign: SignFn, path: string): Promise<T> {
+  await ensureSession(sign);
+  return api<T>(path, { method: "DELETE" });
+}
+
 // ------------------------------------------------------------------ wallet changes, polling
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;

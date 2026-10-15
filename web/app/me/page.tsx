@@ -16,6 +16,8 @@ import { RACE_CHAINS, fetchRaceCoins, type RaceCoin } from "@/lib/race";
 import { CoinAvatar } from "@/components/coins";
 import { raceHref } from "@/lib/race";
 import { AllOrders } from "@/components/myorders";
+import { MyAutoOrders } from "@/components/autopanel";
+import { autoAnywhere } from "@/lib/auto";
 import { Avatar, EditProfileSheet } from "@/components/social";
 import { AllowCopyCard } from "@/components/copy";
 import { InviteCard } from "@/components/invite";
@@ -125,6 +127,11 @@ export default function MePage() {
       <div className="mt-4 empty:hidden">
         <AllOrders />
       </div>
+      {autoAnywhere() && (
+        <div className="mt-4">
+          <MyAutoOrders />
+        </div>
+      )}
 
       {/* Money */}
       <section className="mt-6 rounded-3xl border border-line bg-surface p-4 sm:p-6" aria-label="Your money">

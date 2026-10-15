@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "sasa keepers: fee collection (keeper.mjs), v6 omnichain graduations (omni.mjs), v7 five-minute races (race.mjs).",
+  "description": "sasa keepers: fee collection (keeper.mjs), v6 omnichain graduations (omni.mjs), v7 five-minute races (race.mjs), auto orders (auto.mjs).",
   "scripts": {
     "start": "node keeper.mjs",
     "omni": "node omni.mjs",
-    "race": "node race.mjs"
+    "race": "node race.mjs",
+    "auto": "node auto.mjs"
   },
   "dependencies": {
     "viem": "2.56.8"

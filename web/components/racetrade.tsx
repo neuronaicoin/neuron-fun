@@ -6,6 +6,9 @@ import { usdcGasChain } from "@/lib/usdcgas";
 import { IS_TESTNET } from "@/lib/config";
 import { crossReady, homeChain, onPending, pendingList, removePending, watchPending, type Pending } from "@/lib/racecross";
 import { crossBuy, crossSell, crossSendHome, spareThere, type Senders } from "@/lib/racecrossflow";
+import { AutoPanel } from "@/components/autopanel";
+import { autoAnywhere } from "@/lib/auto";
+import { RACE_SUPPLY } from "@/lib/race";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { call } from "@/lib/tx";
@@ -42,7 +45,8 @@ function fmtAmount(n: number, max = 2) {
  */
 export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; lanes: RaceLane[]; lane: RaceLane; onLane: (chainId: number) => void }) {
   const w = useWallet();
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
+  const sides = (autoAnywhere() ? ["buy", "sell", "auto"] : ["buy", "sell"]) as ("buy" | "sell" | "auto")[];
   const [amount, setAmount] = useState("10");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<string | null>(null);
@@ -311,8 +315,8 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         </div>
       )}
 
-      <div className="grid grid-cols-2 bg-night rounded-full p-1" role="group" aria-label="Buy or sell">
-        {(["buy", "sell"] as const).map((s) => (
+      <div className={"grid bg-night rounded-full p-1 " + (sides.length === 3 ? "grid-cols-3" : "grid-cols-2")} role="group" aria-label="Buy or sell">
+        {sides.map((s) => (
           <button
             key={s}
             type="button"
@@ -325,7 +329,15 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         ))}
       </div>
 
-      {!tradable ? (
+      {side === "auto" && tradable ? (
+        <AutoPanel
+          coin={{ address: coin.coin, symbol: coin.symbol, decimals: 18, kind: "race", raceId: coin.id }}
+          coinChain={chain}
+          priceUsd={lane.priceUsd}
+          holdings={coinBal}
+          mcFactor={RACE_SUPPLY}
+        />
+      ) : !tradable ? (
         <p className="text-[0.9375rem] text-ink-2">
           {chain.short} lost this race. Its pool is closed and holders were moved to {coin.winner?.short ?? "the winner"}.
         </p>
