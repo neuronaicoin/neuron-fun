@@ -50,9 +50,9 @@ contract AcrossUsdBridgeTest is Test {
         uint32[] memory eids = new uint32[](3);
         (eids[0], eids[1], eids[2]) = (BASE, BNB, HOOD);
         AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](3);
-        rs[0] = AcrossUsdBridge.Route(8453, OUT_TOKEN, TWIN, 6);
-        rs[1] = AcrossUsdBridge.Route(56, OUT_TOKEN, TWIN, 18);
-        rs[2] = AcrossUsdBridge.Route(4663, OUT_TOKEN, TWIN, 6);
+        rs[0] = AcrossUsdBridge.Route(8453, OUT_TOKEN, TWIN, 6, false);
+        rs[1] = AcrossUsdBridge.Route(56, OUT_TOKEN, TWIN, 18, false);
+        rs[2] = AcrossUsdBridge.Route(4663, OUT_TOKEN, TWIN, 6, false);
         b.setup(address(this), address(0x1234), eids, rs);
     }
 
@@ -115,7 +115,7 @@ contract AcrossUsdBridgeTest is Test {
         uint32[] memory eids = new uint32[](1);
         eids[0] = BNB;
         AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](1);
-        rs[0] = AcrossUsdBridge.Route(56, OUT_TOKEN, TWIN, 0);
+        rs[0] = AcrossUsdBridge.Route(56, OUT_TOKEN, TWIN, 0, false);
         vm.expectRevert(AcrossUsdBridge.BadAddress.selector);
         b.setup(address(this), address(1), eids, rs);
     }

@@ -133,4 +133,9 @@ contract AcrossBridgeBnbForkTest is AcrossBridgeForkBase {
     function test_bnbToBase() public {
         _depositInto(BNB_SPOKE, BNB_USDC, 8453, BASE_USDC, 6, 1_000e18, 999e6);
     }
+
+    /// First leg of BNB Chain -> Robinhood Chain: to Base, where it is forwarded.
+    function test_hopBnbToRobinhoodFirstLeg() public {
+        _hopFirstLeg(BNB_SPOKE, BNB_USDC, 8453, BASE_USDC, 6, 1_000e18, 999e6);
+    }
 }

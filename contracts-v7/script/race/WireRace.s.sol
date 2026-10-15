@@ -22,6 +22,10 @@ interface IMessageLibSupport {
  * Env: REMOTE_CHAIN_IDS (comma list; their deployments/race/<id>.json must exist), this
  * chain's LayerZero SEND_LIB, RECEIVE_LIB, EXECUTOR, DVNS (comma list, sorted),
  * CONFIRMATIONS, LOCK_BRIDGE (true once every chain is in), OPEN_LAUNCHES.
+ * Across only: ACROSS_HOP_FOR (comma list of remote chain ids Across has no dollar route to;
+ * money for them goes through ACROSS_HOP_CHAIN_ID, which must be a remote with direct routes
+ * to both). Mainnet: on BNB Chain ACROSS_HOP_FOR=4663, on Robinhood Chain ACROSS_HOP_FOR=56,
+ * ACROSS_HOP_CHAIN_ID=8453 (Base) on both.
  */
 contract WireRace is Script {
     uint32 internal constant CONFIG_TYPE_EXECUTOR = 1;
@@ -112,15 +116,11 @@ contract WireRace is Script {
         bool bridgeLocked;
         if (me.across) {
             AcrossUsdBridge ab = AcrossUsdBridge(me.bridge);
-            // one route per linked chain, in the same order as `eids`
-            AcrossUsdBridge.Route[] memory rs = new AcrossUsdBridge.Route[](eids.length);
-            for (uint256 i; i < eids.length; ++i) {
-                for (uint256 k; k < remotes.length; ++k) {
-                    Local memory r = _load(remotes[k]);
-                    if (r.eid == eids[i]) rs[i] = AcrossUsdBridge.Route(r.chainId, r.usd, r.bridge, r.usdDecimals);
-                }
-                require(rs[i].twin != address(0), "route for a linked chain not found");
-            }
+            // unset or empty: every route is direct
+            uint256[] memory hopFor = bytes(vm.envOr("ACROSS_HOP_FOR", string(""))).length > 0 ? vm.envUint("ACROSS_HOP_FOR", ",") : new uint256[](0);
+            Local[] memory all = new Local[](remotes.length);
+            for (uint256 k; k < remotes.length; ++k) all[k] = _load(remotes[k]);
+            AcrossUsdBridge.Route[] memory rs = acrossRoutes(all, eids, hopFor, vm.envOr("ACROSS_HOP_CHAIN_ID", uint256(0)));
             if (!ab.locked()) {
                 ab.setup(me.consolidator, me.builder, eids, rs);
                 if (lockBridge) ab.lock();
@@ -137,6 +137,45 @@ contract WireRace is Script {
         RaceFactory(me.factory).setLaunchesOpen(openLaunches);
         vm.stopBroadcast();
         console2.log("bridge locked:", bridgeLocked, " launches open:", openLaunches);
+    }
+
+    /// @notice One Across route per linked chain, in the same order as `eids`; chains in
+    /// `hopFor` go through `hopChain`. `remotes` are the other chains' deployment files.
+    /// Public so the tests can check it.
+    function acrossRoutes(Local[] memory remotes, uint32[] memory eids, uint256[] memory hopFor, uint256 hopChain)
+        public
+        view
+        returns (AcrossUsdBridge.Route[] memory rs)
+    {
+        for (uint256 i; i < hopFor.length; ++i) require(_find(remotes, hopFor[i]) < remotes.length, "ACROSS_HOP_FOR lists a chain not in REMOTE_CHAIN_IDS");
+        rs = new AcrossUsdBridge.Route[](eids.length);
+        for (uint256 i; i < eids.length; ++i) {
+            for (uint256 k; k < remotes.length; ++k) {
+                Local memory r = remotes[k];
+                if (r.eid != eids[i]) continue;
+                if (_has(hopFor, r.chainId)) {
+                    require(hopChain != 0 && hopChain != r.chainId && hopChain != block.chainid, "ACROSS_HOP_CHAIN_ID must be a third chain");
+                    uint256 hk = _find(remotes, hopChain);
+                    require(hk < remotes.length, "ACROSS_HOP_CHAIN_ID must be one of REMOTE_CHAIN_IDS");
+                    Local memory h = remotes[hk];
+                    rs[i] = AcrossUsdBridge.Route(h.chainId, h.usd, h.bridge, h.usdDecimals, true);
+                    console2.log("two-step route to chain", r.chainId, "through chain", hopChain);
+                } else {
+                    rs[i] = AcrossUsdBridge.Route(r.chainId, r.usd, r.bridge, r.usdDecimals, false);
+                }
+            }
+            require(rs[i].twin != address(0), "route for a linked chain not found");
+        }
+    }
+
+    function _find(Local[] memory list, uint256 chainId) internal pure returns (uint256) {
+        for (uint256 i; i < list.length; ++i) if (list[i].chainId == chainId) return i;
+        return type(uint256).max;
+    }
+
+    function _has(uint256[] memory list, uint256 v) internal pure returns (bool) {
+        for (uint256 i; i < list.length; ++i) if (list[i] == v) return true;
+        return false;
     }
 
     function _trim(uint32[] memory a, bytes32[] memory b, uint256 n) internal pure returns (uint32[] memory, bytes32[] memory) {
