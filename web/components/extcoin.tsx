@@ -9,7 +9,7 @@ import { friendlyError } from "@/lib/format";
 import { refreshPortfolio } from "@/lib/portfolio";
 import { chainForNetwork, quoteCalls, quoteSwap } from "@/lib/extswap";
 import type { Quote } from "@/lib/relay";
-import { crossExtBuy, crossExtSell, extRoute, quoteCrossBuy, quoteCrossSell, type ExtSenders } from "@/lib/extcross";
+import { crossExtBuy, crossExtSell, extRoute, gasTopup, quoteCrossBuy, quoteCrossSell, xClient, type ExtSenders } from "@/lib/extcross";
 import { autoReady, chainForNetwork as autoForNetwork } from "@/lib/auto";
 import { raceClient } from "@/lib/race";
 import { reportExtTrade } from "@/lib/exttrades";
@@ -21,6 +21,7 @@ import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { postOnX } from "@/components/share";
 import { extPageUrl } from "@/lib/extcoins";
+import { topPageUrl } from "@/lib/topcoins";
 import { PriceChart } from "@/components/racechart";
 import { fetchExtCandles } from "@/lib/extchart";
 
@@ -34,7 +35,10 @@ const EXPLORER: Record<string, string> = {
 const FEE = 0.007;
 
 /** Price, stats, chart, token check and trade box of a coin from any DEX. */
-export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink?: boolean }) {
+/** A coin from the Market list: its page shows its rank, and what is bought for it (cbBTC for Bitcoin…). */
+export type MarketInfo = { id: string; rank: number | null; via: string | null; change7d: number | null };
+
+export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; backLink?: boolean; market?: MarketInfo }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
   const [chartFailed, setChartFailed] = useState(false);
@@ -56,7 +60,11 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
   ];
   return (
     <div className={backLink ? "max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28 md:pb-12" : ""}>
-      {backLink && <Link href="/explore/" className="text-emerald font-semibold text-[0.875rem]">← All coins</Link>}
+      {backLink && (
+        <Link href={market ? "/market/" : "/explore/"} className="text-emerald font-semibold text-[0.875rem]">
+          {market ? "← Market" : "← All coins"}
+        </Link>
+      )}
       <div className={(backLink ? "mt-3 " : "") + "grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] items-start"}>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
           <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
@@ -81,7 +89,7 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                         IS_TESTNET
                           ? `$${coin.symbol} is listed on sasa 👀\n\nSoon: buy it in USDC in one tap, no bridging, no gas token.`
                           : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas token.`,
-                        extPageUrl("https://sasapad.fun", coin),
+                        market ? topPageUrl("https://sasapad.fun", market.id) : extPageUrl("https://sasapad.fun", coin),
                         { symbol: coin.symbol, chains: [net.label], handle: coin.xHandle }
                       )
                     }
@@ -141,8 +149,8 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
             </section>
           )}
 
-          <TokenCheck coin={coin} />
-          <AboutCoin coin={coin} chain={net.label} />
+          {!market && <TokenCheck coin={coin} />}
+          <AboutCoin coin={coin} chain={net.label} market={market} />
         </div>
         <TradeBox coin={coin} />
       </div>
@@ -151,10 +159,18 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
 }
 
 /** Plain facts about the coin and how to buy it here (what someone searching for it wants to know). */
-function AboutCoin({ coin, chain }: { coin: ExtCoin; chain: string }) {
+function AboutCoin({ coin, chain, market }: { coin: ExtCoin; chain: string; market?: MarketInfo }) {
   const sym = `$${coin.symbol}`;
   const created = coin.poolCreated ? new Date(coin.poolCreated).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : null;
-  const facts = [
+  const facts = market
+    ? [
+        `${coin.name} (${coin.symbol})${market.rank ? ` is number ${market.rank} by market cap` : ""}${coin.mcapUsd ? `, worth about ${money(coin.mcapUsd)} in total` : ""}.`,
+        coin.vol24h ? `About ${money(coin.vol24h)} of it traded in the last 24 hours across all markets.` : "",
+        market.via
+          ? `On sasa you buy it as ${market.via}: a token that follows its price one to one and trades on DEXs.`
+          : `On sasa it is bought on ${chain}${coin.dex ? `, mainly on ${coin.dex.replace(/[-_]/g, " ")}` : ""}${coin.liqUsd ? `, with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.`,
+      ].filter(Boolean)
+    : [
     `${coin.name} (${sym}) is a coin on ${chain}${coin.dex ? `, traded mainly on ${coin.dex.replace(/[-_]/g, " ")}` : ""}${created ? `. Its main pool opened on ${created}` : ""}.`,
     coin.mcapUsd ? `Its market cap is about ${money(coin.mcapUsd)}${coin.liqUsd ? ` with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.` : "",
     coin.peakMcap && coin.mcapUsd && coin.peakMcap > coin.mcapUsd * 1.2 ? `The highest market cap we saw was ${money(coin.peakMcap)}.` : "",
@@ -181,7 +197,7 @@ function AboutCoin({ coin, chain }: { coin: ExtCoin; chain: string }) {
           </details>
         ))}
       </div>
-      <p className="mt-3 text-[0.75rem] text-ink-3">Meme coins are risky. Only use money you can afford to lose.</p>
+      <p className="mt-3 text-[0.75rem] text-ink-3">{market ? "Crypto prices move fast." : "Meme coins are risky."} Only use money you can afford to lose.</p>
     </section>
   );
 }
@@ -248,7 +264,9 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
   const [busy, setBusy] = useState("");
   const amount = Number(usd.replace(",", ".")) || 0;
   const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
-  const fmt = (t: number) => (t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t.toFixed(2));
+  // small amounts keep 3 significant digits ($25 of Bitcoin is 0.000223 BTC, not 0.00)
+  const fmt = (t: number) =>
+    t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t >= 1 || t <= 0 ? t.toFixed(2) : String(Number(t.toPrecision(3)));
   const token = coin.address as Address;
   const coinKey = cross ? `x${cross.there.chainId}` : chain ? `s${chain.chain.id}` : "";
 
@@ -256,7 +274,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
   const loadHeld = useCallback(async () => {
     if (!address) return setHeld(null);
     const read = cross
-      ? raceClient(cross.there).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
+      ? xClient(cross.there).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
       : chain
         ? clientFor(chain).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [address] })
         : autoChain
@@ -423,7 +441,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
           {cross && (
             <p className="text-[0.6875rem] text-ink-3 mt-2">
               {side === "buy"
-                ? `Paid with your USDC on Base; the coin arrives on ${cross.there.short}. If you have almost no ${cross.there.chain.nativeCurrency.symbol} there, 30 cents of it come along so you can sell later.`
+                ? `Paid with your USDC on Base; the coin arrives on ${cross.there.short}. If you have almost no ${cross.there.chain.nativeCurrency.symbol} there, $${(Number(gasTopup(cross.there.chainId)) / 1e6).toFixed(2)} of it comes along so you can sell later.`
                 : `Your USDC arrives on Base. The network fee on ${cross.there.short} is paid in ${cross.there.chain.nativeCurrency.symbol}.`}
             </p>
           )}

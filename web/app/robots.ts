@@ -10,7 +10,7 @@ const PRIVATE = ["/api/", "/login/", "/admin/", "/daily/"];
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [{ userAgent: "*", allow: "/", disallow: PRIVATE }, ...AI_BOTS.map((ua) => ({ userAgent: ua, allow: "/", disallow: PRIVATE }))],
-    sitemap: [`${SITE_URL}/sitemap.xml`, `${SITE_URL}/forum/sitemap.xml`, `${SITE_URL}/sitemap-coins.xml`, `${SITE_URL}/sitemap-races.xml`],
+    sitemap: [`${SITE_URL}/sitemap.xml`, `${SITE_URL}/forum/sitemap.xml`, `${SITE_URL}/sitemap-coins.xml`, `${SITE_URL}/sitemap-races.xml`, `${SITE_URL}/sitemap-market.xml`],
     host: SITE_URL,
   };
 }

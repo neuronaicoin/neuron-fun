@@ -7,7 +7,7 @@ import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, fetchRaceStats, type RaceStats } from "@/lib/race";
 import { fetchExtStats, type ExtStats } from "@/lib/exttrades";
 
-const CHAIN_NAME: Record<number, string> = { 8453: "Base", 56: "BNB Chain", 4663: "Robinhood", 5042: "Arc" };
+const CHAIN_NAME: Record<number, string> = { 8453: "Base", 56: "BNB Chain", 4663: "Robinhood", 5042: "Arc", 1: "Ethereum" };
 
 /**
  * Everything traded on sasa: race coins plus other DEXs' coins bought and sold here (each of

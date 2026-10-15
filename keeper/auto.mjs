@@ -128,6 +128,12 @@ async function storedPrices(sb, orders) {
     const addrs = [...new Set(ext.filter((o) => o.network === net).map((o) => o.coin))];
     const rows = await sb(`ext_coins_all?network=eq.${net}&address=in.(${addrs.map((a) => `"${a}"`).join(",")})&select=address,price_usd`);
     for (const r of rows || []) out.set(`ext:${net}:${String(r.address).toLowerCase()}`, r.price_usd === null ? null : Number(r.price_usd));
+    // Market coins (the 300 biggest) aren't in that list: their price is in top_coins_pub
+    const missing = addrs.filter((a) => !(out.get(`ext:${net}:${a}`) > 0));
+    if (missing.length) {
+      const more = await sb(`top_coins_pub?network=eq.${net}&address=in.(${missing.map((a) => `"${a}"`).join(",")})&select=address,price_usd`).catch(() => []);
+      for (const r of more || []) out.set(`ext:${net}:${String(r.address).toLowerCase()}`, r.price_usd === null ? null : Number(r.price_usd));
+    }
   }
   return out;
 }

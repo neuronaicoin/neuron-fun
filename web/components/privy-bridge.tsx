@@ -12,7 +12,7 @@ import type { SignAuthorization } from "@/lib/usdcgas";
 import { CHAINS, PRIVY_APP_ID } from "@/lib/config";
 import { RACE_CHAINS } from "@/lib/race";
 import { usdcGasChain } from "@/lib/usdcgas";
-import { base, baseSepolia } from "viem/chains";
+import { base, baseSepolia, mainnet } from "viem/chains";
 
 export type PrivyState = {
   ready: boolean;
@@ -35,6 +35,8 @@ const SUPPORTED = [
   ...CHAINS.map((c) => c.chain),
   ...RACE_CHAINS.map((c) => c.chain),
   ...[base, baseSepolia].filter((c) => usdcGasChain(c.id) && (c.testnet ?? false) === (CHAINS[0].chain.testnet ?? false)),
+  // mainnet: Ethereum too (Market coins live there; the account pays its own gas)
+  ...(CHAINS[0].chain.testnet ? [] : [mainnet]),
 ].filter((c, i, a) => a.findIndex((x) => x.id === c.id) === i);
 
 export default function PrivyBridge({ onState, loginRequests }: { onState: (s: PrivyState) => void; loginRequests: number }) {

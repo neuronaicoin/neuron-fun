@@ -6,7 +6,7 @@ import { db } from "./data";
  * the API checks it on chain and with Relay before it counts (edge/exttrade-api.js). A trade to
  * another chain takes a few seconds to finish, so the page asks again a few times.
  */
-const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042 };
+const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042, eth: 1 };
 
 export async function reportExtTrade(t: { chainId: number; tx: string; network: string; coin: string; side: "buy" | "sell" }) {
   if (IS_TESTNET) return;

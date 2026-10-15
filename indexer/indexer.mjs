@@ -31,6 +31,7 @@ import { pointsLoop } from "./points.mjs";
 import { badgesLoop } from "./badges.mjs";
 import { marketsLoop } from "./markets.mjs";
 import { seoLoop } from "./seo.mjs";
+import { topLoop } from "./topcoins.mjs";
 import { raceLoop, loadRaceChains } from "./race.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
@@ -520,6 +521,8 @@ async function main() {
     badgesLoop(pool, log),
     marketsLoop(pool, log),
     seoLoop(pool, log),
+    // Market: the 300 biggest coins (topcoins.sql), from CoinGecko + DexScreener
+    topLoop(pool, log),
     // v7 five-minute races (race.sql, race-chains.json, RPC_<chainId>); off when no race RPC is set
     raceLoop(pool, log),
   ]);

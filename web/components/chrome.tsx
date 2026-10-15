@@ -219,6 +219,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 const V6_ONLY = new Set(["/traders/", "/copy/", "/swipe/"]);
 const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
+  { href: "/market/", label: "Market", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "Your coins", from: "lg" },
@@ -290,6 +291,7 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
+  { href: "/market/", label: "Market", note: "Top 300 coins, buy with USDC", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
@@ -387,7 +389,7 @@ export function BottomNav() {
   return (
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
@@ -426,6 +428,15 @@ function NavIcon({ name }: { name: string }) {
       <svg {...common}>
         <circle cx="11" cy="11" r="7" />
         <path d="M20 20 L16 16" />
+      </svg>
+    );
+  if (name === "Market")
+    return (
+      <svg {...common}>
+        <path d="M4 20 V10" />
+        <path d="M10 20 V4" />
+        <path d="M16 20 V13" />
+        <path d="M21 20 H3" />
       </svg>
     );
   if (name === "Terminal")
