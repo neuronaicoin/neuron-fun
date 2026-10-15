@@ -36,6 +36,13 @@ begin
     on conflict do nothing;
   exception when undefined_table or undefined_column then null; -- that feature's SQL not run yet
   end;
+  -- race coins (v7, mainnet): launching one counts for the launch quest too
+  begin
+    insert into points_events (owner, kind, ref, pts)
+      select distinct lower(creator), 'quest', 'launch', 200 from race_coins
+    on conflict do nothing;
+  exception when undefined_table or undefined_column then null; -- that feature's SQL not run yet
+  end;
   begin
     insert into points_events (owner, kind, ref, pts)
       select distinct lower(c.creator), 'quest', 'locked', 150 from coins c join coin_lock l on l.coin_id = c.id
@@ -45,6 +52,12 @@ begin
   begin
     insert into points_events (owner, kind, ref, pts)
       select distinct trader, 'quest', 'buy', 50 from trades where is_buy
+    on conflict do nothing;
+  exception when undefined_table or undefined_column then null; -- that feature's SQL not run yet
+  end;
+  begin
+    insert into points_events (owner, kind, ref, pts)
+      select distinct lower(trader), 'quest', 'buy', 50 from race_trades where is_buy and via <> 'system'
     on conflict do nothing;
   exception when undefined_table or undefined_column then null; -- that feature's SQL not run yet
   end;
@@ -74,7 +87,7 @@ begin
   end;
   begin
     insert into points_events (owner, kind, ref, pts)
-      select distinct lower(address), 'quest', 'ai', 100 from ai_usage where kind = 'ideas' and n > 0
+      select distinct lower(address), 'quest', 'ai', 100 from ai_usage where kind in ('ideas', 'coin') and n > 0
     on conflict do nothing;
   exception when undefined_table or undefined_column then null; -- that feature's SQL not run yet
   end;

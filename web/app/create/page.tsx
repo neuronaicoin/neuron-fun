@@ -1,5 +1,7 @@
 "use client";
 
+import { V6Gate } from "@/components/v6gate";
+
 import { CurveSim } from "@/components/curvesim";
 import { coinShareUrl, postOnX } from "@/components/share";
 import { toast } from "@/components/alerts";
@@ -50,7 +52,7 @@ function costFor(terms: Terms, tokens: bigint): bigint {
   return net + (net * terms.feeBps + 9_999n) / 10_000n + 1n;
 }
 
-export default function CreatePage() {
+function CreatePageV6() {
   const { address, send, signMessage } = useWallet();
   // Optional X / Telegram / website, saved once the coin is live.
   const [links, setLinks] = useState<LinkDraft>(EMPTY_DRAFT);
@@ -719,5 +721,14 @@ function Field({ label, hint, right, children }: { label: string; hint?: string;
       </span>
       {children}
     </label>
+  );
+}
+
+/** v6 only: on mainnet this address moves on to /race/launch/ (see components/v6gate.tsx). */
+export default function CreatePage() {
+  return (
+    <V6Gate to="/race/launch/">
+      <CreatePageV6 />
+    </V6Gate>
   );
 }

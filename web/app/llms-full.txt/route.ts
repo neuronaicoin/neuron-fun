@@ -1,4 +1,5 @@
 import { ARTICLES, SITE_URL } from "@/lib/articles";
+import { IS_TESTNET } from "@/lib/config";
 
 export const dynamic = "force-static";
 
@@ -10,7 +11,9 @@ export function GET() {
   const out: string[] = [
     "# sasa guides (full text)",
     "",
-    `> Every guide from ${SITE_URL}/learn/ in one file. sasa is a multi-chain meme coin launchpad and trading app on Robinhood Chain and Base: one launch goes live on several chains at once, buys on every chain count toward one graduation target, and everything is priced in USDC.`,
+    IS_TESTNET
+      ? `> Every guide from ${SITE_URL}/learn/ in one file. sasa is a multi-chain meme coin launchpad and trading app on Robinhood Chain and Base: one launch goes live on several chains at once, buys on every chain count toward one graduation target, and everything is priced in USDC.`
+      : `> Every guide from ${SITE_URL}/learn/ in one file. sasa is a multi-chain meme coin launchpad and trading app: one coin goes live on Base, BNB Chain, Robinhood Chain and Arc at once, the chains race for five minutes, the chain with the most money wins and the whole coin moves there. Everything is priced in USDC.`,
     "",
   ];
   for (const a of ARTICLES) {

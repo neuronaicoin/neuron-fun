@@ -354,7 +354,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
       if (!active && privy?.authenticated && privy.signer) {
         const conf = CHAINS.find((c) => c.chain.id === chain.id);
-        if (!conf) throw new Error("This network is not supported.");
+        // no gas policy (mainnet without v6): nothing is sponsored, ever
+        if (!conf || !conf.gasPolicy) throw new Error("This network is not supported.");
         const key = `${chain.id}:${privy.signer.address}`;
         let client = smartClients.current.get(key) as SmartWalletClient | undefined;
         if (!client) {

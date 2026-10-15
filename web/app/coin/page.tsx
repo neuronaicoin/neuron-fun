@@ -1,5 +1,7 @@
 "use client";
 
+import { V6Gate } from "@/components/v6gate";
+
 import { USD_MODE } from "@/lib/config";
 import { CoinLinksRow } from "@/components/coinlinks";
 import { useCoinLinks } from "@/lib/coinlinks";
@@ -35,7 +37,7 @@ import { SLIPPAGE_BPS, explorerAddress, explorerTx } from "@/lib/config";
 import { clientFor, fetchCoin, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError, shortAddr } from "@/lib/format";
 
-export default function CoinPageWrapper() {
+function CoinPageWrapperV6() {
   return (
     <Suspense fallback={<div className="max-w-5xl mx-auto px-4 py-10"><Skeleton className="h-64" /></div>}>
       <CoinPage />
@@ -302,4 +304,13 @@ function CoinPage() {
 function caCurves(curves: CurveInfo[]): CurveInfo[] {
   const open = curves.filter((c) => c.state !== "closed");
   return [...(open.length ? open : curves)].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+}
+
+/** v6 only: on mainnet this address moves on to /explore/ (see components/v6gate.tsx). */
+export default function CoinPageWrapper() {
+  return (
+    <V6Gate to="/explore/">
+      <CoinPageWrapperV6 />
+    </V6Gate>
+  );
 }

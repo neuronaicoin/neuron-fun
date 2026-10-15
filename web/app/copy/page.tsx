@@ -1,5 +1,7 @@
 "use client";
 
+import { V6Gate } from "@/components/v6gate";
+
 /**
  * Copy trading: your signals (Apply / Reject, several at once), how copying
  * each trader has worked out, and the traders whose copiers did best.
@@ -24,7 +26,7 @@ import { actOnSignal, fetchCopyBoard, fetchCopying, fetchSignals, type BoardRow,
 type Tab = "signals" | "copies" | "best";
 const RAN = 0.25; // the price moved this much above the trader's since they bought
 
-export default function CopyPage() {
+function CopyPageV6() {
   const { address, signMessage } = useWallet();
   const [tab, setTab] = useState<Tab>("signals");
   const [signals, setSignals] = useState<Signal[] | null>(null);
@@ -447,5 +449,14 @@ function BestTab() {
       )}
       <p className="text-[0.75rem] text-ink-3 mt-3">Average change since each copied buy. Past results don&apos;t promise future ones.</p>
     </>
+  );
+}
+
+/** v6 only: on mainnet this address moves on to /explore/ (see components/v6gate.tsx). */
+export default function CopyPage() {
+  return (
+    <V6Gate to="/explore/">
+      <CopyPageV6 />
+    </V6Gate>
   );
 }

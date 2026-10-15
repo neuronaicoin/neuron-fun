@@ -1,7 +1,9 @@
 /**
- * /sitemap-coins.xml: every actively traded coin page (ours and other DEXs'),
- * so search engines find them. Refreshed at most every 30 minutes.
+ * /sitemap-coins.xml: every actively traded coin page from other DEXs (and, on testnet, the
+ * older v6 coin pages), so search engines find them. Race coins are in /sitemap-races.xml.
+ * Refreshed at most every 30 minutes.
  */
+import { NETWORK } from "../lib/network.js";
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 const SITE = "https://sasapad.fun";
@@ -13,10 +15,13 @@ export async function onRequestGet() {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/ext_coins_all?select=network,address,seen_at&order=vol_24h.desc.nullslast&limit=5000`, h);
     if (r.ok) for (const c of await r.json()) urls.push([`${SITE}/x/?n=${c.network}&amp;a=${c.address}`, c.seen_at]);
   } catch {}
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/coin_list?select=id,created_at&order=created_at.desc&limit=5000`, h);
-    if (r.ok) for (const c of await r.json()) urls.push([`${SITE}/coin/?id=${encodeURIComponent(c.id)}`, c.created_at]);
-  } catch {}
+  // v6 coins exist only on testnet: never listed once the site runs on mainnet
+  if (NETWORK === "testnet") {
+    try {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/coin_list?select=id,created_at&order=created_at.desc&limit=5000`, h);
+      if (r.ok) for (const c of await r.json()) urls.push([`${SITE}/coin/?id=${encodeURIComponent(c.id)}`, c.created_at]);
+    } catch {}
+  }
   const body =
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
     urls

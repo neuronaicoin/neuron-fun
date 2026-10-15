@@ -10,6 +10,7 @@ import type { Address } from "viem";
 import { CHAINS, USD_MODE, type NeuronChain } from "./config";
 import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
+import { fetchRacePositions, type RacePosition } from "./race";
 
 /** What cash is held in: dollars (USDC; USDG on Robinhood mainnet) in the dollar edition. */
 export const CASH_SYMBOL = USD_MODE ? "USDC" : "ETH";
@@ -39,6 +40,8 @@ export type Portfolio = {
   dayUsd: number;
   dayPct: number;
   positions: Position[];
+  /** Race coins held (counted in coinsUsd and totalUsd). */
+  racePositions: RacePosition[];
   ethUsd: number | null;
 };
 
@@ -190,6 +193,7 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
   ]);
+  const racePositions = await fetchRacePositions(address).catch(() => [] as RacePosition[]);
   const prices = pf.prices ?? {};
   const ethUsd = prices.ETH ?? null;
   const px = (c: NeuronChain) => (c.priceSymbol === "USD" ? 1 : prices[c.priceSymbol] ?? 0);
@@ -252,7 +256,7 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     })
     .sort((a, b) => b.valueUsd - a.valueUsd);
 
-  const coinsUsd = positions.reduce((a, p) => a + p.valueUsd, 0);
+  const coinsUsd = positions.reduce((a, p) => a + p.valueUsd, 0) + racePositions.reduce((a, p) => a + p.valueUsd, 0);
   const openPnlUsd = positions.reduce((a, p) => a + (p.pnlUsd ?? 0), 0);
   const dayUsd = positions.reduce((a, p) => a + p.dayUsd, 0);
   const totalUsd = cashUsd + coinsUsd;
@@ -267,6 +271,7 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     dayUsd,
     dayPct: start > 0 ? dayUsd / start : 0,
     positions,
+    racePositions,
     ethUsd,
   };
 }

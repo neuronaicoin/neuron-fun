@@ -44,6 +44,10 @@ const ALLOWED_HOSTS = /^(sasapad\.(fun|com)|www\.sasapad\.(fun|com)|([a-z0-9-]+\
 const VERIFY_CHAINS = [
   defineChain({ id: 84532, name: "Base Sepolia", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: ["https://sepolia.base.org"] } } }),
   defineChain({ id: 46630, name: "Robinhood Chain Testnet", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com/rpc"] } } }),
+  // mainnet (a smart wallet is deployed on at least one of these)
+  defineChain({ id: 8453, name: "Base", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: ["https://mainnet.base.org"] } } }),
+  defineChain({ id: 56, name: "BNB Chain", nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 }, rpcUrls: { default: { http: ["https://bsc-dataseed.bnbchain.org"] } } }),
+  defineChain({ id: 4663, name: "Robinhood Chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } } }),
 ];
 
 // ------------------------------------------------------------------ helpers

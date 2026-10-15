@@ -1,11 +1,40 @@
 // Shared by the forum pages (functions/forum) and the forum API (functions/api).
 // Plain JavaScript on purpose: it runs on Cloudflare, outside the Next build.
 
+import { NETWORK } from "../lib/network.js";
+import { MAINNET_IDS } from "./race-pages.js";
+
 export const SITE = "https://sasapad.fun";
+/** v6 coins (bonding curves) on testnet; on mainnet every board is a race coin's. */
+export const V6 = NETWORK === "testnet";
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const PUBLIC_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 export const SUPPLY = 1e9;
 export const COIN_ID = /^0x[0-9a-f]{40}:0x[0-9a-f]{64}$/;
+/** A race coin's id (bytes32). */
+export const RACE_ID = /^0x[0-9a-f]{64}$/;
+/** A board id this site accepts: v6 coins on testnet, race coins on mainnet. */
+export const isCoinBoard = (b) => (V6 ? COIN_ID.test(b) : RACE_ID.test(b));
+
+/** Race coin columns, with its chains (only mainnet chains count on mainnet). */
+export const RACE_COLS = "id,coin,creator,name,symbol,logo,description,fee_mode,launched_at,winner_chain,decided_at,total_usd,race_chains!inner(chain_id,state,pool_usd,reported_usd,price_usd,volume_usd)";
+export const RACE_FILTER = `race_chains.chain_id=in.(${MAINNET_IDS.join(",")})`;
+
+/** A race_coins row in the shape the forum uses for every coin. */
+export function raceCoin(r) {
+  return {
+    ...r,
+    race: true,
+    address: r.coin,
+    launch_key: r.id,
+    created_at: r.launched_at,
+    last_trade_at: r.decided_at || r.launched_at,
+    lanes: Array.isArray(r.race_chains) ? r.race_chains : [],
+  };
+}
+
+/** Where the coin is traded on the site. */
+export const tradeUrl = (coin) => (coin.race ? `/r/?id=${coin.id}` : `/coin/?id=${encodeURIComponent(coin.id)}`);
 export const GENERAL = "sasa";
 
 // ------------------------------------------------------------------ database
@@ -78,16 +107,25 @@ export const boardUrl = (coinOrGeneral) =>
 export const threadUrl = (board, t) =>
   `${board === GENERAL ? `/forum/${GENERAL}/` : boardUrl(board)}${t.id}-${slugify(t.title, 70) || "thread"}/`;
 
-/** Finds a coin from its board slug (last part = first 8 hex of its launch key). */
-export async function coinFromSlug(env, slug) {
+/** Finds a coin from its board slug (last part = first 8 hex of its launch key, or of a race coin's id). */
+export async function coinFromSlug(env, slug, { fresh = false } = {}) {
   const m = /-([0-9a-f]{8})$/.exec(slug);
   if (!m) return null;
+  if (!V6) {
+    const races = (await pub(env, `race_coins?id=like.0x${m[1]}*&select=${RACE_COLS}&${RACE_FILTER}&order=launched_at.asc&limit=20`, { fresh })).map(raceCoin);
+    return races.find((c) => boardSlug(c) === slug) || races[0] || null;
+  }
   const rows = await pub(env, `coins?launch_key=like.0x${m[1]}*&select=id,creator,launch_key,name,symbol,logo,description,created_at,graduated_chain,fee_mode&order=created_at.asc&limit=20`);
   if (!rows.length) return null;
   return rows.find((c) => boardSlug(c) === slug) || rows[0];
 }
 
-export async function coinById(env, id) {
+export async function coinById(env, id, { fresh = false } = {}) {
+  if (!V6) {
+    if (!RACE_ID.test(id)) return null;
+    const rows = await pub(env, `race_coins?id=eq.${q(id)}&select=${RACE_COLS}&${RACE_FILTER}`, { fresh });
+    return rows[0] ? raceCoin(rows[0]) : null;
+  }
   const rows = await pub(env, `coins?id=eq.${q(id)}&select=id,creator,launch_key,name,symbol,logo,description,created_at,graduated_chain,fee_mode`);
   return rows[0] || null;
 }
@@ -99,6 +137,14 @@ export async function coinById(env, id) {
  * (the biggest of its chains), in basis points of a percent (1% = 100).
  */
 export async function holdingBps(env, coinId, owner) {
+  if (!V6) {
+    // race coin: its coins on every mainnet chain, as a share of the whole supply
+    const coin = await coinById(env, coinId);
+    if (!coin) return 0;
+    const rows = await sec(env, `balances?holder=eq.${q(owner)}&token=eq.${q(String(coin.address).toLowerCase())}&chain_id=in.(${MAINNET_IDS.join(",")})&amount=gt.0&select=amount`);
+    const share = (rows || []).reduce((a, r) => a + Number(r.amount) / 1e18, 0) / SUPPLY;
+    return share > 0 ? Math.max(1, Math.round(share * 10000)) : 0;
+  }
   const curves = await sec(env, `curves?coin_id=eq.${q(coinId)}&select=chain_id,token`);
   if (!curves || !curves.length) return 0;
   const tokens = [...new Set(curves.map((c) => c.token))];

@@ -5,6 +5,8 @@
  * at once, then the chains race for five minutes. Shown on the home page, at the top of
  * Explore and on /race/.
  */
+import { IS_TESTNET } from "@/lib/config";
+
 const X_URL = "https://x.com/sasapadfun";
 
 const CHAINS = [
@@ -41,7 +43,7 @@ export function RaceTeaser({ headingLevel = 2 }: { headingLevel?: 1 | 2 }) {
   return (
     <section className="race-teaser" aria-labelledby="race-title">
       <div className="race-copy">
-        <span className="race-soon">Coming soon</span>
+        <span className="race-soon">{IS_TESTNET ? "Coming soon" : "Live now"}</span>
         <H id="race-title" className="race-title">One coin. One CA.<br /><em>Every chain.</em></H>
         <p className="race-lead">
           Launch once and your coin goes live in a DEX pool on every chain you pick (Uniswap, PancakeSwap), with the same contract address.
@@ -53,7 +55,11 @@ export function RaceTeaser({ headingLevel = 2 }: { headingLevel?: 1 | 2 }) {
           ))}
         </ul>
         <div className="race-actions">
-          <a href={X_URL} target="_blank" rel="noreferrer" className="race-btn">Follow @sasapadfun for launch day</a>
+          {IS_TESTNET ? (
+            <a href={X_URL} target="_blank" rel="noreferrer" className="race-btn">Follow @sasapadfun for launch day</a>
+          ) : (
+            <a href="/race/launch/" className="race-btn">Create your coin</a>
+          )}
           <a href="/race/" className="race-link">How the race works</a>
         </div>
       </div>
@@ -77,14 +83,14 @@ export function RaceTeaser({ headingLevel = 2 }: { headingLevel?: 1 | 2 }) {
 /** Slim banner for the top of Explore. */
 export function RaceBanner() {
   return (
-    <a href="/race/" className="race-banner" aria-label="Coming soon: the five-minute race. See how it works">
+    <a href={IS_TESTNET ? "/race/" : "/race/launch/"} className="race-banner" aria-label={IS_TESTNET ? "Coming soon: the five-minute race. See how it works" : "The five-minute race is live. Start one"}>
       <div className="race-banner-text">
-        <span className="race-soon">Coming soon</span>
+        <span className="race-soon">{IS_TESTNET ? "Coming soon" : "Live now"}</span>
         <strong>One coin. One CA. Every chain.</strong>
         <span className="race-banner-sub">Live in DEX pools on every chain, then a five-minute race. One winner.</span>
       </div>
       <RaceBars compact />
-      <span className="race-banner-go">See how →</span>
+      <span className="race-banner-go">{IS_TESTNET ? "See how →" : "Start a race →"}</span>
     </a>
   );
 }

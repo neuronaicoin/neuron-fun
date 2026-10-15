@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
-import { CHAINS, IS_TESTNET } from "@/lib/config";
+import { CHAINS, IS_TESTNET, V6 } from "@/lib/config";
 import { useSafety } from "@/lib/safety";
 import { SasaMark } from "./landing";
 import { shortAddr } from "@/lib/format";
@@ -215,7 +215,9 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 
 // `from`: the screen width a link first shows in the top bar, so it never
 // overflows on tablets (md), small laptops (lg) or wide screens (xl).
-const NAV = [
+// Pages that only work with v6 coins: hidden on mainnet (see V6 in lib/config.ts)
+const V6_ONLY = new Set(["/traders/", "/copy/", "/swipe/"]);
+const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
@@ -227,6 +229,7 @@ const NAV = [
   { href: "/forum/", label: "Forum", from: "never" },
   { href: "/stats/", label: "Stats", from: "lg" },
 ] as const;
+const NAV = NAV_ALL.filter((n) => V6 || !V6_ONLY.has(n.href));
 const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", never: "hidden" } as const;
 
 function isActive(pathname: string, href: string) {
@@ -286,7 +289,7 @@ export function Header() {
 
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
-const MORE = [
+const MORE_ALL = [
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
@@ -299,6 +302,9 @@ const MORE = [
   { href: "/how-it-works/", label: "How it works", note: "sasa in 2 minutes" },
   { href: "/help/", label: "Help", note: "Answers, or write to us" },
 ] as const;
+const MORE = MORE_ALL.filter((m) => V6 || !V6_ONLY.has(m.href)).map((m) =>
+  !V6 && m.href === "/stats/" ? { ...m, note: "Races, volume, winners" } : m
+);
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname() || "/";

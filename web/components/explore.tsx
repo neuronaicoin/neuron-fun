@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CoinAvatar, useCoins, usd } from "@/components/coins";
 import { coinMarketCapUsd } from "@/components/discover";
-import { TARGET_USD } from "@/lib/config";
+import { TARGET_USD, V6 } from "@/lib/config";
+import { RACE_SUPPLY, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, type RaceCoin } from "@/lib/race";
 import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
@@ -20,15 +21,28 @@ import { LiveRaces } from "@/components/liveraces";
 // Trending is ranked by 24h volume for everyone (see lib/rank.ts).
 const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
 
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: "trending", label: "Trending" },
-  { id: "new", label: "New" },
-  { id: "hot", label: "Almost graduating" },
-  { id: "bonding", label: "Bonding" },
-  { id: "graduated", label: "Graduated" },
-  { id: "gainers", label: "Gainers" },
-  { id: "losers", label: "Losers" },
-];
+/** Explore tabs: v6 sorts on testnet; on mainnet the race tabs replace the bonding-curve ones. */
+type Tab = SortKey | "racing" | "winners";
+const SORTS: { id: Tab; label: string }[] = V6
+  ? [
+      { id: "trending", label: "Trending" },
+      { id: "new", label: "New" },
+      { id: "hot", label: "Almost graduating" },
+      { id: "bonding", label: "Bonding" },
+      { id: "graduated", label: "Graduated" },
+      { id: "gainers", label: "Gainers" },
+      { id: "losers", label: "Losers" },
+    ]
+  : [
+      { id: "trending", label: "Trending" },
+      { id: "new", label: "New" },
+      { id: "racing", label: "Racing now" },
+      { id: "winners", label: "Winners" },
+      { id: "gainers", label: "Gainers" },
+      { id: "losers", label: "Losers" },
+    ];
+/** Explore's chain filter ids (lib/extcoins.ts) → race chain keys (lib/race.ts). */
+const RACE_KEY: Record<string, string> = { base: "base", bsc: "bnb", robinhood: "robinhood", arc: "arc" };
 
 // Minimum 24h volume and liquidity, in USD. Liquidity of a coin still on its
 // curve is the money in its curves; other DEXs report their pool's liquidity.
@@ -40,7 +54,9 @@ const filterLabel = (v: number) => (v === 0 ? "Any" : `$${v >= 1000 ? `${v / 100
 const STEP = 24;
 
 export function Discover({ withLanding = false }: { withLanding?: boolean }) {
-  const [sort, setSort] = useState<SortKey>("trending");
+  const [tab, setTab] = useState<Tab>("trending");
+  // the v6 list only knows its own sorts (and is empty on mainnet anyway)
+  const sort: SortKey = tab === "racing" || tab === "winners" ? "new" : tab;
   const [chain, setChain] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -51,11 +67,34 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const [shown, setShown] = useState(STEP);
   const [growing, setGrowing] = useState(false);
   // A new tab, chain, search or filter starts from the top again.
-  useEffect(() => setShown(STEP), [sort, chain, search, minVol, minLiq]);
+  useEffect(() => setShown(STEP), [tab, chain, search, minVol, minLiq]);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   // Coins from every other DEX on the same chains, shown after ours.
   const [ext, setExt] = useState<ExtCoin[] | null>(null);
-  const extSort = EXT_SORT[sort];
+  const extSort = tab === "racing" || tab === "winners" ? undefined : EXT_SORT[sort];
+  // Race coins (mainnet): the race tabs, and the newest races at the top of "New"
+  const raceTab = !V6 && (tab === "racing" || tab === "winners" || tab === "new");
+  const [races, setRaces] = useState<RaceCoin[] | null>(null);
+  useEffect(() => {
+    if (!raceTab) {
+      setRaces([]);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      fetchRaceCoins(Math.min(200, shown + STEP), { only: tab === "racing" ? "racing" : tab === "winners" ? "winners" : undefined, search })
+        .then((r) => alive && setRaces(r))
+        .catch(() => alive && setRaces((cur) => cur ?? []));
+    setRaces(null);
+    void load();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [raceTab, tab, search, shown]);
   // Ask for one step more than shown, so we know whether "Load more" has anything to add.
   const extLimit = shown + STEP;
   const firstExt = useRef(true);
@@ -106,9 +145,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     () => (MERGED_SORTS.has(sort) ? rankMerged(list, ext ?? [], sort, ethUsd) : list.map((c) => ({ kind: "ours" as const, coin: c }))),
     [list, ext, sort, ethUsd]
   );
-  const visible = ranked.slice(0, shown);
+  // race coins first (on a chain, only races that run there), then the rest
+  const raceRows = useMemo(() => {
+    const l = (races ?? []).filter((r) => chain === "all" || r.lanes.some((ln) => ln.state !== 3 && ln.chain.key === RACE_KEY[chain]));
+    return minVol > 0 || minLiq > 0 ? l.filter((r) => raceVol(r) >= minVol && raceLiq(r) >= minLiq) : l;
+  }, [races, chain, minVol, minLiq]);
+  const visible = ranked.slice(0, Math.max(0, shown - raceRows.length));
   const extFull = !!extSort && (ext?.length ?? 0) >= extLimit;
-  const canGrow = ranked.length > shown || hasMore || extFull;
+  const canGrow = ranked.length + raceRows.length > shown || hasMore || extFull || (raceTab && (races?.length ?? 0) >= Math.min(200, shown + STEP));
   const filtered = minVol > 0 || minLiq > 0;
 
   async function grow() {
@@ -123,8 +167,8 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   }
 
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
-  const rows = visible.map((r) => toRow(r, ethUsd));
-  const loading = !coins && !error;
+  const rows = [...raceRows.slice(0, shown).map(raceRow), ...visible.map((r) => toRow(r, ethUsd))];
+  const loading = (!coins && !error) || (raceTab && races === null);
   const moreLoading = !!coins && (growing || (ext === null && !!extSort));
 
   return (
@@ -164,14 +208,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 key={s.id}
                 type="button"
                 role="tab"
-                aria-selected={sort === s.id}
+                aria-selected={tab === s.id}
                 onClick={(e) => {
-                  setSort(s.id);
+                  setTab(s.id);
                   e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
                 }}
                 className={
                   "shrink-0 -mb-px py-3 border-b-2 text-[0.9375rem] whitespace-nowrap " +
-                  (sort === s.id ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")
+                  (tab === s.id ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")
                 }
               >
                 {s.label}
@@ -229,7 +273,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           {moreLoading && Array.from({ length: 4 }, (_, i) => <CardSkeleton key={`m${i}`} />)}
         </ul>
 
-        {coins && visible.length > 0 && (
+        {coins && rows.length > 0 && (
           <div className="mt-5 px-4 flex flex-col items-center gap-2">
             {canGrow ? (
               <button
@@ -241,21 +285,25 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 {growing || loadingMore ? "Loading…" : "Load more"}
               </button>
             ) : null}
-            <p className="text-[0.75rem] text-ink-3">{canGrow ? `Showing ${visible.length}` : `All ${visible.length} shown`}</p>
+            <p className="text-[0.75rem] text-ink-3">{canGrow ? `Showing ${rows.length}` : `All ${rows.length} shown`}</p>
           </div>
         )}
-        {coins && ranked.length === 0 && ext !== null && (
+        {coins && rows.length === 0 && ext !== null && races !== null && (
           <div className="mx-4 sm:mx-6 mt-5 text-center py-12 border border-dashed border-line rounded-xl">
             <p className="text-ink-2">
               {filtered
                 ? "No coins match these filters."
                 : search
                   ? "Nothing matches that search."
-                  : sort === "graduated"
+                  : tab === "graduated"
                     ? "No graduates yet."
-                    : sort === "bonding"
+                    : tab === "bonding"
                       ? "No coins on their bonding curve right now."
-                      : "No coins here yet. Start one."}
+                      : tab === "racing"
+                        ? "No race running right now. Start one."
+                        : tab === "winners"
+                          ? "No winners yet. Start the first race."
+                          : "No coins here yet. Start one."}
             </p>
             {filtered ? (
               <button
@@ -324,7 +372,38 @@ type Row = {
   graduating: boolean;
   /** Chain name, shown for coins from other DEXs. */
   where: string | null;
+  /** Race coins: "Racing" or "Won on Base". */
+  badge?: string;
 };
+
+const raceVol = (r: RaceCoin) => r.lanes.reduce((s, l) => s + l.volumeUsd, 0);
+const raceLiq = (r: RaceCoin) => (r.totalUsd ?? r.lanes.reduce((s, l) => s + laneUsd(l), 0));
+
+/** A race coin as an Explore card: market cap from the leading (or winning) chain's price. */
+function raceRow(r: RaceCoin): Row {
+  const lead = leadLane(r);
+  const price = lead?.priceUsd ?? null;
+  const decided = racePhase(r, Date.now()) === "decided";
+  return {
+    key: `race:${r.id}`,
+    href: raceHref(r.id),
+    name: r.name,
+    symbol: r.symbol,
+    image: r.logo && isImageUrl(r.logo) ? r.logo : null,
+    seed: r.id,
+    mc: price ? price * RACE_SUPPLY : null,
+    change: null,
+    vol: raceVol(r),
+    liq: raceLiq(r),
+    holders: null,
+    since: r.launchedAt ? new Date(r.launchedAt).toISOString() : null,
+    progress: null,
+    graduated: false,
+    graduating: false,
+    where: decided ? (r.winner?.short ?? null) : `${r.lanes.length} chains`,
+    badge: decided ? (r.winner ? `Won on ${r.winner.short}` : "Finished") : "Racing",
+  };
+}
 
 function toRow(r: Ranked, ethUsd: number | null): Row {
   if (r.kind === "ours") {
@@ -449,9 +528,9 @@ function CoinCard({ r }: { r: Row }) {
       <Link href={r.href} className="ex-card group flex flex-col h-full min-w-0 rounded-[14px] border border-line bg-surface overflow-hidden">
         <span className="relative block aspect-square bg-night overflow-hidden">
           <CardArt r={r} />
-          {(r.graduated || r.graduating) && (
-            <span className="absolute left-2 bottom-2 h-[22px] px-2 rounded-md bg-black/60 text-white text-[0.6875rem] font-semibold flex items-center">
-              {r.graduated ? "Graduated" : "Graduating"}
+          {(r.graduated || r.graduating || r.badge) && (
+            <span className="absolute left-2 bottom-2 h-[22px] px-2 rounded-md bg-black/60 text-white text-[0.6875rem] font-semibold flex items-center max-w-[calc(100%-1rem)] truncate">
+              {r.badge ?? (r.graduated ? "Graduated" : "Graduating")}
             </span>
           )}
           {isNew(r.since) && (

@@ -10,8 +10,8 @@
 //   DELETE /api/forum/posts/:id                                                 (own posts)
 
 import {
-  COIN_ID,
   GENERAL,
+  isCoinBoard,
   SITE,
   admins,
   coinById,
@@ -47,7 +47,7 @@ const shouting = (s) => {
 
 async function boardInfo(env, board) {
   if (board === GENERAL) return { board, coin: null };
-  if (!COIN_ID.test(board)) return null;
+  if (!isCoinBoard(board)) return null;
   const coin = await coinById(env, board);
   return coin ? { board, coin } : null;
 }

@@ -17,6 +17,7 @@ import {
 } from "viem";
 import { createBundlerClient, toSimple7702SmartAccount } from "viem/account-abstraction";
 import type { Call } from "./tx";
+import { PIMLICO_KEY } from "./config";
 
 /**
  * Network fees paid in USDC (Circle Paymaster v0.8 + EIP-7702) for email / Google accounts.
@@ -30,8 +31,13 @@ type CircleSetup = { usdc: Address; paymaster: Address; bundler: string };
 const CIRCLE: Record<number, CircleSetup> = {
   // Base Sepolia: Circle's test USDC and testnet paymaster; Pimlico's public bundler
   84532: { usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", paymaster: "0x3BA9A96eE3eFf3A69E2B18886AcF52027EFF8966", bundler: "https://public.pimlico.io/v2/84532/rpc" },
-  // Base: native USDC and Circle's mainnet paymaster. The bundler must be a keyed one before mainnet (see notes).
-  8453: { usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", paymaster: "0x0578cFB241215b77442a541325d6A4E6dFE700Ec", bundler: "https://public.pimlico.io/v2/8453/rpc" },
+  // Base: native USDC and Circle's mainnet paymaster. With a Pimlico key (lib/config.ts) the keyed
+  // bundler is used; the public one is rate-limited and meant for testing.
+  8453: {
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    paymaster: "0x0578cFB241215b77442a541325d6A4E6dFE700Ec",
+    bundler: PIMLICO_KEY ? `https://api.pimlico.io/v2/8453/rpc?apikey=${PIMLICO_KEY}` : "https://public.pimlico.io/v2/8453/rpc",
+  },
 };
 
 export const usdcGasChain = (chainId: number) => CIRCLE[chainId] ?? null;

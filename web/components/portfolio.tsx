@@ -9,6 +9,7 @@ import { USD_MODE, IS_TESTNET } from "@/lib/config";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { onPending, pendingList, returningUsd, watchPending, type Pending } from "@/lib/racecross";
+import { raceHref, type RacePosition } from "@/lib/race";
 import { Sheet } from "./chrome";
 import { CoinAvatar, SkeletonRows } from "./coins";
 import { QuickTrade } from "./trade";
@@ -184,6 +185,8 @@ function PortfolioSheet() {
               <span className="block font-mono text-[1.0625rem] mt-0.5">{money(p.coinsUsd)}</span>
               {p.positions.length > 0 ? (
                 <span className={"block text-[0.75rem] mt-0.5 " + (p.openPnlUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.openPnlUsd)} open</span>
+              ) : p.racePositions.length > 0 ? (
+                <span className="block text-[0.75rem] text-ink-3 mt-0.5">{p.racePositions.length} coin{p.racePositions.length === 1 ? "" : "s"}</span>
               ) : (
                 <span className="block text-[0.75rem] text-ink-3 mt-0.5">none yet</span>
               )}
@@ -223,10 +226,13 @@ function PortfolioSheet() {
               </span>
             )}
           </div>
-          {p.positions.length === 0 ? (
-            <p className="text-[0.875rem] text-ink-2 py-2">No coins yet. Buy something and it shows up here with its profit or loss.</p>
+          {p.positions.length === 0 && p.racePositions.length === 0 ? (
+            <p className="text-[0.875rem] text-ink-2 py-2">No coins yet. Buy something and it shows up here.</p>
           ) : (
             <ul>
+              {p.racePositions.map((pos) => (
+                <RacePositionRow key={pos.coin.id} pos={pos} />
+              ))}
               {p.positions.map((pos) => (
                 <PositionRow key={pos.coin.id} pos={pos} />
               ))}
@@ -305,6 +311,33 @@ export function PositionRow({ pos, big = false }: { pos: Position; big?: boolean
           </button>
         ))}
       </div>
+    </li>
+  );
+}
+
+/** A race coin held: value now, coins per chain; selling happens on the race page. */
+export function RacePositionRow({ pos, big = false }: { pos: RacePosition; big?: boolean }) {
+  const { coin } = pos;
+  return (
+    <li className="py-3 border-t border-line first:border-t-0">
+      <Link href={raceHref(coin.id)} onClick={closeMoney} className="flex items-center gap-3">
+        <CoinAvatar logo={coin.logo} symbol={coin.symbol} size={40} />
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold truncate">{coin.name}</span>
+          <span className="flex items-center gap-1.5 text-[0.8125rem] text-ink-3 min-w-0">
+            <span className="truncate">
+              {tokensText(pos.tokens)} ${coin.symbol}
+            </span>
+            {pos.chains.map((c) => (
+              <span key={c.chain.chainId} title={c.chain.name} className="w-2 h-2 rounded-full shrink-0" style={{ background: c.chain.color }} aria-hidden="true" />
+            ))}
+          </span>
+        </span>
+        <span className="text-right shrink-0">
+          <span className={"block font-mono " + (big ? "text-[1.0625rem] font-semibold" : "")}>{money(pos.valueUsd)}</span>
+          <span className="block text-[0.75rem] text-emerald-dark font-semibold">Trade →</span>
+        </span>
+      </Link>
     </li>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "./data";
+import { V6 } from "./config";
 import { authedPost, type SignFn } from "./alerts";
 
 export type MyPoints = {
@@ -18,11 +19,11 @@ export type BoardRow = { owner: string; total: number; rank: number };
 export type Rewards = { earned: number; paid: number; pending: number; friends: number; friendsTraded: number };
 
 type Quest = { id: string; icon: string; title: string; note: string; pts: number; href?: string; action?: "follow" | "share" };
-export const QUESTS: readonly Quest[] = [
+const ALL_QUESTS: readonly Quest[] = [
   { id: "follow_x", icon: "𝕏", title: "Follow @sasapadfun on X", note: "News, launches and giveaways", pts: 50, action: "follow" },
   { id: "share_x", icon: "📣", title: "Share sasa on X", note: "Post your invite link or a coin", pts: 100, action: "share" },
-  { id: "launch", icon: "🚀", title: "Launch your first coin", note: "Any chain, any idea", pts: 200, href: "/create/" },
-  { id: "ai", icon: "✨", title: "Create a coin with AI", note: "Try the AI designer once", pts: 100, href: "/create/?ai=1" },
+  { id: "launch", icon: "🚀", title: "Launch your first coin", note: "Any chain, any idea", pts: 200, href: V6 ? "/create/" : "/race/launch/" },
+  { id: "ai", icon: "✨", title: "Create a coin with AI", note: "Try the AI designer once", pts: 100, href: V6 ? "/create/?ai=1" : "/race/launch/" },
   { id: "buy", icon: "🛒", title: "Make your first buy", note: "Any coin", pts: 50, href: "/explore/" },
   { id: "follow3", icon: "👥", title: "Follow 3 traders", note: "From Traders or a profile", pts: 50, href: "/traders/" },
   { id: "copy", icon: "🪞", title: "Copy a trader", note: "Turn copying on for someone", pts: 100, href: "/traders/" },
@@ -30,6 +31,8 @@ export const QUESTS: readonly Quest[] = [
   { id: "forum", icon: "💬", title: "Post in a coin forum", note: "As a holder", pts: 50, href: "/forum/" },
   { id: "locked", icon: "🔒", title: "Launch with a creator lock", note: "1 hour or 24 hours", pts: 150, href: "/create/" },
 ];
+/** On mainnet, quests that need v6 pages (traders, copy, creator lock) are left out. */
+export const QUESTS: readonly Quest[] = V6 ? ALL_QUESTS : ALL_QUESTS.filter((q) => !["follow3", "copy", "locked"].includes(q.id));
 
 /** Marks an X quest done (follow / share). Each counts once; repeats are ignored. */
 export async function claimQuest(sign: SignFn, id: "follow_x" | "share_x"): Promise<void> {

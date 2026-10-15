@@ -1,6 +1,6 @@
 "use client";
 
-import { USD_MODE } from "@/lib/config";
+import { USD_MODE, V6 } from "@/lib/config";
 import { toggleWatch, useWatchlist } from "@/lib/watchlist";
 
 import Link from "next/link";
@@ -232,6 +232,12 @@ export function useCoins(sort: SortKey, search: string) {
   // Reload every page shown so far (keeps the list fresh while scrolling).
   const load = useCallback(
     async (n: number) => {
+      // v6 coins only exist on testnet: on mainnet the list is simply empty (race coins are listed apart)
+      if (!V6) {
+        setCoins([]);
+        setHasMore(false);
+        return;
+      }
       try {
         setError("");
         const all: Coin[] = [];
@@ -258,6 +264,7 @@ export function useCoins(sort: SortKey, search: string) {
   }, [load]);
 
   useEffect(() => {
+    if (!V6) return;
     const t = setInterval(() => load(pages), 12_000);
     return () => clearInterval(t);
   }, [load, pages]);

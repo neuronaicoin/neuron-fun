@@ -1,5 +1,7 @@
 "use client";
 
+import { V6Gate } from "@/components/v6gate";
+
 /**
  * Discover: a deck of live coins. Swipe right to buy (opens the buy sheet,
  * amount already filled in, one tap to confirm), left to skip, up to save to
@@ -37,7 +39,7 @@ function markSeen(id: string) {
   } catch {}
 }
 
-export default function SwipePage() {
+function SwipePageV6() {
   const [deck, setDeck] = useState<Coin[] | null>(null);
   const [ethUsd, setEthUsd] = useState<number | null>(null);
   const [amount, setAmount] = useState<number>(5);
@@ -347,5 +349,14 @@ function SwipeCard({
         <p className="text-[0.75rem] text-ink-3 mt-1.5">{coin.graduatedOn ? "Graduated · trading in its pool" : `${pct}% to graduation`}</p>
       </div>
     </div>
+  );
+}
+
+/** v6 only: on mainnet this address moves on to /explore/ (see components/v6gate.tsx). */
+export default function SwipePage() {
+  return (
+    <V6Gate to="/explore/">
+      <SwipePageV6 />
+    </V6Gate>
   );
 }

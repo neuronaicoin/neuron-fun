@@ -1,12 +1,16 @@
 import { defineChain, type Address, type Chain } from "viem";
 import mainnetFill from "./mainnet.json";
 
-/**
- * Which network the whole site runs on. Switch day: set this to "mainnet" (after the
- * mainnet contracts are deployed and lib/mainnet.json is filled in from the deployments).
- */
-export const NETWORK = "testnet" as "testnet" | "mainnet";
+import { NETWORK as SITE_NETWORK } from "./network.js";
+
+/** Which network the whole site runs on: set in lib/network.js (the edge scripts read it too). */
+export const NETWORK = SITE_NETWORK as "testnet" | "mainnet";
 export const IS_TESTNET = NETWORK === "testnet";
+/**
+ * The older launch model (v6 bonding curves) only runs on testnet. On mainnet every coin sasa
+ * launches is a race coin: the v6 pages, lists and links stay hidden (their code is kept).
+ */
+export const V6 = IS_TESTNET;
 /** sasa's treasury (sasa admin): receives the deposit and swap fees and Boost payments. */
 export const SASA_TREASURY = "0xe0ba5905940D748b23Dc01266AA884E2391CcA2F" as const;
 /** Fees taken on mainnet through Relay, in basis points (Relay sends them to the treasury). */
@@ -16,6 +20,12 @@ export const FEE_BPS = { deposit: 25, swap: 70 } as const;
 export const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 export const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 
+/**
+ * Pimlico API key for the Base bundler that sends email accounts' transactions (fees paid in
+ * USDC). Public by design: restrict it to sasapad.fun in Pimlico's dashboard. Empty = the
+ * public, rate-limited bundler.
+ */
+export const PIMLICO_KEY = "";
 /** WalletConnect (Reown) project id: public by design. */
 export const WALLETCONNECT_PROJECT_ID = "d5a8ab4f1bb470db701a5396d283b28a";
 
@@ -168,9 +178,16 @@ const base = defineChain({
 type MainnetFill = { router: Address; migrator: Address; orders?: Address; boost?: Address; startBlock: string; gasPolicy: string };
 const FILL = mainnetFill as unknown as Record<string, MainnetFill | null>;
 
-function mainnetChain(c: Omit<NeuronChain, "router" | "migrator" | "orders" | "startBlock" | "gasPolicy">): NeuronChain | null {
+const NONE = "0x0000000000000000000000000000000000000000" as Address;
+
+/**
+ * A mainnet chain. The v6 contracts (router, migrator, orders) are not deployed on mainnet
+ * (sasa launches race coins there), so without a fill the chain still serves cash, deposits
+ * and withdrawals, with no v6 addresses and no sponsored gas (empty gas policy).
+ */
+function mainnetChain(c: Omit<NeuronChain, "router" | "migrator" | "orders" | "startBlock" | "gasPolicy">): NeuronChain {
   const f = FILL[c.key];
-  if (!f) return null;
+  if (!f) return { ...c, router: NONE, migrator: NONE, startBlock: 0n, gasPolicy: "" };
   return { ...c, router: f.router, migrator: f.migrator, orders: f.orders, boost: f.boost, startBlock: BigInt(f.startBlock), gasPolicy: f.gasPolicy };
 }
 
@@ -207,12 +224,9 @@ const MAINNET_CHAINS: NeuronChain[] = [
     legacy: [],
     alchemyNetwork: "base-mainnet",
   }),
-].filter((c): c is NeuronChain => c !== null);
+];
 
 export const CHAINS: NeuronChain[] = IS_TESTNET ? TESTNET_CHAINS : MAINNET_CHAINS;
-if (!IS_TESTNET && MAINNET_CHAINS.length < 2) {
-  throw new Error("NETWORK is mainnet but lib/mainnet.json is not filled in for every chain");
-}
 
 /**
  * sasa v5: every chain's coins trade against USDC (6 decimals). Site-wide, the

@@ -375,10 +375,55 @@ export async function fetchRaceCoin(id: string): Promise<RaceCoin | null> {
 }
 
 /** Races still running or decided in the last `recentMinutes`, newest first. */
-export async function fetchRaceCoins(limit = 12): Promise<RaceCoin[]> {
-  const { data, error } = await db.from("race_coins").select(COIN_COLS).order("launched_at", { ascending: false }).limit(limit);
+export async function fetchRaceCoins(limit = 12, opts: { only?: "racing" | "winners"; search?: string; creator?: string } = {}): Promise<RaceCoin[]> {
+  // only coins raced on this site's chains (testnet and mainnet races share the database)
+  const cols = COIN_COLS.replace("race_chains(", "race_chains!inner(");
+  let q = db.from("race_coins").select(cols).in("race_chains.chain_id", RACE_CHAINS.map((c) => c.chainId));
+  if (opts.only === "racing") q = q.is("decided_at", null).is("winner_chain", null);
+  if (opts.only === "winners") q = q.not("winner_chain", "is", null);
+  if (opts.creator) q = q.eq("creator", opts.creator.toLowerCase());
+  const term = (opts.search ?? "").trim().replace(/[%_,()*]/g, "");
+  if (term) q = q.or(`name.ilike.%${term}%,symbol.ilike.%${term}%`);
+  const { data, error } = await q.order(opts.only === "winners" ? "decided_at" : "launched_at", { ascending: false }).limit(limit);
   if (error) throw error;
-  return ((data ?? []) as unknown as Record<string, unknown>[]).map(toCoin);
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map(toCoin).filter((c) => c.lanes.length > 0);
+}
+
+/** A race coin someone holds: coins per chain, valued at each chain's last price. */
+export type RacePosition = { coin: RaceCoin; tokens: number; valueUsd: number; chains: { chain: RaceChain; tokens: number }[] };
+
+/** Every race coin `address` holds on this site's chains (from the indexer's balances). */
+export async function fetchRacePositions(address: string): Promise<RacePosition[]> {
+  if (!RACE_CHAINS.length) return [];
+  const { data: bals, error } = await db
+    .from("balances")
+    .select("chain_id,token,amount")
+    .eq("holder", address.toLowerCase())
+    .in("chain_id", RACE_CHAINS.map((c) => c.chainId))
+    .gt("amount", 0);
+  if (error) throw error;
+  const rows = (bals ?? []) as { chain_id: number; token: string; amount: string | number }[];
+  if (!rows.length) return [];
+  const tokens = [...new Set(rows.map((r) => r.token.toLowerCase()))];
+  const { data, error: e2 } = await db.from("race_coins").select(COIN_COLS).in("coin", tokens);
+  if (e2) throw e2;
+  const coins = ((data ?? []) as unknown as Record<string, unknown>[]).map(toCoin);
+  return coins
+    .map((coin): RacePosition => {
+      const chains = rows
+        .filter((r) => r.token.toLowerCase() === coin.coin.toLowerCase())
+        .map((r) => ({ chain: raceChain(Number(r.chain_id)), tokens: Number(r.amount) / 1e18 }))
+        .filter((x): x is { chain: RaceChain; tokens: number } => !!x.chain && x.tokens > 0);
+      const valueUsd = chains.reduce((sum, x) => {
+        const lane = coin.lanes.find((l) => l.chain.chainId === x.chain.chainId);
+        // a lost chain's coins move to the winner: value them at the winner's price
+        const price = lane && lane.state !== 3 ? lane.priceUsd : leadLane(coin)?.priceUsd;
+        return sum + x.tokens * (price ?? 0);
+      }, 0);
+      return { coin, tokens: chains.reduce((a, x) => a + x.tokens, 0), valueUsd, chains };
+    })
+    .filter((p) => p.tokens > 0)
+    .sort((a, b) => b.valueUsd - a.valueUsd);
 }
 
 export type RaceTrade = {

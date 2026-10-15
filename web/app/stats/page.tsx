@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChainChip, CoinAvatar, Skeleton } from "@/components/coins";
 import { BarChart, Donut, Panel, Sparkline, short, type Slice } from "@/components/statcharts";
-import { CHAINS, chainById } from "@/lib/config";
+import { CHAINS, V6, chainById } from "@/lib/config";
 import { coinHref, fetchStats, type FeeMode, type Leader, type LeaderKind } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { RaceStatsSection } from "@/components/racestats";
@@ -44,6 +44,7 @@ export default function StatsPage() {
   }, []);
 
   useEffect(() => {
+    if (!V6) return; // mainnet: race stats only
     let alive = true;
     const load = () =>
       fetchStats(days, chain)
@@ -85,6 +86,17 @@ export default function StatsPage() {
     const ch = chainById(c.chainId);
     return { label: ch?.short ?? `Chain ${c.chainId}`, value: c.volume, color: ch?.color ?? "var(--color-ink-3)", detail: money(c.volume) };
   });
+
+  // mainnet: every coin is a race coin, so the race stats are the whole page
+  if (!V6) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-10">
+        <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Stats</h1>
+        <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">Every race on sasa: chains, winners and volume.</p>
+        <RaceStatsSection />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-10">

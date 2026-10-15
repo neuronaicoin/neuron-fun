@@ -2,12 +2,12 @@
 // crawlers get every word without running JavaScript. A small script
 // (/forum.js) adds posting, likes and moderation for people.
 
-import { GENERAL, SITE, boardSlug, boardUrl, coinFromSlug, fmtShare, pub, q, shortAddr, slugify, threadUrl } from "./forum-core.js";
+import { GENERAL, RACE_COLS, RACE_FILTER, SITE, V6, boardSlug, boardUrl, coinById, coinFromSlug, fmtShare, pub, q, raceCoin, shortAddr, slugify, threadUrl, tradeUrl } from "./forum-core.js";
 
 const TARGET_USD_DEFAULT = 5; // testnet graduation target; set TARGET_USD on Cloudflare for mainnet
 const THREADS_PER_PAGE = 25;
 const POSTS_PER_PAGE = 50;
-const CHAIN_NAMES = { 46630: "Robinhood Chain", 4663: "Robinhood Chain", 84532: "Base", 8453: "Base", 97: "BNB Chain", 56: "BNB Chain" };
+const CHAIN_NAMES = { 46630: "Robinhood Chain", 4663: "Robinhood Chain", 84532: "Base", 8453: "Base", 97: "BNB Chain", 56: "BNB Chain", 5042: "Arc", 5042002: "Arc" };
 const NATIVE = { 97: "BNB", 56: "BNB" };
 // sasa's chains trade against dollars (USDC / USDG, 6 decimals): $ per 1e18 raw units = 1e12.
 const USD_CHAINS = new Set([46630, 84532, 4663, 8453]);
@@ -79,7 +79,28 @@ async function prices() {
   return out;
 }
 
+/** A race coin's facts: market cap from the winning (or leading) chain's price. */
+function raceFacts(coin) {
+  const lanes = coin.lanes || [];
+  const winner = coin.winner_chain ? Number(coin.winner_chain) : null;
+  const money = (l) => Number(l.reported_usd ?? l.pool_usd ?? 0);
+  const lead = winner ? lanes.find((l) => Number(l.chain_id) === winner) : lanes.filter((l) => l.state !== 3).sort((a, b) => money(b) - money(a))[0];
+  const price = lead && lead.price_usd !== null && lead.price_usd !== undefined ? Number(lead.price_usd) : null;
+  return {
+    mc: price && price > 0 ? price * 1e9 : null,
+    holders: null,
+    chains: [...new Set(lanes.map((l) => CHAIN_NAMES[l.chain_id]).filter(Boolean))],
+    graduated: !!winner,
+    winner: winner ? CHAIN_NAMES[winner] || "one chain" : null,
+    progress: null,
+    change: null,
+    race: true,
+    volume: lanes.reduce((a, l) => a + Number(l.volume_usd || 0), 0),
+  };
+}
+
 function facts(coin, px, env) {
+  if (coin.race) return raceFacts(coin);
   const target = Number((env && env.TARGET_USD) || TARGET_USD_DEFAULT);
   const curves = Array.isArray(coin.curves) ? coin.curves : [];
   let mc = null;
@@ -110,7 +131,22 @@ function facts(coin, px, env) {
   };
 }
 
+function raceFaq(coin, f) {
+  const sym = `$${coin.symbol}`;
+  const created = new Date(coin.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const desc = plain(coin.description);
+  const chains = f.chains.join(", ") || "several chains";
+  return [
+    [`What is ${coin.name} (${sym})?`, `${desc ? `${desc} ` : ""}${coin.name} is a meme coin launched on sasa on ${created}, on ${chains} at the same time, with the same contract address on every chain.`],
+    [`Which chain won ${sym}'s race?`, f.graduated ? `${f.winner}. After five minutes it had the most money, so the other chains closed and their money and holders moved to ${f.winner}, where ${sym} now trades.` : `The race is still running or being decided. After five minutes the chain with the most money wins and the whole coin moves there.`],
+    [`What is ${sym}'s market cap?`, f.mc === null ? `The market cap shows up once prices load on the coin's page.` : `About ${money(f.mc)}. Figures update from the chain.`],
+    [`Where do ${sym}'s trading fees go?`, `The creator's share of the trading fee ${FEE_MODES[Number(coin.fee_mode || 0)] || FEE_MODES[0]}. This was fixed when the coin was launched and can't be changed.`],
+    [`How do I buy ${sym}?`, `Open ${coin.name} on sasa, log in with email, Google or a wallet, and tap Buy. Meme coins are risky; only use money you can afford to lose.`],
+  ];
+}
+
 function faqItems(coin, f) {
+  if (coin.race) return raceFaq(coin, f);
   const sym = `$${coin.symbol}`;
   const created = new Date(coin.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const desc = plain(coin.description);
@@ -303,7 +339,7 @@ ${ld.map(jsonLd).join("\n")}
 <a class="skip" href="#main">Skip to content</a>
 <header class="top"><div class="hbar">
 <a class="logo" href="/explore/">${LOGO}sasa</a>
-<nav class="nav" aria-label="Main"><a href="/explore/">Explore</a><a href="/terminal/">Terminal</a><a href="/create/">Create a coin</a><a href="/me/">Your coins</a><a href="/traders/">Traders</a><a href="/copy/">Copy</a><a href="/forum/" aria-current="page">Forum</a><a href="/stats/">Stats</a></nav>
+<nav class="nav" aria-label="Main">${V6 ? '<a href="/explore/">Explore</a><a href="/terminal/">Terminal</a><a href="/create/">Create a coin</a><a href="/me/">Your coins</a><a href="/traders/">Traders</a><a href="/copy/">Copy</a>' : '<a href="/explore/">Explore</a><a href="/terminal/">Terminal</a><a href="/race/launch/">Create a coin</a><a href="/me/">Your coins</a>'}<a href="/forum/" aria-current="page">Forum</a><a href="/stats/">Stats</a></nav>
 <div class="hr"><button class="hbtn" id="themeBtn" type="button" aria-label="Switch theme"><svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button><div class="bellwrap" id="bellWrap" hidden><button class="hbtn" id="bellBtn" type="button" aria-label="Notifications" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="badge" id="bellBadge" hidden></span></button><div class="bellpop" id="bellPop" role="dialog" aria-label="Notifications" hidden></div></div><div class="acct login" id="acct"><a class="main" href="/login/?next=${encodeURIComponent(path)}">Log in</a></div></div>
 </div></header>
 <main id="main" class="wrap">
@@ -364,12 +400,18 @@ export async function renderHome(env, fresh) {
   const [boards, latest, active] = await Promise.all([
     pub(env, "forum_boards_public?select=board,threads,last_post_at&order=last_post_at.desc&limit=60", { fresh }),
     pub(env, "forum_threads_public?select=id,board,title,author,last_post_at,reply_count,pinned&order=last_post_at.desc&limit=20", { fresh }),
-    pub(env, `coin_list?select=${COIN_COLS}&order=last_trade_at.desc.nullslast&limit=40`, { fresh }),
+    V6
+      ? pub(env, `coin_list?select=${COIN_COLS}&order=last_trade_at.desc.nullslast&limit=40`, { fresh })
+      : pub(env, `race_coins?select=${RACE_COLS}&${RACE_FILTER}&order=launched_at.desc&limit=40`, { fresh }).then((r) => r.map(raceCoin)),
   ]);
   const byId = new Map(active.map((c) => [c.id, c]));
   const missing = [...new Set([...boards.map((b) => b.board), ...latest.map((t) => t.board)])].filter((id) => id !== GENERAL && !byId.has(id));
   if (missing.length) {
-    const more = await pub(env, `coin_list?select=${COIN_COLS}&id=in.(${missing.map((m) => `"${m}"`).join(",")})`, { fresh });
+    const more = V6
+      ? await pub(env, `coin_list?select=${COIN_COLS}&id=in.(${missing.map((m) => `"${m}"`).join(",")})`, { fresh })
+      : missing.some((m) => /^0x[0-9a-f]{64}$/.test(m))
+        ? (await pub(env, `race_coins?select=${RACE_COLS}&${RACE_FILTER}&id=in.(${missing.filter((m) => /^0x[0-9a-f]{64}$/.test(m)).map((m) => `"${m}"`).join(",")})`, { fresh })).map(raceCoin)
+        : [];
     for (const c of more) byId.set(c.id, c);
   }
   const counts = new Map(boards.map((b) => [b.board, b]));
@@ -395,7 +437,10 @@ export async function renderHome(env, fresh) {
     .map((coin) => {
       const f = facts(coin, px, env);
       const n = counts.get(coin.id)?.threads || 0;
-      return `<a class="row" href="${esc(boardUrl(coin))}">${avatar(coin)}<div class="grow"><div class="t">${esc(coin.name)} ($${esc(coin.symbol)})</div><div class="s">Market cap ${money(f.mc)} · ${f.holders} ${f.holders === 1 ? "holder" : "holders"}${f.chains.length ? ` · ${esc(f.chains.join(", "))}` : ""}</div></div><div class="num">${n} ${n === 1 ? "thread" : "threads"}</div></a>`;
+      const sub = f.race
+        ? `Market cap ${money(f.mc)} · ${f.graduated ? `won on ${esc(f.winner)}` : `racing on ${esc(f.chains.join(", "))}`}`
+        : `Market cap ${money(f.mc)} · ${f.holders} ${f.holders === 1 ? "holder" : "holders"}${f.chains.length ? ` · ${esc(f.chains.join(", "))}` : ""}`;
+      return `<a class="row" href="${esc(boardUrl(coin))}">${avatar(coin)}<div class="grow"><div class="t">${esc(coin.name)} ($${esc(coin.symbol)})</div><div class="s">${sub}</div></div><div class="num">${n} ${n === 1 ? "thread" : "threads"}</div></a>`;
     })
     .join("")}</div></section>`;
 
@@ -412,7 +457,9 @@ export async function renderHome(env, fresh) {
   ];
   return page({
     title: "sasa forum: meme coin discussions from real holders",
-    description: "Discuss meme coins launched on sasa. Every coin has a board where only its holders can post. Market caps, chains and graduation status update from the chain.",
+    description: V6
+      ? "Discuss meme coins launched on sasa. Every coin has a board where only its holders can post. Market caps, chains and graduation status update from the chain."
+      : "Discuss meme coins launched on sasa. Every coin has a board where only its holders can post. Market caps, chains and race winners update from the chain.",
     path: "/forum/",
     ld,
     body,
@@ -424,10 +471,12 @@ export async function renderBoard(env, slug, url, fresh) {
   const general = slug === GENERAL;
   let coin = null;
   if (!general) {
-    coin = await coinFromSlug(env, slug);
+    coin = await coinFromSlug(env, slug, { fresh });
     if (!coin) return null;
-    const rows = await pub(env, `coin_list?select=${COIN_COLS}&id=eq.${q(coin.id)}`, { fresh });
-    coin = rows[0] || { ...coin, curves: [], holders_total: 0 };
+    if (!coin.race) {
+      const rows = await pub(env, `coin_list?select=${COIN_COLS}&id=eq.${q(coin.id)}`, { fresh });
+      coin = rows[0] || { ...coin, curves: [], holders_total: 0 };
+    }
     if (boardSlug(coin) !== slug) return { redirect: boardUrl(coin) };
   }
   const board = general ? GENERAL : coin.id;
@@ -448,7 +497,9 @@ export async function renderBoard(env, slug, url, fresh) {
   let head, factsHtml = "", faqHtml = "", ldExtra = [], description, title;
   if (general) {
     title = "sasa news & help forum";
-    description = "Questions and answers about launching and trading meme coins on sasa: bonding curves, graduation, fees, chains and wallets.";
+    description = V6
+      ? "Questions and answers about launching and trading meme coins on sasa: bonding curves, graduation, fees, chains and wallets."
+      : "Questions and answers about launching and trading meme coins on sasa: the five-minute race, fees, chains and wallets.";
     head = `<div style="display:flex;gap:.9rem;align-items:center;margin-top:.8rem">${avatar(null, 48)}<h1 style="margin:0">sasa news &amp; help</h1></div><p class="lead">Questions about launching and trading on sasa, the chains it runs on, and ideas for what to build next. Anyone with a sasa account can post here.</p>`;
   } else {
     const px = await prices();
@@ -457,13 +508,22 @@ export async function renderBoard(env, slug, url, fresh) {
     const desc = plain(coin.description);
     title = `${coin.name} (${sym}) forum: news, price talk and holders`;
     description = clip(
-      `${coin.name} (${sym}) community forum on sasa. ${f.mc !== null ? `Market cap ${money(f.mc)}, ` : ""}${f.holders} ${f.holders === 1 ? "holder" : "holders"}, ${f.graduated ? `graduated on ${f.winner}` : `on ${f.chains.join(" and ") || "sasa"}`}. ${desc}`,
+      f.race
+        ? `${coin.name} (${sym}) community forum on sasa. ${f.mc !== null ? `Market cap ${money(f.mc)}, ` : ""}${f.graduated ? `won its race on ${f.winner}` : `racing on ${f.chains.join(", ") || "sasa"}`}. ${desc}`
+        : `${coin.name} (${sym}) community forum on sasa. ${f.mc !== null ? `Market cap ${money(f.mc)}, ` : ""}${f.holders} ${f.holders === 1 ? "holder" : "holders"}, ${f.graduated ? `graduated on ${f.winner}` : `on ${f.chains.join(" and ") || "sasa"}`}. ${desc}`,
       158
     );
     const change = f.change === null ? "—" : `<span class="${f.change >= 0 ? "up" : "down"}">${f.change >= 0 ? "+" : "−"}${Math.abs(f.change * 100).toFixed(1)}%</span>`;
     head = `<div style="display:flex;gap:.9rem;align-items:center;margin-top:.8rem">${avatar(coin, 48)}<h1 style="margin:0">${esc(coin.name)} (${esc(sym)}) forum</h1></div>
-<p class="lead">${desc ? `${esc(desc)} ` : ""}Only ${esc(sym)} holders can post here. <a href="/coin/?id=${esc(encodeURIComponent(coin.id))}">Trade ${esc(sym)} on sasa</a></p>`;
-    factsHtml = `<dl class="facts">
+<p class="lead">${desc ? `${esc(desc)} ` : ""}Only ${esc(sym)} holders can post here. <a href="${esc(tradeUrl(coin))}">Trade ${esc(sym)} on sasa</a></p>`;
+    factsHtml = f.race
+      ? `<dl class="facts">
+<div class="fact"><dt>Market cap</dt><dd>${money(f.mc)}</dd></div>
+<div class="fact"><dt>Race volume</dt><dd>${money(f.volume)}</dd></div>
+<div class="fact"><dt>Chains</dt><dd>${f.chains.length}</dd></div>
+<div class="fact"><dt>${f.graduated ? "Won on" : "Race"}</dt><dd>${f.graduated ? esc(f.winner) : "Running"}</dd></div>
+</dl>`
+      : `<dl class="facts">
 <div class="fact"><dt>Market cap</dt><dd>${money(f.mc)}</dd></div>
 <div class="fact"><dt>24h</dt><dd>${change}</dd></div>
 <div class="fact"><dt>Holders</dt><dd>${f.holders}</dd></div>
@@ -515,12 +575,12 @@ ${faqHtml}`;
       description,
       path,
       robots: sort !== "active" ? "noindex,follow" : "index,follow",
-      image: coin ? cardImage(env, coin.id) : undefined,
+      image: coin && !coin.race ? cardImage(env, coin.id) : undefined,
       ld,
       body,
       prev: pageNo > 1 ? (pageNo > 2 ? `${base}?page=${pageNo - 1}` : base) : null,
       next: pageNo < pages ? `${base}?page=${pageNo + 1}` : null,
-      data: { page: "board", board, boardName: general ? "sasa" : `$${coin.symbol}`, symbol: coin ? coin.symbol : null, coinUrl: coin ? `/coin/?id=${encodeURIComponent(coin.id)}` : null },
+      data: { page: "board", board, boardName: general ? "sasa" : `$${coin.symbol}`, symbol: coin ? coin.symbol : null, coinUrl: coin ? tradeUrl(coin) : null },
     }),
   };
 }
@@ -535,8 +595,12 @@ export async function renderThread(env, slug, threadPart, url, fresh) {
   const general = t.board === GENERAL;
   let coin = null;
   if (!general) {
-    const c = await pub(env, `coin_list?select=${COIN_COLS}&id=eq.${q(t.board)}`, { fresh });
-    coin = c[0] || null;
+    if (V6) {
+      const c = await pub(env, `coin_list?select=${COIN_COLS}&id=eq.${q(t.board)}`, { fresh });
+      coin = c[0] || null;
+    } else {
+      coin = await coinById(env, t.board, { fresh });
+    }
     if (!coin) return null;
   }
   const canonicalBase = threadUrl(coin || GENERAL, t);
@@ -568,7 +632,7 @@ export async function renderThread(env, slug, threadPart, url, fresh) {
 
   const coinLine = coin
     ? (() => {
-        return ` · <a href="/coin/?id=${esc(encodeURIComponent(coin.id))}">Trade $${esc(coin.symbol)}</a>`;
+        return ` · <a href="${esc(tradeUrl(coin))}">Trade $${esc(coin.symbol)}</a>`;
       })()
     : "";
   const pager =
@@ -625,7 +689,7 @@ ${related.length ? `<section class="sect" aria-labelledby="h-more"><h2 id="h-mor
       description,
       path,
       robots: thin ? "noindex,follow" : "index,follow",
-      image: coin ? cardImage(env, coin.id) : undefined,
+      image: coin && !coin.race ? cardImage(env, coin.id) : undefined,
       ld,
       body,
       prev: pageNo > 1 ? (pageNo > 2 ? `${canonicalBase}?page=${pageNo - 1}` : canonicalBase) : null,
@@ -635,7 +699,7 @@ ${related.length ? `<section class="sect" aria-labelledby="h-more"><h2 id="h-mor
         board: t.board,
         boardName: coin ? `$${coin.symbol}` : "sasa",
         symbol: coin ? coin.symbol : null,
-        coinUrl: coin ? `/coin/?id=${encodeURIComponent(coin.id)}` : null,
+        coinUrl: coin ? tradeUrl(coin) : null,
         thread: Number(t.id),
         threadAuthor: t.author,
         firstPost: op ? Number(op.id) : null,
@@ -661,7 +725,9 @@ export function renderNotFound() {
 
 export async function renderSitemap(env) {
   const [coins, threads] = await Promise.all([
-    pub(env, "coin_list?select=id,name,symbol,launch_key,last_trade_at,created_at&order=last_trade_at.desc.nullslast&limit=5000"),
+    V6
+      ? pub(env, "coin_list?select=id,name,symbol,launch_key,last_trade_at,created_at&order=last_trade_at.desc.nullslast&limit=5000")
+      : pub(env, `race_coins?select=${RACE_COLS}&${RACE_FILTER}&order=launched_at.desc&limit=5000`).then((r) => r.map(raceCoin)),
     pub(env, "forum_threads_public?select=id,board,title,last_post_at,reply_count,words&order=last_post_at.desc&limit=20000"),
   ]);
   const byId = new Map(coins.map((c) => [c.id, c]));
@@ -685,7 +751,13 @@ export async function renderSitemap(env) {
 export async function renderFeed(env) {
   const threads = await pub(env, "forum_threads_public?select=id,board,title,author,created_at,reply_count&order=created_at.desc&limit=50");
   const ids = [...new Set(threads.map((t) => t.board).filter((b) => b !== GENERAL))];
-  const coins = ids.length ? await pub(env, `coins?select=id,name,symbol,launch_key&id=in.(${ids.map((i) => `"${i}"`).join(",")})`) : [];
+  const coins = !ids.length
+    ? []
+    : V6
+      ? await pub(env, `coins?select=id,name,symbol,launch_key&id=in.(${ids.map((i) => `"${i}"`).join(",")})`)
+      : ids.some((i) => /^0x[0-9a-f]{64}$/.test(i))
+        ? (await pub(env, `race_coins?select=${RACE_COLS}&${RACE_FILTER}&id=in.(${ids.filter((i) => /^0x[0-9a-f]{64}$/.test(i)).map((i) => `"${i}"`).join(",")})`)).map(raceCoin)
+        : [];
   const byId = new Map(coins.map((c) => [c.id, c]));
   const items = threads
     .map((t) => {

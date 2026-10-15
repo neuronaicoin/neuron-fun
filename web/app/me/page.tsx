@@ -10,7 +10,11 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
 import { TradesFeed } from "@/components/market";
-import { PositionRow } from "@/components/portfolio";
+import { PositionRow, RacePositionRow } from "@/components/portfolio";
+import { V6 } from "@/lib/config";
+import { RACE_CHAINS, fetchRaceCoins, type RaceCoin } from "@/lib/race";
+import { CoinAvatar } from "@/components/coins";
+import { raceHref } from "@/lib/race";
 import { AllOrders } from "@/components/myorders";
 import { Avatar, EditProfileSheet } from "@/components/social";
 import { AllowCopyCard } from "@/components/copy";
@@ -30,6 +34,12 @@ export default function MePage() {
   const [list, setList] = useState<"followers" | "following" | null>(null);
   const [allTrades, setAllTrades] = useState(false);
   const [editing, setEditing] = useState(false);
+  // race coins this account created
+  const [myRaces, setMyRaces] = useState<RaceCoin[] | null>(RACE_CHAINS.length ? null : []);
+  useEffect(() => {
+    if (!address || !RACE_CHAINS.length) return;
+    fetchRaceCoins(50, { creator: address }).then(setMyRaces).catch(() => setMyRaces([]));
+  }, [address]);
 
   const load = useCallback(async () => {
     if (!address) return;
@@ -89,9 +99,13 @@ export default function MePage() {
       </div>
       <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar -mx-1 px-1">
         {[
-          ["/traders/", "Top traders", false],
-          ["/traders/?tab=following", "Following feed", false],
-          ["/copy/", "Copy signals", false],
+          ...(V6
+            ? [
+                ["/traders/", "Top traders", false],
+                ["/traders/?tab=following", "Following feed", false],
+                ["/copy/", "Copy signals", false],
+              ]
+            : []),
           ["/points/", "Points & invites", false],
           ["/forum/", "Forum", true],
           [`/u/${address.toLowerCase()}/`, "Public profile", true],
@@ -164,12 +178,15 @@ export default function MePage() {
         <div className="mt-3 rounded-3xl border border-line bg-surface px-4 sm:px-5">
           {!p ? (
             <SkeletonRows rows={3} avatar="square" className="py-2" />
-          ) : p.positions.length === 0 ? (
+          ) : p.positions.length === 0 && p.racePositions.length === 0 ? (
             <p className="py-6 text-ink-2 text-[0.9375rem]">
               Nothing yet. <Link href="/explore/" className="text-emerald font-semibold">Find a coin you like</Link>.
             </p>
           ) : (
             <ul>
+              {p.racePositions.map((pos) => (
+                <RacePositionRow key={pos.coin.id} pos={pos} big />
+              ))}
               {p.positions.map((pos) => (
                 <PositionRow key={pos.coin.id} pos={pos} big />
               ))}
@@ -183,11 +200,22 @@ export default function MePage() {
         <h2 className="font-display font-semibold text-[1.25rem]">Coins you created</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {!data && <Skeleton className="h-40 sm:h-44" />}
+          {myRaces?.map((r) => (
+            <Link key={r.id} href={raceHref(r.id)} className="rounded-2xl border border-line bg-surface p-4 flex items-center gap-3 hover:border-emerald min-w-0">
+              <CoinAvatar logo={r.logo} symbol={r.symbol} size={44} />
+              <span className="min-w-0">
+                <b className="block truncate">{r.name}</b>
+                <span className="block text-[0.8125rem] text-ink-3 truncate">
+                  ${r.symbol} · {r.winner ? `won on ${r.winner.short}` : `${r.lanes.length} chain${r.lanes.length === 1 ? "" : "s"}`}
+                </span>
+              </span>
+            </Link>
+          ))}
           {data?.created.map((c) => (
             <CoinCard key={c.id} coin={c} />
           ))}
         </div>
-        {data && data.created.length === 0 && (
+        {data && data.created.length === 0 && myRaces !== null && myRaces.length === 0 && (
           <div className="mt-1 text-center py-8 border border-dashed border-line rounded-2xl">
             <p className="text-ink-2">You haven&apos;t created a coin yet.</p>
             <Link href="/race/launch/" className="inline-flex mt-3 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>

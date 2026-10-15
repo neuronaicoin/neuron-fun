@@ -2,6 +2,10 @@
  * /llms-coins.txt: the coins people trade on sasa right now, as plain text for
  * AI answer engines (linked from /llms.txt). Refreshed at most every 30 minutes.
  */
+import { NETWORK } from "../lib/network.js";
+import { CHAINS as RACE_CHAINS, MAINNET_IDS } from "../edge/race-pages.js";
+
+const V6 = NETWORK === "testnet";
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 const SITE = "https://sasapad.fun";
@@ -23,10 +27,22 @@ export async function onRequestGet() {
   const h = { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, cf: { cacheTtl: 1800, cacheEverything: true } };
   let ours = [];
   let ext = [];
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/coin_list?select=id,name,symbol,graduated_chain,volume_native_24h,holders_total,change_24h,created_at&order=volume_native_24h.desc.nullslast&limit=150`, h);
-    if (r.ok) ours = await r.json();
-  } catch {}
+  let races = [];
+  if (V6) {
+    try {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/coin_list?select=id,name,symbol,graduated_chain,volume_native_24h,holders_total,change_24h,created_at&order=volume_native_24h.desc.nullslast&limit=150`, h);
+      if (r.ok) ours = await r.json();
+    } catch {}
+  } else {
+    try {
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/race_coins?select=id,name,symbol,launched_at,winner_chain,race_chains!inner(chain_id,price_usd,volume_usd,state)&race_chains.chain_id=in.(${MAINNET_IDS.join(",")})&order=launched_at.desc&limit=150`,
+        h
+      );
+      if (r.ok) races = await r.json();
+    } catch {}
+  }
+  const chainName = (id) => (RACE_CHAINS.find((c) => c.chainId === Number(id)) || {}).name || `chain ${id}`;
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/ext_coins?select=network,address,name,symbol,mcap_usd,fdv_usd,liq_usd,vol_24h,change_24h&order=vol_24h.desc.nullslast&limit=300`, h);
     if (r.ok) ext = await r.json();
@@ -39,7 +55,17 @@ export async function onRequestGet() {
     "",
     "## Launched on sasa",
     "",
-    ...(ours.length
+    ...(!V6
+      ? races.length
+        ? races.map((c) => {
+            const lanes = c.race_chains || [];
+            const win = c.winner_chain ? lanes.find((l) => Number(l.chain_id) === Number(c.winner_chain)) : null;
+            const price = win ? Number(win.price_usd) : Math.max(0, ...lanes.map((l) => Number(l.price_usd) || 0));
+            const vol = lanes.reduce((a, l) => a + Number(l.volume_usd || 0), 0);
+            return `- [${clean(c.name)} ($${clean(c.symbol)})](${SITE}/r/?id=${c.id}): ${c.winner_chain ? `won its race on ${chainName(c.winner_chain)}` : `racing on ${lanes.map((l) => chainName(l.chain_id)).join(", ")}`}; market cap ${money(price * 1e9)}; race volume ${money(vol)}`;
+          })
+        : ["- None yet."]
+      : ours.length
       ? ours.map(
           (c) =>
             `- [${clean(c.name)} ($${clean(c.symbol)})](${SITE}/coin/?id=${encodeURIComponent(c.id)}): ${c.graduated_chain ? "graduated" : "on its bonding curve"}; volume ${money(Number(c.volume_native_24h || 0) / 1e6)}; holders ${Number(c.holders_total || 0)}; change ${pct(c.change_24h === null ? null : Number(c.change_24h) * 100)}`

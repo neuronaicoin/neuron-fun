@@ -1,5 +1,7 @@
 "use client";
 
+import { V6Gate } from "@/components/v6gate";
+
 /** Top traders (leaderboard) and the Following feed. */
 import { BadgeIcons } from "@/components/badges";
 import { useBadges } from "@/lib/badges";
@@ -28,7 +30,7 @@ import {
 } from "@/lib/social";
 import { signed } from "@/lib/portfolio";
 
-export default function TradersPage() {
+function TradersPageV6() {
   return (
     <Suspense fallback={null}>
       <Traders />
@@ -266,5 +268,14 @@ function Following({ ethUsd }: { ethUsd: number | null }) {
         </ul>
       )}
     </>
+  );
+}
+
+/** v6 only: on mainnet this address moves on to /explore/ (see components/v6gate.tsx). */
+export default function TradersPage() {
+  return (
+    <V6Gate to="/explore/">
+      <TradersPageV6 />
+    </V6Gate>
   );
 }
