@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Perps: leverage trading on Hyperliquid in sasa's own screen. Market list, live chart, order
+ * Futures (perps): leverage trading on Hyperliquid in sasa's own screen. Market list, live chart, order
  * panel (long / short, leverage, amount, TP/SL), the perps balance with Add / Move to main, and
  * the user's positions, orders and history. Trading itself is in lib/perpstrade.ts.
  */
@@ -32,7 +32,8 @@ import {
 import { usePerpsTrade, type PerpsTrade } from "@/lib/perpstrade";
 import { hlSubscribe } from "@/lib/hlws";
 import { haptic } from "@/lib/haptics";
-import { authedPost, checkPush, enablePush, sessionToken, useAlerts } from "@/lib/alerts";
+import { authedGet, authedPost, checkPush, enablePush, sessionToken, useAlerts } from "@/lib/alerts";
+import { MarketSwitch } from "./marketswitch";
 
 const usd = (v: number, d = 2) => `$${v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
 const signedUsd = (v: number) => `${v >= 0 ? "+" : "−"}${usd(Math.abs(v))}`;
@@ -48,6 +49,15 @@ function px(v: number | null | undefined): string {
 export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
   const w = useWallet();
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  // an admin wallet (FORUM_ADMINS) may test from a blocked country: checked by the server
+  // (kept as the address it was checked for, so a wallet switch never carries it over)
+  const [adminFor, setAdminFor] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setAdminFor(sessionStorage.getItem("sasa-futures-admin"));
+    } catch {}
+  }, [w.address]);
+  const adminTest = !!w.address && adminFor === w.address.toLowerCase();
   useEffect(() => {
     let alive = true;
     void perpsAllowedHere().then((ok) => alive && setAllowed(ok));
@@ -169,11 +179,17 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
     return out;
   }, [account, orders, coin]);
 
-  if (allowed === null) return <div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>;
-  if (!allowed) return <Blocked />;
+  if (allowed === null && !adminTest) return <div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>;
+  if (!allowed && !adminTest) return <Blocked onAdmin={setAdminFor} />;
 
   return (
     <div className="max-w-[1500px] mx-auto px-3 sm:px-5 py-3 sm:py-5 pb-28 md:pb-10">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <MarketSwitch at="futures" />
+        {!allowed && adminTest && (
+          <span className="rounded-full bg-warn-bg text-warn-ink px-3 py-1.5 text-[0.75rem] font-semibold">Admin test: Futures stay closed here for everyone else</span>
+        )}
+      </div>
       <div className="grid gap-3 lg:grid-cols-[15rem_minmax(0,1fr)_21rem] items-start">
         {/* market list (computers) */}
         <aside className="hidden lg:block rounded-3xl border border-line bg-surface overflow-hidden lg:sticky lg:top-24">
@@ -223,13 +239,44 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
   );
 }
 
-function Blocked() {
+function Blocked({ onAdmin }: { onAdmin: (address: string) => void }) {
+  const w = useWallet();
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await authedGet<{ admin?: boolean }>(w.signMessage, "perps/admin");
+      if (r.admin && w.address) {
+        try {
+          sessionStorage.setItem("sasa-futures-admin", w.address.toLowerCase());
+        } catch {}
+        onAdmin(w.address.toLowerCase());
+      } else setMsg("This wallet isn't an admin.");
+    } catch (e) {
+      setMsg(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <div className="max-w-xl mx-auto px-4 py-16 text-center">
-      <h1 className="font-display font-bold text-[1.5rem]">Perps aren&apos;t available where you are</h1>
-      <p className="text-ink-2 mt-2">
-        Leverage trading isn&apos;t offered in your country or region. Everything else on sasa works as usual.
-      </p>
+    <div className="max-w-xl mx-auto px-4 py-10">
+      <MarketSwitch at="futures" />
+      <div className="text-center mt-8">
+        <h1 className="font-display font-bold text-[1.5rem]">Futures aren&apos;t available where you are</h1>
+        <p className="text-ink-2 mt-2">
+          Leverage trading isn&apos;t offered in your country or region. Everything else on sasa works as usual.
+        </p>
+        {w.address && (
+          <div className="mt-8">
+            <button type="button" disabled={busy} onClick={() => void check()} className="text-[0.75rem] text-ink-3 underline disabled:opacity-50">
+              {busy ? "Checking…" : "Admin test"}
+            </button>
+            {msg && <p className="mt-1 text-[0.75rem] text-ink-3">{msg}</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -309,9 +356,9 @@ function MarketHeader({ m, onPick }: { m: PerpMarket | null; onPick: () => void 
 function BalanceCard({ account, trade, signedIn }: { account: PerpAccount | null; trade: PerpsTrade; signedIn: boolean }) {
   const [sheet, setSheet] = useState<"add" | "out" | null>(null);
   return (
-    <section className="rounded-3xl border border-line bg-surface p-4" aria-label="Perps balance">
+    <section className="rounded-3xl border border-line bg-surface p-4" aria-label="Futures balance">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[0.8125rem] text-ink-3">Perps balance</span>
+        <span className="text-[0.8125rem] text-ink-3">Futures balance</span>
         <span className="font-mono font-semibold text-[1.125rem] tabular-nums">{account ? usd(account.accountValue) : signedIn ? "…" : "—"}</span>
       </div>
       {account && account.marginUsed > 0 && (
@@ -349,7 +396,7 @@ function MoveSheet({ kind, account, trade, onClose }: { kind: "add" | "out"; acc
     try {
       if (kind === "add") await trade.deposit(n, setBusy);
       else await trade.withdraw(n, setBusy);
-      setMsg({ ok: true, text: kind === "add" ? `$${n.toFixed(2)} is on its way to your perps balance (usually under a minute).` : `$${n.toFixed(2)} is on its way to your main balance (usually a few minutes).` });
+      setMsg({ ok: true, text: kind === "add" ? `$${n.toFixed(2)} is on its way to your futures balance (usually under a minute).` : `$${n.toFixed(2)} is on its way to your main balance (usually a few minutes).` });
     } catch (e) {
       setMsg({ ok: false, text: friendlyError(e) });
     } finally {
@@ -357,12 +404,12 @@ function MoveSheet({ kind, account, trade, onClose }: { kind: "add" | "out"; acc
     }
   };
   return (
-    <Sheet title={kind === "add" ? "Add money to perps" : "Move to main balance"} onClose={onClose}>
+    <Sheet title={kind === "add" ? "Add money to futures" : "Move to main balance"} onClose={onClose}>
       <div className="flex flex-col gap-3 p-1">
         <p className="text-[0.875rem] text-ink-2">
           {kind === "add"
-            ? "USDC from your sasa balance goes to your perps balance on Hyperliquid, in your own name. Smallest: $5."
-            : "USDC from your perps balance comes back to your sasa balance. Hyperliquid keeps about $1 for moving it."}
+            ? "USDC from your sasa balance goes to your futures balance on Hyperliquid, in your own name. Smallest: $5."
+            : "USDC from your futures balance comes back to your sasa balance."}
         </p>
         <label className="flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
           <span className="text-ink-3 text-[1.375rem] mr-1">$</span>

@@ -63,11 +63,11 @@ function readAgent(store: Pick<Storage, "getItem"> | null, user: string): `0x${s
 /** Hyperliquid's error text, in plain words where we know it. */
 export function hlError(e: unknown): Error {
   const m = String((e as { message?: string })?.message ?? e);
-  if (/insufficient margin|not enough/i.test(m)) return new Error("Not enough in your perps balance for that.");
+  if (/insufficient margin|not enough/i.test(m)) return new Error("Not enough in your futures balance for that.");
   if (/could not immediately match|no resting orders/i.test(m)) return new Error("The price moved too fast. Try again.");
   if (/minimum value|min.*\$10/i.test(m)) return new Error("The smallest position is $10 (amount × leverage).");
   if (/builder fee has not been approved|builder/i.test(m) && /approv/i.test(m)) return new Error("Trading isn't approved yet. Try again to approve it.");
-  if (/does not exist|user or api wallet/i.test(m)) return new Error("Your perps account isn't set up yet. Add money first.");
+  if (/does not exist|user or api wallet/i.test(m)) return new Error("Your futures account isn't set up yet. Add money first.");
   if (/rejected|denied|user rejected/i.test(m)) return new Error("You cancelled it in your wallet.");
   return new Error(m.length > 160 ? `${m.slice(0, 160)}…` : m);
 }

@@ -23,7 +23,8 @@
  *   /api/forum/*                   see edge/forum-api.js
  *   POST   /api/racechat           { coinId, body } (live race chat, edge/racechat-api.js)
  *   /api/auto                      auto orders (edge/auto-api.js)
- *   POST   /api/perps/watch        perps TP / SL / liquidation alerts (edge/perps-api.js)
+ *   POST   /api/perps/watch        futures TP / SL / liquidation alerts (edge/perps-api.js)
+ *   GET    /api/perps/admin        { admin }: admins may test Futures from a blocked country
  *
  * Optional env: FORUM_ADMINS  comma-separated wallet addresses that can moderate every forum board
  */

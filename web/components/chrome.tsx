@@ -221,7 +221,6 @@ const V6_ONLY = new Set(["/traders/", "/copy/", "/swipe/"]);
 const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/market/", label: "Market", from: "lg" },
-  { href: "/perps/", label: "Perps", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "Your coins", from: "lg" },
@@ -237,6 +236,8 @@ const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", neve
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
+  // Futures is the second half of Market (Spot | Futures)
+  if (href === "/market/" && /^\/(futures|perps)(\/|$)/.test(pathname)) return true;
   return pathname.startsWith(href.replace(/\/$/, ""));
 }
 
@@ -293,8 +294,7 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
-  { href: "/market/", label: "Market", note: "Top 300 coins, buy with USDC", tablet: true },
-  { href: "/perps/", label: "Perps", note: "Long or short with leverage" },
+  { href: "/market/", label: "Market", note: "Top coins (spot) and futures", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
@@ -313,11 +313,12 @@ const MORE = MORE_ALL.filter((m) => V6 || !V6_ONLY.has(m.href)).map((m) =>
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname() || "/";
-  const { address } = useWallet();
+  const { address, disconnect } = useWallet();
   const points = useMyTotal(address);
   return (
     <Sheet title="More" onClose={onClose}>
       <div className="grid -mx-1">
+        <GetAppButton variant="tile" />
         {MORE.map((m) => {
           const active = isActive(pathname, m.href);
           const cls =
@@ -348,7 +349,28 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
             </Link>
           );
         })}
-        <GetAppButton variant="tile" />
+        {/* log in / log out, so another phone or a shared computer is easy */}
+        <div className="pt-4 pb-1">
+          {address ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[0.8125rem] text-ink-3 min-w-0 truncate">
+                Logged in as <span className="font-mono text-ink-2">{shortAddr(address)}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  disconnect();
+                }}
+                className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] hover:border-danger hover:text-danger shrink-0"
+              >
+                Log out
+              </button>
+            </div>
+          ) : (
+            <ConnectButton full />
+          )}
+        </div>
       </div>
     </Sheet>
   );
@@ -395,7 +417,7 @@ export function BottomNav() {
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-6">
-        {NAV.filter((n) => n.href !== "/perps/" && n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link

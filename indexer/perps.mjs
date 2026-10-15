@@ -129,7 +129,7 @@ export async function checkOne(row, { site, read = info, typeOf = orderType, now
     const fills = await read({ type: "userFillsByTime", user, startTime: lastFill + 1, endTime: now + 60_000, aggregateByTime: true });
     const list = Array.isArray(fills) ? fills.filter((f) => Number(f.time) > lastFill) : [];
     for (const c of await closesFrom(list, user, (oid) => typeOf(user, oid))) {
-      notes.push({ owner: user, kind: `perps-${c.kind}`, title: c.title, body: c.body, url: `${site}/perps/?c=${encodeURIComponent(c.coin)}` });
+      notes.push({ owner: user, kind: `perps-${c.kind}`, title: c.title, body: c.body, url: `${site}/futures/?c=${encodeURIComponent(c.coin)}` });
     }
     for (const f of list) lastFill = Math.max(lastFill, Number(f.time) || 0);
   }

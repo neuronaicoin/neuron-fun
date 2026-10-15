@@ -251,7 +251,7 @@ export function planOrder(m: PerpMarket, side: "long" | "short", margin: number,
   else if (notional < MIN_NOTIONAL) why = `The smallest position is $${MIN_NOTIONAL} (amount × leverage).`;
   else if (Number(coins) <= 0) why = "That amount is too small for this coin.";
   else if (lev > m.maxLev) why = `Up to ${m.maxLev}x on ${m.coin}.`;
-  else if (margin + fees > available + 1e-9) why = "Not enough in your perps balance. Add money first.";
+  else if (margin + fees > available + 1e-9) why = "Not enough in your futures balance. Add money first.";
   return { notional, coins, liq, fees, ok: !why, why };
 }
 

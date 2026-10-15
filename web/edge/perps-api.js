@@ -2,12 +2,14 @@
 // perps position on sasa:
 //
 //   POST /api/perps/watch   → { ok }
+//   GET  /api/perps/admin   → { admin }   (admins test Futures from a blocked country; FORUM_ADMINS)
 //
 // Puts the signed-in address in perps_watch (perps.sql). The indexer (perps.mjs) then tells them
 // when a take profit, stop loss or liquidation closes a position. Only the caller's own address
 // can be added (it comes from the session), and their Hyperliquid fills are public anyway.
 
 import { NETWORK } from "../lib/network.js";
+import { admins } from "./forum-core.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 
@@ -15,6 +17,7 @@ const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 
 export async function perpsRoute(env, me, parts, method) {
+  if (parts.length === 2 && parts[1] === "admin" && method === "GET") return json({ admin: admins(env).includes(String(me || "").toLowerCase()) });
   if (!(parts.length === 2 && parts[1] === "watch" && method === "POST")) return json({ error: "Not found." }, 404);
   // perps trade at mainnet only; the test site never adds anyone
   if (NETWORK !== "mainnet" && !env.PERPS_ANY_NETWORK) return json({ ok: false });

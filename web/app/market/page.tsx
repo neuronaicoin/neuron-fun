@@ -8,6 +8,7 @@ import { compactUsd } from "@/lib/format";
 import { fmtPrice } from "@/lib/race";
 import { extNetwork } from "@/lib/extcoins";
 import { fetchTopCoins, topHref, type TopCoin } from "@/lib/topcoins";
+import { MarketSwitch } from "@/components/marketswitch";
 
 type Sort = "top" | "gainers" | "losers" | "volume";
 const SORTS: { id: Sort; label: string }[] = [
@@ -76,7 +77,8 @@ export default function MarketPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28 md:pb-12">
-      <h1 className="font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Market</h1>
+      <MarketSwitch at="spot" />
+      <h1 className="mt-3 font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Market</h1>
       <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">The 300 biggest coins. Buy and sell any of them with USDC in one tap.</p>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
