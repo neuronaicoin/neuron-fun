@@ -705,6 +705,36 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         t.pancakeV3SwapCallback(1, 0, "");
     }
 
+    /// A sasa account (dollars on Base) launches here through Across with its signature: the
+    /// coin, fees and first-buy coins are the user's, a little of the money becomes gas, the
+    /// change goes back to the user, nothing stays in RaceCross.
+    function test_crossLaunch() public {
+        CrossSpoke spoke = new CrossSpoke();
+        RaceCrossPcs x = new RaceCrossPcs(spoke, usdcA, IWrappedNative(address(wbnb)), pb.dollarPool(), IRaceRouter(address(new RaceTradePcs(IRaceBuilderPcsPools(address(pb))))), facA, 8453,
+            IERC20(address(0xBA5E)), 6, 0.0002 ether);
+        facA.setLauncher(address(x));
+        uint256 pk = 0xA11CE5EC2E7;
+        address u = vm.addr(pk);
+        RaceFactory.Launch memory l = RaceFactory.Launch("Moon Dog", "MDOG", "", "", bytes32("k9"), _eids(), 0, 5 * U, 0);
+        uint256 dl = vm.getBlockTimestamp() + 10 minutes;
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(pk, x.launchDigest(u, l, 30 * U / 100, dl));
+        bytes memory m = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(u, l, 30 * U / 100, dl, abi.encodePacked(r, sg, v))));
+        uint256 g0 = gasleft();
+        spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 6 * U, m);
+        emit log_named_uint("cross launch fill gas", g0 - gasleft());
+        assertLt(g0 - gasleft(), 7_000_000, "a launch fill fits easily in a block");
+        address coin = facA.coinAddress(u, bytes32("k9"));
+        assertGt(coin.code.length, 0, "launched");
+        assertGt(IERC20(coin).balanceOf(u), 0, "first-buy coins are the creator's");
+        assertGt(u.balance, 0, "gas topped up");
+        assertEq(usdcA.balanceOf(u), 6 * U - 5 * U - facA.raceFee() - 30 * U / 100, "change back");
+        assertEq(usdcA.balanceOf(address(x)), 0, "nothing kept");
+        assertEq(address(x).balance, 0);
+        // the same order again can't launch twice: refused (Across returns the dollars on Base)
+        vm.expectRevert(RaceCross.AlreadyLaunched.selector);
+        spoke.fill{gas: 1_000_000}(address(usdcA), ICrossMinter(address(minterA)), address(x), 6 * U, m);
+    }
+
     /// Dollars kept on Base buy here through Across: a user with no BNB gets a little gas and the
     /// coins; selling sends the dollars home to Base (6 decimals there); a failed buy refunds.
     function test_crossBuyAndSellHome() public {
@@ -712,12 +742,12 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         vm.warp(block.timestamp + 301);
         RaceTradePcs t = new RaceTradePcs(IRaceBuilderPcsPools(address(pb)));
         CrossSpoke spoke = new CrossSpoke();
-        RaceCrossPcs x = new RaceCrossPcs(spoke, usdcA, IWrappedNative(address(wbnb)), pb.dollarPool(), IRaceRouter(address(t)), 8453,
+        RaceCrossPcs x = new RaceCrossPcs(spoke, usdcA, IWrappedNative(address(wbnb)), pb.dollarPool(), IRaceRouter(address(t)), facA, 8453,
             IERC20(address(0xBA5E)), 6, 0.0002 ether); // top-up below ~12 cents of BNB
         address u = address(0xC0FFEE01);
 
         spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 20 * U,
-            abi.encode(RaceCross.Order(u, coin, 1, 30 * U / 100, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(u, coin, 1, 30 * U / 100, block.timestamp + 1 hours))));
         uint256 coins = IERC20(coin).balanceOf(u);
         assertGt(coins, 0, "coins delivered");
         assertGt(u.balance, 0, "gas delivered");
@@ -746,7 +776,7 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         {
             address w = address(new NoNativePcs());
             spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * U,
-                abi.encode(RaceCross.Order(w, coin, 1, 30 * U / 100, block.timestamp + 1 hours)));
+                abi.encode(uint8(0), abi.encode(RaceCross.Order(w, coin, 1, 30 * U / 100, block.timestamp + 1 hours))));
             assertEq(w.balance, 0);
             assertGt(IERC20(coin).balanceOf(w), 0, "bought anyway");
             assertEq(usdcA.balanceOf(address(x)), 0);
@@ -754,7 +784,7 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         }
         address v = address(0xC0FFEE02);
         spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * U,
-            abi.encode(RaceCross.Order(v, coin, type(uint256).max, 0, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(v, coin, type(uint256).max, 0, block.timestamp + 1 hours))));
         assertEq(usdcA.balanceOf(v), 10 * U, "refunded in full");
         vm.expectRevert(RaceCrossPcs.NotOurCall.selector);
         x.pancakeV3SwapCallback(1, 0, "");

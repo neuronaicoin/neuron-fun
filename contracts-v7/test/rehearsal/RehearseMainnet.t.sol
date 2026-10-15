@@ -213,6 +213,7 @@ contract RehearseMainnetTest is Test {
         (bool okBnb, address coinBnb) = _launch(3, eids);
         assertTrue(okBnb, "BNB Chain launch");
         _crossTrade(3, coinBnb); // right away: BNB Chain's public nodes forget old state quickly
+        _crossLaunch(3, eids);
 
         // 2. wire and launch on the other three
         for (uint256 i; i < 3; ++i) _wire(i);
@@ -236,6 +237,7 @@ contract RehearseMainnetTest is Test {
         //    (topping up gas); the user then sells and the dollars leave for Base through Across
         assertEq(vm.parseJsonAddress(_json(8453), ".cross"), address(0), "no cross contract on Base itself");
         _crossTrade(1, coinBnb); // Robinhood Chain
+        _crossLaunch(1, eids);
         console2.log("REHEARSAL OK: chains deployed 4, wired 4, coin launched on", launched);
     }
 
@@ -250,7 +252,7 @@ contract RehearseMainnetTest is Test {
         deal(c.usd, x, amount);
         vm.prank(c.across);
         RaceCross(payable(x)).handleV3AcrossMessage(c.usd, amount, address(0xF111),
-            abi.encode(RaceCross.Order(user, coin, 1, (30 * _unit(c)) / 100, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(user, coin, 1, (30 * _unit(c)) / 100, block.timestamp + 1 hours))));
         uint256 coins = IERC20(coin).balanceOf(user);
         assertGt(coins, 0, "coins bought from Base dollars");
         assertGt(user.balance, 0, "gas topped up");
@@ -264,6 +266,41 @@ contract RehearseMainnetTest is Test {
         assertGt(got, 12 * _unit(c), "sold for most of it (opening fee still 10% each way here)");
         assertEq(IERC20(c.usd).balanceOf(c.across) - spoke0, got, "dollars handed to Across for Base");
         console2.log("cross trade ok on chain", c.id, "gas wei", user.balance);
+    }
+
+
+    /// A sasa account (dollars on Base) launches here through Across: the real factory, pools and
+    /// all four chains picked, with the user's signature. Also measures the fill's gas.
+    function _crossLaunch(uint256 i, uint32[] memory eids) internal {
+        Net memory c = chains[i];
+        vm.selectFork(forks[i]);
+        RaceCross x = RaceCross(payable(vm.parseJsonAddress(_json(c.id), ".cross")));
+        RaceFactory f = RaceFactory(vm.parseJsonAddress(_json(c.id), ".factory"));
+        assertEq(f.launcher(), address(x), "RaceCross is the factory's launcher");
+        uint256 pk = uint256(keccak256(abi.encode("sasa rehearsal: cross creator", c.id)));
+        address user = vm.addr(pk);
+        RaceFactory.Launch memory l =
+            RaceFactory.Launch("Rehearsal Dog", "RDOG", "", "", bytes32("rehearsal-2"), eids, 0, f.minFirstBuy(), 0);
+        uint256 dl = vm.getBlockTimestamp() + 15 minutes;
+        uint256 gasUsd = (30 * _unit(c)) / 100;
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(pk, x.launchDigest(user, l, gasUsd, dl));
+        bytes memory m = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(user, l, gasUsd, dl, abi.encodePacked(r, sg, v))));
+        uint256 amount = f.minFirstBuy() + f.raceFee() + _unit(c); // $1 first buy + 50c fee + $1 for gas and change
+        deal(c.usd, address(x), amount);
+        uint256 t0 = IERC20(c.usd).balanceOf(TREASURY);
+        vm.prank(c.across);
+        uint256 g0 = gasleft();
+        x.handleV3AcrossMessage(c.usd, amount, address(0xF111), m);
+        uint256 used = g0 - gasleft();
+        address coin = f.coinAddress(user, bytes32("rehearsal-2"));
+        assertGt(coin.code.length, 0, "launched through Across");
+        assertGt(IERC20(coin).balanceOf(user), 0, "first-buy coins are the creator's");
+        assertGt(user.balance, 0, "gas topped up");
+        assertEq(IERC20(c.usd).balanceOf(user), amount - f.minFirstBuy() - f.raceFee() - gasUsd, "change back to the creator");
+        assertGe(IERC20(c.usd).balanceOf(TREASURY) - t0, f.raceFee(), "race fee reached the treasury");
+        assertEq(IERC20(c.usd).balanceOf(address(x)), 0, "cross contract keeps nothing");
+        assertLt(used, 9_000_000, "a launch fill fits easily in a block");
+        console2.log("cross launch ok on chain", c.id, "fill gas", used);
     }
 
     function _checkRoutes(uint32[] memory) internal {

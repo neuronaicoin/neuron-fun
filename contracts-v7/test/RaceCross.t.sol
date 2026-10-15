@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAcrossSpokePool} from "../src/omni/AcrossUsdBridge.sol";
 import {RaceCross, RaceCrossUsdc, IRaceRouter} from "../src/race/RaceCross.sol";
+import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {DecUsd} from "./AcrossUsdBridge.t.sol";
 
 interface IAcrossReceiver {
@@ -102,11 +103,11 @@ contract RaceCrossTest is Test {
         r = new MockRouter(usd, coin);
         spoke = new XSpoke();
         // a user under $0.10 here gets a top-up
-        x = new RaceCrossUsdc(spoke, IERC20(address(usd)), r, BASE, IERC20(BASE_USDC), 6, (10 ** dec) / 10);
+        x = new RaceCrossUsdc(spoke, IERC20(address(usd)), r, RaceFactory(address(0)), BASE, IERC20(BASE_USDC), 6, (10 ** dec) / 10);
     }
 
     function _order(address coin, uint256 minOut, uint256 gasUsd) internal view returns (bytes memory) {
-        return abi.encode(RaceCross.Order(user, coin, minOut, gasUsd, block.timestamp + 1 hours));
+        return abi.encode(uint8(0), abi.encode(RaceCross.Order(user, coin, minOut, gasUsd, block.timestamp + 1 hours)));
     }
 
     function test_buyDeliversCoinsAndTopsUpGas() public {
@@ -161,7 +162,7 @@ contract RaceCrossTest is Test {
 
     function test_noUserRefusedSoAcrossRefundsTheSender() public {
         (RaceCrossUsdc x, DecUsd usd, MockCoin coin, , XSpoke spoke) = _setup(6);
-        bytes memory m = abi.encode(RaceCross.Order(address(0), address(coin), 1, 0, block.timestamp + 1 hours));
+        bytes memory m = abi.encode(uint8(0), abi.encode(RaceCross.Order(address(0), address(coin), 1, 0, block.timestamp + 1 hours)));
         vm.expectRevert(RaceCross.NoUser.selector);
         spoke.fill(usd, address(x), 10e6, m);
     }

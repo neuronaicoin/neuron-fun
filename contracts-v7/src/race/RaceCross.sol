@@ -5,6 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -17,6 +20,7 @@ import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientSta
 import {IAcrossSpokePool} from "../omni/AcrossUsdBridge.sol";
 import {IRaceBuilderEthPools} from "./RaceTradeEth.sol";
 import {IWrappedNative, IPancakeV3PoolMin} from "./RaceBuilderPcs.sol";
+import {RaceFactory} from "./RaceFactory.sol";
 
 /// @notice The trade routers' shared shape (RaceTradeEth, RaceTradePcs, UsdPoolRouter).
 interface IRaceRouter {
@@ -34,14 +38,23 @@ interface IRaceRouter {
  *    becomes gas for them first, so they can sell later;
  *  - the rest buys the coin for the user. If the buy can't happen (price moved past their
  *    minimum, deadline passed), the dollars go to the user here instead: nothing is ever stuck.
+ * To launch a coin on this chain, the same way: the message carries the launch and the user's
+ * signature over it (only the user can launch as themselves); the race fee and the first buy
+ * come out of the dollars that arrived, and the coin, its fees and the first-buy coins are the
+ * user's. A launch that can't happen (closed, too late, too little) is never filled: Across
+ * returns the dollars to the user on Base.
  * To sell, the user calls `sellAndSendHome`: the coins are sold and the dollars go back to the
  * user's own address on Base through Across, in the same transaction.
  *
  * Holds nothing between calls, has no owner and no settings. Everything it moves belongs to
  * the user who sent it, and only goes to that user.
  */
-abstract contract RaceCross is ReentrancyGuard {
+abstract contract RaceCross is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
+
+    /// @notice The Across message: `abi.encode(kind, abi.encode(Order or LaunchOrder))`.
+    uint8 public constant KIND_BUY = 0;
+    uint8 public constant KIND_LAUNCH = 1;
 
     /// @notice What the Across message carries for a buy.
     struct Order {
@@ -52,6 +65,18 @@ abstract contract RaceCross is ReentrancyGuard {
         uint256 deadline;
     }
 
+    /// @notice What the Across message carries for a launch.
+    struct LaunchOrder {
+        address user; // the creator: gets the coin, its fees, the first-buy coins, gas, any refund
+        RaceFactory.Launch launch; // exactly what the user would send to the factory themselves
+        uint256 gasUsd;
+        uint256 deadline; // no launch after this (the race starts together on every chain)
+        bytes signature; // the user's EIP-712 signature over LaunchAuth
+    }
+
+    bytes32 public constant LAUNCH_AUTH_TYPEHASH =
+        keccak256("LaunchAuth(address user,bytes32 launch,uint256 gasUsd,uint256 deadline)");
+
     uint32 public constant FILL_WINDOW = 4 hours;
     /// @notice A fill must leave at least this much gas for the buy: a relayer can't starve the
     /// buy on purpose to turn it into a refund.
@@ -61,6 +86,7 @@ abstract contract RaceCross is ReentrancyGuard {
     IERC20 public immutable usdc;
     uint8 public immutable usdcDecimals;
     IRaceRouter public immutable router;
+    RaceFactory public immutable factory;
     /// @notice Base: where the dollars go home to.
     uint256 public immutable homeChainId;
     IERC20 public immutable homeUsdc;
@@ -73,6 +99,7 @@ abstract contract RaceCross is ReentrancyGuard {
     event Bought(address indexed user, address indexed coin, uint256 usdcIn, uint256 coinsOut, uint256 gasUsd);
     event Refunded(address indexed user, address indexed coin, uint256 usdc);
     event SentHome(address indexed user, uint256 amount, uint256 outputAmount);
+    event LaunchedFor(address indexed user, address indexed coin, uint256 usdcIn, uint256 gasUsd);
 
     error NotSpokePool();
     error WrongToken();
@@ -81,20 +108,27 @@ abstract contract RaceCross is ReentrancyGuard {
     error NotSelf();
     error LowGas();
     error GasSendFailed();
+    error BadSignature();
+    error UnknownKind();
+    error TooLate();
+    error AlreadyLaunched();
+    error NotEnough();
 
     constructor(
         IAcrossSpokePool spokePool_,
         IERC20 usdc_,
         IRaceRouter router_,
+        RaceFactory factory_,
         uint256 homeChainId_,
         IERC20 homeUsdc_,
         uint8 homeDecimals_,
         uint256 gasFloor_
-    ) {
+    ) EIP712("sasa RaceCross", "1") {
         spokePool = spokePool_;
         usdc = usdc_;
         usdcDecimals = IERC20Metadata(address(usdc_)).decimals();
         router = router_;
+        factory = factory_;
         homeChainId = homeChainId_;
         homeUsdc = homeUsdc_;
         homeDecimals = homeDecimals_;
@@ -108,18 +142,23 @@ abstract contract RaceCross is ReentrancyGuard {
     function handleV3AcrossMessage(address token, uint256 amount, address, bytes memory message) external nonReentrant {
         if (msg.sender != address(spokePool)) revert NotSpokePool();
         if (token != address(usdc)) revert WrongToken();
-        Order memory o = abi.decode(message, (Order));
+        (uint8 kind, bytes memory body) = abi.decode(message, (uint8, bytes));
+        if (kind == KIND_BUY) _buy(abi.decode(body, (Order)), amount);
+        else if (kind == KIND_LAUNCH) _launch(abi.decode(body, (LaunchOrder)), amount);
+        else revert UnknownKind();
+        // whatever wasn't used (all of it on a refund) goes to the user
+        uint256 rest = usdc.balanceOf(address(this));
+        if (rest > 0) usdc.safeTransfer(_userOf(kind, body), rest);
+    }
+
+    function _userOf(uint8 kind, bytes memory body) internal pure returns (address) {
+        return kind == KIND_BUY ? abi.decode(body, (Order)).user : abi.decode(body, (LaunchOrder)).user;
+    }
+
+    function _buy(Order memory o, uint256 amount) internal {
         // no user to deliver to: refuse, so Across never fills and refunds the sender on Base
         if (o.user == address(0)) revert NoUser();
-
-        uint256 gas = gasFor(o.user, o.gasUsd, amount);
-        if (gas > 0) {
-            uint256 g0 = gasleft();
-            try this.dropGas(o.user, gas) {} catch {
-                if (gasleft() < g0 / 32) revert LowGas(); // starved, not refused: no fill
-                gas = 0; // no top-up then; everything goes to the buy
-            }
-        }
+        uint256 gas = _topUp(o.user, o.gasUsd, amount);
         uint256 left = amount - gas;
         if (gasleft() < BUY_GAS) revert LowGas();
         usdc.forceApprove(address(router), left);
@@ -132,9 +171,54 @@ abstract contract RaceCross is ReentrancyGuard {
             emit Refunded(o.user, o.coin, left);
         }
         usdc.forceApprove(address(router), 0);
-        // whatever the router didn't use (all of it on a refund) goes to the user
-        uint256 rest = usdc.balanceOf(address(this));
-        if (rest > 0) usdc.safeTransfer(o.user, rest);
+    }
+
+    /// @dev A launch that can't happen is never filled: the whole fill reverts, so no relayer can
+    /// deliver it and Across returns the dollars to the user on Base after the deposit's fill
+    /// deadline. No partial outcome, and no gas trick by a relayer can change that.
+    function _launch(LaunchOrder memory o, uint256 amount) internal {
+        if (o.user == address(0)) revert NoUser();
+        // only the user can launch as the user
+        if (!isUserSignature(o.user, launchDigest(o.user, o.launch, o.gasUsd, o.deadline), o.signature)) revert BadSignature();
+        if (block.timestamp > o.deadline) revert TooLate();
+        // already launched (a replay): refused before the deploy, which would burn all the gas
+        if (factory.coinAddress(o.user, o.launch.launchKey).code.length != 0) revert AlreadyLaunched();
+        uint256 gas = _topUp(o.user, o.gasUsd, amount);
+        uint256 cost = o.launch.firstBuy + factory.raceFee();
+        if (cost > amount - gas) revert NotEnough();
+        usdc.forceApprove(address(factory), cost);
+        (address coin,) = factory.launchFor(o.user, o.launch);
+        usdc.forceApprove(address(factory), 0);
+        emit LaunchedFor(o.user, coin, cost, gas);
+    }
+
+    /// @notice The user's own key signed `digest`, or (a smart wallet) the wallet accepts it. The
+    /// key is checked first: a sasa account with EIP-7702 code on this chain still signs with it.
+    function isUserSignature(address user, bytes32 digest, bytes memory signature) public view returns (bool) {
+        (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
+        if (err == ECDSA.RecoverError.NoError && signer == user) return true;
+        return user.code.length > 0 && SignatureChecker.isValidERC1271SignatureNow(user, digest, signature);
+    }
+
+    /// @notice What the user signs (EIP-712, this contract on this chain) to launch through Across.
+    function launchDigest(address user, RaceFactory.Launch memory l, uint256 gasUsd, uint256 deadline)
+        public
+        view
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(keccak256(abi.encode(LAUNCH_AUTH_TYPEHASH, user, keccak256(abi.encode(l)), gasUsd, deadline)));
+    }
+
+    /// @dev Turns part of `amount` into gas for `user` if they have almost none; returns how much.
+    function _topUp(address user, uint256 asked, uint256 amount) internal returns (uint256 gas) {
+        gas = gasFor(user, asked, amount);
+        if (gas > 0) {
+            uint256 g0 = gasleft();
+            try this.dropGas(user, gas) {} catch {
+                if (gasleft() < g0 / 32) revert LowGas(); // starved, not refused: no fill
+                gas = 0; // no top-up then; everything goes to the trade
+            }
+        }
     }
 
     /// @notice How much of an `amount` buy becomes gas for `user` (0 if they have enough).
@@ -231,11 +315,12 @@ contract RaceCrossEth is RaceCross, IUnlockCallback {
         IAcrossSpokePool spokePool_,
         IRaceBuilderEthPools builder_,
         IRaceRouter router_,
+        RaceFactory factory_,
         uint256 homeChainId_,
         IERC20 homeUsdc_,
         uint8 homeDecimals_,
         uint256 gasFloor_
-    ) RaceCross(spokePool_, builder_.usdc(), router_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {
+    ) RaceCross(spokePool_, builder_.usdc(), router_, factory_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {
         builder = builder_;
         poolManager = builder_.poolManager();
     }
@@ -299,11 +384,12 @@ contract RaceCrossPcs is RaceCross {
         IWrappedNative wbnb_,
         IPancakeV3PoolMin dollarPool_,
         IRaceRouter router_,
+        RaceFactory factory_,
         uint256 homeChainId_,
         IERC20 homeUsdc_,
         uint8 homeDecimals_,
         uint256 gasFloor_
-    ) RaceCross(spokePool_, usdc_, router_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {
+    ) RaceCross(spokePool_, usdc_, router_, factory_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {
         dollarPool = dollarPool_;
         wbnb = wbnb_;
         usdcIsToken0 = dollarPool_.token0() == address(usdc_);
@@ -339,11 +425,12 @@ contract RaceCrossUsdc is RaceCross {
         IAcrossSpokePool spokePool_,
         IERC20 usdc_,
         IRaceRouter router_,
+        RaceFactory factory_,
         uint256 homeChainId_,
         IERC20 homeUsdc_,
         uint8 homeDecimals_,
         uint256 gasFloor_
-    ) RaceCross(spokePool_, usdc_, router_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {}
+    ) RaceCross(spokePool_, usdc_, router_, factory_, homeChainId_, homeUsdc_, homeDecimals_, gasFloor_) {}
 
     /// @dev On Arc the dollar balance is the gas balance (in the token's own units).
     function _gasBalance(address user) internal view override returns (uint256) {

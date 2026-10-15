@@ -41,6 +41,7 @@ interface IRaceBuilderLaunch {
  *
  * The owner (sasa's admin) only sets things for FUTURE launches (launch price, minimum
  * first buy, race fee, routes to other chains, open/closed). It has no power over launched coins.
+ * It names the one launcher (this chain's RaceCross) once, at deploy, and can't change it.
  */
 contract RaceFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -100,6 +101,12 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     mapping(uint32 eid => Route) internal routes;
     bool public launchesOpen;
     mapping(address seat => bool) public isSeat;
+    /// @notice The one contract that may launch for a creator who isn't the caller: this chain's
+    /// RaceCross, which launches for sasa accounts whose dollars are on Base, and only with the
+    /// creator's own signature. The caller still pays the race fee and the first buy.
+    /// Set once; it can later be switched off for good, never replaced.
+    address public launcher;
+    bool public launcherFixed;
 
     event Launched(
         bytes32 indexed coinId,
@@ -117,6 +124,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     event LaunchesOpenSet(bool open);
     event SettingsSet(uint256 startMarketCap, uint256 minFirstBuy, uint16 moveFeeBps);
     event RaceFeeSet(uint256 raceFee);
+    event LauncherSet(address launcher);
 
     error BadConfig();
     error BadChains();
@@ -125,6 +133,8 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     error LaunchesClosed();
     error FirstBuyTooSmall(uint256 minimum);
     error RenounceDisabled();
+    error NotLauncher();
+    error LauncherFixed();
 
     constructor(
         address owner_,
@@ -176,6 +186,17 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     // ------------------------------------------------------------ launch
 
     function launch(Launch calldata l) external nonReentrant returns (address coin, address seat) {
+        return _launch(l, msg.sender);
+    }
+
+    /// @notice `launcher` only: the same launch for `creator` (the coin's address, the creator's
+    /// fees and the first-buy coins are all the creator's). The caller pays fee and first buy.
+    function launchFor(address creator, Launch calldata l) external nonReentrant returns (address coin, address seat) {
+        if (msg.sender != launcher || creator == address(0)) revert NotLauncher();
+        return _launch(l, creator);
+    }
+
+    function _launch(Launch calldata l, address creator) internal returns (address coin, address seat) {
         if (!launchesOpen) revert LaunchesClosed();
         uint256 n = l.eids.length;
         if (n == 0 || n > MAX_CHAINS) revert BadChains();
@@ -189,29 +210,29 @@ contract RaceFactory is Ownable, ReentrancyGuard {
         if (l.firstBuy < minFirstBuy || l.firstBuy == 0) revert FirstBuyTooSmall(minFirstBuy);
         if (l.feeMode > 1) revert BadConfig();
 
-        bytes32 coinId = coinIdOf(msg.sender, l.launchKey);
+        bytes32 coinId = coinIdOf(creator, l.launchKey);
         // lock 0: creators can always sell
         coin = coinDeployer.deploy(
-            coinId, abi.encode(l.name, l.symbol, address(endpoint), moveFeeBps, treasury, msg.sender, uint256(0), address(this))
+            coinId, abi.encode(l.name, l.symbol, address(endpoint), moveFeeBps, treasury, creator, uint256(0), address(this))
         );
         _wire(LaunchCoin(coin), l.eids);
 
         uint256 share = MAX_SUPPLY / n;
         seat = address(
-            new RaceSeat(hub, IRaceBuilderSeat(builder), coin, coinId, msg.sender, l.feeMode, startMarketCap, share)
+            new RaceSeat(hub, IRaceBuilderSeat(builder), coin, coinId, creator, l.feeMode, startMarketCap, share)
         );
         isSeat[seat] = true;
         LaunchCoin(coin).setController(builder);
         LaunchCoin(coin).renounceOwnership();
         // target 1: every race graduates (the creator's first buy is always in the pool)
         IRaceHubRegister(hub).register(coinId, seat, l.eids, 1);
-        IRaceBuilderLaunch(builder).open(coinId, coin, seat, share, startMarketCap, msg.sender, l.feeMode);
+        IRaceBuilderLaunch(builder).open(coinId, coin, seat, share, startMarketCap, creator, l.feeMode);
 
-        emit Launched(coinId, coin, seat, msg.sender, l.eids, l.name, l.symbol, l.logo, l.description, l.feeMode);
+        emit Launched(coinId, coin, seat, creator, l.eids, l.name, l.symbol, l.logo, l.description, l.feeMode);
 
         if (raceFee > 0) usdc.safeTransferFrom(msg.sender, treasury, raceFee);
         usdc.safeTransferFrom(msg.sender, builder, l.firstBuy);
-        IRaceBuilderLaunch(builder).launchBuy(coin, l.firstBuy, l.minCoinsOut, msg.sender);
+        IRaceBuilderLaunch(builder).launchBuy(coin, l.firstBuy, l.minCoinsOut, creator);
     }
 
     /// @dev Links the coin to its twins and fixes its LayerZero settings for good (as v6).
@@ -254,6 +275,15 @@ contract RaceFactory is Ownable, ReentrancyGuard {
         if (fee > maxRaceFee) revert BadConfig();
         raceFee = fee;
         emit RaceFeeSet(fee);
+    }
+
+    /// @notice Sets this chain's RaceCross, once. address(0) switches launching-for-others off
+    /// for good. The owner can never point it somewhere else (it would let them launch as anyone).
+    function setLauncher(address launcher_) external onlyOwner {
+        if (launcherFixed && launcher_ != address(0)) revert LauncherFixed();
+        launcherFixed = true;
+        launcher = launcher_;
+        emit LauncherSet(launcher_);
     }
 
     function setLaunchesOpen(bool open) external onlyOwner {

@@ -472,12 +472,12 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         UsdPoolRouter ra = new UsdPoolRouter(a.pm, IUsdGraduatedPools(address(a.builder)));
         UsdPoolRouter rb = new UsdPoolRouter(b.pm, IUsdGraduatedPools(address(b.builder)));
         CrossSpoke spoke = new CrossSpoke();
-        RaceCrossUsdc xa = new RaceCrossUsdc(spoke, IERC20(address(a.usdc)), IRaceRouter(address(ra)), 8453, IERC20(address(0xBA5E)), 6, D / 10);
-        RaceCrossUsdc xb = new RaceCrossUsdc(spoke, IERC20(address(b.usdc)), IRaceRouter(address(rb)), 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        RaceCrossUsdc xa = new RaceCrossUsdc(spoke, IERC20(address(a.usdc)), IRaceRouter(address(ra)), a.factory, 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        RaceCrossUsdc xb = new RaceCrossUsdc(spoke, IERC20(address(b.usdc)), IRaceRouter(address(rb)), b.factory, 8453, IERC20(address(0xBA5E)), 6, D / 10);
         vm.warp(block.timestamp + 130); // the opening fee is down to 2%
         address u = address(0xC0FFEE01);
         spoke.fill(address(a.usdc), ICrossMinter(address(a.usdc)), address(xa), 20 * D,
-            abi.encode(RaceCross.Order(u, ca, 1, 30 * D / 100, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(u, ca, 1, 30 * D / 100, block.timestamp + 1 hours))));
         assertEq(a.usdc.balanceOf(u), 30 * D / 100, "30 cents left as gas");
         uint256 coins = IERC20(ca).balanceOf(u);
         assertGt(coins, 0, "coins delivered");
@@ -494,9 +494,172 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         _endRace();
         address v = address(0xC0FFEE02);
         spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 10 * D,
-            abi.encode(RaceCross.Order(v, cb, 1, 0, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(v, cb, 1, 0, block.timestamp + 1 hours))));
         assertEq(b.usdc.balanceOf(v), 10 * D, "refunded in full on the losing chain");
         assertEq(IERC20(cb).balanceOf(v), 0);
+    }
+
+
+    function _signLaunch(RaceCross x, uint256 pk, RaceFactory.Launch memory l, uint256 gasUsd, uint256 deadline)
+        internal
+        view
+        returns (bytes memory)
+    {
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(pk, x.launchDigest(vm.addr(pk), l, gasUsd, deadline));
+        return abi.encodePacked(r, sg, v);
+    }
+
+    function _launchMsg(RaceCross x, uint256 pk, RaceFactory.Launch memory l, uint256 gasUsd, uint256 deadline)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(vm.addr(pk), l, gasUsd, deadline, _signLaunch(x, pk, l, gasUsd, deadline))));
+    }
+
+    /// A sasa account with its dollars on Base launches on chain A itself and on chain B through
+    /// Across + RaceCross: same coin id, creator, fees and first-buy coins as a direct launch;
+    /// only the user's own signature can launch as the user; a launch that can't happen is never
+    /// filled (Across returns the dollars on Base), whatever gas a relayer gives it.
+    function _flow_crossLaunch() internal {
+        uint256 pk = 0xA11CE5EC2E7;
+        creator = vm.addr(pk);
+        CrossSpoke spoke = new CrossSpoke();
+        UsdPoolRouter rb = new UsdPoolRouter(b.pm, IUsdGraduatedPools(address(b.builder)));
+        RaceCrossUsdc xb = new RaceCrossUsdc(spoke, IERC20(address(b.usdc)), IRaceRouter(address(rb)), b.factory, 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        b.factory.setRaceFee(D / 2);
+
+        // only the owner sets the launcher; nobody else can launch for someone
+        vm.prank(alice);
+        vm.expectRevert();
+        b.factory.setLauncher(address(xb));
+        RaceFactory.Launch memory l = RaceFactory.Launch("Moon Cat", "MCAT", "", "", bytes32("k1"), _eids2(), 0, 5 * D, 0);
+        vm.prank(alice);
+        vm.expectRevert(RaceFactory.NotLauncher.selector);
+        b.factory.launchFor(creator, l);
+        uint256 dl = vm.getBlockTimestamp() + 10 minutes; // (via-ir may re-read block.timestamp later)
+        bytes memory good = _launchMsg(xb, pk, l, 30 * D / 100, dl);
+        // not the launcher yet: not filled
+        vm.expectRevert(RaceFactory.NotLauncher.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, good);
+
+        vm.expectEmit(address(b.factory));
+        emit RaceFactory.LauncherSet(address(xb));
+        b.factory.setLauncher(address(xb));
+
+        // set once: never pointed somewhere else, only switched off for good
+        vm.expectRevert(RaceFactory.LauncherFixed.selector);
+        b.factory.setLauncher(alice);
+        assertEq(b.factory.launcher(), address(xb));
+
+        // a forged order (someone else's signature) is refused
+        bytes memory forged = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(creator, l, 0, dl, _signLaunch(xb, 0xBAD, l, 0, dl))));
+        vm.expectRevert(RaceCross.BadSignature.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, forged);
+        // a signature over different launch details (or another gas amount) is refused too
+        RaceFactory.Launch memory other = RaceFactory.Launch("Evil Cat", "EVIL", "", "", bytes32("k1"), _eids2(), 0, 5 * D, 0);
+        bytes memory swapped = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(creator, other, 0, dl, _signLaunch(xb, pk, l, 0, dl))));
+        vm.expectRevert(RaceCross.BadSignature.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, swapped);
+        swapped = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(creator, l, D / 2, dl, _signLaunch(xb, pk, l, 0, dl))));
+        vm.expectRevert(RaceCross.BadSignature.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, swapped);
+        // an unknown message kind is refused
+        vm.expectRevert(RaceCross.UnknownKind.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, abi.encode(uint8(7), bytes("")));
+        // too little money for first buy + race fee (+ the gas asked for): not filled
+        vm.expectRevert(RaceCross.NotEnough.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 5 * D + D / 2, good);
+        // a relayer giving too little gas can't turn the launch into anything: the fill just fails
+        for (uint256 gl = 500_000; gl <= 4_000_000; gl += 250_000) {
+            vm.expectRevert();
+            spoke.fill{gas: gl}(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, good);
+        }
+        assertEq(b.factory.coinAddress(creator, bytes32("k1")).code.length, 0, "nothing launched");
+        assertEq(b.usdc.balanceOf(creator), 0, "nothing delivered either");
+
+        // the creator launches on A directly (from Base, say) ...
+        _fund(a, creator, 10 * D);
+        vm.prank(creator);
+        a.usdc.approve(address(a.factory), type(uint256).max);
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        // ... and on B through Across: $6.00 = 30c gas + 50c race fee + $5 first buy + 20c back
+        uint256 tB = b.usdc.balanceOf(treasury);
+        uint256 g0 = gasleft();
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, good);
+        emit log_named_uint("cross launch fill gas", g0 - gasleft());
+        assertLt(g0 - gasleft(), 7_000_000, "a launch fill fits easily in a block");
+        address cb = b.factory.coinAddress(creator, bytes32("k1"));
+        // the same coin id as the direct launch (the address is the same where the factory is, as on mainnet)
+        assertGt(cb.code.length, 0, "launched for the creator");
+        assertGt(ca.code.length, 0);
+        assertEq(b.factory.coinIdOf(creator, bytes32("k1")), a.factory.coinIdOf(creator, bytes32("k1")));
+        assertGt(IERC20(cb).balanceOf(creator), 0, "first-buy coins are the creator's");
+        assertEq(IERC20(cb).balanceOf(address(xb)), 0);
+        assertEq(b.usdc.balanceOf(creator), 30 * D / 100 + 20 * D / 100, "gas + change");
+        // the treasury gets the race fee (plus its usual share of the first buy's pool fee)
+        assertGe(b.usdc.balanceOf(treasury) - tB, D / 2, "race fee to the treasury");
+        assertLe(b.usdc.balanceOf(treasury) - tB, D / 2 + D / 10);
+        assertEq(b.usdc.balanceOf(address(xb)), 0, "nothing stays in RaceCross");
+        (uint256 ub,) = b.builder.poolAmounts(cb);
+        assertApproxEqAbs(ub, 4_900_000, 2);
+
+        // the same order again (replay): refused cheaply, nothing launched twice
+        vm.expectRevert(RaceCross.AlreadyLaunched.selector);
+        spoke.fill{gas: 1_000_000}(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, good);
+
+        // the race runs as usual with the cross-launched chain
+        vm.warp(vm.getBlockTimestamp() + 10);
+        _buy(a, ca, alice, 50 * D);
+        _buy(b, cb, bob, 10 * D);
+        vm.warp(vm.getBlockTimestamp() + 301);
+        _endRace();
+
+        // too late: not filled
+        vm.warp(dl + 1);
+        RaceFactory.Launch memory l2 = RaceFactory.Launch("Two", "TWO", "", "", bytes32("k2"), _eids2(), 0, 5 * D, 0);
+        bytes memory late = _launchMsg(xb, pk, l2, 0, dl);
+        vm.expectRevert(RaceCross.TooLate.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, late);
+        // a sasa account with EIP-7702 code here still launches with its own key's signature
+        vm.etch(creator, abi.encodePacked(hex"ef0100", address(new SigRejecter())));
+        RaceFactory.Launch memory l3 = RaceFactory.Launch("Three", "THR", "", "", bytes32("k3"), _eids2(), 0, 5 * D, 0);
+        bytes memory m3 = _launchMsg(xb, pk, l3, 0, dl + 1 hours);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, m3);
+        assertGt(b.factory.coinAddress(creator, bytes32("k3")).code.length, 0, "7702 account launched");
+        vm.etch(creator, "");
+        // closed launches: not filled
+        b.factory.setLaunchesOpen(false);
+        bytes memory closed = _launchMsg(xb, pk, l2, 0, dl + 1 hours);
+        vm.expectRevert(RaceFactory.LaunchesClosed.selector);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, closed);
+        // the launcher can be switched off for good, and then never set again
+        b.factory.setLauncher(address(0));
+        vm.expectRevert(RaceFactory.LauncherFixed.selector);
+        b.factory.setLauncher(address(xb));
+    }
+
+    /// Whatever gas the relayer gives a launch fill: either the full launch (coins, gas, change
+    /// all with the user) or nothing at all.
+    function _flow_crossLaunchAnyGas(uint256 gl) internal {
+        gl = bound(gl, 200_000, 8_000_000);
+        uint256 pk = 0xA11CE5EC2E7;
+        creator = vm.addr(pk);
+        CrossSpoke spoke = new CrossSpoke();
+        RaceCrossUsdc xb = new RaceCrossUsdc(spoke, IERC20(address(b.usdc)), IRaceRouter(address(1)), b.factory, 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        b.factory.setLauncher(address(xb));
+        RaceFactory.Launch memory l = RaceFactory.Launch("Moon Cat", "MCAT", "", "", bytes32("k1"), _eids2(), 0, 5 * D, 0);
+        bytes memory m = _launchMsg(xb, pk, l, 30 * D / 100, vm.getBlockTimestamp() + 10 minutes);
+        try spoke.fill{gas: gl}(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 6 * D, m) {
+            address coin = b.factory.coinAddress(creator, bytes32("k1"));
+            assertGt(coin.code.length, 0, "launched");
+            assertGt(IERC20(coin).balanceOf(creator), 0, "first-buy coins");
+            assertEq(b.usdc.balanceOf(creator), D, "30c gas + 70c change (no race fee set)");
+        } catch {
+            assertEq(b.factory.coinAddress(creator, bytes32("k1")).code.length, 0, "nothing launched");
+            assertEq(b.usdc.balanceOf(creator), 0, "nothing delivered");
+        }
+        assertEq(b.usdc.balanceOf(address(xb)), 0, "nothing stays in RaceCross");
     }
 
     function _flow_router() internal {
@@ -658,6 +821,8 @@ contract RaceLowTest is RaceFlow {
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
     function test_raceFee() public { _flow_raceFee(); }
     function test_cross() public { _flow_cross(); }
+    function test_crossLaunch() public { _flow_crossLaunch(); }
+    function testFuzz_crossLaunchAnyGas(uint256 gl) public { _flow_crossLaunchAnyGas(gl); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }
@@ -681,6 +846,8 @@ contract RaceHighTest is RaceFlow {
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
     function test_raceFee() public { _flow_raceFee(); }
     function test_cross() public { _flow_cross(); }
+    function test_crossLaunch() public { _flow_crossLaunch(); }
+    function testFuzz_crossLaunchAnyGas(uint256 gl) public { _flow_crossLaunchAnyGas(gl); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }
@@ -689,4 +856,11 @@ contract RaceHighTest is RaceFlow {
     function test_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
     function testFuzz_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
     function test_keeperMovesHolders() public { _flow_keeperMovesHolders(); }
+}
+
+/// A smart wallet that accepts no signature (ERC-1271 always says no).
+contract SigRejecter {
+    function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
+        return 0xffffffff;
+    }
 }

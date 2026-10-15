@@ -255,13 +255,18 @@ contract DeployRace is Script {
         // race fee per chain in this chain's dollar units (mainnet: $0.50 -> 500000 for 6 decimals, 5e17 on BNB Chain)
         uint256 raceFee = vm.envOr("RACE_FEE", uint256(0));
         if (raceFee > 0) factory.setRaceFee(raceFee);
-        if (owner != c.deployer) factory.transferOwnership(owner);
         vm.stopBroadcast();
 
         require(o.hub == hubAt && o.bridge == bridgeAt && o.builder == builderAt, "address moved (hub/bridge/builder)");
         require(o.consolidator == consolidatorAt && o.router == routerAt, "address moved (consolidator/router)");
         require(factory.hub() == o.hub && factory.builder() == o.builder && address(factory.usdc()) == c.usd, "factory wiring");
         o.cross = _cross(key, c, o, spoke);
+        vm.startBroadcast(key);
+        // RaceCross launches for sasa accounts whose dollars are on Base (with their signature)
+        if (o.cross != address(0)) factory.setLauncher(o.cross);
+        if (owner != c.deployer) factory.transferOwnership(owner);
+        vm.stopBroadcast();
+        require(factory.launcher() == o.cross, "launcher");
 
         _write(c, o, localEid, coordEid, across, startMc, minFirstBuy);
         console2.log("--- sasa v7 (race) ---");
@@ -290,12 +295,12 @@ contract DeployRace is Script {
         uint256 floor = vm.envUint("CROSS_GAS_FLOOR");
         vm.startBroadcast(key);
         if (c.kind == Kind.Eth) {
-            x = address(new RaceCrossEth(IAcrossSpokePool(spoke), IRaceBuilderEthPools(o.builder), IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+            x = address(new RaceCrossEth(IAcrossSpokePool(spoke), IRaceBuilderEthPools(o.builder), IRaceRouter(o.router), RaceFactory(o.factory), home, homeUsdc, homeDec, floor));
         } else if (c.kind == Kind.Pcs) {
             x = address(new RaceCrossPcs(IAcrossSpokePool(spoke), IERC20(c.usd), IWrappedNative(c.wnative), IPancakeV3PoolMin(c.dollarPool),
-                IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+                IRaceRouter(o.router), RaceFactory(o.factory), home, homeUsdc, homeDec, floor));
         } else {
-            x = address(new RaceCrossUsdc(IAcrossSpokePool(spoke), IERC20(c.usd), IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+            x = address(new RaceCrossUsdc(IAcrossSpokePool(spoke), IERC20(c.usd), IRaceRouter(o.router), RaceFactory(o.factory), home, homeUsdc, homeDec, floor));
         }
         vm.stopBroadcast();
     }

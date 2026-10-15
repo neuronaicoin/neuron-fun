@@ -536,6 +536,36 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         t.unlockCallback("");
     }
 
+    /// A sasa account (dollars on Base) launches here through Across with its signature: the
+    /// coin, fees and first-buy coins are the user's, a little of the money becomes gas, the
+    /// change goes back to the user, nothing stays in RaceCross.
+    function test_crossLaunch() public {
+        CrossSpoke spoke = new CrossSpoke();
+        RaceCrossEth x = new RaceCrossEth(spoke, IRaceBuilderEthPools(address(eb)), IRaceRouter(address(new RaceTradeEth(IRaceBuilderEthPools(address(eb))))), facA, 8453,
+            IERC20(address(0xBA5E)), 6, 0.00005 ether);
+        facA.setLauncher(address(x));
+        uint256 pk = 0xA11CE5EC2E7;
+        address u = vm.addr(pk);
+        RaceFactory.Launch memory l = RaceFactory.Launch("Moon Dog", "MDOG", "", "", bytes32("k9"), _eids(), 0, 5 * D, 0);
+        uint256 dl = vm.getBlockTimestamp() + 10 minutes;
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(pk, x.launchDigest(u, l, 30 * D / 100, dl));
+        bytes memory m = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(u, l, 30 * D / 100, dl, abi.encodePacked(r, sg, v))));
+        uint256 g0 = gasleft();
+        spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 6 * D, m);
+        emit log_named_uint("cross launch fill gas", g0 - gasleft());
+        assertLt(g0 - gasleft(), 7_000_000, "a launch fill fits easily in a block");
+        address coin = facA.coinAddress(u, bytes32("k9"));
+        assertGt(coin.code.length, 0, "launched");
+        assertGt(IERC20(coin).balanceOf(u), 0, "first-buy coins are the creator's");
+        assertGt(u.balance, 0, "gas topped up");
+        assertEq(usdcA.balanceOf(u), 6 * D - 5 * D - facA.raceFee() - 30 * D / 100, "change back");
+        assertEq(usdcA.balanceOf(address(x)), 0, "nothing kept");
+        assertEq(address(x).balance, 0);
+        // the same order again can't launch twice: refused (Across returns the dollars on Base)
+        vm.expectRevert(RaceCross.AlreadyLaunched.selector);
+        spoke.fill{gas: 1_000_000}(address(usdcA), ICrossMinter(address(minterA)), address(x), 6 * D, m);
+    }
+
     /// Dollars kept on Base buy here through Across: a user with no ETH gets a little gas and the
     /// coins; selling sends the dollars home to Base in the same transaction; a failed buy refunds.
     function test_crossBuyAndSellHome() public {
@@ -543,13 +573,13 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         vm.warp(block.timestamp + 301);
         RaceTradeEth t = new RaceTradeEth(IRaceBuilderEthPools(address(eb)));
         CrossSpoke spoke = new CrossSpoke();
-        RaceCrossEth x = new RaceCrossEth(spoke, IRaceBuilderEthPools(address(eb)), IRaceRouter(address(t)), 8453, IERC20(address(0xBA5E)), 6, 0.00005 ether); // top-up below ~12 cents of ETH
+        RaceCrossEth x = new RaceCrossEth(spoke, IRaceBuilderEthPools(address(eb)), IRaceRouter(address(t)), facA, 8453, IERC20(address(0xBA5E)), 6, 0.00005 ether); // top-up below ~12 cents of ETH
         address u = address(0xC0FFEE01);
         assertEq(u.balance, 0);
 
         // buy $20 from Base, 30 cents of it as gas
         spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 20 * D,
-            abi.encode(RaceCross.Order(u, coin, 1, 30 * D / 100, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(u, coin, 1, 30 * D / 100, block.timestamp + 1 hours))));
         uint256 coins = IERC20(coin).balanceOf(u);
         assertGt(coins, 0, "coins delivered");
         assertGt(u.balance, 0, "gas delivered");
@@ -565,7 +595,7 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         // a second buy: the user has gas now, all of it buys coins
         uint256 g = u.balance;
         spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 5 * D,
-            abi.encode(RaceCross.Order(u, coin, 1, 30 * D / 100, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(u, coin, 1, 30 * D / 100, block.timestamp + 1 hours))));
         assertEq(u.balance, g, "no second top-up");
 
         // sell everything; the dollars head home to the user on Base
@@ -586,7 +616,7 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         {
             address w = address(new NoNativeEth());
             spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * D,
-                abi.encode(RaceCross.Order(w, coin, 1, 30 * D / 100, block.timestamp + 1 hours)));
+                abi.encode(uint8(0), abi.encode(RaceCross.Order(w, coin, 1, 30 * D / 100, block.timestamp + 1 hours))));
             assertEq(w.balance, 0);
             assertGt(IERC20(coin).balanceOf(w), 0, "bought anyway");
             assertEq(usdcA.balanceOf(address(x)), 0);
@@ -595,7 +625,7 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         // an impossible minimum: the dollars go to the user here instead
         address v = address(0xC0FFEE02);
         spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * D,
-            abi.encode(RaceCross.Order(v, coin, type(uint256).max, 0, block.timestamp + 1 hours)));
+            abi.encode(uint8(0), abi.encode(RaceCross.Order(v, coin, type(uint256).max, 0, block.timestamp + 1 hours))));
         assertEq(usdcA.balanceOf(v), 10 * D, "refunded in full");
         assertEq(IERC20(coin).balanceOf(v), 0);
         // nobody can call the swap step
