@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { fetchRaceCandles, fmtPrice, type RaceCandle } from "@/lib/race";
 import { compactUsd } from "@/lib/format";
@@ -223,50 +223,7 @@ export function PriceChart({
     };
   }, [cacheKey, tradeCoinId, refreshMs, frame, mode, k]);
 
-  // Two fingers: spreading them apart zooms in, pinching zooms out; sideways spread works on
-  // time, up-and-down spread on prices (like the mouse wheel and dragging the axes).
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    let start: { dx: number; dy: number; from: number; to: number; pFrom: number; pTo: number } | null = null;
-    const spread = (t: TouchList) => ({ dx: Math.abs(t[0].clientX - t[1].clientX) + 20, dy: Math.abs(t[0].clientY - t[1].clientY) + 20 });
-    const onStart = (e: TouchEvent) => {
-      const c = chartRef.current;
-      if (!c || e.touches.length !== 2) return;
-      const r = c.timeScale().getVisibleLogicalRange();
-      const p = c.priceScale("right").getVisibleRange();
-      if (!r || !p) return;
-      start = { ...spread(e.touches), from: r.from, to: r.to, pFrom: p.from, pTo: p.to };
-    };
-    const onMove = (e: TouchEvent) => {
-      const c = chartRef.current;
-      if (!c || !start || e.touches.length !== 2) return;
-      e.preventDefault(); // the page itself must not zoom or scroll
-      const now = spread(e.touches);
-      const kx = Math.min(8, Math.max(0.125, start.dx / now.dx));
-      const ky = Math.min(8, Math.max(0.125, start.dy / now.dy));
-      const width = Math.max(10, (start.to - start.from) * kx);
-      c.timeScale().setVisibleLogicalRange({ from: start.to - width, to: start.to });
-      const mid = (start.pFrom + start.pTo) / 2;
-      const half = ((start.pTo - start.pFrom) / 2) * ky;
-      const ps = c.priceScale("right");
-      ps.setAutoScale(false);
-      ps.setVisibleRange({ from: mid - half, to: mid + half });
-    };
-    const onEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) start = null;
-    };
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd);
-    el.addEventListener("touchcancel", onEnd);
-    return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
-    };
-  }, []);
+  usePinchZoom(box, chartRef);
 
   /** Zoom buttons: keep the newest candle on the right edge, show fewer or more candles. */
   const zoom = (k: "in" | "out" | "reset") => {
@@ -366,4 +323,53 @@ export function PriceChart({
       </div>
     </div>
   );
+}
+
+/**
+ * Two fingers: spreading them apart zooms in, pinching zooms out; sideways spread works on
+ * time, up-and-down spread on prices (like the mouse wheel and dragging the axes).
+ */
+export function usePinchZoom(box: RefObject<HTMLDivElement | null>, chartRef: RefObject<IChartApi | null>) {
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let start: { dx: number; dy: number; from: number; to: number; pFrom: number; pTo: number } | null = null;
+    const spread = (t: TouchList) => ({ dx: Math.abs(t[0].clientX - t[1].clientX) + 20, dy: Math.abs(t[0].clientY - t[1].clientY) + 20 });
+    const onStart = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || e.touches.length !== 2) return;
+      const r = c.timeScale().getVisibleLogicalRange();
+      const p = c.priceScale("right").getVisibleRange();
+      if (!r || !p) return;
+      start = { ...spread(e.touches), from: r.from, to: r.to, pFrom: p.from, pTo: p.to };
+    };
+    const onMove = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || !start || e.touches.length !== 2) return;
+      e.preventDefault(); // the page itself must not zoom or scroll
+      const now = spread(e.touches);
+      const kx = Math.min(8, Math.max(0.125, start.dx / now.dx));
+      const ky = Math.min(8, Math.max(0.125, start.dy / now.dy));
+      const width = Math.max(10, (start.to - start.from) * kx);
+      c.timeScale().setVisibleLogicalRange({ from: start.to - width, to: start.to });
+      const mid = (start.pFrom + start.pTo) / 2;
+      const half = ((start.pTo - start.pFrom) / 2) * ky;
+      const ps = c.priceScale("right");
+      ps.setAutoScale(false);
+      ps.setVisibleRange({ from: mid - half, to: mid + half });
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) start = null;
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [box, chartRef]);
 }

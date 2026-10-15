@@ -13,6 +13,11 @@ export const IS_TESTNET = NETWORK === "testnet";
 export const V6 = IS_TESTNET;
 /** sasa's treasury (sasa admin): receives the deposit and swap fees and Boost payments. */
 export const SASA_TREASURY = "0xe0ba5905940D748b23Dc01266AA884E2391CcA2F" as const;
+/**
+ * sasa's Hyperliquid builder address: perps fees (0.07%) collect in its Hyperliquid account. It
+ * must hold at least 100 USDC there (Hyperliquid's rule) or builder orders stop working.
+ */
+export const HL_BUILDER = "0xe0ba5905940d748b23dc01266aa884e2391cca2f" as const;
 /** Fees taken on mainnet through Relay, in basis points (Relay sends them to the treasury). */
 export const FEE_BPS = { deposit: 25, swap: 70 } as const;
 

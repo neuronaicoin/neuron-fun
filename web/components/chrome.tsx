@@ -16,6 +16,7 @@ import { BalancePill, MoneyHost } from "./portfolio";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
 import { useMyTotal } from "@/lib/points";
+import { installHaptics } from "@/lib/haptics";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -220,6 +221,7 @@ const V6_ONLY = new Set(["/traders/", "/copy/", "/swipe/"]);
 const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/market/", label: "Market", from: "lg" },
+  { href: "/perps/", label: "Perps", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "Your coins", from: "lg" },
@@ -292,6 +294,7 @@ export function Header() {
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
   { href: "/market/", label: "Market", note: "Top 300 coins, buy with USDC", tablet: true },
+  { href: "/perps/", label: "Perps", note: "Long or short with leverage" },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
@@ -367,6 +370,8 @@ function HeaderMore() {
 export function BottomNav() {
   const pathname = usePathname() || "/";
   const [more, setMore] = useState(false);
+  // a light tick under the finger on every tap, site-wide (phones; lib/haptics.ts)
+  useEffect(() => installHaptics(), []);
   // Bars that sit above this menu (You page's Deposit / Withdraw) use its real height.
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -390,7 +395,7 @@ export function BottomNav() {
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-6">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
+        {NAV.filter((n) => n.href !== "/perps/" && n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link

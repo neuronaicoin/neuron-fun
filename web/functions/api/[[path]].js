@@ -23,6 +23,7 @@
  *   /api/forum/*                   see edge/forum-api.js
  *   POST   /api/racechat           { coinId, body } (live race chat, edge/racechat-api.js)
  *   /api/auto                      auto orders (edge/auto-api.js)
+ *   POST   /api/perps/watch        perps TP / SL / liquidation alerts (edge/perps-api.js)
  *
  * Optional env: FORUM_ADMINS  comma-separated wallet addresses that can moderate every forum board
  */
@@ -34,6 +35,7 @@ import { aiRoute } from "../../edge/ai-api.js";
 import { raceChatRoute } from "../../edge/racechat-api.js";
 import { autoRoute } from "../../edge/auto-api.js";
 import { extTradeRoute } from "../../edge/exttrade-api.js";
+import { perpsRoute } from "../../edge/perps-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
@@ -405,6 +407,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "ai") return await aiRoute(ctx, me, parts, method, body);
     if (parts[0] === "racechat") return await raceChatRoute(env, me, parts, method, body);
     if (parts[0] === "auto") return await autoRoute(env, me, parts, method, body);
+    if (parts[0] === "perps") return await perpsRoute(env, me, parts, method);
     if (parts[0] === "push" && parts.length === 1) {
       if (method === "POST") return await savePush(env, me, body);
       if (method === "DELETE") return await deletePush(env, me, body);
