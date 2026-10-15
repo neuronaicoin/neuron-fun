@@ -7,7 +7,8 @@
 import { BaseDepositSheet, BaseWithdrawSheet } from "./basemoney";
 import { USD_MODE, IS_TESTNET } from "@/lib/config";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { onPending, pendingList, returningUsd, watchPending, type Pending } from "@/lib/racecross";
 import { Sheet } from "./chrome";
 import { CoinAvatar, SkeletonRows } from "./coins";
 import { QuickTrade } from "./trade";
@@ -31,11 +32,19 @@ import {
 } from "@/lib/portfolio";
 
 /** Logged-in header control: total balance, and the cash left to spend under it. Opens the portfolio. */
+const NO_PENDING: Pending[] = [];
+
 export function BalancePill() {
   const { portfolio } = useMoney();
   const total = portfolio ? money(portfolio.totalUsd) : null;
   const cash = portfolio ? money(portfolio.cashUsd) : null;
-  const { address } = useWallet();
+  const { address, embedded } = useWallet();
+  // dollars on their way back to Base from a sale on another chain (sasa accounts)
+  const pending = useSyncExternalStore(onPending, pendingList, () => NO_PENDING);
+  const coming = embedded ? returningUsd(pending) : 0;
+  useEffect(() => {
+    if (embedded && pending.length) watchPending();
+  }, [embedded, pending.length]);
   // The forum pages are plain HTML: leave them the last known balance to show.
   useEffect(() => {
     if (!address || !total || !cash) return;
@@ -65,6 +74,11 @@ export function BalancePill() {
             </span>
             <span className="text-[0.6875rem] text-ink-3 mt-1 whitespace-nowrap">
               Cash <span className="font-mono text-ink-2 font-semibold tabular-nums">{cash}</span>
+              {coming > 0 && (
+                <span className="text-emerald-dark font-semibold" title="On its way back to your balance">
+                  {" "}+{money(coming)}
+                </span>
+              )}
             </span>
           </span>
         ) : (

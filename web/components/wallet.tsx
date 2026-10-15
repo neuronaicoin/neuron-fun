@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type WalletClient } from "viem";
+import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type LocalAccount, type WalletClient } from "viem";
 import dynamic from "next/dynamic";
 import { createPublicClient, http, type Hex } from "viem";
 import { ALCHEMY_KEY, CHAINS, WALLETCONNECT_PROJECT_ID } from "@/lib/config";
@@ -125,6 +125,13 @@ type WalletState = {
   send: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
   /** Signs a plain text message (free, no transaction). Email users sign without a popup. */
   signMessage: (message: string) => Promise<Hex>;
+  /**
+   * Email users only: sends `calls` one by one from their own address on `chain`, the network
+   * fee paid in that chain's own coin from their balance there (never sponsored by sasa).
+   */
+  sendOwnGas: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
+  /** Email users only: the embedded wallet as a signer (EIP-712 signatures, no popup). */
+  embeddedSigner: LocalAccount | null;
 };
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -341,6 +348,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (!active && privy?.authenticated && privy.signer && privy.signAuthorization && usdcGasChain(chain.id)) {
         return within(sendWithUsdcGas(chain, privy.signer, privy.signAuthorization, calls, onStep), WALLET_MS);
       }
+      // the account pays its own fee in USDC here: never fall through to a sponsored send
+      if (!active && privy?.authenticated && usdcGasChain(chain.id)) {
+        throw new Error("Your account is still getting ready. Try again in a moment.");
+      }
       if (!active && privy?.authenticated && privy.signer) {
         const conf = CHAINS.find((c) => c.chain.id === chain.id);
         if (!conf) throw new Error("This network is not supported.");
@@ -431,6 +442,35 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [active, address, privy]
   );
 
+  const sendOwnGas = useCallback(
+    async (chain: Chain, calls: Call[], onStep?: (msg: string) => void): Promise<Hex> => {
+      if (active || !privy?.authenticated || !privy.sendTransaction) throw new Error("Log in first.");
+      if (calls.length === 0) throw new Error("Nothing to send.");
+      const pub = createPublicClient({ chain, transport: http() });
+      let last: Hex = "0x";
+      for (let i = 0; i < calls.length; i++) {
+        onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}…` : "Sending…");
+        last = await within(privy.sendTransaction(chain.id, calls[i]), SERVICE_MS);
+        onStep?.("Almost done…");
+        let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
+        for (let attempt = 0; attempt < 3 && !r; attempt++) {
+          try {
+            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 1_000 });
+          } catch (e) {
+            if (isTimeout(e)) break;
+            const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "");
+            if (!/RPC|HTTP|fetch|network|429|not be found/i.test(m)) throw e;
+            await new Promise((res) => setTimeout(res, 1500));
+          }
+        }
+        if (!r) throw new Error(SENT_UNCONFIRMED);
+        if (r.status !== "success") throw new Error("The network rejected the transaction.");
+      }
+      return last;
+    },
+    [active, privy]
+  );
+
   const disconnectAll = useCallback(() => {
     if (active) disconnect();
     else if (privy?.authenticated) privy.logout().catch(() => {});
@@ -452,8 +492,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       loginWithEmail,
       send,
       signMessage,
+      sendOwnGas,
+      embeddedSigner: embedded ? (privy?.signer ?? null) : null,
     }),
-    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage, sendOwnGas]
   );
 
   return (

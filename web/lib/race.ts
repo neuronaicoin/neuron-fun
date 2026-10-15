@@ -29,6 +29,10 @@ export type RaceChain = {
   system: Address[];
   /** Testnets: the dollar has a faucet ($100 a day). */
   faucet: boolean;
+  /** Across's SpokePool here (mainnet): sasa accounts move dollars between Base and the other chains. */
+  spoke?: Address;
+  /** RaceCross here (mainnet, not on Base): sasa accounts buy, sell and launch with their Base dollars. */
+  cross?: Address;
 };
 
 const robinhoodTestnet = defineChain({

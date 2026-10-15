@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, keccak256, parseUnits, toHex, type Address, type Hex } from "viem";
-import { useWallet } from "@/components/wallet";
+import { NO_ANSWER, SENT_UNCONFIRMED, useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar } from "@/components/coins";
 import { AiCoinPanel } from "@/components/aicoin";
@@ -14,6 +14,8 @@ import { friendlyError } from "@/lib/format";
 import { isImageUrl } from "@/lib/data";
 import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
+import { GAS_ASK_CENTS, crossReady, homeChain } from "@/lib/racecross";
+import { liveOn, planLaunch, sendLaunch } from "@/lib/racecrossflow";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -22,7 +24,21 @@ import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, ra
  */
 
 const SAVE = "sasa-race-launch";
-type Draft = { key: Hex; creator: string; name: string; symbol: string; logo: string; description: string; feeMode: 0 | 1; chains: number[]; firstBuy: string };
+type Draft = {
+  key: Hex;
+  creator: string;
+  name: string;
+  symbol: string;
+  logo: string;
+  description: string;
+  feeMode: 0 | 1;
+  chains: number[];
+  firstBuy: string;
+  /** Email accounts: chains sent through Across, and until when each may still land (unix s). */
+  sent?: Record<number, number>;
+};
+/** Rough Across fee per chain, for the total shown before launching (the real one is asked at launch). */
+const ACROSS_FEE_GUESS = 0.15;
 type ChainStatus = { state: "idle" | "working" | "done" | "error"; note?: string; tx?: string };
 type Funds = { usd: bigint; usdDec: number; gas: bigint; min: bigint; open: boolean; fee: bigint };
 
@@ -103,6 +119,9 @@ export default function RaceLaunchPage() {
   }, [w.address]);
 
   const picked = useMemo(() => RACE_CHAINS.filter((c) => chains.includes(c.chainId)), [chains]);
+  // email accounts on mainnet launch everything from their dollars on Base
+  const home = homeChain();
+  const viaBase = w.embedded && !IS_TESTNET && !!home;
 
   // What the wallet has on each picked chain, and each factory's minimum first buy.
   const readFunds = useCallback(async () => {
@@ -164,6 +183,19 @@ export default function RaceLaunchPage() {
             ? `With ${picked.length} chains your first buy is at least $${(minUsd * picked.length).toLocaleString("en-US", { maximumFractionDigits: 2 })} ($${minUsd} on each chain).`
             : "";
 
+  // Email accounts: about what the whole launch takes from the Base balance
+  const crossCount = picked.filter((c) => home && c.chainId !== home.chainId).length;
+  const viaBaseTotal = (Number.isFinite(buyN) ? Number(perChain) * picked.length : 0) + raceFeeUsd + crossCount * (ACROSS_FEE_GUESS + GAS_ASK_CENTS / 100);
+  const homeFunds = home ? funds[home.chainId] : undefined;
+  const viaBaseShort = (): string | null => {
+    if (!viaBase || !homeFunds) return null;
+    const closed = picked.find((c) => home && c.chainId !== home.chainId && !crossReady(c));
+    if (closed) return `${closed.short} isn't open to email accounts yet. Untick it.`;
+    const have = Number(formatUnits(homeFunds.usd, homeFunds.usdDec));
+    if (have < viaBaseTotal + 0.05) return `Needs about $${(viaBaseTotal + 0.05).toFixed(2)} USDC on Base, you have $${have.toFixed(2)}. Add money with the + button.`;
+    return null;
+  };
+
   // Per chain: is something missing before the launch can go through?
   const shortOf = (c: RaceChain): string | null => {
     const f = funds[c.chainId];
@@ -195,8 +227,98 @@ export default function RaceLaunchPage() {
     void readFunds();
   };
 
+  /**
+   * Email accounts (mainnet): one Base transaction launches on Base and sends the launch for
+   * every other chain through Across (signed by the user); then each chain is watched until the
+   * coin is live there. Anything Across can't deliver goes back to the user's balance on Base.
+   */
+  const runViaBase = async (d: Draft) => {
+    const home = homeChain();
+    if (!w.address || !home || !w.embeddedSigner || busy) return;
+    setBusy(true);
+    setError("");
+    saveDraft(d);
+    setDraft(d);
+    const me = w.address as Address;
+    const order = RACE_CHAINS.filter((c) => d.chains.includes(c.chainId));
+    const set = (id: number, st: ChainStatus) => setStatus((s) => ({ ...s, [id]: st }));
+    try {
+      const live = new Set<number>();
+      await Promise.all(
+        order.map(async (c) => {
+          set(c.chainId, { state: "working", note: "Checking…" });
+          if (await liveOn(c, me, d.key)) {
+            live.add(c.chainId);
+            set(c.chainId, { state: "done", note: "Live" });
+          }
+        })
+      );
+      const plan = await planLaunch({
+        user: me,
+        signer: w.embeddedSigner,
+        home,
+        picked: order,
+        d: { ...d },
+        live,
+        onStep: (m) => order.forEach((c) => !live.has(c.chainId) && set(c.chainId, { state: "working", note: m })),
+      });
+      let tx: string | undefined;
+      if (plan.calls.length) {
+        // remembered BEFORE sending: if the send is unconfirmed or the tab closes, Continue
+        // waits for these deliveries instead of paying for them a second time
+        const before = d;
+        const next = { ...d, sent: { ...(d.sent ?? {}), ...plan.crossUntil } };
+        saveDraft(next);
+        setDraft(next);
+        d = next;
+        try {
+          tx = await sendLaunch({ s: { user: me, sendHome: w.send, sendThere: w.sendOwnGas }, home, plan, onStep: (m) => order.forEach((c) => !live.has(c.chainId) && set(c.chainId, { state: "working", note: m })) });
+        } catch (e) {
+          const m = String((e as Error)?.message ?? "");
+          // surely not sent: forget it, so Continue can send it again
+          if (m !== SENT_UNCONFIRMED && m !== NO_ANSWER) {
+            saveDraft(before);
+            setDraft(before);
+          }
+          throw e;
+        }
+      }
+      if (plan.homeLaunch) set(home.chainId, { state: "done", note: "Live", tx });
+      // watch every chain until the coin is live there, or its delivery window has passed
+      const waiting = new Set(order.filter((c) => !live.has(c.chainId) && c.chainId !== home.chainId).map((c) => c.chainId));
+      waiting.forEach((id) => set(id, { state: "working", note: "On its way… (about a minute)" }));
+      while (waiting.size) {
+        await new Promise((r) => setTimeout(r, 3_000));
+        for (const id of [...waiting]) {
+          const c = order.find((x) => x.chainId === id)!;
+          if (await liveOn(c, me, d.key).catch(() => false)) {
+            waiting.delete(id);
+            set(id, { state: "done", note: "Live" });
+          } else if (Math.floor(Date.now() / 1000) > (d.sent?.[id] ?? 0) + 60) {
+            waiting.delete(id);
+            set(id, { state: "error", note: "Didn't arrive in time. Across returns the dollars for this chain to your balance on Base (this can take a few hours)." });
+          }
+        }
+      }
+      setBusy(false);
+      const coinId = (await raceClient(home).readContract({ address: home.factory, abi: raceFactoryAbi, functionName: "coinIdOf", args: [me, d.key] })) as Hex;
+      const allLive = (await Promise.all(order.map((c) => liveOn(c, me, d.key).catch(() => false)))).every(Boolean);
+      if (allLive) {
+        saveDraft(null);
+        router.push(raceHref(coinId.toLowerCase()));
+      } else {
+        setError("Not live everywhere yet. Press Continue to try the missing chains again (live chains are skipped).");
+      }
+    } catch (e) {
+      setBusy(false);
+      setError(friendlyError(e));
+      order.forEach((c) => setStatus((s) => (s[c.chainId]?.state === "working" ? { ...s, [c.chainId]: { state: "error", note: friendlyError(e) } } : s)));
+    }
+  };
+
   /** Opens the coin on every chain of `d` that doesn't have it yet, one after the other. */
   const run = async (d: Draft) => {
+    if (viaBase) return runViaBase(d);
     if (!w.address || busy) return;
     setBusy(true);
     setError("");
@@ -507,8 +629,31 @@ export default function RaceLaunchPage() {
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">
           {!w.address ? (
             <ConnectButton />
-          ) : w.embedded ? (
+          ) : w.embedded && !viaBase ? (
             IS_TESTNET ? <p className="text-[0.8125rem] text-ink-3">Testnet: create with a browser wallet.</p> : null
+          ) : viaBase ? (
+            <ul className="flex flex-col gap-3">
+              {picked.map((c) => {
+                const st = status[c.chainId];
+                return (
+                  <li key={c.chainId} className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} />
+                      <span className="font-semibold text-[0.9375rem] truncate flex-1">{c.name}</span>
+                      <span className={"text-[0.8125rem] shrink-0 " + (st?.state === "done" ? "text-up font-semibold" : st?.state === "error" ? "text-danger" : "text-ink-3")}>
+                        {st?.state === "done" ? "✓ Live" : st?.state === "working" ? "…" : st?.state === "error" ? "Failed" : "Ready"}
+                      </span>
+                    </div>
+                    {st?.note && st.state !== "done" && <p className="text-[0.8125rem] text-ink-2 break-words pl-[1.125rem]">{st.note}</p>}
+                    {st?.tx && (
+                      <a href={raceExplorerTx(home!, st.tx)} target="_blank" rel="noreferrer" className="text-[0.8125rem] text-ink-3 underline pl-[1.125rem]">
+                        View transaction
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           ) : (
             <ul className="flex flex-col gap-3">
               {picked.map((c) => {
@@ -554,6 +699,25 @@ export default function RaceLaunchPage() {
                 );
               })}
             </ul>
+          )}
+
+          {viaBase && (
+            <>
+              <button
+                type="button"
+                onClick={start}
+                disabled={busy || !!problem || !!viaBaseShort()}
+                className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
+              >
+                {busy ? "Creating…" : `Create on ${picked.length} chain${picked.length === 1 ? "" : "s"}`}
+              </button>
+              {(problem || viaBaseShort()) && <p className="text-[0.8125rem] text-ink-2 text-center">{problem || viaBaseShort()}</p>}
+              {error && <p className="text-[0.8125rem] text-danger text-center">{error}</p>}
+              <p className="text-[0.75rem] text-ink-3 text-center">
+                About ${viaBaseTotal.toFixed(2)} from your balance on Base, in one step: first buys, race fees
+                {crossCount > 0 ? ", Across fees and a little gas on the other chains" : ""}. Other chains go live about a minute after Base.
+              </p>
+            </>
           )}
 
           {w.address && !w.embedded && (
