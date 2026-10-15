@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Header balance ("$120.16 | ＋"), the Portfolio sheet (cash, coins, profit
+ * Header balance ("$120.16 | ＋": Deposit and Withdraw in one sheet), the Portfolio sheet (cash, coins, profit
  * and loss, quick sell) and the host that shows Deposit / Withdraw / Sell.
  */
 import { BaseDepositSheet, BaseWithdrawSheet } from "./basemoney";
@@ -74,23 +74,12 @@ export function BalancePill() {
       <button
         type="button"
         onClick={() => openMoney({ kind: "deposit" })}
-        aria-label="Deposit"
-        title="Deposit"
+        aria-label="Deposit or withdraw"
+        title="Deposit or withdraw"
         className="w-8 h-8 rounded-[0.625rem] bg-emerald text-on-accent flex items-center justify-center shrink-0 hover:bg-emerald-dark"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
           <path d="M12 5v14M5 12h14" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={() => openMoney({ kind: "withdraw" })}
-        aria-label="Withdraw"
-        title="Withdraw"
-        className="w-8 h-8 rounded-[0.625rem] border border-line text-ink flex items-center justify-center shrink-0 hover:border-ink-3"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 19V5M6 11l6-6 6 6" />
         </svg>
       </button>
     </div>

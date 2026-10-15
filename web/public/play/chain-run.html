@@ -59,7 +59,7 @@ aside { display: grid; gap: 16px; min-width: 0; }
         <h2>Pick your chain</h2>
         <p>Four chains race to the finish. Run in your chain's lane and grab what pushes it forward. Every other lane helps a rival.</p>
         <div class="pick" id="pick"></div>
-        <div class="keys">← → change lane · ↑ / space jump · swipe on phone</div>
+        <div class="keys">← → change lane · ↑ / space jump · phone: touch a lane, swipe up to jump</div>
       </div>
     </div>
     <div class="overlay" id="end" hidden>
@@ -127,7 +127,7 @@ aside { display: grid; gap: 16px; min-width: 0; }
     st.t += dt;
     st.speed = 0.4 + Math.min(0.3, st.t * 0.006);
     st.scroll = (st.scroll + dt * st.speed) % 0.1;
-    st.laneX += (st.lane - st.laneX) * Math.min(1, dt * 14);
+    st.laneX += (st.lane - st.laneX) * Math.min(1, dt * 24);
     if (st.jump > 0) st.jump = Math.max(0, st.jump - dt);
     if (st.trip > 0) st.trip = Math.max(0, st.trip - dt);
     // the crowd: every chain drifts forward a little; rivals a bit more than yours so you have to work
@@ -257,21 +257,40 @@ aside { display: grid; gap: 16px; min-width: 0; }
     document.getElementById("start").hidden = true; document.getElementById("end").hidden = true;
     last = performance.now(); raf = requestAnimationFrame(frame);
   }
-  const move = (d) => { if (st?.running && st.trip === 0) st.lane = Math.max(0, Math.min(3, st.lane + d)); };
+  // changing lane always answers at once (even while tripped: only jumping waits)
+  const move = (d) => { if (st?.running) st.lane = Math.max(0, Math.min(3, st.lane + d)); };
+  const goTo = (lane) => { if (st?.running) st.lane = Math.max(0, Math.min(3, lane)); };
   const jump = () => { if (st?.running && st.jump === 0 && st.trip === 0) st.jump = 0.6; };
   addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft") { move(-1); e.preventDefault(); }
     else if (e.key === "ArrowRight") { move(1); e.preventDefault(); }
     else if (e.key === "ArrowUp" || e.key === " ") { jump(); e.preventDefault(); }
   });
-  let sx = 0, sy = 0;
-  cv.addEventListener("pointerdown", (e) => { sx = e.clientX; sy = e.clientY; });
-  cv.addEventListener("pointerup", (e) => {
-    const dx = e.clientX - sx, dy = e.clientY - sy;
-    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) jump();
-    else if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1);
-    else if (dy < 0) jump();
+  // Touch / mouse: the runner goes to the lane under the finger the moment it touches, and
+  // follows it while it drags; a quick flick up jumps. A mouse click on the canvas jumps.
+  const laneUnder = (e) => {
+    const r = cv.getBoundingClientRect();
+    const x = ((e.clientX - r.left) * W) / r.width;
+    return Math.floor((x - (W / 2 - 260)) / 130);
+  };
+  let sy = 0, st0 = 0, down = false, jumped = false;
+  cv.addEventListener("pointerdown", (e) => {
+    down = true; jumped = false; sy = e.clientY; st0 = performance.now();
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+    if (e.pointerType === "mouse") { jump(); return; }
+    goTo(laneUnder(e));
   });
+  cv.addEventListener("pointermove", (e) => {
+    if (!down || e.pointerType === "mouse") return;
+    goTo(laneUnder(e));
+    if (!jumped && sy - e.clientY > 40 && performance.now() - st0 < 400) { jump(); jumped = true; }
+  });
+  const up = () => { down = false; };
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  const still = (e) => { if (e.cancelable) e.preventDefault(); };
+  cv.addEventListener("touchstart", still, { passive: false });
+  cv.addEventListener("touchmove", still, { passive: false });
   const pick = document.getElementById("pick");
   LANES.forEach((L, i) => {
     const b = document.createElement("button");
@@ -279,6 +298,8 @@ aside { display: grid; gap: 16px; min-width: 0; }
     pick.appendChild(b);
   });
   document.getElementById("again").onclick = () => { document.getElementById("end").hidden = true; document.getElementById("start").hidden = false; };
+  // read-only peek for the site's automated checks
+  window.__chainRun = { lane: () => (st ? st.lane : null), running: () => !!(st && st.running) };
   // resting frame
   reset(); st.running = false;
   st.items = [{ lane: 0, z: 0.55, kind: "coin" }, { lane: 1, z: 0.35, kind: "candle" }, { lane: 2, z: 0.7, kind: "hole" }, { lane: 3, z: 0.25, kind: "coin" }, { lane: 1, z: 0.8, kind: "coin" }];

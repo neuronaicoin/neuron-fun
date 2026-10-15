@@ -25,7 +25,7 @@ header { max-width: 1120px; margin: 0 auto 18px; display: flex; align-items: bas
 .word { font-weight: 800; font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.02em; background: linear-gradient(90deg, var(--amber), var(--orange)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 header p { color: var(--ink3); font-family: var(--mono); font-size: 13px; margin: 0; }
 .stage { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; user-select: none; -webkit-user-select: none; }
-canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 4; touch-action: manipulation; cursor: pointer; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 4; touch-action: none; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,14,13,.84); text-align: center; padding: 24px; }
 .overlay h2 { margin: 0 0 12px; font-size: 26px; text-wrap: balance; }
 .overlay p { margin: 0 auto 16px; color: var(--ink2); max-width: 34ch; line-height: 1.5; }
@@ -233,6 +233,11 @@ aside { display: grid; gap: 16px; min-width: 0; }
     last = performance.now(); raf = requestAnimationFrame(frame);
   }
   cv.addEventListener("pointerdown", (e) => { e.preventDefault(); tap(); });
+  // fast tapping on a phone must never scroll or zoom the page
+  const still = (e) => { if (e.cancelable) e.preventDefault(); };
+  cv.addEventListener("touchstart", still, { passive: false });
+  cv.addEventListener("touchmove", still, { passive: false });
+  cv.addEventListener("touchend", still, { passive: false });
   addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && st?.phase === "play") { tap(); e.preventDefault(); } });
   const pick = document.getElementById("pick");
   CH.forEach((L, i) => {

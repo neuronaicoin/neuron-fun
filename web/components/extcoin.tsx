@@ -111,6 +111,7 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                 cacheKey={`ext:${coin.network}:${coin.pool}`}
                 load={(frame) => fetchExtCandles(coin.network, coin.pool!, coin.address, frame)}
                 refreshMs={30_000}
+                mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No trades in this period yet."
                 onFail={() => setChartFailed(true)}
               />

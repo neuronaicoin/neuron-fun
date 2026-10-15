@@ -16,7 +16,7 @@ import { usdcAbi } from "@/lib/abis";
 import { CHAINS, IS_TESTNET } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
-import { refreshPortfolio } from "@/lib/portfolio";
+import { openMoney, refreshPortfolio } from "@/lib/portfolio";
 import { call } from "@/lib/tx";
 import { gasUsdcOf, usdcGasChain } from "@/lib/usdcgas";
 
@@ -83,6 +83,26 @@ function Warning({ children }: { children: React.ReactNode }) {
   return <div className="rounded-xl bg-warn-bg text-warn-ink px-3 py-2.5 text-[0.8125rem] leading-snug">{children}</div>;
 }
 
+/** Deposit | Withdraw, side by side at the top of both sheets (the header's ＋ opens them). */
+export function MoneyTabs({ active }: { active: "deposit" | "withdraw" }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-night" role="tablist" aria-label="Deposit or withdraw">
+      {(["deposit", "withdraw"] as const).map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          aria-selected={active === k}
+          onClick={() => active !== k && openMoney({ kind: k })}
+          className={"h-9 rounded-lg text-[0.875rem] font-semibold " + (active === k ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink-2")}
+        >
+          {k === "deposit" ? "Deposit" : "Withdraw"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
   const { address, send } = useWallet();
   const { bal, reload } = useBaseUsdc(address);
@@ -129,6 +149,7 @@ export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="Deposit" onClose={onClose}>
       <div className="flex flex-col gap-4 min-w-0">
+        <MoneyTabs active="deposit" />
         <NetworkTag />
         <div className="flex flex-col items-center gap-3">
           <div className="w-[180px] h-[180px] rounded-2xl bg-white p-2 grid place-items-center border border-line">
@@ -230,6 +251,9 @@ export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <Sheet title="Withdraw" onClose={onClose}>
+      <div className="mb-4">
+        <MoneyTabs active="withdraw" />
+      </div>
       {done ? (
         <div className="flex flex-col gap-3 items-center text-center py-4">
           <div className="text-[2rem]" aria-hidden="true">

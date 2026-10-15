@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { fetchRaceCandles, fmtPrice, type RaceCandle } from "@/lib/race";
+import { compactUsd } from "@/lib/format";
 import { onTrade } from "@/lib/live";
 
 export type Candle = RaceCandle;
@@ -17,6 +18,10 @@ const FRAMES = [
   { label: "1D", sec: 86400 },
 ] as const;
 type Mode = "line" | "candles";
+/** Market cap (price x supply) or price per coin. */
+type Value = "mc" | "price";
+/** Every race coin has a billion. */
+const RACE_SUPPLY = 1_000_000_000;
 const PREFS = "sasa-race-chart";
 
 const CACHE = new Map<string, Candle[]>();
@@ -37,6 +42,7 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
       cacheKey={`${coinId}:${chainId ?? "all"}`}
       load={(frame) => fetchRaceCandles(coinId, chainId, frame)}
       tradeCoinId={coinId}
+      mcFactor={RACE_SUPPLY}
       height={height}
     />
   );
@@ -55,6 +61,7 @@ export function PriceChart({
   refreshMs = 5_000,
   emptyText = "No trades yet. The first one draws the chart.",
   onFail,
+  mcFactor,
 }: {
   cacheKey: string;
   load: (frameSec: number) => Promise<Candle[]>;
@@ -63,6 +70,8 @@ export function PriceChart({
   refreshMs?: number;
   emptyText?: string;
   onFail?: () => void;
+  /** price x this = market cap; given: the chart opens on market cap, with a Price switch */
+  mcFactor?: number;
 }) {
   const loadRef = useRef(loadCandles);
   loadRef.current = loadCandles;
@@ -74,6 +83,11 @@ export function PriceChart({
   const [frame, setFrame] = useState<number>(60);
   const [empty, setEmpty] = useState(false);
   const [hover, setHover] = useState<{ price: number; time: number } | null>(null);
+  const [value, setValue] = useState<Value>("mc");
+  const k = mcFactor && mcFactor > 0 && value === "mc" ? mcFactor : 1;
+  const fmt = (v: number) => (k === 1 ? fmtPrice(v) : compactUsd(v));
+  const fmtRef = useRef(fmt);
+  fmtRef.current = fmt;
 
   useEffect(() => {
     try {
@@ -114,10 +128,11 @@ export function PriceChart({
         // phones: vertical swipes keep scrolling the page; pinch, the buttons and sideways drags zoom and pan
         handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
         // mouse wheel zooms, dragging the price or time axis stretches it, double-click on an axis resets it
-        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
-        localization: { priceFormatter: (p: number) => fmtPrice(p) },
+        // two-finger pinch is our own (below): it zooms prices as well as time
+        handleScale: { mouseWheel: true, pinch: false, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
+        localization: { priceFormatter: (p: number) => fmtRef.current(p) },
       });
-      const priceFormat = { type: "custom" as const, minMove: 1e-12, formatter: (p: number) => fmtPrice(p) };
+      const priceFormat = { type: "custom" as const, minMove: 1e-12, formatter: (p: number) => fmtRef.current(p) };
       let series: ISeriesApi<"Area"> | ISeriesApi<"Candlestick">;
       if (mode === "line") {
         series = chart.addSeries(lc.AreaSeries, {
@@ -152,7 +167,7 @@ export function PriceChart({
       const apply = (rows: Candle[]) => {
         setEmpty(rows.length === 0);
         if (mode === "line") {
-          (series as ISeriesApi<"Area">).setData(rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.close })));
+          (series as ISeriesApi<"Area">).setData(rows.map((r) => ({ time: r.t as UTCTimestamp, value: r.close * k })));
           // tint the line red when the shown period ends below where it started
           if (rows.length > 1) {
             const c = rows[rows.length - 1].close >= rows[0].open ? up : down;
@@ -160,7 +175,7 @@ export function PriceChart({
           }
         } else {
           (series as ISeriesApi<"Candlestick">).setData(
-            rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open, high: r.high, low: r.low, close: r.close }))
+            rows.map((r) => ({ time: r.t as UTCTimestamp, open: r.open * k, high: r.high * k, low: r.low * k, close: r.close * k }))
           );
         }
         if (!fitted && rows.length && chart) {
@@ -206,7 +221,52 @@ export function PriceChart({
         } catch {}
       });
     };
-  }, [cacheKey, tradeCoinId, refreshMs, frame, mode]);
+  }, [cacheKey, tradeCoinId, refreshMs, frame, mode, k]);
+
+  // Two fingers: spreading them apart zooms in, pinching zooms out; sideways spread works on
+  // time, up-and-down spread on prices (like the mouse wheel and dragging the axes).
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let start: { dx: number; dy: number; from: number; to: number; pFrom: number; pTo: number } | null = null;
+    const spread = (t: TouchList) => ({ dx: Math.abs(t[0].clientX - t[1].clientX) + 20, dy: Math.abs(t[0].clientY - t[1].clientY) + 20 });
+    const onStart = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || e.touches.length !== 2) return;
+      const r = c.timeScale().getVisibleLogicalRange();
+      const p = c.priceScale("right").getVisibleRange();
+      if (!r || !p) return;
+      start = { ...spread(e.touches), from: r.from, to: r.to, pFrom: p.from, pTo: p.to };
+    };
+    const onMove = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || !start || e.touches.length !== 2) return;
+      e.preventDefault(); // the page itself must not zoom or scroll
+      const now = spread(e.touches);
+      const kx = Math.min(8, Math.max(0.125, start.dx / now.dx));
+      const ky = Math.min(8, Math.max(0.125, start.dy / now.dy));
+      const width = Math.max(10, (start.to - start.from) * kx);
+      c.timeScale().setVisibleLogicalRange({ from: start.to - width, to: start.to });
+      const mid = (start.pFrom + start.pTo) / 2;
+      const half = ((start.pTo - start.pFrom) / 2) * ky;
+      const ps = c.priceScale("right");
+      ps.setAutoScale(false);
+      ps.setVisibleRange({ from: mid - half, to: mid + half });
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) start = null;
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
 
   /** Zoom buttons: keep the newest candle on the right edge, show fewer or more candles. */
   const zoom = (k: "in" | "out" | "reset") => {
@@ -227,6 +287,21 @@ export function PriceChart({
   return (
     <div className="flex flex-col gap-3 min-w-0">
       <div className="flex items-center gap-2 flex-wrap">
+        {mcFactor && mcFactor > 0 ? (
+          <div className="flex bg-night rounded-full p-1" role="group" aria-label="Show">
+            {(["mc", "price"] as Value[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setValue(v)}
+                className={"h-8 px-3.5 rounded-full text-[0.8125rem] font-medium " + (value === v ? "bg-paper text-ink shadow-sm" : "text-ink-2")}
+                aria-pressed={value === v}
+              >
+                {v === "mc" ? "MC" : "Price"}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="flex bg-night rounded-full p-1" role="group" aria-label="Chart type">
           {(["line", "candles"] as Mode[]).map((m) => (
             <button
@@ -279,7 +354,7 @@ export function PriceChart({
         </div>
         {hover && (
           <span className="ml-auto text-[0.8125rem] text-ink-2 tabular-nums">
-            {fmtPrice(hover.price)} · {new Date(hover.time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            {fmt(hover.price)} · {new Date(hover.time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>

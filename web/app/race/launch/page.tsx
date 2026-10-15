@@ -13,7 +13,7 @@ import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 import { isImageUrl } from "@/lib/data";
 import { IS_TESTNET } from "@/lib/config";
-import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
+import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -84,14 +84,11 @@ export default function RaceLaunchPage() {
   const [error, setError] = useState("");
   const [links, setLinks] = useState<Map<number, Set<number> | null> | null>(null);
 
-  // Which chains can race together; start with the biggest group that can.
+  // Which chains can race together (every chain starts picked; a pair that can't is explained)
   useEffect(() => {
     let alive = true;
     fetchRaceLinks().then((l) => {
-      if (!alive) return;
-      setLinks(l);
-      const best = bestLinkedGroup(l);
-      if (best.length >= 2) setChains(best);
+      if (alive) setLinks(l);
     });
     return () => {
       alive = false;
@@ -159,8 +156,8 @@ export default function RaceLaunchPage() {
       ? "The ticker needs at least 2 letters or numbers."
       : logo !== "" && !isImageUrl(logo)
         ? "That picture could not be used."
-        : picked.length < 2
-          ? "Pick at least two chains: it's a race."
+        : picked.length < 1
+          ? "Pick at least one chain."
           : links && !chainsLinked(chains, links)
             ? unlinkedText(chains, links)
           : !Number.isFinite(buyN) || perChainN < minUsd
@@ -325,10 +322,15 @@ export default function RaceLaunchPage() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] gap-5 lg:gap-8 items-start">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-5 min-w-0">
-          <div className="rounded-2xl border border-line bg-paper p-3 sm:p-4 flex flex-col gap-3">
+          <div className="rounded-2xl border border-emerald/40 bg-emerald-soft p-3 sm:p-4 flex flex-col gap-3">
             <button type="button" onClick={() => setAiOpen((o) => !o)} aria-expanded={aiOpen} className="flex items-center justify-between gap-3 text-left">
-              <span className="font-semibold text-[0.9375rem]">✨ Create with AI</span>
-              <span className="text-[0.8125rem] text-ink-3">{aiOpen ? "Close" : "Pick a topic, get a coin"}</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-[1rem]" style={{ background: "linear-gradient(135deg, #ffb020, #ff6b1a)" }} aria-hidden="true">
+                  ✨
+                </span>
+                <span className="font-bold text-[0.9375rem] text-emerald-dark">Create with AI</span>
+              </span>
+              <span className="text-[0.8125rem] text-ink-2 shrink-0">{aiOpen ? "Close" : "Pick a topic, get a coin →"}</span>
             </button>
             {aiOpen && (
               <AiCoinPanel
@@ -488,7 +490,9 @@ export default function RaceLaunchPage() {
             )}
             <span className="text-[0.8125rem] text-ink-3">
               {picked.length > 0 && perChainN > 0
-                ? `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
+                ? picked.length === 1
+                  ? `$${perChain} on ${picked[0].short}. Your first buy pays the 2% floor fee.`
+                  : `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
                 : "Split evenly over the chains you pick. Your first buy pays the 2% floor fee."}
             </span>
             {raceFeeUsd > 0 && (
@@ -560,7 +564,7 @@ export default function RaceLaunchPage() {
                 disabled={busy || !!problem || picked.some((c) => !!shortOf(c))}
                 className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
               >
-                {busy ? "Creating…" : `Create on ${picked.length} chains`}
+                {busy ? "Creating…" : `Create on ${picked.length} chain${picked.length === 1 ? "" : "s"}`}
               </button>
               {problem && <p className="text-[0.8125rem] text-ink-2 text-center">{problem}</p>}
               {error && <p className="text-[0.8125rem] text-danger text-center">{error}</p>}

@@ -12,8 +12,12 @@ import { RACE_CHAINS, clock, fetchRaceCoins, laneUsd, leadLane, raceHref, racePh
  * scroll sideways, so the Explore list below keeps its layout. Shows `fallback` (the
  * "coming soon" banner) while there are no races.
  */
+// The last list seen, so coming back to Explore shows the races at once (no flash of the
+// "coming soon" banner while the list reloads).
+let lastRaces: RaceCoin[] | null = null;
+
 export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
-  const [races, setRaces] = useState<RaceCoin[] | null>(null);
+  const [races, setRaces] = useState<RaceCoin[] | null>(lastRaces);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -21,7 +25,10 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
     let alive = true;
     const load = () =>
       fetchRaceCoins(18)
-        .then((r) => alive && setRaces(r))
+        .then((r) => {
+          lastRaces = r;
+          if (alive) setRaces(r);
+        })
         .catch(() => alive && setRaces((cur) => cur ?? []));
     load();
     const t = setInterval(load, 10_000);
@@ -33,7 +40,10 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
     };
   }, []);
 
-  if (!RACE_CHAINS.length || races === null || races.length === 0) return <>{fallback}</>;
+  if (!RACE_CHAINS.length) return <>{fallback}</>;
+  // still loading: show nothing rather than the banner for a second
+  if (races === null) return null;
+  if (races.length === 0) return <>{fallback}</>;
   const live = races.filter((r) => racePhase(r, now) !== "decided");
   const done = races.filter((r) => racePhase(r, now) === "decided").slice(0, 6);
   const liveUsd = live.reduce((s, r) => s + r.lanes.reduce((a, l) => a + laneUsd(l), 0), 0);
