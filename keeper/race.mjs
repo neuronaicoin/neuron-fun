@@ -12,6 +12,11 @@
 //      swapped into its pool yet (convertPending)              -> convert
 //   5. holders on losing chains                                -> move their coins
 //   6. after the race, on the winner: collect fees (every 30 min if it traded), buybacks
+//   7. Across two-step routes (BNB Chain <-> Robinhood Chain go through Base): money waiting
+//      on the middle chain's bridge                            -> forwardHop
+//      The bridge pays whoever forwards a small tip out of the money (at most 5 cents, at most
+//      1%); a hop is forwarded only when that tip covers the gas with room to spare, so the
+//      keeper never pays for it. Hops too small for that wait (anyone may still forward them).
 //
 // The keeper cannot pick a winner or move money anywhere else: the coordinator decides
 // on-chain, and money/coins can only go to the places fixed in the contracts.
@@ -111,6 +116,14 @@ const testFeedAbi = parseAbi([
   "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)",
   "function touch()",
 ]);
+const bridgeAbi = parseAbi([
+  "function hopsCount() view returns (uint256)",
+  "function hops(uint256) view returns (bytes32 coin, uint32 finalEid, bool buyback, bool forwarded, uint256 amount)",
+  "function tipFor(uint256 amount) view returns (uint256)",
+  "function tokenDecimals() view returns (uint8)",
+  "function forwardHop(uint256 hopId)",
+]);
+const priceFeedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
 const NONE = 0, RACING = 1, WON = 2, LOST = 3;
 
 // ------------------------------------------------------------------ chains
@@ -203,6 +216,62 @@ async function raceState(c, coin) {
 
 const hasNativePair = (c) => c.builderKind === "eth" || c.builderKind === "pcs";
 
+// ------------------------------------------------------------------ two-step routes
+
+// Native gas in dollars with 18 decimals. Arc pays gas in USDC (18 decimals natively); the other
+// chains in ETH / BNB, priced by the builder's Chainlink feed (8 decimals). null if unknown.
+export async function gasUsd18(c, gasWei) {
+  if (c.builderKind === "usdc") return gasWei;
+  if (!c.feed || c.feed === zeroAddress) return null;
+  const [, answer] = await c.pub.readContract({ address: c.feed, abi: priceFeedAbi, functionName: "latestRoundData" });
+  if (answer <= 0n) return null;
+  return (gasWei * answer) / 100_000_000n;
+}
+
+// Forward when the tip beats the gas by half again plus a tenth of a cent (L2 data fees, price moves).
+export const tipCoversGas = (tipUsd18, gasUsd) => gasUsd !== null && tipUsd18 >= (gasUsd * 15n) / 10n + 1_000_000_000_000_000n;
+
+// Sends on every hop waiting on this chain's Across bridge whose tip pays for its gas.
+// state.hops[chainId] = first hop id not known to be forwarded (so finished ones are not read again).
+export async function forwardHops(c, state, sendFn = send) {
+  if (c.bridgeKind !== "across" || !c.bridge) return;
+  state.hops ||= {};
+  const count = Number(await c.pub.readContract({ address: c.bridge, abi: bridgeAbi, functionName: "hopsCount" }));
+  let first = Number(state.hops[c.chainId] ?? 0);
+  if (first >= count) return;
+  const dec = Number(await c.pub.readContract({ address: c.bridge, abi: bridgeAbi, functionName: "tokenDecimals" }));
+  let prefixDone = true; // every hop before i is forwarded: the cursor can move past i once it is too
+  for (let i = first; i < count; i++) {
+    if (!timeLeft()) break;
+    const [coinId, finalEid, , forwarded, amount] = await c.pub.readContract({ address: c.bridge, abi: bridgeAbi, functionName: "hops", args: [BigInt(i)] });
+    let done = forwarded;
+    if (!done) done = await forwardOne(c, i, coinId, finalEid, amount, dec, sendFn);
+    if (prefixDone && done) first = i + 1;
+    else prefixDone = false;
+  }
+  state.hops[c.chainId] = String(first);
+}
+
+async function forwardOne(c, i, coinId, finalEid, amount, dec, sendFn) {
+  const tip = await c.pub.readContract({ address: c.bridge, abi: bridgeAbi, functionName: "tipFor", args: [amount] });
+  const params = { address: c.bridge, abi: bridgeAbi, functionName: "forwardHop", args: [BigInt(i)] };
+  let gasUsd;
+  try {
+    const gas = await c.pub.estimateContractGas({ account, ...params });
+    const price = await c.pub.getGasPrice();
+    gasUsd = await gasUsd18(c, gas * price);
+  } catch (e) {
+    log(`${c.chainId}: hop ${i} gas estimate failed (${e.shortMessage || e.message}); next pass retries`);
+    return false;
+  }
+  const tipUsd18 = tip * 10n ** BigInt(18 - dec);
+  if (!tipCoversGas(tipUsd18, gasUsd)) {
+    log(`${c.chainId}: hop ${i} (${amount} to eid ${finalEid}) waits: its tip ${tip} doesn't cover the gas`);
+    return false;
+  }
+  return sendFn(c, `forward hop ${i} of ${String(coinId).slice(0, 10)}: ${amount} to eid ${finalEid} (tip ${tip})`, params);
+}
+
 // ------------------------------------------------------------------ one pass
 
 async function main() {
@@ -256,6 +325,15 @@ async function main() {
   }
   const coord = coordEid === null ? null : byEid.get(coordEid);
   if (!coord) throw new Error("the coordinator chain is not configured (or no RPC answered)");
+
+  // Money waiting halfway on a two-step route goes first: it is already late.
+  for (const c of chains) {
+    try {
+      await forwardHops(c, state);
+    } catch (e) {
+      log(`${c.chainId}: hop check failed this pass (${e.shortMessage || e.message})`);
+    }
+  }
 
   for (const [id, coin] of Object.entries(state.coins)) {
     if (!timeLeft()) { log("time budget spent; the next run continues"); break; }
