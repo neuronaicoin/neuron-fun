@@ -402,6 +402,41 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         a.factory.launch(l);
     }
 
+    /// The race fee: the creator pays it on each chain, straight to the treasury, on top of the
+    /// first buy; nothing else changes. Owner only, never above $2.
+    function _flow_raceFee() internal {
+        assertEq(a.factory.raceFee(), 0, "off until set");
+        assertEq(a.factory.maxRaceFee(), 2 * D, "cap is $2 in this chain's dollar");
+        vm.expectRevert(RaceFactory.BadConfig.selector);
+        a.factory.setRaceFee(2 * D + 1);
+        vm.prank(alice);
+        vm.expectRevert();
+        a.factory.setRaceFee(D / 2);
+        vm.expectEmit(address(a.factory));
+        emit RaceFactory.RaceFeeSet(D / 2);
+        a.factory.setRaceFee(D / 2);
+
+        // chain A charges $0.50, chain B nothing: the same launch on both
+        uint256 cA = a.usdc.balanceOf(creator);
+        uint256 cB = b.usdc.balanceOf(creator);
+        uint256 tA = a.usdc.balanceOf(treasury);
+        uint256 tB = b.usdc.balanceOf(treasury);
+        _launch(a, _eids2(), 5 * D, 0);
+        _launch(b, _eids2(), 5 * D, 0);
+        assertEq(cA - a.usdc.balanceOf(creator), 5 * D + D / 2, "creator pays first buy + race fee");
+        assertEq(cB - b.usdc.balanceOf(creator), 5 * D, "no fee where none is set");
+        assertEq(a.usdc.balanceOf(treasury) - tA, D / 2 + (b.usdc.balanceOf(treasury) - tB), "the fee went to the treasury");
+
+        // without enough allowance for the fee the launch doesn't go through
+        a.factory.setRaceFee(2 * D);
+        vm.prank(creator);
+        a.usdc.approve(address(a.factory), 5 * D + D);
+        RaceFactory.Launch memory l = RaceFactory.Launch("Two", "TWO", "", "", bytes32("k2"), _eids2(), 0, 5 * D, 0);
+        vm.prank(creator);
+        vm.expectRevert();
+        a.factory.launch(l);
+    }
+
     /// A coin on one chain: no race to wait for, it "wins" at once after five minutes.
     function _flow_singleChain() internal {
         uint32[] memory e = new uint32[](1);
@@ -584,6 +619,7 @@ contract RaceLowTest is RaceFlow {
     function test_settleOnce() public { _flow_settleOnce(); }
     function test_accessRules() public { _flow_accessRules(); }
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
+    function test_raceFee() public { _flow_raceFee(); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }
@@ -605,6 +641,7 @@ contract RaceHighTest is RaceFlow {
     function test_settleOnce() public { _flow_settleOnce(); }
     function test_accessRules() public { _flow_accessRules(); }
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
+    function test_raceFee() public { _flow_raceFee(); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }

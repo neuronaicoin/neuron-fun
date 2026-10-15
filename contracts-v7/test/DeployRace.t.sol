@@ -64,6 +64,7 @@ contract DeployRaceTest is Test, DeployPermit2 {
         vm.setEnv("PRICE_FEED", "");
         vm.setEnv("ACROSS_SPOKE", "");
         vm.setEnv("SEED_WEI", "50000000000000000"); // 0.05
+        vm.setEnv("RACE_FEE", "0");
     }
 
     function _v4() internal returns (address pm, address posm) {
@@ -194,12 +195,16 @@ contract DeployRaceTest is Test, DeployPermit2 {
         vm.setEnv("BUILDER_KIND", "usdc");
         vm.setEnv("POOL_MANAGER", vm.toString(pm));
         vm.setEnv("POSITION_MANAGER", vm.toString(posm));
+        vm.setEnv("RACE_FEE", "500000"); // $0.50
         new DeployRace().run();
+        vm.setEnv("RACE_FEE", "0");
+        assertEq(RaceFactory(_read("factory")).raceFee(), 500_000, "race fee set at deploy");
         RaceBuilder b = RaceBuilder(_read("builder"));
         assertEq(b.factory(), _read("factory"));
         // the wiring step reads the dollar's decimals from here (Across routes need them)
         string memory j = vm.readFile(string.concat(dir, vm.toString(block.chainid), ".json"));
         assertEq(vm.parseJsonUint(j, ".usdDecimals"), 6);
+        assertEq(vm.parseJsonUint(j, ".raceFee"), 500_000);
         _launch(_read("factory"), _read("usd"));
     }
 

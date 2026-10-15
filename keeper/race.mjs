@@ -11,7 +11,9 @@
 //   4. the winner has dollars that arrived but could not be
 //      swapped into its pool yet (convertPending)              -> convert
 //   5. holders on losing chains                                -> move their coins
-//   6. after the race, on the winner: collect fees (every 30 min if it traded), buybacks
+//   6. after the race, on the winner: collect fees (every 30 min if it traded), buybacks;
+//      only when there is at least MIN_COLLECT_USD (default $1) to collect or buy back, so
+//      the gas stays a small slice of the money moved (catch-all once a day)
 //   7. Across two-step routes (BNB Chain <-> Robinhood Chain go through Base): money waiting
 //      on the middle chain's bridge                            -> forwardHop
 //      The bridge pays whoever forwards a small tip out of the money (at most 5 cents, at most
@@ -59,6 +61,7 @@ const lzFee = (c) => BigInt(process.env[`LZ_FEE_WEI_${c.chainId}`] || LZ_FEE_DEF
 // the launch position's range.
 const COLLECT_MS = Number(env("COLLECT_MINUTES", "30")) * 60_000;
 const IDLE_COLLECT_MS = Number(env("IDLE_COLLECT_HOURS", "24")) * 3_600_000;
+const MIN_COLLECT_USD = Number(env("MIN_COLLECT_USD", "1"));
 const BUDGET_MS = Number(env("BUDGET_MS", String(9 * 60_000)));
 const RACE_SECONDS = 300;
 let STARTED = Date.now();
@@ -228,6 +231,14 @@ export async function gasUsd18(c, gasWei) {
   return (gasWei * answer) / 100_000_000n;
 }
 
+// An amount of the winner pool's money side in dollars: USDC on Arc-type builders, ETH / BNB
+// (18 decimals) priced by the builder's Chainlink feed elsewhere. null when it can't be priced.
+export async function moneyUsd(c, amount) {
+  if (c.builderKind === "usdc") return Number(amount) / 10 ** Number(c.usdDecimals ?? 6);
+  const p = await gasUsd18(c, amount); // same maths: native amount x feed price
+  return p === null ? null : Number(p) / 1e18;
+}
+
 // Forward when the tip beats the gas by half again plus a tenth of a cent (L2 data fees, price moves).
 export const tipCoversGas = (tipUsd18, gasUsd) => gasUsd !== null && tipUsd18 >= (gasUsd * 15n) / 10n + 1_000_000_000_000_000n;
 
@@ -358,7 +369,18 @@ async function main() {
         const [a, b] = await win.pub.readContract({ address: win.builder, abi: builderAbi, functionName: "poolAmounts", args: [coin.coin] });
         const snap = `${a}:${b}`;
         if (snap !== coin.lastPoolSnap || since > IDLE_COLLECT_MS) {
-          await send(win, `collect pool fees of ${coin.name}`, { address: win.builder, abi: builderAbi, functionName: "collectFees", args: [coin.coin] });
+          const params = { address: win.builder, abi: builderAbi, functionName: "collectFees", args: [coin.coin] };
+          // what collecting would bring in now (money side); small amounts wait, at most a day
+          let usd = null;
+          try {
+            const { result } = await win.pub.simulateContract({ account, ...params });
+            usd = await moneyUsd(win, result[0]);
+          } catch {}
+          const sinceAny = Date.now() - (coin.lastCollectDone ?? coin.lastCollect ?? 0);
+          if ((usd !== null && usd >= MIN_COLLECT_USD) || sinceAny > IDLE_COLLECT_MS) {
+            const ok = await send(win, `collect pool fees of ${coin.name}${usd !== null ? ` (~$${usd.toFixed(2)})` : ""}`, params);
+            if (ok && !DRY) coin.lastCollectDone = Date.now();
+          } else log(`${coin.name}: fees waiting (~$${usd === null ? "?" : usd.toFixed(2)}), below $${MIN_COLLECT_USD}`);
           if (!DRY) {
             coin.lastCollect = Date.now();
             coin.lastPoolSnap = snap;
@@ -367,7 +389,15 @@ async function main() {
       }
       if (win && coin.feeMode === 1) {
         const bb = await win.pub.readContract({ address: win.builder, abi: builderAbi, functionName: "buybackFunds", args: [coin.coin] });
-        if (bb > 0n) await send(win, `buyback ${coin.name} (${bb} waiting)`, { address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin] });
+        if (bb > 0n) {
+          const usd = await moneyUsd(win, bb).catch(() => null);
+          if (!DRY) coin.lastBuyback ??= Date.now() - IDLE_COLLECT_MS / 2; // a first small amount waits half a day at most
+          const sinceBb = Date.now() - (coin.lastBuyback ?? 0);
+          if ((usd !== null && usd >= MIN_COLLECT_USD) || sinceBb > IDLE_COLLECT_MS) {
+            const ok = await send(win, `buyback ${coin.name} (${bb} waiting)`, { address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin] });
+            if (ok && !DRY) coin.lastBuyback = Date.now();
+          }
+        }
       }
       return;
     }

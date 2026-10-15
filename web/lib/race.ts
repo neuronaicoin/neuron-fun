@@ -180,6 +180,7 @@ export const raceFactoryAbi = parseAbi([
   "function coinAddress(address creator, bytes32 launchKey) view returns (address)",
   "function coinIdOf(address creator, bytes32 launchKey) pure returns (bytes32)",
   "function minFirstBuy() view returns (uint256)",
+  "function raceFee() view returns (uint256)",
   "function launchesOpen() view returns (bool)",
   "struct Route { address sendLib; address receiveLib; bytes executorConfig; bytes ulnConfig; }",
   "function routeOf(uint32 eid) view returns (Route)",

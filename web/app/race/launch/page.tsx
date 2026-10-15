@@ -24,7 +24,7 @@ import { RACE_CHAINS, bestLinkedGroup, chainsLinked, fetchRaceLinks, raceClient,
 const SAVE = "sasa-race-launch";
 type Draft = { key: Hex; creator: string; name: string; symbol: string; logo: string; description: string; feeMode: 0 | 1; chains: number[]; firstBuy: string };
 type ChainStatus = { state: "idle" | "working" | "done" | "error"; note?: string; tx?: string };
-type Funds = { usd: bigint; usdDec: number; gas: bigint; min: bigint; open: boolean };
+type Funds = { usd: bigint; usdDec: number; gas: bigint; min: bigint; open: boolean; fee: bigint };
 
 const loadDraft = (): Draft | null => {
   try {
@@ -121,7 +121,9 @@ export default function RaceLaunchPage() {
             w.address ? pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "balanceOf", args: [w.address] }) : Promise.resolve(0n),
             w.address ? pub.getBalance({ address: w.address }) : Promise.resolve(0n),
           ]);
-          out[c.chainId] = { usdDec: Number(usdDec), min: min as bigint, open: open as boolean, usd: usd as bigint, gas };
+          // the race fee (factories deployed before it existed have none)
+          const fee = (await pub.readContract({ address: c.factory, abi: raceFactoryAbi, functionName: "raceFee" }).catch(() => 0n)) as bigint;
+          out[c.chainId] = { usdDec: Number(usdDec), min: min as bigint, open: open as boolean, usd: usd as bigint, gas, fee };
         } catch {
           out[c.chainId] = null;
         }
@@ -138,6 +140,14 @@ export default function RaceLaunchPage() {
     return mins.length ? Math.max(...mins) : 5;
   }, [picked, funds]);
 
+  // race fee on the picked chains, in dollars (each chain's own setting)
+  const raceFeeUsd = useMemo(
+    () => picked.reduce((s, c) => {
+      const f = funds[c.chainId];
+      return s + (f ? Number(formatUnits(f.fee, f.usdDec)) : 0);
+    }, 0),
+    [picked, funds]
+  );
   const sym = cleanSym(symbol);
   // `firstBuy` is the total; each chain gets an even share of it
   const buyN = Number(firstBuy);
@@ -166,12 +176,12 @@ export default function RaceLaunchPage() {
     if (f.gas === 0n) return `No ${c.chain.nativeCurrency.symbol} for the network fee.`;
     const need = (() => {
       try {
-        return parseUnits(perChain, f.usdDec);
+        return parseUnits(perChain, f.usdDec) + f.fee;
       } catch {
         return 0n;
       }
     })();
-    if (f.usd < need) return `Needs $${perChain} ${IS_TESTNET ? "test " : ""}USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
+    if (f.usd < need) return `Needs $${Number(formatUnits(need, f.usdDec)).toFixed(2)} ${IS_TESTNET ? "test " : ""}USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
     return null;
   };
 
@@ -214,13 +224,16 @@ export default function RaceLaunchPage() {
         }
         const dec = Number(await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "decimals" }));
         const amount = parseUnits(d.firstBuy, dec);
+        // the factory takes the first buy and this chain's race fee
+        const fee = (await pub.readContract({ address: c.factory, abi: raceFactoryAbi, functionName: "raceFee" }).catch(() => 0n)) as bigint;
+        const spend = amount + fee;
         const allowance = (await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "allowance", args: [me, c.factory] })) as bigint;
-        if (allowance < amount) {
-          await w.send(c.chain, [call(c.usd, raceErc20Abi, "approve", [c.factory, amount])], (m) => set({ state: "working", note: `Approve: ${m}` }));
+        if (allowance < spend) {
+          await w.send(c.chain, [call(c.usd, raceErc20Abi, "approve", [c.factory, spend])], (m) => set({ state: "working", note: `Approve: ${m}` }));
           // the node answering next may be a block behind the approval: wait until it sees it
           for (let i = 0; i < 8; i++) {
             const a = (await pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "allowance", args: [me, c.factory] }).catch(() => 0n)) as bigint;
-            if (a >= amount) break;
+            if (a >= spend) break;
             await new Promise((r) => setTimeout(r, 1000));
           }
         }
@@ -478,6 +491,12 @@ export default function RaceLaunchPage() {
                 ? `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
                 : "Split evenly over the chains you pick. Your first buy pays the 2% floor fee."}
             </span>
+            {raceFeeUsd > 0 && (
+              <span className="text-[0.8125rem] text-ink-3">
+                Race fee: ${raceFeeUsd.toFixed(2)} (covers the network fees of running your race). Total: $
+                {((Number.isFinite(buyN) ? Number(perChain) * picked.length : 0) + raceFeeUsd).toFixed(2)}
+              </span>
+            )}
           </div>
         </div>
 

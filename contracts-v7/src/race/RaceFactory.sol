@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
@@ -35,8 +36,11 @@ interface IRaceBuilderLaunch {
  *     trade, so DEX screeners list the coin from the first block.
  * Creators can always sell: there is no creator lock (lock is always 0).
  *
+ * The creator also pays the race fee on each chain (`raceFee`, never above $2), straight to
+ * the treasury: it pays the network fees of running the race, so sasa's keeper doesn't.
+ *
  * The owner (sasa's admin) only sets things for FUTURE launches (launch price, minimum
- * first buy, routes to other chains, open/closed). It has no power over launched coins.
+ * first buy, race fee, routes to other chains, open/closed). It has no power over launched coins.
  */
 contract RaceFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -87,6 +91,12 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     uint256 public startMarketCap; // launch market cap of the whole supply, in USDC units
     uint256 public minFirstBuy; // smallest first buy per chain, in USDC units
     uint16 public moveFeeBps; // fee on the automatic coin move after the race (v6 coin)
+    /// @notice Paid by the creator on each chain the coin opens on, in USDC units, to the treasury:
+    /// it covers the network fees of running the race (closing it on every chain, the verdict,
+    /// moving the losing chains' money and holders), so nobody else pays them.
+    uint256 public raceFee;
+    /// @notice The race fee can never be set above $2 per chain.
+    uint256 public immutable maxRaceFee;
     mapping(uint32 eid => Route) internal routes;
     bool public launchesOpen;
     mapping(address seat => bool) public isSeat;
@@ -106,6 +116,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     event RouteSet(uint32 eid);
     event LaunchesOpenSet(bool open);
     event SettingsSet(uint256 startMarketCap, uint256 minFirstBuy, uint16 moveFeeBps);
+    event RaceFeeSet(uint256 raceFee);
 
     error BadConfig();
     error BadChains();
@@ -143,6 +154,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
         hub = hub_;
         builder = builder_;
         treasury = treasury_;
+        maxRaceFee = 2 * 10 ** IERC20Metadata(address(usdc_)).decimals();
         _setSettings(startMarketCap_, minFirstBuy_, moveFeeBps_);
     }
 
@@ -197,6 +209,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
 
         emit Launched(coinId, coin, seat, msg.sender, l.eids, l.name, l.symbol, l.logo, l.description, l.feeMode);
 
+        if (raceFee > 0) usdc.safeTransferFrom(msg.sender, treasury, raceFee);
         usdc.safeTransferFrom(msg.sender, builder, l.firstBuy);
         IRaceBuilderLaunch(builder).launchBuy(coin, l.firstBuy, l.minCoinsOut, msg.sender);
     }
@@ -234,6 +247,13 @@ contract RaceFactory is Ownable, ReentrancyGuard {
 
     function setSettings(uint256 startMarketCap_, uint256 minFirstBuy_, uint16 moveFeeBps_) external onlyOwner {
         _setSettings(startMarketCap_, minFirstBuy_, moveFeeBps_);
+    }
+
+    /// @notice Sets the race fee for future launches (at most `maxRaceFee`, $2 per chain).
+    function setRaceFee(uint256 fee) external onlyOwner {
+        if (fee > maxRaceFee) revert BadConfig();
+        raceFee = fee;
+        emit RaceFeeSet(fee);
     }
 
     function setLaunchesOpen(bool open) external onlyOwner {

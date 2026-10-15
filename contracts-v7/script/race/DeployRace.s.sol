@@ -250,6 +250,9 @@ contract DeployRace is Script {
         }
         OmniHub(payable(o.hub)).setKeeper(keeper);
         OmniHub(payable(o.hub)).setFactory(o.factory);
+        // race fee per chain in this chain's dollar units (mainnet: $0.50 -> 500000 for 6 decimals, 5e17 on BNB Chain)
+        uint256 raceFee = vm.envOr("RACE_FEE", uint256(0));
+        if (raceFee > 0) factory.setRaceFee(raceFee);
         if (owner != c.deployer) factory.transferOwnership(owner);
         vm.stopBroadcast();
 
@@ -394,6 +397,7 @@ contract DeployRace is Script {
         vm.serializeAddress(j, "coinDeployer", o.coinDeployer);
         vm.serializeUint(j, "startMarketCap", startMc);
         vm.serializeUint(j, "minFirstBuy", minFirstBuy);
+        vm.serializeUint(j, "raceFee", RaceFactory(o.factory).raceFee());
         vm.serializeUint(j, "startBlock", block.number);
         string memory out = vm.serializeAddress(j, "factory", o.factory);
         vm.writeJson(out, string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/race/")), vm.toString(block.chainid), ".json"));
