@@ -6,7 +6,8 @@ name: deploy-race-mainnet
 #          Makes copies of the four real chains in memory and runs the whole mainnet deploy
 #          on them with the real settings: deploy on each chain, wire the chains together
 #          (BNB Chain <-> Robinhood Chain money goes through Base), then launches a coin on all
-#          four and checks it lands at the same address and pays the race fee.
+#          four and checks it lands at the same address and pays the race fee, then buys and
+#          sells on BNB Chain and Robinhood Chain with dollars from Base (RaceCross).
 #   mode = deploy     on one chain (network), then on the other three
 #   mode = wire       on each chain, after all four are deployed
 #   deploy and wire only send when "broadcast" is ticked; unticked they are a free dry run.
@@ -121,7 +122,7 @@ jobs:
             echo "## Mainnet rehearsal"
             if [ "$ok" = 1 ]; then echo "**OK.** Deployed and wired on all four chains, the coin launched (details below)."; else echo "**FAILED.** See the log below."; fi
             echo '```'
-            grep -E "== deploy|== wire|launched on chain|REHEARSAL OK|two-step route|linked to eid|bridge locked|can't|feed price|dollar pool liquidity|Error|FAIL|revert" /tmp/rehearsal.log | head -120
+            grep -E "== deploy|== wire|launched on chain|cross trade|Cross trades|REHEARSAL OK|two-step route|linked to eid|bridge locked|can't|feed price|dollar pool liquidity|Error|FAIL|revert" /tmp/rehearsal.log | head -120
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           [ "$ok" = 1 ]
@@ -136,20 +137,20 @@ jobs:
             base) CHAIN_ID=8453; RPC="https://mainnet.base.org"; KIND=eth; DEC=6
               USD=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; FEED=0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70; AGE=7200
               ACROSS=0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
-              PM=0x498581fF718922c3f8e6A244956aF099B2652b2b; POSM=0x7C5f5A4bBd8fD63184577525326123B519429bDc; DFEE=3000; DSPACE=60; HOP_FOR="" ;;
+              PM=0x498581fF718922c3f8e6A244956aF099B2652b2b; POSM=0x7C5f5A4bBd8fD63184577525326123B519429bDc; DFEE=3000; DSPACE=60; HOP_FOR=""; GAS_FLOOR=0 ;;
             robinhood) CHAIN_ID=4663; RPC="https://rpc.mainnet.chain.robinhood.com"; KIND=eth; DEC=6
               USD=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168; FEED=0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9; AGE=93600
               ACROSS=0xD29C85F15DF544bA632C9E25829fd29d767d7978
-              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x58daec3116aae6D93017bAAea7749052E8a04fA7; DFEE=500; DSPACE=10; HOP_FOR=56 ;;
+              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x58daec3116aae6D93017bAAea7749052E8a04fA7; DFEE=500; DSPACE=10; HOP_FOR=56; GAS_FLOOR=50000000000000 ;;
             arc) CHAIN_ID=5042; RPC="https://rpc.mainnet.arc.io"; KIND=usdc; DEC=6
               USD=0x3600000000000000000000000000000000000000; FEED=""; AGE=7200
               ACROSS=0x9b4A302A548c7e313c2b74C461db7b84d3074A84
-              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x6049c9a0e26405C0985f9E3685C87d0aE917f82B; DFEE=0; DSPACE=0; HOP_FOR="" ;;
+              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x6049c9a0e26405C0985f9E3685C87d0aE917f82B; DFEE=0; DSPACE=0; HOP_FOR=""; GAS_FLOOR=100000 ;;
             bsc) CHAIN_ID=56; RPC="https://bsc-dataseed.bnbchain.org"; KIND=pcs; DEC=18
               USD=0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d; FEED=0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE; AGE=7200
               ACROSS=0x4e8E101924eDE233C13e2D8622DC8aED2872d505
               VAULT=0x238a358808379702088667322f80aC48bAd5e6c4; CLPM=0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b
-              WNATIVE=0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; DPOOL=0xf2688Fb5B81049DFB7703aDa5e770543770612C4; HOP_FOR=4663 ;;
+              WNATIVE=0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; DPOOL=0xf2688Fb5B81049DFB7703aDa5e770543770612C4; HOP_FOR=4663; GAS_FLOOR=200000000000000 ;;
           esac
           GOT_ID=$(cast chain-id --rpc-url "$RPC")
           if [ "$GOT_ID" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT_ID, expected $CHAIN_ID"; exit 1; fi
@@ -166,6 +167,8 @@ jobs:
             echo "LOCAL_EID=$EID"; echo "LZ_ENDPOINT=$EP"; echo "SEND_LIB=$SEND"; echo "RECEIVE_LIB=$RECV"; echo "EXECUTOR=$EXEC"; echo "DVNS=$DVNS"
             echo "ACROSS_HOP_FOR=$HOP_FOR"; echo "ACROSS_HOP_CHAIN_ID=$([ -n "$HOP_FOR" ] && echo 8453 || true)"
             echo "DEPLOY_DIR=./deployments/race-mainnet/"
+            # trading from Base dollars (RaceCross, not on Base itself); gas top-up below ~12 cents
+            echo "CROSS_HOME_CHAIN_ID=8453"; echo "CROSS_HOME_USDC=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; echo "CROSS_GAS_FLOOR=$GAS_FLOOR"
           } >> "$GITHUB_ENV"
 
       - name: Deploy or wire
