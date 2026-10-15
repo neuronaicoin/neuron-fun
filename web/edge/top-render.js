@@ -97,7 +97,7 @@ const pct = (v) => {
   const a = Math.abs(n);
   return { text: `${n > 0 ? "+" : n < 0 ? "−" : ""}${a >= 1000 ? `${(a / 1000).toFixed(1)}K` : a >= 100 ? a.toFixed(0) : a.toFixed(1)}%`, cls: n > 0.05 ? "up" : n < -0.05 ? "down" : "" };
 };
-const coinUrl = (c) => `${SITE}/x/?n=${encodeURIComponent(c.network)}&a=${encodeURIComponent(c.address)}`;
+const coinUrl = (c) => `${SITE}/x/${encodeURIComponent(c.network)}/${encodeURIComponent(String(c.address).toLowerCase())}/`;
 const mcapOf = (c) => (num(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
 export const dateLabel = (d) => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 

@@ -26,7 +26,7 @@ const MAX_PER_REQUEST = 9_000; // IndexNow accepts up to 10,000
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const coinUrl = (id) => `${SITE}/coin/?id=${encodeURIComponent(id)}`;
-const extUrl = (network, address) => `${SITE}/x/?n=${network}&a=${address}`;
+const extUrl = (network, address) => `${SITE}/x/${network}/${String(address).toLowerCase()}/`;
 
 /** When each page was last sent (kept in memory; a restart only re-sends a few). */
 const sent = new Map();

@@ -442,6 +442,15 @@ export async function marketsLoop(pool, log) {
     await sleep(3000); // let DexScreener's per-minute window recover after the refresh
     // Missing pictures: ask DexScreener (projects often upload theirs there first).
     await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
+    // Search pages: every real coin is kept for good in ext_archive (archive.sql), junk never is.
+    try {
+      const r = await pool.query("select ext_archive_sync() as n");
+      const added = Number(r.rows[0]?.n ?? 0);
+      if (added || round <= 3 || round % 30 === 0) log(`markets: archive +${added}`);
+      if (round % 30 === 1) await pool.query("delete from ext_archive where upper(symbol) = any($1)", [[...NOT_MEME]]);
+    } catch (e) {
+      if (round <= 3 || round % 30 === 0) log(`markets: archive ${e.message} (run indexer/archive.sql)`);
+    }
     // Coins stay searchable for 30 days after their last trade, then go.
     await pool.query("delete from ext_tokens where seen_at < now() - interval '30 days'").catch(() => {});
     // Coins added before a symbol joined the not-a-meme list (gold tokens, stables…) go too.

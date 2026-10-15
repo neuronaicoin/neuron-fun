@@ -33,6 +33,11 @@ export type ExtCoin = {
   top10: number | null;
   /** The project's X account, when it lists one (tagged when people share). */
   xHandle: string | null;
+  /** From the archive: the coin isn't actively traded now; numbers are from when it last was. */
+  quietSince?: string | null;
+  /** Highest market cap and 24h volume we ever saw (archive). */
+  peakMcap?: number | null;
+  peakVol?: number | null;
 };
 
 /** The chains All coins covers, in the order the filter shows them. */
@@ -120,11 +125,42 @@ export async function fetchExtCoins(
   return ((data ?? []) as Record<string, unknown>[]).map(toExt);
 }
 
+/**
+ * One coin: live data while it trades (last 30 days), else the archive (every real coin we ever
+ * saw, kept for good; never junk). Bad coins (honeypots…) are in neither.
+ */
 export async function fetchExtCoin(network: string, address: string): Promise<ExtCoin | null> {
-  const { data, error } = await db.from("ext_coins_all").select("*").eq("network", network).eq("address", address.toLowerCase()).maybeSingle();
-  if (error) throw error;
-  return data ? toExt(data as Record<string, unknown>) : null;
+  const a = address.toLowerCase();
+  const [live, arch] = await Promise.all([
+    db.from("ext_coins_all").select("*").eq("network", network).eq("address", a).maybeSingle(),
+    db.from("ext_archive_pages").select("*").eq("network", network).eq("address", a).maybeSingle(),
+  ]);
+  const archRow = arch.error ? null : (arch.data as Record<string, unknown> | null);
+  const peaks = archRow ? { peakMcap: pos(archRow.peak_mcap), peakVol: pos(archRow.peak_vol) } : {};
+  if (live.data) return { ...toExt(live.data as Record<string, unknown>), ...peaks };
+  if (live.error && !archRow) throw live.error;
+  if (!archRow) return null;
+  return {
+    ...toExt({
+      ...archRow,
+      gp_buy_tax: archRow.buy_tax,
+      gp_sell_tax: archRow.sell_tax,
+      gp_mintable: archRow.mintable,
+      gp_top10: archRow.top10,
+      gp_checked_at: archRow.last_seen,
+      change_1h: null,
+      change_24h: null,
+      buys_24h: null,
+      sells_24h: null,
+      trending_rank: null,
+    }),
+    ...peaks,
+    quietSince: (archRow.last_seen as string) ?? null,
+  };
 }
+
+/** A coin page's address for links outside the app (search engines, shares, notifications). */
+export const extPageUrl = (site: string, c: { network: string; address: string }) => `${site}/x/${encodeURIComponent(c.network)}/${c.address.toLowerCase()}/`;
 
 export const extHref = (c: { network: string; address: string }) => `/x/?n=${encodeURIComponent(c.network)}&a=${c.address}`;
 

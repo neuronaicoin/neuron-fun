@@ -20,7 +20,7 @@ import Link from "next/link";
 import { extNetwork, money, price, type ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { postOnX } from "@/components/share";
-import { extHref } from "@/lib/extcoins";
+import { extPageUrl } from "@/lib/extcoins";
 import { PriceChart } from "@/components/racechart";
 import { fetchExtCandles } from "@/lib/extchart";
 
@@ -81,7 +81,7 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                         IS_TESTNET
                           ? `$${coin.symbol} is listed on sasa 👀\n\nSoon: buy it in USDC in one tap, no bridging, no gas token.`
                           : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas token.`,
-                        `https://sasapad.fun${extHref(coin)}`,
+                        extPageUrl("https://sasapad.fun", coin),
                         { symbol: coin.symbol, chains: [net.label], handle: coin.xHandle }
                       )
                     }
@@ -108,6 +108,11 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
                 </div>
               ))}
             </div>
+            {coin.quietSince && (
+              <p className="mt-3 rounded-xl bg-paper border border-line px-3 py-2 text-[0.8125rem] text-ink-2">
+                Not actively traded right now. These numbers are from {new Date(coin.quietSince).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}, the last time it was.
+              </p>
+            )}
           </section>
 
           {coin.pool && !chartFailed && (
@@ -137,10 +142,47 @@ export function ExtCoinView({ coin, backLink = true }: { coin: ExtCoin; backLink
           )}
 
           <TokenCheck coin={coin} />
+          <AboutCoin coin={coin} chain={net.label} />
         </div>
         <TradeBox coin={coin} />
       </div>
     </div>
+  );
+}
+
+/** Plain facts about the coin and how to buy it here (what someone searching for it wants to know). */
+function AboutCoin({ coin, chain }: { coin: ExtCoin; chain: string }) {
+  const sym = `$${coin.symbol}`;
+  const created = coin.poolCreated ? new Date(coin.poolCreated).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : null;
+  const facts = [
+    `${coin.name} (${sym}) is a coin on ${chain}${coin.dex ? `, traded mainly on ${coin.dex.replace(/[-_]/g, " ")}` : ""}${created ? `. Its main pool opened on ${created}` : ""}.`,
+    coin.mcapUsd ? `Its market cap is about ${money(coin.mcapUsd)}${coin.liqUsd ? ` with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.` : "",
+    coin.peakMcap && coin.mcapUsd && coin.peakMcap > coin.mcapUsd * 1.2 ? `The highest market cap we saw was ${money(coin.peakMcap)}.` : "",
+    coin.sellTax !== null || coin.buyTax !== null
+      ? `Token check: ${coin.buyTax ? `${(coin.buyTax * 100).toFixed(1)}% buy tax` : "no buy tax"}, ${coin.sellTax ? `${(coin.sellTax * 100).toFixed(1)}% sell tax` : "no sell tax"}${coin.mintable ? ", and the owner can still create more coins" : ""}${coin.top10 !== null ? `; the 10 biggest wallets hold ${(coin.top10 * 100).toFixed(0)}%` : ""}.`
+      : "",
+  ].filter(Boolean);
+  const faq: [string, string][] = [
+    [`How do I buy ${sym}?`, IS_TESTNET ? `Trading coins from other DEXs opens when sasa's mainnet starts. Then: log in with your email or a wallet, add USDC, and tap Buy on this page.` : `Log in on sasa with your email or a wallet, add USDC, and tap Buy on this page. sasa finds the best price across DEXs; you don't need ${chain === "Base" ? "ETH" : "that chain's gas coin"} or a bridge.`],
+    [`Can I set a take profit or stop loss on ${sym}?`, `Yes. Use the Auto tab next to Buy and Sell: pick a price once and the order runs on its own, even with sasa closed. It costs 0.1% when it runs.`],
+    [`What is the ${sym} contract address?`, `${coin.address} on ${chain}. Always check the address before you buy: other coins can use the same name.`],
+  ];
+  return (
+    <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5" aria-label={`About ${coin.name}`}>
+      <h2 className="font-display font-bold text-[1.0625rem]">About {coin.name}</h2>
+      {facts.map((f) => (
+        <p key={f} className="mt-2 text-[0.875rem] text-ink-2 break-words">{f}</p>
+      ))}
+      <div className="mt-3 flex flex-col divide-y divide-line">
+        {faq.map(([q, a]) => (
+          <details key={q} className="py-2">
+            <summary className="cursor-pointer font-semibold text-[0.875rem]">{q}</summary>
+            <p className="mt-1 text-[0.8125rem] text-ink-2 break-words">{a}</p>
+          </details>
+        ))}
+      </div>
+      <p className="mt-3 text-[0.75rem] text-ink-3">Meme coins are risky. Only use money you can afford to lose.</p>
+    </section>
   );
 }
 

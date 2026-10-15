@@ -17,8 +17,10 @@ export default function Page() {
 
 function ExtCoinPage() {
   const q = useSearchParams();
-  const network = q.get("n") ?? "";
-  const address = (q.get("a") ?? "").toLowerCase();
+  // /x/<network>/<address> (search engines, shares) or /x/?n=<network>&a=<address> (in-app links)
+  const fromPath = typeof window !== "undefined" ? /^\/x\/([a-z]+)\/(0x[0-9a-fA-F]{40})\/?$/.exec(window.location.pathname) : null;
+  const network = fromPath?.[1] ?? q.get("n") ?? "";
+  const address = (fromPath?.[2] ?? q.get("a") ?? "").toLowerCase();
   const valid = !!extNetwork(network) && /^0x[0-9a-f]{40}$/.test(address);
   const [coin, setCoin] = useState<ExtCoin | null | undefined>(undefined);
 
@@ -38,7 +40,7 @@ function ExtCoinPage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.5rem]">Coin not found</h1>
-        <p className="text-ink-2 mt-2">It may have gone quiet: we only show coins that are actively traded.</p>
+        <p className="text-ink-2 mt-2">We don&apos;t have this coin. We only list coins that really traded and passed the token check.</p>
         <Link href="/explore/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Back to coins</Link>
       </div>
     );

@@ -77,7 +77,7 @@ export async function onRequestGet() {
     ...(ext.length
       ? ext.map(
           (c) =>
-            `- [${clean(c.name)} ($${clean(c.symbol)}) on ${NETS[c.network] || c.network}](${SITE}/x/?n=${c.network}&a=${c.address}): market cap ${money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd)}; volume ${money(c.vol_24h)}; liquidity ${money(c.liq_usd)}; change ${pct(c.change_24h)}`
+            `- [${clean(c.name)} ($${clean(c.symbol)}) on ${NETS[c.network] || c.network}](${SITE}/x/${c.network}/${String(c.address).toLowerCase()}/): market cap ${money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd)}; volume ${money(c.vol_24h)}; liquidity ${money(c.liq_usd)}; change ${pct(c.change_24h)}`
         )
       : ["- None right now."]),
     "",

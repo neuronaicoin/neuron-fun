@@ -437,7 +437,7 @@ export async function pass(ctx) {
       }).catch((e) => log(`order ${o.id}: stats save failed ${e.message}`));
     }
     const sym = o.symbol ? `$${o.symbol}` : "your coin";
-    const url = o.coin_kind === "race" ? `${site}/r/?id=${o.race_id}` : `${site}/x/?n=${o.network}&a=${o.coin}`;
+    const url = o.coin_kind === "race" ? `${site}/r/?id=${o.race_id}` : `${site}/x/${o.network}/${o.coin}/`;
     const title = res.status === "filled" ? `${TITLES[o.kind]}: ${o.kind === "dip" ? "bought" : "sold"} ${sym}` : `Auto order on ${sym} closed`;
     const body = res.status === "filled" ? "Your auto order ran. Tap to see the coin." : res.note || "It couldn't run.";
     await sb("notifications", { method: "POST", body: { owner: o.owner, coin_id: o.race_id ?? null, kind: "order", title, body, url } }).catch(() => {});
