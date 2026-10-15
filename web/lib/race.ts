@@ -381,7 +381,8 @@ export async function fetchRaceCoins(limit = 12, opts: { only?: "racing" | "winn
   // only coins raced on this site's chains (testnet and mainnet races share the database)
   const cols = COIN_COLS.replace("race_chains(", "race_chains!inner(");
   let q = db.from("race_coins").select(cols).in("race_chains.chain_id", RACE_CHAINS.map((c) => c.chainId));
-  if (opts.only === "racing") q = q.is("decided_at", null).is("winner_chain", null);
+  // racing now: not decided, and not stuck (a race whose result never came in an hour after its end)
+  if (opts.only === "racing") q = q.is("decided_at", null).is("winner_chain", null).gt("ends_at", new Date(Date.now() - STUCK_MS).toISOString());
   if (opts.only === "winners") q = q.not("winner_chain", "is", null);
   if (opts.creator) q = q.eq("creator", opts.creator.toLowerCase());
   const term = (opts.search ?? "").trim().replace(/[%_,()*]/g, "");
@@ -514,6 +515,10 @@ export async function fetchRaceHolders(chain: RaceChain, coin: string, limit = 2
 
 /** Where the race stands right now. */
 export type RacePhase = "racing" | "deciding" | "decided";
+/** An hour after its end with no result: the race is stuck, so lists stop showing it as live. */
+export const STUCK_MS = 3600_000;
+export const raceStuck = (c: RaceCoin, now: number) => !c.winner && !c.decidedAt && c.endsAt > 0 && now > c.endsAt + STUCK_MS;
+
 export function racePhase(c: RaceCoin, now: number): RacePhase {
   if (c.winner || c.decidedAt) return "decided";
   return now < c.endsAt ? "racing" : "deciding";

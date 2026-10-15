@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { CoinAvatar } from "@/components/coins";
 import { compactUsd } from "@/lib/format";
-import { RACE_CHAINS, clock, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, type RaceCoin } from "@/lib/race";
+import { RACE_CHAINS, clock, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, raceStuck, type RaceCoin } from "@/lib/race";
 
 /**
  * The race wall at the top of Explore: live races in big cards (every chain's money side by
@@ -44,8 +44,10 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   // still loading: show nothing rather than the banner for a second
   if (races === null) return null;
   if (races.length === 0) return <>{fallback}</>;
-  const live = races.filter((r) => racePhase(r, now) !== "decided");
+  // stuck races (no result an hour after the end) aren't live: their pages stay, the wall skips them
+  const live = races.filter((r) => racePhase(r, now) !== "decided" && !raceStuck(r, now));
   const done = races.filter((r) => racePhase(r, now) === "decided").slice(0, 6);
+  if (!live.length && !done.length) return <>{fallback}</>;
   const liveUsd = live.reduce((s, r) => s + r.lanes.reduce((a, l) => a + laneUsd(l), 0), 0);
 
   return (
