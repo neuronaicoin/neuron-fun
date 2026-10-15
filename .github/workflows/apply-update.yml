@@ -35,6 +35,16 @@ jobs:
             if unzip -Z1 "$z" | grep -Eq '(^/|\.\./)'; then echo "Unsafe path in $z"; exit 1; fi
             unzip -o -q "$z" -d .
             git rm -q "$z"
+            # update-delete.txt (optional, inside the zip): one repository path per line to remove
+            if [ -f update-delete.txt ]; then
+              while IFS= read -r p || [ -n "$p" ]; do
+                p="${p%$'\r'}"
+                [ -z "$p" ] && continue
+                case "$p" in /*|*..*) echo "Unsafe delete path: $p"; exit 1 ;; esac
+                if [ -e "$p" ]; then git rm -q -r -- "$p"; echo "Deleted $p"; else echo "Already gone: $p"; fi
+              done < update-delete.txt
+              rm -f update-delete.txt
+            fi
           done
 
       - name: Check the website still builds
