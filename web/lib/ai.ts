@@ -15,6 +15,15 @@ export async function aiLogo(sign: SignFn, art: string): Promise<string> {
   return j.image;
 }
 
+export type AiCoin = { name: string; symbol: string; description: string; image: string | null; imageError: string | null };
+
+/** One whole coin from one sentence: name, ticker, story and one picture (null if drawing failed). */
+export async function aiCoin(sign: SignFn, idea: string): Promise<AiCoin> {
+  const j = await authedPost<AiCoin>(sign, "ai/coin", { idea });
+  const image = typeof j.image === "string" && j.image.startsWith("data:image/") ? j.image : null;
+  return { name: j.name ?? "", symbol: j.symbol ?? "", description: j.description ?? "", image, imageError: image ? null : (j.imageError ?? "Couldn't draw a picture right now.") };
+}
+
 export const IDEA_SPARKS: readonly (readonly [string, string])[] = [
   ["Frog trader", "A frog that trades on Robinhood"],
   ["Panda astronaut", "A sleepy panda astronaut"],

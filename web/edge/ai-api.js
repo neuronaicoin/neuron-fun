@@ -2,6 +2,8 @@
 //
 //   POST /api/ai/ideas  { idea }    → { ideas: [{ name, symbol, description, art }] }
 //   POST /api/ai/logo   { art }     → { image: "data:image/jpeg;base64,…" }
+//   POST /api/ai/coin   { idea }    → { name, symbol, description, image | null }
+//        one coin in one go (the race launch page): one idea, one picture
 //
 // Signed-in users only, with a daily allowance per account (ai.sql). If the
 // binding isn't set up, or the free daily quota is used up, it answers with a
@@ -67,6 +69,7 @@ const codeOf = (e) => {
 };
 const IDEAS_PER_DAY = 10;
 const LOGOS_PER_DAY = 40;
+const COINS_PER_DAY = 10;
 
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 const fail = (status, error) => json({ error }, status);
@@ -113,6 +116,85 @@ function parseIdeas(out) {
   return Array.isArray(v) ? v : [];
 }
 
+/** `count` coin ideas for one sentence: { list } or { error: Response }. */
+async function makeIdeas(env, idea, count) {
+  const system =
+    `You name meme coins. Reply with ONLY a JSON array of exactly ${count} object${count === 1 ? "" : "s"}, no other text. ` +
+    'Each object: {"name": catchy coin name, 2-4 words, max 28 characters; ' +
+    '"symbol": ticker, 3-6 capital letters A-Z only; ' +
+    '"description": one fun sentence, max 140 characters, no promises of profit, no emojis; ' +
+    '"art": a short visual description of a cute mascot logo for this coin, max 25 words}. ' +
+    (count > 1 ? `Make the ${count} ideas clearly different. ` : "") +
+    "Never use real people, brands, celebrities, existing crypto names, " +
+    "or anything hateful, sexual or violent.";
+  let out = null;
+  let lastErr = null;
+  for (const model of TEXT_MODELS) {
+    try {
+      const res = await env.AI.run(model, {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: `Coin idea: ${idea}` },
+        ],
+        // Some newer models think before answering; leave them room.
+        max_tokens: 1500,
+        temperature: 0.9,
+      });
+      const text = textOf(res);
+      if (parseIdeas(text).length) {
+        out = text;
+        break;
+      }
+      lastErr = new Error(`${model}: no ideas in the answer`);
+    } catch (e) {
+      lastErr = e;
+      console.error("ai ideas", model, e && e.message);
+    }
+  }
+  if (out === null) {
+    console.error("ai ideas failed", lastErr && lastErr.message);
+    return { error: fail(503, adminView ? adminMsg(lastErr) : `Our AI is busy right now. Try again in a minute, or fill in the form below.${codeOf(lastErr)}`) };
+  }
+  const seen = new Set();
+  const ideas = parseIdeas(out)
+    .map((x) => ({
+      name: clean(x && x.name, 32),
+      symbol: clean(x && x.symbol, 12).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
+      description: clean(x && x.description, 200),
+      art: clean(x && x.art, 240),
+    }))
+    .filter((x) => x.name.length >= 2 && x.symbol.length >= 2 && !BLOCK.test(x.name + " " + x.description) && !BRANDS.test(x.name + " " + x.symbol))
+    .filter((x) => (seen.has(x.symbol) ? false : (seen.add(x.symbol), true)))
+    .slice(0, count);
+  if (!ideas.length) return { error: fail(502, "The AI came back empty. Try again, maybe with a different sentence.") };
+  return { list: ideas };
+}
+
+/** One mascot picture: { image } or { image: null, message }. */
+async function drawLogo(env, art) {
+  const prompt =
+    `Cute meme coin mascot logo: ${art}. Centered single character, bold simple shapes, vibrant colors, ` +
+    "soft gradient background, flat vector illustration, sticker style, no text, no letters, no watermark.";
+  let image = null;
+  let lastErr = null;
+  // A safety check sometimes trips on harmless words; a plainer prompt usually passes.
+  const plain = `Cute cartoon mascot logo, ${art.split(/[,.]/)[0]}, flat vector, vibrant colors, no text`;
+  outer: for (const [model, input] of IMAGE_MODELS) {
+    for (const p of [prompt, plain]) {
+      try {
+        image = await imageOf(await env.AI.run(model, input(p)));
+        if (image) break outer;
+        lastErr = new Error(`${model}: empty picture`);
+      } catch (e) {
+        lastErr = e;
+        console.error("ai logo", model, e && e.message);
+      }
+    }
+  }
+  if (!image) return { image: null, message: adminView ? adminMsg(lastErr) : `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}` };
+  return { image };
+}
+
 export async function aiRoute(ctx, me, parts, method, body) {
   const env = ctx.env;
   adminView = String(env.FORUM_ADMINS || "")
@@ -129,81 +211,31 @@ export async function aiRoute(ctx, me, parts, method, body) {
     if (BLOCK.test(idea)) return fail(400, "Let's keep it friendly. Try another idea.");
     if (!(await take(env, me, "ideas", IDEAS_PER_DAY))) return fail(429, `That's your ${IDEAS_PER_DAY} AI ideas for today. Come back tomorrow, or fill in the form below.`);
 
-    const system =
-      "You name meme coins. Reply with ONLY a JSON array of exactly 3 objects, no other text. " +
-      'Each object: {"name": catchy coin name, 2-4 words, max 28 characters; ' +
-      '"symbol": ticker, 3-6 capital letters A-Z only; ' +
-      '"description": one fun sentence, max 140 characters, no promises of profit, no emojis; ' +
-      '"art": a short visual description of a cute mascot logo for this coin, max 25 words}. ' +
-      "Make the 3 ideas clearly different. Never use real people, brands, celebrities, existing crypto names, " +
-      "or anything hateful, sexual or violent.";
-    let out = null;
-    let lastErr = null;
-    for (const model of TEXT_MODELS) {
-      try {
-        const res = await env.AI.run(model, {
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: `Coin idea: ${idea}` },
-          ],
-          // Some newer models think before answering; leave them room.
-          max_tokens: 1500,
-          temperature: 0.9,
-        });
-        const text = textOf(res);
-        if (parseIdeas(text).length) {
-          out = text;
-          break;
-        }
-        lastErr = new Error(`${model}: no ideas in the answer`);
-      } catch (e) {
-        lastErr = e;
-        console.error("ai ideas", model, e && e.message);
-      }
-    }
-    if (out === null) {
-      console.error("ai ideas failed", lastErr && lastErr.message);
-      return fail(503, adminView ? adminMsg(lastErr) : `Our AI is busy right now. Try again in a minute, or fill in the form below.${codeOf(lastErr)}`);
-    }
-    const seen = new Set();
-    const ideas = parseIdeas(out)
-      .map((x) => ({
-        name: clean(x && x.name, 32),
-        symbol: clean(x && x.symbol, 12).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
-        description: clean(x && x.description, 200),
-        art: clean(x && x.art, 240),
-      }))
-      .filter((x) => x.name.length >= 2 && x.symbol.length >= 2 && !BLOCK.test(x.name + " " + x.description) && !BRANDS.test(x.name + " " + x.symbol))
-      .filter((x) => (seen.has(x.symbol) ? false : (seen.add(x.symbol), true)))
-      .slice(0, 3);
-    if (!ideas.length) return fail(502, "The AI came back empty. Try again, maybe with a different sentence.");
-    return json({ ideas });
+    const ideas = await makeIdeas(env, idea, 3);
+    if (ideas.error) return ideas.error;
+    return json({ ideas: ideas.list });
+  }
+
+  if (parts[1] === "coin") {
+    const idea = clean(body.idea, 200);
+    if (idea.length < 3) return fail(400, "Write a few words about your coin first.");
+    if (BLOCK.test(idea)) return fail(400, "Let's keep it friendly. Try another idea.");
+    if (!(await take(env, me, "coin", COINS_PER_DAY))) return fail(429, `That's your ${COINS_PER_DAY} AI coins for today. Come back tomorrow, or fill in the form yourself.`);
+    const ideas = await makeIdeas(env, idea, 1);
+    if (ideas.error) return ideas.error;
+    const pick = ideas.list[0];
+    const drawn = await drawLogo(env, pick.art);
+    // the name, ticker and story are still useful when the picture fails: the user can upload one
+    return json({ name: pick.name, symbol: pick.symbol, description: pick.description, image: drawn.image, imageError: drawn.image ? null : drawn.message });
   }
 
   if (parts[1] === "logo") {
     const art = clean(body.art, 240);
     if (art.length < 3 || BLOCK.test(art)) return fail(400, "Can't draw that one.");
     if (!(await take(env, me, "logo", LOGOS_PER_DAY))) return fail(429, "That's all the AI pictures for today. Upload your own below.");
-    const prompt =
-      `Cute meme coin mascot logo: ${art}. Centered single character, bold simple shapes, vibrant colors, ` +
-      "soft gradient background, flat vector illustration, sticker style, no text, no letters, no watermark.";
-    let image = null;
-    let lastErr = null;
-    // A safety check sometimes trips on harmless words; a plainer prompt usually passes.
-    const plain = `Cute cartoon mascot logo, ${art.split(/[,.]/)[0]}, flat vector, vibrant colors, no text`;
-    outer: for (const [model, input] of IMAGE_MODELS) {
-      for (const p of [prompt, plain]) {
-        try {
-          image = await imageOf(await env.AI.run(model, input(p)));
-          if (image) break outer;
-          lastErr = new Error(`${model}: empty picture`);
-        } catch (e) {
-          lastErr = e;
-          console.error("ai logo", model, e && e.message);
-        }
-      }
-    }
-    if (!image) return fail(503, adminView ? adminMsg(lastErr) : `Couldn't draw a picture right now. Try again, or upload your own.${codeOf(lastErr)}`);
+    const drawn = await drawLogo(env, art);
+    if (!drawn.image) return fail(503, drawn.message);
+    const image = drawn.image;
     return json({ image });
   }
 

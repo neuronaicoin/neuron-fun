@@ -49,7 +49,7 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
           </span>
         )}
         <Link href="/race/launch/" className="ml-auto text-[0.875rem] font-semibold text-emerald-dark shrink-0">
-          Launch a race →
+          Create a coin →
         </Link>
       </div>
 

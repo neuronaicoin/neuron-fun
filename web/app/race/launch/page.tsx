@@ -7,6 +7,7 @@ import { formatUnits, keccak256, parseUnits, toHex, type Address, type Hex } fro
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar } from "@/components/coins";
+import { AiCoinPanel } from "@/components/aicoin";
 import { call } from "@/lib/tx";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
@@ -53,8 +54,14 @@ function unlinkedText(ids: number[], links: Map<number, Set<number> | null>): st
     }
   return "";
 }
-/** First buy we suggest on each chain; smaller is allowed (down to the contract's minimum) with a note. */
+/** Total first buy we suggest; smaller is allowed (down to the contracts' minimum) with a note. */
 const RECOMMENDED_BUY = 5;
+/** The total split evenly over `n` chains, rounded down to the cent: what each chain's first buy is. */
+const perChainOf = (total: string, n: number): string => {
+  const t = Number(total);
+  if (!Number.isFinite(t) || t <= 0 || n <= 0) return "0";
+  return (Math.floor((t * 100) / n + 1e-9) / 100).toFixed(2);
+};
 const cleanSym = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
 
 export default function RaceLaunchPage() {
@@ -69,6 +76,7 @@ export default function RaceLaunchPage() {
   const [firstBuy, setFirstBuy] = useState("10");
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [status, setStatus] = useState<Record<number, ChainStatus>>({});
   const [funds, setFunds] = useState<Record<number, Funds | null>>({});
@@ -131,7 +139,10 @@ export default function RaceLaunchPage() {
   }, [picked, funds]);
 
   const sym = cleanSym(symbol);
+  // `firstBuy` is the total; each chain gets an even share of it
   const buyN = Number(firstBuy);
+  const perChain = perChainOf(firstBuy, picked.length);
+  const perChainN = Number(perChain);
   const problem = !name.trim()
     ? "Give your coin a name."
     : sym.length < 2
@@ -142,8 +153,8 @@ export default function RaceLaunchPage() {
           ? "Pick at least two chains: it's a race."
           : links && !chainsLinked(chains, links)
             ? unlinkedText(chains, links)
-          : !Number.isFinite(buyN) || buyN < minUsd
-            ? `The first buy is at least $${minUsd} on each chain.`
+          : !Number.isFinite(buyN) || perChainN < minUsd
+            ? `With ${picked.length} chains your first buy is at least $${(minUsd * picked.length).toLocaleString("en-US", { maximumFractionDigits: 2 })} ($${minUsd} on each chain).`
             : "";
 
   // Per chain: is something missing before the launch can go through?
@@ -155,12 +166,12 @@ export default function RaceLaunchPage() {
     if (f.gas === 0n) return `No ${c.chain.nativeCurrency.symbol} for the network fee.`;
     const need = (() => {
       try {
-        return parseUnits(firstBuy || "0", f.usdDec);
+        return parseUnits(perChain, f.usdDec);
       } catch {
         return 0n;
       }
     })();
-    if (f.usd < need) return `Needs $${firstBuy} ${IS_TESTNET ? "test " : ""}USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
+    if (f.usd < need) return `Needs $${perChain} ${IS_TESTNET ? "test " : ""}USDC, you have $${Number(formatUnits(f.usd, f.usdDec)).toFixed(2)}.`;
     return null;
   };
 
@@ -251,7 +262,8 @@ export default function RaceLaunchPage() {
 
   const start = () => {
     if (problem || !w.address) return;
-    void run({ key: newKey(), creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy });
+    // the draft keeps each chain's share, so a resumed launch buys the same on the chains left
+    void run({ key: newKey(), creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain });
   };
 
   const toggle = (id: number) => setChains((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -264,8 +276,8 @@ export default function RaceLaunchPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-12 flex flex-col gap-5 min-w-0">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[1.75rem] sm:text-[2.25rem] font-extrabold tracking-tight">Launch a race</h1>
-        <p className="text-ink-2 text-[0.9375rem]">Your coin opens on every chain you pick. After five minutes the chain with the most money wins and gets the whole coin.</p>
+        <h1 className="text-[1.75rem] sm:text-[2.25rem] font-extrabold tracking-tight">Create your coin on multiple chains</h1>
+        <p className="text-ink-2 text-[0.9375rem]">Your coin goes live on every chain you pick. After 5 minutes, the chain with the most money wins and the whole coin moves there.</p>
       </div>
 
       {draft && !busy && (
@@ -300,6 +312,30 @@ export default function RaceLaunchPage() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] gap-5 lg:gap-8 items-start">
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-5 min-w-0">
+          <div className="rounded-2xl border border-line bg-paper p-3 sm:p-4 flex flex-col gap-3">
+            <button type="button" onClick={() => setAiOpen((o) => !o)} aria-expanded={aiOpen} className="flex items-center justify-between gap-3 text-left">
+              <span className="font-semibold text-[0.9375rem]">✨ Create with AI</span>
+              <span className="text-[0.8125rem] text-ink-3">{aiOpen ? "Close" : "Pick a topic, get a coin"}</span>
+            </button>
+            {aiOpen && (
+              <AiCoinPanel
+                onFill={(f) => {
+                  setName(f.name);
+                  setSymbol(f.symbol);
+                  setDescription(f.description);
+                  if (f.logo) {
+                    setLogo(f.logo);
+                    setPicError("");
+                  } else {
+                    // the old picture belonged to the previous idea
+                    setLogo("");
+                    setPicError(f.logoError ?? "");
+                  }
+                  setAiOpen(false);
+                }}
+              />
+            )}
+          </div>
           <div className="grid grid-cols-[88px_minmax(0,1fr)] sm:grid-cols-[120px_minmax(0,1fr)] gap-4 items-start">
             <label className="relative aspect-square rounded-2xl border-2 border-dashed border-line hover:border-ink-3 bg-paper flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden">
               {logo ? (
@@ -367,7 +403,7 @@ export default function RaceLaunchPage() {
           </label>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[0.8125rem] text-ink-3">Chains in the race</span>
+            <span className="text-[0.8125rem] text-ink-3">Pick your chains (multi-chain recommended)</span>
             <div className="grid grid-cols-2 gap-2">
               {RACE_CHAINS.map((c) => {
                 const on = chains.includes(c.chainId);
@@ -409,7 +445,7 @@ export default function RaceLaunchPage() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] text-ink-3">Buy some yourself, on each chain (USDC)</span>
+            <span className="text-[0.8125rem] text-ink-3">Your first buy, in total (USDC)</span>
             <div className="grid grid-cols-3 gap-2">
               {["10", "50", "100"].map((v) => (
                 <button
@@ -430,25 +466,26 @@ export default function RaceLaunchPage() {
                 value={firstBuy}
                 onChange={(e) => setFirstBuy(e.target.value.replace(",", ".").replace(/[^0-9.]/g, ""))}
                 placeholder="Or type any amount"
-                aria-label="Your first buy on each chain, in dollars"
+                aria-label="Your first buy in total, in dollars"
                 className={input + " pl-8"}
               />
             </label>
-            {Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && buyN >= minUsd && (
-              <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more on each chain, so your coin starts with some weight.</span>
+            {Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
+              <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more, so your coin starts with some weight.</span>
             )}
             <span className="text-[0.8125rem] text-ink-3">
-              Total ${Number.isFinite(buyN) ? (buyN * picked.length).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"} across {picked.length} chains. Your first buy pays the 2% floor fee.
+              {picked.length > 0 && perChainN > 0
+                ? `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
+                : "Split evenly over the chains you pick. Your first buy pays the 2% floor fee."}
             </span>
           </div>
         </div>
 
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">
-          <h2 className="font-bold text-[1.0625rem]">Before you launch</h2>
           {!w.address ? (
             <ConnectButton />
           ) : w.embedded ? (
-            <p className="text-[0.875rem] text-ink-2">Races on testnet need a browser wallet (MetaMask, Rabby, Coinbase Wallet…). Email accounts join with the USDC deposit at mainnet.</p>
+            IS_TESTNET ? <p className="text-[0.8125rem] text-ink-3">Testnet: create with a browser wallet.</p> : null
           ) : (
             <ul className="flex flex-col gap-3">
               {picked.map((c) => {
@@ -504,7 +541,7 @@ export default function RaceLaunchPage() {
                 disabled={busy || !!problem || picked.some((c) => !!shortOf(c))}
                 className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
               >
-                {busy ? "Launching…" : `Launch on ${picked.length} chains`}
+                {busy ? "Creating…" : `Create on ${picked.length} chains`}
               </button>
               {problem && <p className="text-[0.8125rem] text-ink-2 text-center">{problem}</p>}
               {error && <p className="text-[0.8125rem] text-danger text-center">{error}</p>}

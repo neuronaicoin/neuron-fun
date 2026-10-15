@@ -33,7 +33,7 @@ export default function RacePage() {
       {IS_TESTNET && (
         <div className="flex justify-center px-4 pb-12">
           <Link href="/race/launch/" className="inline-flex items-center h-12 px-6 rounded-full bg-emerald text-on-accent font-bold">
-            Try it on testnet: launch a race
+            Try it on testnet: create a coin
           </Link>
         </div>
       )}
