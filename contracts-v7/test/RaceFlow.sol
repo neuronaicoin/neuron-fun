@@ -29,6 +29,8 @@ import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {RaceSeat} from "../src/race/RaceSeat.sol";
 import {MockLzEndpoint} from "./MockLzEndpoint.sol";
 import {UsdPoolRouter, IUsdGraduatedPools} from "../src/usd/UsdPoolRouter.sol";
+import {RaceCross, RaceCrossUsdc, IRaceRouter} from "../src/race/RaceCross.sol";
+import {CrossSpoke, ICrossMinter} from "./CrossSpoke.sol";
 
 contract USD6 is ERC20 {
     constructor() ERC20("USD Coin", "USDC") {}
@@ -462,6 +464,41 @@ abstract contract RaceFlow is Test, DeployPermit2 {
     }
 
     /// The site's router (the reviewed v6 USD pool router, unchanged) trades in race pools.
+    /// Arc-like chain (dollar pools, gas paid in dollars): a buy from Base leaves a little of the
+    /// dollars as gas and buys the rest; selling sends the dollars home; the losing chain refunds.
+    function _flow_cross() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        UsdPoolRouter ra = new UsdPoolRouter(a.pm, IUsdGraduatedPools(address(a.builder)));
+        UsdPoolRouter rb = new UsdPoolRouter(b.pm, IUsdGraduatedPools(address(b.builder)));
+        CrossSpoke spoke = new CrossSpoke();
+        RaceCrossUsdc xa = new RaceCrossUsdc(spoke, IERC20(address(a.usdc)), IRaceRouter(address(ra)), 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        RaceCrossUsdc xb = new RaceCrossUsdc(spoke, IERC20(address(b.usdc)), IRaceRouter(address(rb)), 8453, IERC20(address(0xBA5E)), 6, D / 10);
+        vm.warp(block.timestamp + 130); // the opening fee is down to 2%
+        address u = address(0xC0FFEE01);
+        spoke.fill(address(a.usdc), ICrossMinter(address(a.usdc)), address(xa), 20 * D,
+            abi.encode(RaceCross.Order(u, ca, 1, 30 * D / 100, block.timestamp + 1 hours)));
+        assertEq(a.usdc.balanceOf(u), 30 * D / 100, "30 cents left as gas");
+        uint256 coins = IERC20(ca).balanceOf(u);
+        assertGt(coins, 0, "coins delivered");
+        assertEq(a.usdc.balanceOf(address(xa)), 0);
+        vm.startPrank(u);
+        IERC20(ca).approve(address(xa), coins);
+        uint256 got = xa.sellAndSendHome(ca, coins, 1, D / 100, block.timestamp);
+        vm.stopPrank();
+        assertGt(got, 18 * D);
+        assertEq(spoke.lastOutput(), got - D / 100);
+        assertEq(spoke.lastDepositor(), u);
+        // after the race the losing chain's pool refuses buys: the dollars come back instead
+        vm.warp(block.timestamp + 200);
+        _endRace();
+        address v = address(0xC0FFEE02);
+        spoke.fill(address(b.usdc), ICrossMinter(address(b.usdc)), address(xb), 10 * D,
+            abi.encode(RaceCross.Order(v, cb, 1, 0, block.timestamp + 1 hours)));
+        assertEq(b.usdc.balanceOf(v), 10 * D, "refunded in full on the losing chain");
+        assertEq(IERC20(cb).balanceOf(v), 0);
+    }
+
     function _flow_router() internal {
         (address ca,) = _launch(a, _eids2(), 5 * D, 0);
         (address cb,) = _launch(b, _eids2(), 5 * D, 0);
@@ -620,6 +657,7 @@ contract RaceLowTest is RaceFlow {
     function test_accessRules() public { _flow_accessRules(); }
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
     function test_raceFee() public { _flow_raceFee(); }
+    function test_cross() public { _flow_cross(); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }
@@ -642,6 +680,7 @@ contract RaceHighTest is RaceFlow {
     function test_accessRules() public { _flow_accessRules(); }
     function test_minFirstBuy() public { _flow_minFirstBuy(); }
     function test_raceFee() public { _flow_raceFee(); }
+    function test_cross() public { _flow_cross(); }
     function test_singleChain() public { _flow_singleChain(); }
     function test_buybackMode() public { _flow_buybackMode(); }
     function test_router() public { _flow_router(); }

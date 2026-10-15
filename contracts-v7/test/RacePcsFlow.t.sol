@@ -31,6 +31,15 @@ import {RaceBuilder} from "../src/race/RaceBuilder.sol";
 import {RaceBuilderPcs, IPriceFeedPcs, IWrappedNative, IPancakeV3PoolMin} from "../src/race/RaceBuilderPcs.sol";
 import {RaceLaunchHookPcs} from "../src/race/RaceLaunchHookPcs.sol";
 import {RaceTradePcs, IRaceBuilderPcsPools} from "../src/race/RaceTradePcs.sol";
+import {RaceCross, RaceCrossPcs, IRaceRouter} from "../src/race/RaceCross.sol";
+import {CrossSpoke, ICrossMinter} from "./CrossSpoke.sol";
+
+/// A wallet that refuses native coins.
+contract NoNativePcs {
+    receive() external payable {
+        revert("no thanks");
+    }
+}
 import {RaceLaunchHook} from "../src/race/RaceLaunchHook.sol";
 import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {MockLzEndpoint} from "./MockLzEndpoint.sol";
@@ -694,6 +703,61 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         t.lockAcquired("");
         vm.expectRevert(RaceTradePcs.NotOurCall.selector);
         t.pancakeV3SwapCallback(1, 0, "");
+    }
+
+    /// Dollars kept on Base buy here through Across: a user with no BNB gets a little gas and the
+    /// coins; selling sends the dollars home to Base (6 decimals there); a failed buy refunds.
+    function test_crossBuyAndSellHome() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        vm.warp(block.timestamp + 301);
+        RaceTradePcs t = new RaceTradePcs(IRaceBuilderPcsPools(address(pb)));
+        CrossSpoke spoke = new CrossSpoke();
+        RaceCrossPcs x = new RaceCrossPcs(spoke, usdcA, IWrappedNative(address(wbnb)), pb.dollarPool(), IRaceRouter(address(t)), 8453,
+            IERC20(address(0xBA5E)), 6, 0.0002 ether); // top-up below ~12 cents of BNB
+        address u = address(0xC0FFEE01);
+
+        spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 20 * U,
+            abi.encode(RaceCross.Order(u, coin, 1, 30 * U / 100, block.timestamp + 1 hours)));
+        uint256 coins = IERC20(coin).balanceOf(u);
+        assertGt(coins, 0, "coins delivered");
+        assertGt(u.balance, 0, "gas delivered");
+        {
+            (, int256 px,,,) = feed.latestRoundData(); // 8 decimals
+            uint256 cents = (u.balance * uint256(px) * 100) / 1e26;
+            assertGe(cents, 28, "about 30 cents of BNB (pool fee and price gap aside)");
+            assertLe(cents, 31, "not more than asked");
+        }
+        assertEq(usdcA.balanceOf(address(x)), 0, "nothing kept");
+        assertEq(address(x).balance, 0, "no BNB kept");
+        assertEq(wbnb.balanceOf(address(x)), 0, "no WBNB kept");
+
+        vm.startPrank(u);
+        IERC20(coin).approve(address(x), coins);
+        uint256 got = x.sellAndSendHome(coin, coins, 1, U / 100, block.timestamp);
+        vm.stopPrank();
+        assertGt(got, 18 * U, "sold for most of the $19.70 put in");
+        assertEq(spoke.lastDepositor(), u);
+        assertEq(spoke.lastDst(), 8453);
+        assertEq(spoke.lastOutput(), (got - U / 100) / 1e12, "asked on Base in 6 decimals");
+        assertEq(IERC20(coin).balanceOf(address(x)), 0);
+        assertEq(usdcA.balanceOf(address(x)), 0);
+
+        // a wallet that refuses BNB loses only its top-up: the whole amount buys coins
+        {
+            address w = address(new NoNativePcs());
+            spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * U,
+                abi.encode(RaceCross.Order(w, coin, 1, 30 * U / 100, block.timestamp + 1 hours)));
+            assertEq(w.balance, 0);
+            assertGt(IERC20(coin).balanceOf(w), 0, "bought anyway");
+            assertEq(usdcA.balanceOf(address(x)), 0);
+            assertEq(address(x).balance, 0);
+        }
+        address v = address(0xC0FFEE02);
+        spoke.fill(address(usdcA), ICrossMinter(address(minterA)), address(x), 10 * U,
+            abi.encode(RaceCross.Order(v, coin, type(uint256).max, 0, block.timestamp + 1 hours)));
+        assertEq(usdcA.balanceOf(v), 10 * U, "refunded in full");
+        vm.expectRevert(RaceCrossPcs.NotOurCall.selector);
+        x.pancakeV3SwapCallback(1, 0, "");
     }
 
     function testFuzz_supplyNeverGrows(uint96 bnbIn, uint96 usdIn) public {

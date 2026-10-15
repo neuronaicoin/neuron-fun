@@ -7,6 +7,7 @@ import {DeployRace} from "../../script/race/DeployRace.s.sol";
 import {WireRace} from "../../script/race/WireRace.s.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {AcrossUsdBridge} from "../../src/omni/AcrossUsdBridge.sol";
+import {RaceCross} from "../../src/race/RaceCross.sol";
 
 /**
  * Mainnet dress rehearsal, nothing is sent anywhere: copies of the four REAL chains (Base, BNB
@@ -107,6 +108,11 @@ contract RehearseMainnetTest is Test {
         vm.setEnv("CL_POOL_MANAGER", c.clpm == address(0) ? "" : vm.toString(c.clpm));
         vm.setEnv("WNATIVE", c.wnative == address(0) ? "" : vm.toString(c.wnative));
         vm.setEnv("DOLLAR_POOL", c.dollarPool == address(0) ? "" : vm.toString(c.dollarPool));
+        // trades here with dollars kept on Base (not deployed on Base itself)
+        vm.setEnv("CROSS_HOME_CHAIN_ID", "8453");
+        vm.setEnv("CROSS_HOME_USDC", vm.toString(chains[0].usd));
+        // top up gas below ~12 cents: ETH on Robinhood, BNB on BNB Chain, USDC (token units) on Arc
+        vm.setEnv("CROSS_GAS_FLOOR", c.id == 4663 ? "50000000000000" : c.id == 56 ? "200000000000000" : "100000");
     }
 
     function _deploy(uint256 i) internal {
@@ -206,6 +212,7 @@ contract RehearseMainnetTest is Test {
         _sort(eids);
         (bool okBnb, address coinBnb) = _launch(3, eids);
         assertTrue(okBnb, "BNB Chain launch");
+        _crossTrade(3, coinBnb); // right away: BNB Chain's public nodes forget old state quickly
 
         // 2. wire and launch on the other three
         for (uint256 i; i < 3; ++i) _wire(i);
@@ -224,7 +231,39 @@ contract RehearseMainnetTest is Test {
 
         // 3. the Across routes: BNB Chain <-> Robinhood Chain go through Base, the rest direct
         _checkRoutes(eids);
+
+        // 4. trading from Base: the REAL SpokePool delivers dollars to RaceCross, which buys
+        //    (topping up gas); the user then sells and the dollars leave for Base through Across
+        assertEq(vm.parseJsonAddress(_json(8453), ".cross"), address(0), "no cross contract on Base itself");
+        _crossTrade(1, coinBnb); // Robinhood Chain
         console2.log("REHEARSAL OK: chains deployed 4, wired 4, coin launched on", launched);
+    }
+
+    function _crossTrade(uint256 i, address coin) internal {
+        Net memory c = chains[i];
+        vm.selectFork(forks[i]);
+        address x = vm.parseJsonAddress(_json(c.id), ".cross");
+        assertTrue(x != address(0), "cross contract deployed");
+        address user = vm.addr(uint256(keccak256(abi.encode("sasa rehearsal: cross user", c.id))));
+        uint256 amount = 20 * _unit(c);
+        // what Across's relayer does: pay the contract, then the SpokePool calls it
+        deal(c.usd, x, amount);
+        vm.prank(c.across);
+        RaceCross(payable(x)).handleV3AcrossMessage(c.usd, amount, address(0xF111),
+            abi.encode(RaceCross.Order(user, coin, 1, (30 * _unit(c)) / 100, block.timestamp + 1 hours)));
+        uint256 coins = IERC20(coin).balanceOf(user);
+        assertGt(coins, 0, "coins bought from Base dollars");
+        assertGt(user.balance, 0, "gas topped up");
+        assertEq(IERC20(c.usd).balanceOf(x), 0, "cross contract keeps nothing");
+        // sell: the dollars go into the real SpokePool, bound for the user's address on Base
+        uint256 spoke0 = IERC20(c.usd).balanceOf(c.across);
+        vm.startPrank(user);
+        IERC20(coin).approve(x, coins);
+        uint256 got = RaceCross(payable(x)).sellAndSendHome(coin, coins, 1, _unit(c) / 100, block.timestamp);
+        vm.stopPrank();
+        assertGt(got, 12 * _unit(c), "sold for most of it (opening fee still 10% each way here)");
+        assertEq(IERC20(c.usd).balanceOf(c.across) - spoke0, got, "dollars handed to Across for Base");
+        console2.log("cross trade ok on chain", c.id, "gas wei", user.balance);
     }
 
     function _checkRoutes(uint32[] memory) internal {

@@ -35,6 +35,7 @@ import {RaceLaunchHook} from "../../src/race/RaceLaunchHook.sol";
 import {RaceFactory} from "../../src/race/RaceFactory.sol";
 import {RaceTradeEth, IRaceBuilderEthPools} from "../../src/race/RaceTradeEth.sol";
 import {RaceTradePcs, IRaceBuilderPcsPools} from "../../src/race/RaceTradePcs.sol";
+import {RaceCrossEth, RaceCrossPcs, RaceCrossUsdc, IRaceRouter} from "../../src/race/RaceCross.sol";
 import {TestUsdV7, TestFeed, TestDollarPool, ITestFeedPrice} from "../../src/race/testnet/TestnetSupport.sol";
 
 interface IFeedDescription {
@@ -104,6 +105,7 @@ contract DeployRace is Script {
         address router;
         address factory;
         address coinDeployer;
+        address cross; // trades here with dollars kept on Base (not on Base itself)
     }
 
     function run() external {
@@ -259,6 +261,7 @@ contract DeployRace is Script {
         require(o.hub == hubAt && o.bridge == bridgeAt && o.builder == builderAt, "address moved (hub/bridge/builder)");
         require(o.consolidator == consolidatorAt && o.router == routerAt, "address moved (consolidator/router)");
         require(factory.hub() == o.hub && factory.builder() == o.builder && address(factory.usdc()) == c.usd, "factory wiring");
+        o.cross = _cross(key, c, o, spoke);
 
         _write(c, o, localEid, coordEid, across, startMc, minFirstBuy);
         console2.log("--- sasa v7 (race) ---");
@@ -270,7 +273,31 @@ contract DeployRace is Script {
         console2.log("Builder / hook: ", o.builder, o.hook);
         console2.log("Consolidator:   ", o.consolidator);
         console2.log("Trade router:   ", o.router);
+        if (o.cross != address(0)) console2.log("Cross trades:   ", o.cross);
         console2.log("RaceFactory:    ", o.factory, "(same on every chain)");
+    }
+
+    /**
+     * @dev RaceCross: buys here paid from dollars kept on the home chain (Base), and sells back
+     * home, through Across. Only on mainnet chains other than the home chain (CROSS_HOME_CHAIN_ID,
+     * CROSS_HOME_USDC; CROSS_GAS_FLOOR = the native balance under which a buy tops up gas).
+     */
+    function _cross(uint256 key, Cfg memory c, Out memory o, address spoke) internal returns (address x) {
+        uint256 home = vm.envOr("CROSS_HOME_CHAIN_ID", uint256(0));
+        if (home == 0 || home == block.chainid || spoke == address(0)) return address(0);
+        IERC20 homeUsdc = IERC20(vm.envAddress("CROSS_HOME_USDC"));
+        uint8 homeDec = uint8(vm.envOr("CROSS_HOME_DECIMALS", uint256(6)));
+        uint256 floor = vm.envUint("CROSS_GAS_FLOOR");
+        vm.startBroadcast(key);
+        if (c.kind == Kind.Eth) {
+            x = address(new RaceCrossEth(IAcrossSpokePool(spoke), IRaceBuilderEthPools(o.builder), IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+        } else if (c.kind == Kind.Pcs) {
+            x = address(new RaceCrossPcs(IAcrossSpokePool(spoke), IERC20(c.usd), IWrappedNative(c.wnative), IPancakeV3PoolMin(c.dollarPool),
+                IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+        } else {
+            x = address(new RaceCrossUsdc(IAcrossSpokePool(spoke), IERC20(c.usd), IRaceRouter(o.router), home, homeUsdc, homeDec, floor));
+        }
+        vm.stopBroadcast();
     }
 
     // ------------------------------------------------------------------ checks and testnet pools
@@ -394,6 +421,7 @@ contract DeployRace is Script {
         vm.serializeAddress(j, "hook", o.hook);
         vm.serializeAddress(j, "consolidator", o.consolidator);
         vm.serializeAddress(j, "router", o.router);
+        vm.serializeAddress(j, "cross", o.cross);
         vm.serializeAddress(j, "coinDeployer", o.coinDeployer);
         vm.serializeUint(j, "startMarketCap", startMc);
         vm.serializeUint(j, "minFirstBuy", minFirstBuy);
