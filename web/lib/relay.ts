@@ -9,7 +9,11 @@
  */
 import { FEE_BPS, IS_TESTNET, SASA_TREASURY } from "./config";
 
-export const RELAY_API = IS_TESTNET ? "https://api.testnets.relay.link" : "https://api.relay.link";
+/**
+ * Relay's API through sasa's own server (functions/relay-proxy): it adds sasa's Relay API key,
+ * which must never be in the page. The proxy picks Relay's mainnet or testnet API.
+ */
+export const RELAY_API = "/relay-proxy";
 export const NATIVE = "0x0000000000000000000000000000000000000000";
 export const SOLANA_ID = 792703809;
 const SOLANA_NATIVE = "11111111111111111111111111111111";
@@ -145,7 +149,6 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     body: JSON.stringify({
       ...Object.fromEntries(Object.entries(q).filter(([k]) => k !== "fee")),
       tradeType: "EXACT_INPUT",
-      referrer: "sasapad.fun",
       ...(!IS_TESTNET && q.fee ? { appFees: [{ recipient: SASA_TREASURY, fee: String(FEE_BPS[q.fee]) }] } : {}),
     }),
   });

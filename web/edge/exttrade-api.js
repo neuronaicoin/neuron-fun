@@ -83,9 +83,10 @@ export function moves(chainId, rcpt, trader, coin = "") {
 }
 
 /** Relay's requests this transaction started (it can start two: a trade and a gas top-up). */
-async function relayRequests(hash) {
-  for (const v of ["v3", "v2"]) {
-    const r = await fetch(`${RELAY}/requests/${v}?hash=${hash}`).catch(() => null);
+async function relayRequests(hash, key) {
+  // v3 needs sasa's Relay API key; v2 (no key) works until Relay retires it
+  for (const v of key ? ["v3", "v2"] : ["v2"]) {
+    const r = await fetch(`${RELAY}/requests/${v}?hash=${hash}`, { headers: v === "v3" ? { "x-api-key": key } : {} }).catch(() => null);
     if (!r || !r.ok) continue;
     const j = await r.json().catch(() => null);
     if (j && Array.isArray(j.requests)) return j.requests;
@@ -124,7 +125,7 @@ export async function extTradeRoute(env, body) {
   if (seen && seen.length) return settle(tx, { ok: true });
 
   // Relay's request that this transaction paid into (not one it paid out of), carrying sasa's fee
-  const reqs = await relayRequests(tx);
+  const reqs = await relayRequests(tx, env.RELAY_API_KEY);
   if (!reqs) return json({ pending: true });
   const started = reqs.filter((q) =>
     ((q.data && q.data.inTxs) || []).some((t) => lower(t.hash) === tx && (t.chainId === undefined || Number(t.chainId) === chainId))

@@ -163,7 +163,8 @@ const toOrder = (j) => ({
 export async function relayRoute({ relayApi, treasury, chainId, contract, tokenIn, tokenOut, amount, fetchFn = fetch }) {
   const r = await fetchFn(`${relayApi}/quote/v2`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // sasa's Relay API key (RELAY_API_KEY): ties the quote and its fee to sasa
+    headers: { "content-type": "application/json", ...(process.env.RELAY_API_KEY ? { "x-api-key": process.env.RELAY_API_KEY } : {}) },
     body: JSON.stringify({
       user: contract,
       recipient: contract,
@@ -173,7 +174,6 @@ export async function relayRoute({ relayApi, treasury, chainId, contract, tokenI
       destinationCurrency: tokenOut,
       amount: amount.toString(),
       tradeType: "EXACT_INPUT",
-      referrer: "sasapad.fun",
       ...(treasury ? { appFees: [{ recipient: treasury, fee: "70" }] } : {}),
     }),
   });
