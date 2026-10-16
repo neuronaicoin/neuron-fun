@@ -237,7 +237,7 @@ const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", neve
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   // Futures is the second half of Market (Spot | Futures)
-  if (href === "/market/" && /^\/(futures|perps)(\/|$)/.test(pathname)) return true;
+  if (href === "/market/" && /^\/(futures|perps|data)(\/|$)/.test(pathname)) return true;
   return pathname.startsWith(href.replace(/\/$/, ""));
 }
 
@@ -294,7 +294,7 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
-  { href: "/market/", label: "Market", note: "Top coins (spot) and futures", tablet: true },
+  { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },

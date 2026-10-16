@@ -64,7 +64,7 @@ export type PerpFill = { coin: string; px: number; sz: number; side: "B" | "A"; 
 
 const num = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? 0 : Number(v));
 
-async function info<T>(body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+export async function info<T>(body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const r = await fetch(`${HL_API}/info`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
   if (!r.ok) throw new Error(`Hyperliquid ${r.status}`);
   return (await r.json()) as T;

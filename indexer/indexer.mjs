@@ -33,6 +33,7 @@ import { marketsLoop } from "./markets.mjs";
 import { seoLoop } from "./seo.mjs";
 import { topLoop } from "./topcoins.mjs";
 import { perpsLoop } from "./perps.mjs";
+import { whalesLoop } from "./whales.mjs";
 import { raceLoop, loadRaceChains } from "./race.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
@@ -526,6 +527,8 @@ async function main() {
     topLoop(pool, log),
     // Perps: 🔔 + push when a take profit, stop loss or liquidation closes a position (perps.sql)
     perpsLoop(pool, log),
+    // Data tab: top traders, Market Fear & Greed history, whale alerts (data.sql)
+    whalesLoop(pool, log),
     // v7 five-minute races (race.sql, race-chains.json, RPC_<chainId>); off when no race RPC is set
     raceLoop(pool, log),
   ]);
