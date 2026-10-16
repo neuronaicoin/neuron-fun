@@ -6,6 +6,7 @@ import { toast } from "./alerts";
 import { useWallet } from "./wallet";
 import { postOnX } from "./share";
 import { SUPABASE_URL } from "@/lib/config";
+import { useCoinLinks } from "@/lib/coinlinks";
 import { compactUsd } from "@/lib/format";
 import { clock, laneUsd, leadLane, racePhase, type RaceCoin } from "@/lib/race";
 
@@ -18,7 +19,8 @@ const chainList = (c: RaceCoin) => {
   const names = c.lanes.map((l) => l.chain.short);
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
 };
-const tags = (c: RaceCoin) => ({ symbol: c.symbol, chains: c.lanes.map((l) => l.chain.short) });
+/** Hashtags, plus the coin's own X account when its creator added one. */
+const tags = (c: RaceCoin, handle?: string | null) => ({ symbol: c.symbol, chains: c.lanes.map((l) => l.chain.short), handle: handle ?? null });
 
 /** Ready-made posts for the race as it stands now (written loosely, like a person would). */
 function posts(c: RaceCoin, now: number): { key: string; label: string; text: string }[] {
@@ -72,6 +74,7 @@ export function RaceShareButton({ coin }: { coin: RaceCoin }) {
 }
 
 function ShareSheet({ coin, onClose }: { coin: RaceCoin; onClose: () => void }) {
+  const links = useCoinLinks(coin.id);
   const url = raceShareUrl(coin.id);
   const [noCard, setNoCard] = useState(false);
   const phase = racePhase(coin, Date.now());
@@ -89,7 +92,7 @@ function ShareSheet({ coin, onClose }: { coin: RaceCoin; onClose: () => void }) 
           // eslint-disable-next-line @next/next/no-img-element
           <img src={raceCardUrl(coin.id)} alt={`${coin.name} share card`} width={1200} height={630} onError={() => setNoCard(true)} className="w-full h-auto rounded-xl border border-line" />
         )}
-        <button type="button" onClick={() => postOnX(text, url, tags(coin))} className="h-11 rounded-full bg-ink text-mist font-semibold text-[0.9375rem]">
+        <button type="button" onClick={() => postOnX(text, url, tags(coin, links?.x))} className="h-11 rounded-full bg-ink text-mist font-semibold text-[0.9375rem]">
           Post on X
         </button>
         <div className="grid grid-cols-2 gap-2">
@@ -112,6 +115,7 @@ function ShareSheet({ coin, onClose }: { coin: RaceCoin; onClose: () => void }) 
 /** Creator kit: shown only to the coin's creator, with posts ready to go out. */
 export function CreatorKit({ coin, now }: { coin: RaceCoin; now: number }) {
   const { address } = useWallet();
+  const links = useCoinLinks(coin.id);
   if (!address || address.toLowerCase() !== coin.creator.toLowerCase()) return null;
   const url = raceShareUrl(coin.id);
   return (
@@ -125,7 +129,7 @@ export function CreatorKit({ coin, now }: { coin: RaceCoin; now: number }) {
           <div className="text-[0.75rem] font-semibold text-ink-3">{p.label}</div>
           <p className="text-[0.875rem] whitespace-pre-line break-words">{p.text}</p>
           <div className="flex gap-2 flex-wrap">
-            <button type="button" onClick={() => postOnX(p.text, url, tags(coin))} className="h-9 px-4 rounded-full bg-ink text-mist font-semibold text-[0.8125rem]">
+            <button type="button" onClick={() => postOnX(p.text, url, tags(coin, links?.x))} className="h-9 px-4 rounded-full bg-ink text-mist font-semibold text-[0.8125rem]">
               Post on X
             </button>
             <button

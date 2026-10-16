@@ -7,6 +7,7 @@ import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
 import { RaceTradeBox } from "@/components/racetrade";
 import { CreatorKit, RaceShareButton } from "@/components/raceshare";
+import { CoinLinksRow } from "@/components/coinlinks";
 import { RacePick } from "@/components/racepick";
 import { RaceChat } from "@/components/racechat";
 import { RaceReplay } from "@/components/racereplay";
@@ -147,6 +148,7 @@ function RacePage() {
             <PhaseBadge coin={coin} phase={phase} now={now} />
             <RaceShareButton coin={coin} />
           </div>
+          <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-2" />
         </div>
       </header>
 

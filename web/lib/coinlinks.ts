@@ -18,8 +18,9 @@ export async function fetchLinks(coinId: string): Promise<CoinLinks> {
   return v;
 }
 
-export async function saveLinks(sign: SignFn, coinId: string, links: Partial<CoinLinks>): Promise<CoinLinks> {
-  const r = await authedPost<{ ok: boolean; links: CoinLinks }>(sign, "social/links", { coinId: coinId.toLowerCase(), ...links });
+/** `proof.launchKey`: a race coin's launch key, so a brand-new coin (not listed yet) can be named. */
+export async function saveLinks(sign: SignFn, coinId: string, links: Partial<CoinLinks>, proof?: { launchKey?: string }): Promise<CoinLinks> {
+  const r = await authedPost<{ ok: boolean; links: CoinLinks }>(sign, "social/links", { coinId: coinId.toLowerCase(), ...links, ...(proof?.launchKey ? { launchKey: proof.launchKey } : {}) });
   cache.set(coinId, r.links);
   listeners.forEach((l) => l());
   return r.links;

@@ -8,6 +8,9 @@ import { NO_ANSWER, SENT_UNCONFIRMED, useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar } from "@/components/coins";
 import { AiCoinPanel } from "@/components/aicoin";
+import { EMPTY_DRAFT, LinkFields, draftProblems, draftToLinks, type LinkDraft } from "@/components/coinlinks";
+import { toast } from "@/components/alerts";
+import { saveLinks } from "@/lib/coinlinks";
 import { call } from "@/lib/tx";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
@@ -34,6 +37,8 @@ type Draft = {
   feeMode: 0 | 1;
   chains: number[];
   firstBuy: string;
+  /** X / Telegram / website, saved once the coin is live (optional). */
+  socials?: LinkDraft;
   /** Email accounts: chains sent through Across, and until when each may still land (unix s). */
   sent?: Record<number, number>;
 };
@@ -87,6 +92,8 @@ export default function RaceLaunchPage() {
   const [symbol, setSymbol] = useState("");
   const [logo, setLogo] = useState("");
   const [description, setDescription] = useState("");
+  const [socials, setSocials] = useState<LinkDraft>(EMPTY_DRAFT);
+  const [socialsOpen, setSocialsOpen] = useState(false);
   const [feeMode, setFeeMode] = useState<0 | 1>(0);
   const [chains, setChains] = useState<number[]>(RACE_CHAINS.map((c) => c.chainId));
   const [firstBuy, setFirstBuy] = useState("10");
@@ -175,6 +182,8 @@ export default function RaceLaunchPage() {
       ? "The ticker needs at least 2 letters or numbers."
       : logo !== "" && !isImageUrl(logo)
         ? "That picture could not be used."
+        : Object.values(draftProblems(socials)).some(Boolean)
+          ? "One of the links doesn't look right. Fix it or leave it empty."
         : picked.length < 1
           ? "Pick at least one chain."
           : links && !chainsLinked(chains, links)
@@ -305,6 +314,7 @@ export default function RaceLaunchPage() {
       const allLive = (await Promise.all(order.map((c) => liveOn(c, me, d.key).catch(() => false)))).every(Boolean);
       if (allLive) {
         saveDraft(null);
+        await saveSocials(d, coinId);
         router.push(raceHref(coinId.toLowerCase()));
       } else {
         setError("Not live everywhere yet. Press Continue to try the missing chains again (live chains are skipped).");
@@ -313,6 +323,19 @@ export default function RaceLaunchPage() {
       setBusy(false);
       setError(friendlyError(e));
       order.forEach((c) => setStatus((s) => (s[c.chainId]?.state === "working" ? { ...s, [c.chainId]: { state: "error", note: friendlyError(e) } } : s)));
+    }
+  };
+
+  /** The coin's X / Telegram / website, once it is live. The launch key proves who made it, so
+   * this works at once (before the coin is listed). Never stops the launch: if it fails, the
+   * creator adds them from the coin's page. */
+  const saveSocials = async (d: Draft, coinId: Hex) => {
+    const l = d.socials ? draftToLinks(d.socials) : null;
+    if (!l || (!l.x && !l.telegram && !l.website)) return;
+    try {
+      await saveLinks(w.signMessage, coinId, l, { launchKey: d.key });
+    } catch {
+      toast("Your coin is live. The links didn't save: add them on the coin's page.");
     }
   };
 
@@ -386,6 +409,7 @@ export default function RaceLaunchPage() {
     void readFunds();
     if (!failed && coinId) {
       saveDraft(null);
+      await saveSocials(d, coinId);
       router.push(raceHref(coinId.toLowerCase()));
     } else {
       setError("Stopped. Fix what's shown and press Continue: chains that are already live are skipped.");
@@ -395,7 +419,7 @@ export default function RaceLaunchPage() {
   const start = () => {
     if (problem || !w.address) return;
     // the draft keeps each chain's share, so a resumed launch buys the same on the chains left
-    void run({ key: newKey(), creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain });
+    void run({ key: newKey(), creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain, socials });
   };
 
   const toggle = (id: number) => setChains((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -538,6 +562,18 @@ export default function RaceLaunchPage() {
               className="w-full rounded-xl border border-line bg-paper px-4 py-3 text-[1rem] outline-none focus:border-ink-3 resize-none min-w-0"
             />
           </label>
+
+          {/* X / Telegram / website: optional, saved as soon as the coin is live */}
+          {socialsOpen || socials.x || socials.telegram || socials.website ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.8125rem] text-ink-3">Links (optional)</span>
+              <LinkFields value={socials} onChange={setSocials} />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setSocialsOpen(true)} className="self-start text-[0.875rem] font-semibold text-emerald">
+              + Add links (X, Telegram, website)
+            </button>
+          )}
 
           <div className="flex flex-col gap-2">
             <span className="text-[0.8125rem] text-ink-3">Pick your chains (multi-chain recommended)</span>

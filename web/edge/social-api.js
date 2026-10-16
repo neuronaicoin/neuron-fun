@@ -12,6 +12,7 @@
 //   POST /api/social/referral      { ref }                                 → { ok, referrer? , reason? }
 import { cleanTelegram, cleanWebsite, cleanX } from "../lib/links.js";
 import { admins, q, sec } from "./forum-core.js";
+import { encodeAbiParameters, keccak256 } from "viem";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const MAX_AVATAR = 200 * 1024;
@@ -234,8 +235,22 @@ export async function socialRoute(ctx, me, parts, method, body) {
   if (p[0] === "links" && p.length === 1 && method === "POST") {
     const coinId = typeof body.coinId === "string" ? body.coinId.trim().toLowerCase() : "";
     const m = /^(0x[0-9a-f]{40}):0x[0-9a-f]{64}$/.exec(coinId);
-    if (!m) return fail(400, "That isn't a sasa coin.");
-    if (m[1] !== me) return fail(403, "Only the coin's creator can change its links.");
+    const race = /^0x[0-9a-f]{64}$/.test(coinId);
+    if (!m && !race) return fail(400, "That isn't a sasa coin.");
+    if (m && m[1] !== me) return fail(403, "Only the coin's creator can change its links.");
+    if (race) {
+      // a race coin's id is keccak(creator, launch key): with the key, the creator is proven at
+      // once (a coin seconds old isn't listed yet); otherwise the listed creator decides
+      let creator = null;
+      const key = typeof body.launchKey === "string" && /^0x[0-9a-fA-F]{64}$/.test(body.launchKey) ? body.launchKey.toLowerCase() : null;
+      if (key && keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [me, key])) === coinId) creator = me;
+      if (!creator) {
+        const rows = await sec(env, `race_coins?id=eq.${q(coinId)}&select=creator&limit=1`).catch(() => []);
+        creator = rows && rows[0] && rows[0].creator ? String(rows[0].creator).toLowerCase() : null;
+      }
+      if (!creator) return fail(404, "This coin isn't listed yet. Try again in a minute.");
+      if (creator !== me) return fail(403, "Only the coin's creator can change its links.");
+    }
     const x = cleanX(body.x);
     const tg = cleanTelegram(body.telegram);
     const web = cleanWebsite(body.website);
