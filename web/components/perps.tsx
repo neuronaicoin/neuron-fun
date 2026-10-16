@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PerpsChart, type ChartLine } from "./perpschart";
 import { OrderBook } from "./perpsbook";
+import { PnlCardSheet } from "./pnlcard";
 import { ConnectButton, Sheet } from "./chrome";
 import { useWallet } from "./wallet";
 import { compactUsd } from "@/lib/format";
@@ -325,16 +326,73 @@ function Blocked({ onAdmin }: { onAdmin: (address: string) => void }) {
 
 // ------------------------------------------------------------------ markets
 
+const FAVS = "sasa-futures-favs";
+function loadFavs(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(FAVS) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 100) : [];
+  } catch {
+    return [];
+  }
+}
+
+type ListSort = "volume" | "gainers" | "losers";
+
 function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; coin: string; onPick: (c: string) => void }) {
   const [q, setQ] = useState("");
+  const [favs, setFavs] = useState<string[]>([]);
+  const [onlyFavs, setOnlyFavs] = useState(false);
+  const [sort, setSort] = useState<ListSort>("volume");
+  useEffect(() => setFavs(loadFavs()), []);
+  const toggleFav = (c: string) =>
+    setFavs((now) => {
+      const next = now.includes(c) ? now.filter((x) => x !== c) : [...now, c];
+      try {
+        localStorage.setItem(FAVS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   const list = useMemo(() => {
     const s = q.trim().toUpperCase();
-    return (markets ?? []).filter((m) => !s || m.coin.toUpperCase().includes(s));
-  }, [markets, q]);
+    const hit = (markets ?? []).filter((m) => (!s || m.coin.toUpperCase().includes(s)) && (!onlyFavs || favs.includes(m.coin)));
+    const ch = (m: PerpMarket) => m.change24h ?? 0;
+    if (sort === "gainers") hit.sort((a, b) => ch(b) - ch(a));
+    else if (sort === "losers") hit.sort((a, b) => ch(a) - ch(b));
+    // favourites on top (the list is already busiest first)
+    return [...hit.filter((m) => favs.includes(m.coin)), ...hit.filter((m) => !favs.includes(m.coin))];
+  }, [markets, q, favs, onlyFavs, sort]);
   return (
     <div className="flex flex-col min-h-0">
-      <div className="p-3 border-b border-line">
+      <div className="p-3 border-b border-line flex flex-col gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" aria-label="Search markets" className="w-full h-10 rounded-xl border border-line bg-paper px-3 text-[0.875rem] outline-none focus:border-ink-3" />
+        <div className="flex items-center gap-1 text-[0.75rem]" role="group" aria-label="Show">
+          <button
+            type="button"
+            aria-pressed={onlyFavs}
+            onClick={() => setOnlyFavs((v) => !v)}
+            className={"h-7 px-2 rounded-lg font-semibold flex items-center gap-1 " + (onlyFavs ? "bg-ink text-paper" : "text-ink-2 hover:bg-paper")}
+            title="Only your favourites"
+          >
+            <Star on={onlyFavs} size={12} /> {favs.length || ""}
+          </button>
+          {(
+            [
+              ["volume", "Volume"],
+              ["gainers", "Gainers"],
+              ["losers", "Losers"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={sort === k}
+              onClick={() => setSort(k)}
+              className={"h-7 px-2 rounded-lg font-semibold " + (sort === k ? "bg-paper text-ink" : "text-ink-3 hover:text-ink-2")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <ul className="max-h-[70vh] overflow-y-auto divide-y divide-line" aria-label="Markets">
         {markets === null
@@ -343,13 +401,24 @@ function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; c
                 <div className="h-8 shimmer rounded-lg" />
               </li>
             ))
-          : list.map((m) => (
-              <li key={m.coin}>
+          : list.length === 0 ? (
+              <li className="px-3 py-8 text-center text-[0.8125rem] text-ink-3">{onlyFavs ? "Tap ☆ next to a market to keep it here." : "No market found."}</li>
+            ) : list.map((m) => (
+              <li key={m.coin} className={"flex items-center " + (m.coin === coin ? "bg-paper" : "")}>
+                <button
+                  type="button"
+                  onClick={() => toggleFav(m.coin)}
+                  aria-pressed={favs.includes(m.coin)}
+                  aria-label={`${favs.includes(m.coin) ? "Remove" : "Add"} ${m.coin} ${favs.includes(m.coin) ? "from" : "to"} favourites`}
+                  className="pl-3 pr-1 py-3 text-ink-3 hover:text-[#f5a524]"
+                >
+                  <Star on={favs.includes(m.coin)} size={14} />
+                </button>
                 <button
                   type="button"
                   onClick={() => onPick(m.coin)}
                   aria-current={m.coin === coin}
-                  className={"w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-paper " + (m.coin === coin ? "bg-paper" : "")}
+                  className="flex-1 min-w-0 pl-1.5 pr-3 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-paper"
                 >
                   <span className="min-w-0">
                     <span className="block font-semibold text-[0.875rem] truncate">{m.coin}</span>
@@ -364,6 +433,14 @@ function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; c
             ))}
       </ul>
     </div>
+  );
+}
+
+function Star({ on, size = 14 }: { on: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={on ? "#f5a524" : "none"} stroke={on ? "#f5a524" : "currentColor"} strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
+    </svg>
   );
 }
 
@@ -477,6 +554,8 @@ const LEV_CHIPS = [2, 5, 10, 20];
 
 function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; account: PerpAccount | null; trade: PerpsTrade; signedIn: boolean }) {
   const [side, setSide] = useState<"long" | "short">("long");
+  const [kind, setKind] = useState<"market" | "limit">("market");
+  const [limit, setLimit] = useState("");
   const [amount, setAmount] = useState("50");
   const [lev, setLev] = useState(DEFAULT_LEV);
   const [tpsl, setTpsl] = useState(false);
@@ -492,6 +571,7 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
   useEffect(() => {
     setTp(EMPTY_TPSL);
     setSl(EMPTY_TPSL);
+    setLimit("");
     setMsg(null);
     setAlertsOffer(false);
   }, [m?.coin]);
@@ -500,25 +580,37 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
   }, [maxLev, lev]);
   const margin = Number(amount.replace(",", ".")) || 0;
   const available = account?.withdrawable ?? 0;
-  const plan = m ? planOrder(m, side, margin, lev, available) : null;
-  const tpN = m ? tpslPrice(tp, "tp", side, m.mark, lev) : 0;
-  const slN = m ? tpslPrice(sl, "sl", side, m.mark, lev) : 0;
+  const limitN = kind === "limit" ? Number(limit) || 0 : 0;
+  // where the position starts: the limit price, or today's price
+  const entry = m ? (limitN > 0 ? limitN : m.mark) : 0;
+  const plan = m ? planOrder(m, side, margin, lev, available, entry) : null;
+  const tpN = m ? tpslPrice(tp, "tp", side, entry, lev) : 0;
+  const slN = m ? tpslPrice(sl, "sl", side, entry, lev) : 0;
   const coinsN = plan ? Number(plan.coins) || 0 : 0;
   const tpslWhy =
     !tpsl || !m
       ? null
       : side === "long"
-        ? (tpN && tpN <= m.mark ? "Take profit must be above the price." : slN && slN >= m.mark ? "Stop loss must be below the price." : slN && plan && slN <= plan.liq ? "Stop loss is past the liquidation price." : null)
-        : (tpN && tpN >= m.mark ? "Take profit must be below the price." : slN && slN <= m.mark ? "Stop loss must be above the price." : slN && plan && slN >= plan.liq ? "Stop loss is past the liquidation price." : null);
-  const why = !PERPS_TRADING ? "Trading opens at mainnet." : !signedIn ? null : (plan?.why ?? tpslWhy);
+        ? (tpN && tpN <= entry ? "Take profit must be above the entry." : slN && slN >= entry ? "Stop loss must be below the entry." : slN && plan && slN <= plan.liq ? "Stop loss is past the liquidation price." : null)
+        : (tpN && tpN >= entry ? "Take profit must be below the entry." : slN && slN <= entry ? "Stop loss must be above the entry." : slN && plan && slN >= plan.liq ? "Stop loss is past the liquidation price." : null);
+  const limitWhy = kind === "limit" && !(limitN > 0) ? "Enter the limit price." : null;
+  const why = !PERPS_TRADING ? "Trading opens at mainnet." : !signedIn ? null : (limitWhy ?? plan?.why ?? tpslWhy);
 
   const go = async () => {
     if (!m || !plan || why) return;
     setMsg(null);
     try {
       const withTpsl = tpsl && !!(tpN || slN);
-      const r = await trade.open({ market: m, side, margin, lev, coins: plan.coins, tp: tpsl && tpN ? tpN : null, sl: tpsl && slN ? slN : null }, setBusy);
-      setMsg({ ok: true, text: `${side === "long" ? "Long" : "Short"} ${m.coin} opened at ${px(r.avgPx)}.` });
+      const r = await trade.open(
+        { market: m, side, margin, lev, coins: plan.coins, tp: tpsl && tpN ? tpN : null, sl: tpsl && slN ? slN : null, limitPx: limitN > 0 ? limitN : null },
+        setBusy
+      );
+      setMsg({
+        ok: true,
+        text: r.resting
+          ? `Limit order placed at ${px(limitN)}. It waits under "TP/SL & orders" until the price gets there.`
+          : `${side === "long" ? "Long" : "Short"} ${m.coin} opened at ${px(r.avgPx)}.`,
+      });
       // TP / SL / liquidation alerts: signed-in users and email accounts are signed up without a prompt
       const silent = !!sessionToken() || w.embedded;
       if (silent) void authedPost(w.signMessage, "perps/watch", {}).catch(() => {});
@@ -546,6 +638,38 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
           </button>
         ))}
       </div>
+
+      <div className="mt-3 flex items-center gap-4 text-[0.875rem]" role="group" aria-label="Order type">
+        {(["market", "limit"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={kind === k}
+            onClick={() => setKind(k)}
+            className={"pb-1 border-b-2 font-semibold " + (kind === k ? "border-ink text-ink" : "border-transparent text-ink-3 hover:text-ink-2")}
+          >
+            {k === "market" ? "Market" : "Limit"}
+          </button>
+        ))}
+      </div>
+      {kind === "limit" && (
+        <>
+          <div className="mt-3 text-[0.8125rem] text-ink-3">Limit price (opens when the price gets there)</div>
+          <label className="mt-1.5 flex items-center h-12 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+            <input
+              value={limit}
+              onChange={(e) => setLimit(e.target.value.replace(",", ".").replace(/[^0-9.]/g, ""))}
+              inputMode="decimal"
+              placeholder={m ? String(Number(m.mark.toPrecision(5))) : "Price"}
+              aria-label="Limit price"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[1.0625rem] font-mono"
+            />
+            <button type="button" onClick={() => m && setLimit(String(Number(m.mark.toPrecision(5))))} className="text-[0.8125rem] font-semibold text-emerald">
+              Now
+            </button>
+          </label>
+        </>
+      )}
 
       <div className="mt-4 flex items-center justify-between text-[0.8125rem]">
         <span className="text-ink-3">Amount (your money in)</span>
@@ -600,16 +724,16 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
       </label>
       {tpsl && m && (
         <div className="mt-2 flex flex-col gap-2.5">
-          <TpslRow kind="tp" v={tp} set={setTp} side={side} m={m} coins={coinsN} lev={lev} ref={m.mark} margin={margin} />
-          <TpslRow kind="sl" v={sl} set={setSl} side={side} m={m} coins={coinsN} lev={lev} ref={m.mark} margin={margin} />
+          <TpslRow kind="tp" v={tp} set={setTp} side={side} m={m} coins={coinsN} lev={lev} ref={entry} margin={margin} />
+          <TpslRow kind="sl" v={sl} set={setSl} side={side} m={m} coins={coinsN} lev={lev} ref={entry} margin={margin} />
         </div>
       )}
 
       <dl className="mt-4 rounded-2xl bg-paper px-4 py-3 text-[0.8125rem] grid grid-cols-[1fr_auto] gap-y-1.5">
         <dt className="text-ink-3">Position size</dt>
         <dd className="font-mono text-right">{plan ? `${usd(plan.notional)}` : "—"}</dd>
-        <dt className="text-ink-3">Entry (about)</dt>
-        <dd className="font-mono text-right">{m ? px(m.mark) : "—"}</dd>
+        <dt className="text-ink-3">{kind === "limit" ? "Entry" : "Entry (about)"}</dt>
+        <dd className="font-mono text-right">{m ? px(entry) : "—"}</dd>
         <dt className="text-ink-3">Liquidation (about)</dt>
         <dd className="font-mono text-right text-danger">{plan && margin > 0 ? px(plan.liq) : "—"}</dd>
       </dl>
@@ -621,7 +745,7 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
           onClick={() => void go()}
           className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "long" ? "bg-up text-on-accent" : "bg-danger text-white")}
         >
-          {busy ?? `${side === "long" ? "Long" : "Short"} ${m?.coin ?? ""} ${lev}x`}
+          {busy ?? `${kind === "limit" ? "Limit " : ""}${side === "long" ? "Long" : "Short"} ${m?.coin ?? ""} ${lev}x`}
         </button>
       ) : (
         <div className="mt-3">
@@ -806,6 +930,7 @@ function Positions({
 }) {
   const [tab, setTab] = useState<"pos" | "orders" | "history">("pos");
   const [sheet, setSheet] = useState<{ kind: "tpsl" | "close"; coin: string } | null>(null);
+  const [share, setShare] = useState<PerpPosition | null>(null);
   const sheetPos = sheet ? (account?.positions.find((x) => x.coin === sheet.coin) ?? null) : null;
   const sheetMarket = sheet ? (markets?.find((x) => x.coin === sheet.coin) ?? null) : null;
   // the position closed (TP, liquidation) or flipped while a sheet was open: the sheet goes
@@ -839,6 +964,20 @@ function Positions({
   ];
   return (
     <section className="rounded-3xl border border-line bg-surface p-3 sm:p-4 min-w-0" aria-label="Your positions">
+      {share && (
+        <PnlCardSheet
+          data={{
+            coin: share.coin,
+            side: share.side,
+            lev: share.lev,
+            roi: share.roe,
+            pnl: share.pnl,
+            entry: px(share.entry),
+            mark: px(markets?.find((x) => x.coin === share.coin)?.mark ?? share.entry),
+          }}
+          onClose={() => setShare(null)}
+        />
+      )}
       {sheet && sheetPos && sheetMarket && sheet.kind === "close" && (
         <CloseSheet p={sheetPos} m={sheetMarket} trade={trade} onClose={() => setSheet(null)} />
       )}
@@ -872,7 +1011,7 @@ function Positions({
                 <Cell k="Entry / mark" v={`${px(p.entry)} / ${px(markOf(p.coin))}`} />
                 <Cell k="Liquidation" v={px(p.liq)} cls="text-danger" />
                 <Cell k="Profit" v={`${signedUsd(p.pnl)} (${pct(p.roe, 1)})`} cls={tone(p.pnl)} />
-                <div className="col-span-2 sm:col-span-1 grid grid-cols-2 gap-1.5">
+                <div className="col-span-2 sm:col-span-1 grid grid-cols-[1fr_1fr_auto] gap-1.5">
                   <button
                     type="button"
                     disabled={!!busy}
@@ -888,6 +1027,18 @@ function Positions({
                     className="h-9 px-3 rounded-xl border border-line font-semibold hover:border-danger hover:text-danger disabled:opacity-50"
                   >
                     Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShare(p)}
+                    aria-label={`Share your ${p.coin} result`}
+                    title="Share your result"
+                    className="h-9 w-9 rounded-xl border border-line grid place-items-center text-ink-2 hover:border-ink-3 hover:text-ink"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3v12M8 7l4-4 4 4" />
+                      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+                    </svg>
                   </button>
                 </div>
                 {(() => {
@@ -914,8 +1065,9 @@ function Positions({
             {orders.map((o) => (
               <li key={o.oid} className="py-2.5 flex items-center justify-between gap-3 text-[0.8125rem]">
                 <span className="min-w-0">
-                  <b className="font-semibold">{o.coin}</b> {o.tpsl === "tp" ? "Take profit" : o.tpsl === "sl" ? "Stop loss" : o.type}
-                  {o.triggerPx ? ` at ${px(o.triggerPx)}` : ""}
+                  <b className="font-semibold">{o.coin}</b>{" "}
+                  {o.tpsl === "tp" ? "Take profit" : o.tpsl === "sl" ? "Stop loss" : `${o.type} ${o.side === "B" ? "long" : "short"}`}
+                  {o.triggerPx ? ` at ${px(o.triggerPx)}` : o.limitPx ? ` at ${px(o.limitPx)}` : ""}
                 </span>
                 <button
                   type="button"

@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * The Perps chart: Hyperliquid's candles, live. History comes from the info API, then every
- * trade moves the last candle through the live feed (lib/hlws.ts); if the feed drops, the chart
- * polls every few seconds until it is back. Indicators (MA, EMA, Bollinger, RSI, volume) are the
- * user's own picks, each with its own settings, remembered in this browser. The user's open
- * position (entry, liquidation) and TP/SL show as lines on the chart.
+ * sasa's chart, for every coin on the site (ProChart) and for Futures (PerpsChart).
+ * History comes from the coin's own source, then a live feed (when there is one) moves the newest
+ * candle on every trade; otherwise it refreshes every few seconds. Indicators (MA, EMA, Bollinger,
+ * RSI, volume) are the user's own picks, each with its own settings, remembered in this browser
+ * and shared by every chart. Futures also show the open position (entry, liquidation) and TP/SL
+ * as lines, and 1-second and 15-second candles built from the live trades.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from "lightweight-charts";
-import { usePinchZoom } from "./racechart";
 import { Sheet } from "./chrome";
 import { fetchPerpCandles, hlInterval, type PerpCandle } from "@/lib/perps";
 import { hlOnStatus, hlSubscribe, type HlWsCandle } from "@/lib/hlws";
@@ -29,18 +29,24 @@ import {
 } from "@/lib/indicators";
 import { compactUsd } from "@/lib/format";
 
-const FRAMES = [
+export type Frame = { label: string; sec: number };
+/** Futures: 1s and 15s are built live from trades; the rest come from Hyperliquid. */
+export const PERP_FRAMES: Frame[] = [
+  { label: "1s", sec: 1 },
+  { label: "15s", sec: 15 },
   { label: "1m", sec: 60 },
   { label: "5m", sec: 300 },
   { label: "15m", sec: 900 },
   { label: "1h", sec: 3600 },
   { label: "4h", sec: 14400 },
   { label: "1D", sec: 86400 },
-] as const;
+];
 type Mode = "line" | "candles";
-const PREFS = "sasa-perps-chart";
 const RSI_PANE_PX = 120;
 const CACHE = new Map<string, PerpCandle[]>();
+
+/** A live feed: calls `push` with each changed candle and `status` when it connects or drops. */
+export type LiveFeed = (frameSec: number, push: (c: PerpCandle) => void, status: (up: boolean) => void) => () => void;
 
 export type ChartLine = { price: number; label: string; kind: "entry" | "liq" | "tp" | "sl" };
 
@@ -81,7 +87,126 @@ type Legend = { t: number; o: number; h: number; l: number; c: number; v: number
 
 type IndSeries = { ind: Indicator; series: ISeriesApi<"Line" | "Histogram">[] };
 
+/** Builds candles of `sec` seconds from single trades (oldest first); returns the changed candle. */
+export function tradeCandles(sec: number) {
+  let cur: PerpCandle | null = null;
+  // trades already counted (a reconnect sends the recent ones again)
+  const seen = new Set<string>();
+  return (px: number, sz: number, timeMs: number, id = ""): PerpCandle | null => {
+    const t = Math.floor(timeMs / 1000 / sec) * sec;
+    if (!(px > 0)) return null;
+    if (id) {
+      if (seen.has(id)) return null;
+      seen.add(id);
+      if (seen.size > 5000) seen.clear();
+    }
+    if (cur && t < cur.t) return null; // older than what's shown
+    if (!cur || t > cur.t) cur = { t, open: px, high: px, low: px, close: px, volume: px * sz };
+    else cur = { ...cur, high: Math.max(cur.high, px), low: Math.min(cur.low, px), close: px, volume: cur.volume + px * sz };
+    return cur;
+  };
+}
+
+/** Futures: Hyperliquid candles (1m and up) or candles built live from trades (1s, 15s). */
 export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin: string; decimals: number; lines?: ChartLine[]; height?: number }) {
+  const load = useCallback((frame: number) => (frame < 60 ? Promise.resolve([] as PerpCandle[]) : fetchPerpCandles(coin, frame)), [coin]);
+  const live = useCallback<LiveFeed>(
+    (frame, push, status) => {
+      const stopStatus = hlOnStatus(status);
+      let stop: () => void;
+      if (frame >= 60) {
+        stop = hlSubscribe({ type: "candle", coin, interval: hlInterval(frame) }, (d) => {
+          const c = wsCandle(d as HlWsCandle);
+          if (c && (d as HlWsCandle).s === coin) push(c);
+        });
+      } else {
+        const add = tradeCandles(frame);
+        stop = hlSubscribe({ type: "trades", coin }, (d) => {
+          const list = (Array.isArray(d) ? (d as { coin: string; px: string; sz: string; time: number; tid: number; hash: string }[]) : [])
+            .filter((t) => t.coin === coin)
+            .sort((a, b) => a.time - b.time);
+          for (const t of list) {
+            const c = add(Number(t.px), Number(t.sz), Number(t.time), `${t.tid}:${t.hash}`);
+            if (c) push(c);
+          }
+        });
+      }
+      return () => {
+        stop();
+        stopStatus();
+      };
+    },
+    [coin]
+  );
+  return (
+    <ProChart
+      cacheKey={`perp:${coin}`}
+      load={load}
+      live={live}
+      frames={PERP_FRAMES}
+      defaultFrame={900}
+      defaultMode="candles"
+      prefsKey="sasa-perps-chart"
+      decimals={decimals}
+      lines={lines}
+      height={height}
+      emptyText={(frame) => (frame < 60 ? "Live candles start with the next trade." : "No price data yet.")}
+    />
+  );
+}
+
+export function ProChart({
+  cacheKey,
+  load: loadCandles,
+  live: liveFeed,
+  refreshMs = 5_000,
+  refreshOn,
+  frames,
+  defaultFrame,
+  defaultMode = "candles",
+  prefsKey,
+  decimals = 2,
+  format,
+  lines = [],
+  height = 400,
+  emptyText = () => "No price data yet.",
+  onFail,
+  toolbarStart,
+}: {
+  /** what is charted (with the time frame, the cache key) */
+  cacheKey: string;
+  /** the candles of one time frame (seconds), oldest first, volume in dollars */
+  load: (frameSec: number) => Promise<PerpCandle[]>;
+  live?: LiveFeed;
+  /** without a live feed: refresh this often */
+  refreshMs?: number;
+  /** extra refreshes (e.g. right after the user trades); returns the unsubscribe */
+  refreshOn?: (refresh: () => void) => () => void;
+  frames: Frame[];
+  defaultFrame: number;
+  defaultMode?: Mode;
+  prefsKey: string;
+  /** fixed decimals for prices (Futures); or a formatter for any size of number */
+  decimals?: number;
+  format?: (v: number) => string;
+  lines?: ChartLine[];
+  height?: number;
+  emptyText?: (frameSec: number) => string;
+  /** the first load failed and nothing was cached */
+  onFail?: () => void;
+  toolbarStart?: ReactNode;
+}) {
+  const loadRef = useRef(loadCandles);
+  loadRef.current = loadCandles;
+  const liveRef = useRef(liveFeed);
+  liveRef.current = liveFeed;
+  const refreshOnRef = useRef(refreshOn);
+  refreshOnRef.current = refreshOn;
+  const failRef = useRef(onFail);
+  failRef.current = onFail;
+  const fmtRef = useRef<(v: number) => string>((v) => fmtPx(v, decimals));
+  fmtRef.current = format ?? ((v: number) => fmtPx(v, decimals));
+  const hasLive = !!liveFeed;
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
@@ -91,8 +216,8 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
   const valsRef = useRef(new Map<string, (number | null)[][]>());
   const lcRef = useRef<typeof import("lightweight-charts") | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  const [mode, setMode] = useState<Mode>("candles");
-  const [frame, setFrame] = useState<number>(900);
+  const [mode, setMode] = useState<Mode>(defaultMode);
+  const [frame, setFrame] = useState<number>(defaultFrame);
   const [inds, setInds] = useState<Indicator[]>([]);
   const [indsReady, setIndsReady] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -101,24 +226,22 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
   const [legend, setLegend] = useState<Legend | null>(null);
   const [ready, setReady] = useState(0);
   const hovering = useRef(false);
-  const decRef = useRef(decimals);
-  decRef.current = decimals;
   const indsRef = useRef(inds);
   indsRef.current = inds;
   const hasRsi = inds.some((i) => i.kind === "rsi");
 
   useEffect(() => {
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS) ?? "{}") as { mode?: Mode; frame?: number };
+      const p = JSON.parse(localStorage.getItem(prefsKey) ?? "{}") as { mode?: Mode; frame?: number };
       if (p.mode === "line" || p.mode === "candles") setMode(p.mode);
-      if (FRAMES.some((f) => f.sec === p.frame)) setFrame(p.frame!);
+      if (frames.some((f) => f.sec === p.frame)) setFrame(p.frame!);
     } catch {}
     setInds(loadIndicators());
     setIndsReady(true);
   }, []);
   const save = (p: { mode?: Mode; frame?: number }) => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ mode, frame, ...p }));
+      localStorage.setItem(prefsKey, JSON.stringify({ mode, frame, ...p }));
     } catch {}
   };
   const changeInds = useCallback((next: Indicator[]) => {
@@ -131,7 +254,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
     const rows = rowsRef.current;
     const r = rows[idx];
     if (!r) return null;
-    const dec = decRef.current;
+    const f = fmtRef.current;
     const ind: Legend["ind"] = [];
     for (const s of indRef.current) {
       const i = s.ind;
@@ -139,9 +262,10 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       const vals = valsRef.current.get(i.id);
       const at = (k: number) => vals?.[k]?.[idx] ?? null;
       let value = "—";
-      if (i.kind === "bb") value = `${fmtOrDash(at(0), dec)} / ${fmtOrDash(at(2), dec)}`;
+      const fd = (v: number | null) => (v === null || !Number.isFinite(v) ? "—" : f(v));
+      if (i.kind === "bb") value = `${fd(at(0))} / ${fd(at(2))}`;
       else if (i.kind === "rsi") value = at(0) === null ? "—" : (at(0) as number).toFixed(1);
-      else value = fmtOrDash(at(0), dec);
+      else value = fd(at(0));
       ind.push({ label: indLabel(i), color: i.color, value });
     }
     return { t: r.t, o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume, ind };
@@ -201,11 +325,11 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
     let chart: IChartApi | null = null;
     let poll: ReturnType<typeof setInterval> | null = null;
     let stopWs: (() => void) | null = null;
-    let stopStatus: (() => void) | null = null;
     let legendTimer: ReturnType<typeof setTimeout> | null = null;
     let indTimer: ReturnType<typeof setTimeout> | null = null;
-    const key = `${coin}:${frame}`;
-    const first = fetchPerpCandles(coin, frame).catch(() => null);
+    let stopRefresh: (() => void) | null = null;
+    const key = `${cacheKey}:${frame}`;
+    const first = loadRef.current(frame).catch(() => null);
     rowsRef.current = [];
 
     (async () => {
@@ -216,7 +340,6 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       const down = cssVar("--color-danger", "#e5484d");
       const ink3 = cssVar("--color-ink-3", "#75757b");
       const line = cssVar("--color-line", "#ebebe8");
-      const dec = decRef.current;
       chart = lc.createChart(box.current, {
         autoSize: true,
         layout: { background: { color: "transparent" }, textColor: ink3, fontSize: 11, panes: { separatorColor: line, enableResize: true } },
@@ -225,7 +348,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         timeScale: {
           borderVisible: false,
           timeVisible: true,
-          secondsVisible: false,
+          secondsVisible: frame < 60,
           rightOffset: 4,
           barSpacing: 7,
           minBarSpacing: 1,
@@ -234,7 +357,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
             if (type === 0) return String(d.getFullYear());
             if (type === 1) return d.toLocaleString("en-US", { month: "short" });
             if (type === 2) return String(d.getDate());
-            return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+            return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(type === 4 ? { second: "2-digit" } : {}), hour12: false });
           },
         },
         crosshair: { mode: 0 },
@@ -242,10 +365,10 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         handleScale: { mouseWheel: true, pinch: false, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
         localization: {
           timeFormatter: (t: Time) =>
-            new Date(Number(t) * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }),
+            new Date(Number(t) * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", ...(frame < 60 ? { second: "2-digit" } : {}), hour12: false }),
         },
       });
-      const priceFormat = { type: "price" as const, precision: dec, minMove: 1 / 10 ** dec };
+      const priceFormat = priceFormatFor(format ? null : decimals, fmtRef);
       const series =
         mode === "line"
           ? chart.addSeries(lc.AreaSeries, { lineColor: up, topColor: up + "33", bottomColor: up + "00", lineWidth: 2, priceFormat, priceLineVisible: true, crosshairMarkerRadius: 4 })
@@ -272,6 +395,11 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         rowsRef.current = rows.slice();
         setEmpty(rows.length === 0);
         (series as ISeriesApi<"Candlestick">).setData(rows.map(point) as never);
+        // line: red when the shown period ends below where it started
+        if (mode === "line" && rows.length > 1) {
+          const col = rows[rows.length - 1].close >= rows[0].open ? up : down;
+          (series as unknown as ISeriesApi<"Area">).applyOptions({ lineColor: col, topColor: col + "33", bottomColor: col + "00" });
+        }
         drawInds(false);
         if (fit && rows.length && chart) {
           const n = rows.length;
@@ -280,7 +408,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         if (!hovering.current) setLegend(legendAt(rows.length - 1));
       };
       const reload = async (fit = false) => {
-        const rows = await fetchPerpCandles(coin, frame).catch(() => null);
+        const rows = await loadRef.current(frame).catch(() => null);
         if (!alive || !rows) return;
         CACHE.set(key, rows);
         showAll(rows, fit);
@@ -292,14 +420,13 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       if (!alive) return;
       if (rows) {
         CACHE.set(key, rows);
-        showAll(rows, !cached);
-      }
+        // a live-built frame (no history) keeps what the feed already drew
+        if (rows.length || !(liveRef.current && frame < 60)) showAll(rows, !cached);
+      } else if (!cached) failRef.current?.();
 
       // live: each trade moves the newest candle
-      const onCandle = (d: unknown) => {
+      const onCandle = (c: PerpCandle) => {
         if (!alive) return;
-        const c = wsCandle(d as HlWsCandle);
-        if (!c || (d as HlWsCandle).s !== coin) return;
         const r = mergeCandle(rowsRef.current, c);
         if (r === "old") return;
         try {
@@ -310,6 +437,10 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         // the candle itself moves on every trade; indicators follow a few times a second
         // (a new candle: everything redrawn at once, so the closed candle keeps its final values)
         if (r === "new") {
+          if (rowsRef.current.length === 1) {
+            // the first candle of a live-built frame: frame it
+            chart?.timeScale().setVisibleLogicalRange({ from: -60, to: 4 });
+          }
           if (indTimer) clearTimeout(indTimer);
           indTimer = null;
           drawInds(false);
@@ -326,22 +457,26 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
             if (alive && !hovering.current) setLegend(legendAt(rowsRef.current.length - 1));
           }, 250);
       };
-      stopWs = hlSubscribe({ type: "candle", coin, interval: hlInterval(frame) }, onCandle);
       let everUp = false;
       let isLive = false;
-      stopStatus = hlOnStatus((isUp) => {
-        const back = isUp && !isLive && everUp;
-        isLive = isUp;
-        if (isUp) everUp = true;
-        if (!alive) return;
-        setLive(isUp);
-        // the feed came back after a drop: fill what was missed while it was down
-        if (back) void reload();
-      });
-      // without the live feed (blocked network, old browser) the chart still moves every 5 s
+      const feed = liveRef.current;
+      if (feed)
+        stopWs = feed(frame, onCandle, (isUp) => {
+          const back = isUp && !isLive && everUp;
+          isLive = isUp;
+          if (isUp) everUp = true;
+          if (!alive) return;
+          setLive(isUp);
+          // the feed came back after a drop: fill what was missed while it was down
+          if (back && frame >= 60) void reload();
+        });
+      // without a live feed (none, blocked network, old browser) the chart still moves
       poll = setInterval(() => {
-        if (document.visibilityState === "visible" && !isLive) void reload();
-      }, 5_000);
+        // live-built frames (1s, 15s on Futures) have no history to reload: keep what the feed drew
+        if (document.visibilityState === "visible" && !isLive && !(feed && frame < 60)) void reload();
+      }, feed ? 5_000 : refreshMs);
+      const on = refreshOnRef.current;
+      if (on) stopRefresh = on(() => [1200, 3000, 6000].forEach((d) => setTimeout(() => alive && void reload(), d)));
     })();
 
     return () => {
@@ -351,7 +486,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       indRef.current = [];
       priceLinesRef.current = [];
       stopWs?.();
-      stopStatus?.();
+      stopRefresh?.();
       if (poll) clearInterval(poll);
       if (legendTimer) clearTimeout(legendTimer);
       if (indTimer) clearTimeout(indTimer);
@@ -363,7 +498,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
           } catch {}
         });
     };
-  }, [coin, frame, mode, drawInds, legendAt]);
+  }, [cacheKey, frame, mode, refreshMs, drawInds, legendAt]);
 
   // ---------------------------------------------------------------- indicator series
   useEffect(() => {
@@ -372,8 +507,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
     if (!chart || !lc || !indsReady) return;
     for (const s of indRef.current) for (const x of s.series) chart.removeSeries(x);
     indRef.current = [];
-    const dec = decimals;
-    const priceFormat = { type: "price" as const, precision: dec, minMove: 1 / 10 ** dec };
+    const priceFormat = priceFormatFor(format ? null : decimals, fmtRef);
     const lineOpts = (color: string, width: 1 | 2 = 1, style = 0) => ({
       color,
       lineWidth: width,
@@ -408,7 +542,8 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
     if (chart.panes().length > 1) chart.panes()[1].setHeight(RSI_PANE_PX);
     drawInds(false);
     if (!hovering.current) setLegend(legendAt(rowsRef.current.length - 1));
-  }, [inds, indsReady, ready, decimals, drawInds, legendAt]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inds, indsReady, ready, decimals, !!format, drawInds, legendAt]);
 
   // ---------------------------------------------------------------- position lines
   const linesKey = JSON.stringify(lines);
@@ -457,7 +592,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       el.removeEventListener("wheel", check);
     };
   }, []);
-  useEffect(() => setManualScale(false), [coin, frame, mode]);
+  useEffect(() => setManualScale(false), [cacheKey, frame, mode]);
   const autoScale = () => {
     chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
     setManualScale(false);
@@ -487,8 +622,9 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
   return (
     <div className="flex flex-col gap-2.5 min-w-0">
       <div className="flex items-center gap-2 flex-wrap">
+        {toolbarStart}
         <div className="flex bg-night rounded-full p-1 overflow-x-auto max-w-full no-scrollbar" role="group" aria-label="Time frame">
-          {FRAMES.map((f) => (
+          {frames.map((f) => (
             <button
               key={f.sec}
               type="button"
@@ -549,10 +685,12 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
             </button>
           ))}
         </div>
-        <span className={"ml-auto flex items-center gap-1.5 text-[0.75rem] " + (live ? "text-up" : "text-ink-3")} title={live ? "Prices stream live" : "Updating every few seconds"}>
-          <span className={"w-2 h-2 rounded-full " + (live ? "bg-up animate-pulse" : "bg-ink-3")} aria-hidden="true" />
-          {live ? "Live" : "Connecting…"}
-        </span>
+        {hasLive && (
+          <span className={"ml-auto flex items-center gap-1.5 text-[0.75rem] " + (live ? "text-up" : "text-ink-3")} title={live ? "Prices stream live" : "Updating every few seconds"}>
+            <span className={"w-2 h-2 rounded-full " + (live ? "bg-up animate-pulse" : "bg-ink-3")} aria-hidden="true" />
+            {live ? "Live" : "Connecting…"}
+          </span>
+        )}
       </div>
 
       <div className="relative w-full" style={{ height: height + (hasRsi ? RSI_PANE_PX : 0) }}>
@@ -560,11 +698,13 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
         {legend && (
           <div className="absolute left-1 top-0 z-[2] pointer-events-none text-[0.6875rem] sm:text-[0.75rem] font-mono tabular-nums leading-5 bg-surface/70 rounded-md px-1 max-w-[calc(100%-5rem)]">
             <div className="flex flex-wrap gap-x-2">
-              <span className="text-ink-3">{new Date(legend.t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-              <span>O <b className={tone}>{fmtPx(legend.o, decimals)}</b></span>
-              <span>H <b className={tone}>{fmtPx(legend.h, decimals)}</b></span>
-              <span>L <b className={tone}>{fmtPx(legend.l, decimals)}</b></span>
-              <span>C <b className={tone}>{fmtPx(legend.c, decimals)}</b></span>
+              <span className="text-ink-3">
+                {new Date(legend.t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", ...(frame < 60 ? { second: "2-digit" } : {}), hour12: false })}
+              </span>
+              <span>O <b className={tone}>{fmtRef.current(legend.o)}</b></span>
+              <span>H <b className={tone}>{fmtRef.current(legend.h)}</b></span>
+              <span>L <b className={tone}>{fmtRef.current(legend.l)}</b></span>
+              <span>C <b className={tone}>{fmtRef.current(legend.c)}</b></span>
               {chg !== null && <b className={tone}>{`${chg >= 0 ? "+" : "−"}${Math.abs(chg).toFixed(2)}%`}</b>}
               {inds.some((i) => i.kind === "vol") && <span className="text-ink-3">Vol {compactUsd(legend.v)}</span>}
             </div>
@@ -579,7 +719,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
             )}
           </div>
         )}
-        {empty && <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">No price data yet.</div>}
+        {empty && <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">{emptyText(frame)}</div>}
         {manualScale && (
           <button
             type="button"
@@ -597,8 +737,11 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
   );
 }
 
-function fmtOrDash(v: number | null, dec: number) {
-  return v === null || !Number.isFinite(v) ? "—" : fmtPx(v, dec);
+/** Price axis format: fixed decimals, or any size of number through the chart's formatter. */
+function priceFormatFor(dec: number | null, fmt: { current: (v: number) => string }) {
+  return dec === null
+    ? { type: "custom" as const, minMove: 1e-12, formatter: (v: number) => fmt.current(v) }
+    : { type: "price" as const, precision: dec, minMove: 1 / 10 ** dec };
 }
 
 // ------------------------------------------------------------------ the picker
@@ -728,4 +871,53 @@ function IndRow({ ind, onPatch, onRemove }: { ind: Indicator; onPatch: (p: Parti
       </button>
     </li>
   );
+}
+
+/**
+ * Two fingers: spreading them apart zooms in, pinching zooms out; sideways spread works on
+ * time, up-and-down spread on prices (like the mouse wheel and dragging the axes).
+ */
+export function usePinchZoom(box: RefObject<HTMLDivElement | null>, chartRef: RefObject<IChartApi | null>) {
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let start: { dx: number; dy: number; from: number; to: number; pFrom: number; pTo: number } | null = null;
+    const spread = (t: TouchList) => ({ dx: Math.abs(t[0].clientX - t[1].clientX) + 20, dy: Math.abs(t[0].clientY - t[1].clientY) + 20 });
+    const onStart = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || e.touches.length !== 2) return;
+      const r = c.timeScale().getVisibleLogicalRange();
+      const p = c.priceScale("right").getVisibleRange();
+      if (!r || !p) return;
+      start = { ...spread(e.touches), from: r.from, to: r.to, pFrom: p.from, pTo: p.to };
+    };
+    const onMove = (e: TouchEvent) => {
+      const c = chartRef.current;
+      if (!c || !start || e.touches.length !== 2) return;
+      e.preventDefault(); // the page itself must not zoom or scroll
+      const now = spread(e.touches);
+      const kx = Math.min(8, Math.max(0.125, start.dx / now.dx));
+      const ky = Math.min(8, Math.max(0.125, start.dy / now.dy));
+      const width = Math.max(10, (start.to - start.from) * kx);
+      c.timeScale().setVisibleLogicalRange({ from: start.to - width, to: start.to });
+      const mid = (start.pFrom + start.pTo) / 2;
+      const half = ((start.pTo - start.pFrom) / 2) * ky;
+      const ps = c.priceScale("right");
+      ps.setAutoScale(false);
+      ps.setVisibleRange({ from: mid - half, to: mid + half });
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) start = null;
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [box, chartRef]);
 }

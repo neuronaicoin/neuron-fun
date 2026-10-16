@@ -59,7 +59,7 @@ export type PerpAccount = {
   positions: PerpPosition[];
 };
 
-export type PerpOrder = { coin: string; oid: number; side: "B" | "A"; type: string; triggerPx: number | null; size: number; reduceOnly: boolean; tpsl: "tp" | "sl" | null };
+export type PerpOrder = { coin: string; oid: number; side: "B" | "A"; type: string; triggerPx: number | null; limitPx: number; size: number; reduceOnly: boolean; tpsl: "tp" | "sl" | null };
 export type PerpFill = { coin: string; px: number; sz: number; side: "B" | "A"; time: number; dir: string; pnl: number; fee: number; hash: string; tid: number };
 
 const num = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? 0 : Number(v));
@@ -173,7 +173,7 @@ export async function fetchPerpAccount(user: string, signal?: AbortSignal): Prom
   };
 }
 
-type RawOrder = { coin: string; oid: number; side: "B" | "A"; orderType: string; isTrigger: boolean; triggerPx: string; sz: string; reduceOnly: boolean };
+type RawOrder = { coin: string; oid: number; side: "B" | "A"; orderType: string; isTrigger: boolean; triggerPx: string; limitPx: string; sz: string; reduceOnly: boolean };
 
 export async function fetchPerpOrders(user: string, signal?: AbortSignal): Promise<PerpOrder[]> {
   const rows = await info<RawOrder[]>({ type: "frontendOpenOrders", user: user.toLowerCase() }, signal);
@@ -183,6 +183,7 @@ export async function fetchPerpOrders(user: string, signal?: AbortSignal): Promi
     side: o.side,
     type: o.orderType,
     triggerPx: o.isTrigger ? num(o.triggerPx) : null,
+    limitPx: num(o.limitPx),
     size: num(o.sz),
     reduceOnly: o.reduceOnly,
     tpsl: /^Take Profit/.test(o.orderType) ? "tp" : /^Stop/.test(o.orderType) ? "sl" : null,
@@ -241,11 +242,13 @@ export type OrderPlan = {
 };
 
 /** What a market order of `margin` dollars at `lev`x would be. */
-export function planOrder(m: PerpMarket, side: "long" | "short", margin: number, lev: number, available: number): OrderPlan {
+/** `entryPx`: a limit order's price (default: today's price, a market order). */
+export function planOrder(m: PerpMarket, side: "long" | "short", margin: number, lev: number, available: number, entryPx = m.mark): OrderPlan {
   const notional = margin * lev;
-  const coins = sizeString(notional / m.mark, m.szDecimals);
+  const at = entryPx > 0 ? entryPx : m.mark;
+  const coins = sizeString(notional / at, m.szDecimals);
   const fees = notional * (HL_TAKER_FEE + BUILDER_FEE);
-  const liq = liqPrice(side, m.mark, lev, m.hlMaxLev);
+  const liq = liqPrice(side, at, lev, m.hlMaxLev);
   let why: string | null = null;
   if (!(margin > 0)) why = "Enter an amount.";
   else if (notional < MIN_NOTIONAL) why = `The smallest position is $${MIN_NOTIONAL} (amount × leverage).`;

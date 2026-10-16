@@ -38,11 +38,12 @@ const SLIP_OPEN = 0.01;
 const SLIP_CLOSE = 0.02;
 const AGENT_NAME = "sasa";
 
-export type OpenOrder = { market: PerpMarket; side: "long" | "short"; margin: number; lev: number; coins: string; tp: number | null; sl: number | null };
+/** `limitPx`: a limit order that waits at that price; none: a market order. */
+export type OpenOrder = { market: PerpMarket; side: "long" | "short"; margin: number; lev: number; coins: string; tp: number | null; sl: number | null; limitPx?: number | null };
 export type PerpsTrade = {
   deposit: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
   withdraw: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
-  open: (o: OpenOrder, onStep: (m: string | null) => void) => Promise<{ avgPx: number }>;
+  open: (o: OpenOrder, onStep: (m: string | null) => void) => Promise<{ avgPx: number | null; resting?: boolean }>;
   /** Closes all of a position, or a part (fraction 0.25 = a quarter). */
   close: (p: PerpPosition, m: PerpMarket | null, fraction?: number) => Promise<void>;
   /** Sets (or removes, with null) the take profit and stop loss of an open position. */
@@ -202,7 +203,9 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
           await ex.updateLeverage({ asset: m.index, isCross: false, leverage: o.lev });
           onStep("Opening…");
           const orders: Parameters<ExchangeClient["order"]>[0]["orders"] = [
-            { a: m.index, b: buy, p: priceString(m.mark * (buy ? 1 + SLIP_OPEN : 1 - SLIP_OPEN), m.szDecimals), s: o.coins, r: false, t: { limit: { tif: "Ioc" } } },
+            o.limitPx
+              ? { a: m.index, b: buy, p: priceString(o.limitPx, m.szDecimals), s: o.coins, r: false, t: { limit: { tif: "Gtc" } } }
+              : { a: m.index, b: buy, p: priceString(m.mark * (buy ? 1 + SLIP_OPEN : 1 - SLIP_OPEN), m.szDecimals), s: o.coins, r: false, t: { limit: { tif: "Ioc" } } },
           ];
           for (const [kind, at] of [["tp", o.tp], ["sl", o.sl]] as const) {
             if (!at) continue;
@@ -221,6 +224,7 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
           onStep(null);
           void after();
           if (first && typeof first === "object" && "filled" in first) return { avgPx: Number(first.filled.avgPx) };
+          if (o.limitPx && first && typeof first === "object" && "resting" in first) return { avgPx: null, resting: true };
           throw new Error("The order didn't fill. Try again.");
         } catch (e) {
           throw hlError(e);
