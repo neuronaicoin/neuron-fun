@@ -23,7 +23,7 @@ import { useWallet } from "@/components/wallet";
 import { CHAINS, HL_BUILDER } from "./config";
 import { getQuote } from "./relay";
 import { quoteCallsOn } from "./extcross";
-import { BUILDER_FEE_TENTHS_BP, HL_API, PERPS_TRADING, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
+import { BUILDER_FEE_TENTHS_BP, HL_API, MIN_NOTIONAL, PERPS_TRADING, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
 
 /** Hyperliquid's perps USDC, as Relay names it. */
 const HL_PERPS_USDC = "0x00000000000000000000000000000000";
@@ -43,7 +43,10 @@ export type PerpsTrade = {
   deposit: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
   withdraw: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
   open: (o: OpenOrder, onStep: (m: string | null) => void) => Promise<{ avgPx: number }>;
-  close: (p: PerpPosition, m: PerpMarket | null) => Promise<void>;
+  /** Closes all of a position, or a part (fraction 0.25 = a quarter). */
+  close: (p: PerpPosition, m: PerpMarket | null, fraction?: number) => Promise<void>;
+  /** Sets (or removes, with null) the take profit and stop loss of an open position. */
+  setTpsl: (p: PerpPosition, m: PerpMarket | null, t: { tp: number | null; sl: number | null }, current: PerpOrder[]) => Promise<void>;
   cancel: (o: PerpOrder, m: PerpMarket | null) => Promise<void>;
 };
 
@@ -224,16 +227,79 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         }
       },
 
-      async close(p, m) {
+      async close(p, m, fraction = 1) {
         if (!m) throw new Error("This market isn't loaded yet.");
+        const all = !(fraction > 0 && fraction < 1);
+        const size = all ? sizeString(Math.abs(p.size), m.szDecimals) : sizeString(Math.abs(p.size) * fraction, m.szDecimals);
+        // a part must still be a real order, and leave a real position behind
+        // (with room: the order's limit sits a little under the price)
+        if (!all && (Number(size) * m.mark < MIN_NOTIONAL * 1.05 || (Math.abs(p.size) - Number(size)) * m.mark < MIN_NOTIONAL * 1.05))
+          throw new Error(`That part is too small (the smallest order is $${MIN_NOTIONAL}). Close all of it instead.`);
+        if (!(Number(size) > 0)) throw new Error("Nothing to close.");
         const ex = await ready(() => {});
         const buy = p.side === "short";
         try {
           await ex.order({
-            orders: [{ a: m.index, b: buy, p: priceString(m.mark * (buy ? 1 + SLIP_CLOSE : 1 - SLIP_CLOSE), m.szDecimals), s: sizeString(Math.abs(p.size), m.szDecimals), r: true, t: { limit: { tif: "Ioc" } } }],
+            orders: [{ a: m.index, b: buy, p: priceString(m.mark * (buy ? 1 + SLIP_CLOSE : 1 - SLIP_CLOSE), m.szDecimals), s: size, r: true, t: { limit: { tif: "Ioc" } } }],
             grouping: "na",
             builder,
           });
+        } catch (e) {
+          throw hlError(e);
+        }
+        void after();
+      },
+
+      async setTpsl(p, m, t, current) {
+        if (!m) throw new Error("This market isn't loaded yet.");
+        const long = p.side === "long";
+        const ref = m.mark;
+        if (t.tp && (long ? t.tp <= ref : t.tp >= ref)) throw new Error(`Take profit must be ${long ? "above" : "below"} the price.`);
+        if (t.sl && (long ? t.sl >= ref : t.sl <= ref)) throw new Error(`Stop loss must be ${long ? "below" : "above"} the price.`);
+        if (t.sl && p.liq && (long ? t.sl <= p.liq : t.sl >= p.liq)) throw new Error("Stop loss is past the liquidation price.");
+        const ex = await ready(() => {});
+        const size = sizeString(Math.abs(p.size), m.szDecimals);
+        const old = current.filter((o) => o.coin === p.coin && (o.tpsl === "tp" || o.tpsl === "sl"));
+        try {
+          // the new ones first, so the position is never left without them; then the old ones go
+          const orders: Parameters<ExchangeClient["order"]>[0]["orders"] = [];
+          for (const [kind, at] of [["tp", t.tp], ["sl", t.sl]] as const) {
+            if (!at) continue;
+            orders.push({
+              a: m.index,
+              b: !long,
+              p: priceString(at * (long ? 0.9 : 1.1), m.szDecimals),
+              s: size,
+              r: true,
+              t: { trigger: { isMarket: true, triggerPx: priceString(at, m.szDecimals), tpsl: kind } },
+            });
+          }
+          if (orders.length) {
+            try {
+              await ex.order({ orders, grouping: "na", builder });
+            } catch (e) {
+              // part of it may have gone through (the SDK throws if any order fails): look at what is
+              // open now, and drop only the old ones that a new one replaced, so nothing is doubled
+              const oldIds = new Set(old.map((o) => o.oid));
+              const now = (await infoClient.frontendOpenOrders({ user: user! }).catch(() => [])) as { coin: string; oid: number; orderType: string }[];
+              const kinds = new Set(
+                now
+                  .filter((o) => o.coin === p.coin && !oldIds.has(o.oid))
+                  .map((o) => (/take profit/i.test(o.orderType) ? "tp" : /stop/i.test(o.orderType) ? "sl" : ""))
+              );
+              const gone = old.filter((o) => o.tpsl && kinds.has(o.tpsl));
+              if (gone.length) await ex.cancel({ cancels: gone.map((o) => ({ a: m.index, o: o.oid })) }).catch(() => {});
+              throw e;
+            }
+          }
+          // the old ones go: those replaced, and those removed (box left empty)
+          if (old.length) {
+            try {
+              await ex.cancel({ cancels: old.map((o) => ({ a: m.index, o: o.oid })) });
+            } catch {
+              throw new Error("The new TP/SL is set, but an old one couldn't be removed. Cancel it in TP/SL & orders.");
+            }
+          }
         } catch (e) {
           throw hlError(e);
         }

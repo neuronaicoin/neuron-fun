@@ -9,13 +9,16 @@ export function MarketSwitch({ at }: { at: "spot" | "futures" }) {
     { id: "futures", href: "/futures/", label: "Futures" },
   ] as const;
   return (
-    <nav className="inline-flex bg-night rounded-full p-1" aria-label="Spot or futures">
+    <nav className="inline-flex rounded-2xl p-1 bg-surface border border-line shadow-sm" aria-label="Spot or futures">
       {tabs.map((t) => (
         <Link
           key={t.id}
           href={t.href}
           aria-current={at === t.id ? "page" : undefined}
-          className={"h-9 px-5 rounded-full text-[0.875rem] font-semibold flex items-center " + (at === t.id ? "bg-paper text-ink shadow-sm" : "text-ink-2 hover:text-ink")}
+          className={
+            "h-10 px-6 rounded-xl text-[0.9375rem] font-bold flex items-center transition-colors " +
+            (at === t.id ? "bg-emerald text-on-accent shadow-sm" : "text-ink hover:bg-paper")
+          }
         >
           {t.label}
         </Link>

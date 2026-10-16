@@ -430,6 +430,39 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
 
   usePinchZoom(box, chartRef);
 
+  // Dragging the chart up or down (or the price axis, or a pinch) turns the price autoscale off;
+  // an "Auto" button then brings it back, like on TradingView.
+  const [manualScale, setManualScale] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const check = () =>
+      setTimeout(() => {
+        const c = chartRef.current;
+        if (!c) return;
+        try {
+          setManualScale(!c.priceScale("right").options().autoScale);
+        } catch {}
+      }, 50);
+    el.addEventListener("pointerup", check);
+    el.addEventListener("touchend", check);
+    el.addEventListener("dblclick", check);
+    el.addEventListener("wheel", check, { passive: true });
+    window.addEventListener("pointerup", check);
+    return () => {
+      window.removeEventListener("pointerup", check);
+      el.removeEventListener("dblclick", check);
+      el.removeEventListener("pointerup", check);
+      el.removeEventListener("touchend", check);
+      el.removeEventListener("wheel", check);
+    };
+  }, []);
+  useEffect(() => setManualScale(false), [coin, frame, mode]);
+  const autoScale = () => {
+    chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
+    setManualScale(false);
+  };
+
   const zoom = (k: "in" | "out" | "reset") => {
     const c = chartRef.current;
     if (!c) return;
@@ -438,6 +471,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       const n = rowsRef.current.length;
       ts.setVisibleLogicalRange({ from: Math.max(0, n - 120), to: n + 4 });
       c.priceScale("right").applyOptions({ autoScale: true });
+      setManualScale(false);
       return;
     }
     const r = ts.getVisibleLogicalRange();
@@ -524,7 +558,7 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
       <div className="relative w-full" style={{ height: height + (hasRsi ? RSI_PANE_PX : 0) }}>
         <div ref={box} className="absolute inset-0" />
         {legend && (
-          <div className="absolute left-1 top-0 z-[2] pointer-events-none text-[0.6875rem] sm:text-[0.75rem] font-mono tabular-nums leading-5 bg-surface/70 rounded-md px-1">
+          <div className="absolute left-1 top-0 z-[2] pointer-events-none text-[0.6875rem] sm:text-[0.75rem] font-mono tabular-nums leading-5 bg-surface/70 rounded-md px-1 max-w-[calc(100%-5rem)]">
             <div className="flex flex-wrap gap-x-2">
               <span className="text-ink-3">{new Date(legend.t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
               <span>O <b className={tone}>{fmtPx(legend.o, decimals)}</b></span>
@@ -546,6 +580,16 @@ export function PerpsChart({ coin, decimals, lines = [], height = 400 }: { coin:
           </div>
         )}
         {empty && <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">No price data yet.</div>}
+        {manualScale && (
+          <button
+            type="button"
+            onClick={autoScale}
+            title="Fit the prices on screen again"
+            className="absolute right-16 bottom-8 z-[2] h-7 px-2.5 rounded-lg bg-surface border border-line text-[0.75rem] font-semibold text-ink-2 hover:text-ink shadow-sm"
+          >
+            Auto
+          </button>
+        )}
       </div>
 
       {picker && <IndicatorSheet inds={inds} onChange={changeInds} onClose={() => setPicker(false)} />}

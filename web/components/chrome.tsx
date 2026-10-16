@@ -353,8 +353,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         <div className="pt-4 pb-1">
           {address ? (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[0.8125rem] text-ink-3 min-w-0 truncate">
-                Logged in as <span className="font-mono text-ink-2">{shortAddr(address)}</span>
+              <span className="text-[0.8125rem] text-ink-3 min-w-0 flex items-center gap-2">
+                <span className="truncate">
+                  Logged in as <span className="font-mono text-ink-2">{shortAddr(address)}</span>
+                </span>
+                <CopyAddress address={address} />
               </span>
               <button
                 type="button"
@@ -373,6 +376,29 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </Sheet>
+  );
+}
+
+/** Copies the full address (it is shown shortened). */
+function CopyAddress({ address }: { address: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void navigator.clipboard
+          ?.writeText(address)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {})
+      }
+      aria-label="Copy your address"
+      className="shrink-0 h-7 px-2 rounded-lg border border-line text-[0.75rem] font-semibold text-emerald hover:bg-paper"
+    >
+      {done ? "Copied" : "Copy"}
+    </button>
   );
 }
 

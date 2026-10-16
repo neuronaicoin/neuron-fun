@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PerpsChart, type ChartLine } from "./perpschart";
+import { OrderBook } from "./perpsbook";
 import { ConnectButton, Sheet } from "./chrome";
 import { useWallet } from "./wallet";
 import { compactUsd } from "@/lib/format";
@@ -24,10 +25,12 @@ import {
   planOrder,
   chartDecimals,
   priceDecimals,
+  sizeString,
   type PerpAccount,
   type PerpFill,
   type PerpMarket,
   type PerpOrder,
+  type PerpPosition,
 } from "@/lib/perps";
 import { usePerpsTrade, type PerpsTrade } from "@/lib/perpstrade";
 import { hlSubscribe } from "@/lib/hlws";
@@ -163,6 +166,7 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
 
   const trade = usePerpsTrade(loadMine);
   const m = markets?.find((x) => x.coin === coin) ?? null;
+  const screen = useScreen();
   // the user's position and its TP / SL, drawn on the chart
   const lines = useMemo(() => {
     const out: ChartLine[] = [];
@@ -183,7 +187,7 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
   if (!allowed && !adminTest) return <Blocked onAdmin={setAdminFor} />;
 
   return (
-    <div className="max-w-[1500px] mx-auto px-3 sm:px-5 py-3 sm:py-5 pb-28 md:pb-10">
+    <div className="max-w-[1800px] mx-auto px-3 sm:px-5 py-3 sm:py-5 pb-28 md:pb-10">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <MarketSwitch at="futures" />
         {!allowed && adminTest && (
@@ -198,13 +202,27 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
 
         <div className="flex flex-col gap-3 min-w-0">
           <MarketHeader m={m} onPick={() => setPicker(true)} />
+          <div className="grid gap-3 2xl:grid-cols-[minmax(0,1fr)_17rem] items-start">
           <section className="rounded-3xl border border-line bg-surface p-3 sm:p-4 min-w-0">
             {m ? (
-              <PerpsChart coin={coin} decimals={chartDecimals(m)} lines={lines} />
+              <>
+                <PerpsChart coin={coin} decimals={chartDecimals(m)} lines={lines} />
+                <p className="mt-2 text-right text-[0.6875rem] text-ink-3">
+                  Powered by{" "}
+                  <a href="https://hyperliquid.xyz" target="_blank" rel="noopener noreferrer" className="font-semibold text-ink-2 hover:text-ink">
+                    Hyperliquid
+                  </a>
+                </p>
+              </>
             ) : (
               <div className="h-[440px] shimmer rounded-2xl" />
             )}
           </section>
+          {/* big screens: the book beside the chart */}
+          {m && screen === "huge" && <OrderBook coin={coin} decimals={chartDecimals(m)} rows={11} />}
+          </div>
+          {/* laptops: under the chart */}
+          {m && screen === "wide" && <OrderBook coin={coin} decimals={chartDecimals(m)} rows={7} split />}
           <div className="hidden lg:block">
             <Positions account={account} orders={orders} fills={fills} markets={markets} trade={trade} signedIn={!!user} />
           </div>
@@ -215,6 +233,12 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
           <OrderPanel m={m} account={account} trade={trade} signedIn={!!user} />
         </div>
 
+        {/* phones: after the order box */}
+        {m && screen === "phone" && (
+          <div className="lg:hidden">
+            <OrderBook coin={coin} decimals={chartDecimals(m)} rows={6} />
+          </div>
+        )}
         <div className="lg:hidden">
           <Positions account={account} orders={orders} fills={fills} markets={markets} trade={trade} signedIn={!!user} />
         </div>
@@ -237,6 +261,24 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
       )}
     </div>
   );
+}
+
+/** Which layout the book uses (only one is ever live, so one feed, not three). */
+function useScreen(): "phone" | "wide" | "huge" {
+  const [s, setS] = useState<"phone" | "wide" | "huge">("phone");
+  useEffect(() => {
+    const huge = window.matchMedia("(min-width: 1536px)");
+    const wide = window.matchMedia("(min-width: 1024px)");
+    const set = () => setS(huge.matches ? "huge" : wide.matches ? "wide" : "phone");
+    set();
+    huge.addEventListener("change", set);
+    wide.addEventListener("change", set);
+    return () => {
+      huge.removeEventListener("change", set);
+      wide.removeEventListener("change", set);
+    };
+  }, []);
+  return s;
 }
 
 function Blocked({ onAdmin }: { onAdmin: (address: string) => void }) {
@@ -459,8 +501,8 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
   const margin = Number(amount.replace(",", ".")) || 0;
   const available = account?.withdrawable ?? 0;
   const plan = m ? planOrder(m, side, margin, lev, available) : null;
-  const tpN = m ? tpslPrice(tp, "tp", side, m.mark) : 0;
-  const slN = m ? tpslPrice(sl, "sl", side, m.mark) : 0;
+  const tpN = m ? tpslPrice(tp, "tp", side, m.mark, lev) : 0;
+  const slN = m ? tpslPrice(sl, "sl", side, m.mark, lev) : 0;
   const coinsN = plan ? Number(plan.coins) || 0 : 0;
   const tpslWhy =
     !tpsl || !m
@@ -558,8 +600,8 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
       </label>
       {tpsl && m && (
         <div className="mt-2 flex flex-col gap-2.5">
-          <TpslRow kind="tp" v={tp} set={setTp} side={side} m={m} coins={coinsN} />
-          <TpslRow kind="sl" v={sl} set={setSl} side={side} m={m} coins={coinsN} />
+          <TpslRow kind="tp" v={tp} set={setTp} side={side} m={m} coins={coinsN} lev={lev} ref={m.mark} margin={margin} />
+          <TpslRow kind="sl" v={sl} set={setSl} side={side} m={m} coins={coinsN} lev={lev} ref={m.mark} margin={margin} />
         </div>
       )}
 
@@ -596,17 +638,20 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
 
 // ------------------------------------------------------------------ TP / SL
 
-/** One TP or SL: a price, or a % move from the current price (the one typed last counts). */
+/** One TP or SL: a price, or a ROI % (the one typed last counts). */
 type TpslInput = { px: string; pct: string; from: "px" | "pct" };
 const EMPTY_TPSL: TpslInput = { px: "", pct: "", from: "px" };
 /** +1 when this TP / SL sits above the price, −1 below. */
 const tpslDir = (kind: "tp" | "sl", side: "long" | "short") => ((kind === "tp") === (side === "long") ? 1 : -1);
-/** The TP / SL price (0 when empty). */
-export function tpslPrice(v: TpslInput, kind: "tp" | "sl", side: "long" | "short", mark: number): number {
+/**
+ * The TP / SL price (0 when empty). The % is ROI: profit or loss on the money put in, like on
+ * the big exchanges, so at 20x a 20% ROI is a 1% price move from `ref` (the entry).
+ */
+export function tpslPrice(v: TpslInput, kind: "tp" | "sl", side: "long" | "short", ref: number, lev: number): number {
   if (v.from === "pct") {
     const p = Number(v.pct);
-    if (!v.pct || !Number.isFinite(p) || !(mark > 0)) return 0;
-    const x = mark * (1 + (tpslDir(kind, side) * p) / 100);
+    if (!v.pct || !Number.isFinite(p) || !(ref > 0) || !(lev > 0)) return 0;
+    const x = ref * (1 + (tpslDir(kind, side) * p) / 100 / lev);
     return x > 0 ? Number(x.toPrecision(5)) : 0;
   }
   const x = Number(v.px);
@@ -619,28 +664,55 @@ export function netAt(side: "long" | "short", coins: number, entry: number, exit
   return gross - coins * entry * rate - coins * exit * rate;
 }
 
-function TpslRow({ kind, v, set, side, m, coins }: { kind: "tp" | "sl"; v: TpslInput; set: (v: TpslInput) => void; side: "long" | "short"; m: PerpMarket; coins: number }) {
-  const price = tpslPrice(v, kind, side, m.mark);
+/** One take profit or stop loss: price box, ROI % box, and what it would make or lose. */
+function TpslRow({
+  kind,
+  v,
+  set,
+  side,
+  m,
+  coins,
+  lev,
+  ref,
+  margin,
+}: {
+  kind: "tp" | "sl";
+  v: TpslInput;
+  set: (v: TpslInput) => void;
+  side: "long" | "short";
+  m: PerpMarket;
+  coins: number;
+  lev: number;
+  /** the entry (or today's price for a new position) */
+  ref: number;
+  /** the money in the position, for ROI */
+  margin: number;
+}) {
+  const price = tpslPrice(v, kind, side, ref, lev);
   const dec = priceDecimals(m);
   const shownPx = v.from === "px" ? v.px : price ? String(Number(price.toFixed(dec))) : "";
-  const pctNow = price && m.mark > 0 ? tpslDir(kind, side) * (price / m.mark - 1) * 100 : null;
+  // price move from the entry, in the position's favour (+) or against it (−)
+  const move = price && ref > 0 ? tpslDir(kind, side) * (price / ref - 1) * 100 : null;
+  const roiNow = move === null ? null : move * lev;
   // a price on the wrong side shows its real direction (the order button says what's wrong)
-  const wrongSide = v.from === "px" && pctNow !== null && pctNow < 0;
-  const shownPct = v.from === "pct" ? v.pct : pctNow === null ? "" : String(Math.round(Math.abs(pctNow) * 100) / 100);
+  const wrongSide = v.from === "px" && roiNow !== null && roiNow < 0;
+  const shownPct = v.from === "pct" ? v.pct : roiNow === null ? "" : String(Math.round(Math.abs(roiNow) * 100) / 100);
   const sign = (kind === "tp") !== wrongSide ? "+" : "−";
-  const net = price && coins > 0 ? netAt(side, coins, m.mark, price) : null;
+  const net = price && coins > 0 ? netAt(side, coins, ref, price) : null;
+  const priceMove = price && ref > 0 ? (price / ref - 1) * 100 : null;
   const name = kind === "tp" ? "Take profit" : "Stop loss";
   return (
     <div>
       <div className="flex items-center justify-between text-[0.75rem] mb-1">
         <span className="text-ink-3">{name}</span>
         {net !== null && (
-          <span className={"font-mono font-semibold " + (net >= 0 ? "text-up" : "text-danger")} title="If it closes there, after fees">
-            ≈ {signedUsd(net)}
+          <span className="flex items-baseline gap-1" title="What you'd make or lose if it closes there, after fees">
+            <span className="text-ink-3">PnL</span>
+            <span className={"font-mono font-semibold " + (net >= 0 ? "text-up" : "text-danger")}>≈ {signedUsd(net)}</span>
           </span>
         )}
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-2">
         <input
           value={shownPx}
           onChange={(e) => set({ px: e.target.value.replace(/[^0-9.]/g, ""), pct: "", from: "px" })}
@@ -649,19 +721,25 @@ function TpslRow({ kind, v, set, side, m, coins }: { kind: "tp" | "sl"; v: TpslI
           aria-label={`${name} price`}
           className="h-10 rounded-xl border border-line bg-paper px-3 text-[0.875rem] font-mono outline-none focus:border-ink-3 min-w-0"
         />
-        <label className="h-10 rounded-xl border border-line bg-paper px-3 flex items-center focus-within:border-ink-3 min-w-0">
+        <label className="h-10 rounded-xl border border-line bg-paper px-2.5 flex items-center focus-within:border-ink-3 min-w-0" title="ROI: profit or loss on the money you put in">
           <span className={"text-[0.875rem] " + (sign === "+" ? "text-up" : "text-danger")}>{sign}</span>
           <input
             value={shownPct}
             onChange={(e) => set({ px: "", pct: e.target.value.replace(/[^0-9.]/g, ""), from: "pct" })}
             inputMode="decimal"
             placeholder="0"
-            aria-label={`${name} percent`}
+            aria-label={`${name} ROI percent`}
             className="flex-1 min-w-0 bg-transparent outline-none text-[0.875rem] font-mono text-right"
           />
-          <span className="text-ink-3 text-[0.875rem] ml-0.5">%</span>
+          <span className="text-ink-3 text-[0.75rem] ml-1 whitespace-nowrap">% ROI</span>
         </label>
       </div>
+      {priceMove !== null && (
+        <div className="mt-1 text-[0.6875rem] text-ink-3 font-mono">
+          Price {priceMove >= 0 ? "+" : "−"}
+          {Math.abs(priceMove).toFixed(2)}% from {px(ref)}
+        </div>
+      )}
     </div>
   );
 }
@@ -727,6 +805,18 @@ function Positions({
   signedIn: boolean;
 }) {
   const [tab, setTab] = useState<"pos" | "orders" | "history">("pos");
+  const [sheet, setSheet] = useState<{ kind: "tpsl" | "close"; coin: string } | null>(null);
+  const sheetPos = sheet ? (account?.positions.find((x) => x.coin === sheet.coin) ?? null) : null;
+  const sheetMarket = sheet ? (markets?.find((x) => x.coin === sheet.coin) ?? null) : null;
+  // the position closed (TP, liquidation) or flipped while a sheet was open: the sheet goes
+  const sheetSide = sheetPos?.side ?? null;
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sheet) return setSheetFor(null);
+    if (account && !sheetPos) return setSheet(null);
+    if (sheetSide && sheetFor && sheetFor !== sheetSide) return setSheet(null);
+    if (sheetSide && !sheetFor) setSheetFor(sheetSide);
+  }, [sheet, sheetPos, sheetSide, sheetFor, account]);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const positions = account?.positions ?? [];
@@ -749,6 +839,12 @@ function Positions({
   ];
   return (
     <section className="rounded-3xl border border-line bg-surface p-3 sm:p-4 min-w-0" aria-label="Your positions">
+      {sheet && sheetPos && sheetMarket && sheet.kind === "close" && (
+        <CloseSheet p={sheetPos} m={sheetMarket} trade={trade} onClose={() => setSheet(null)} />
+      )}
+      {sheet && sheetPos && sheetMarket && sheet.kind === "tpsl" && (
+        <TpslSheet p={sheetPos} m={sheetMarket} orders={orders} trade={trade} onClose={() => setSheet(null)} />
+      )}
       <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist">
         {tabs.map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={"h-8 px-3 rounded-lg text-[0.8125rem] font-semibold shrink-0 " + (tab === k ? "bg-ink text-mist" : "text-ink-2")}>
@@ -776,14 +872,36 @@ function Positions({
                 <Cell k="Entry / mark" v={`${px(p.entry)} / ${px(markOf(p.coin))}`} />
                 <Cell k="Liquidation" v={px(p.liq)} cls="text-danger" />
                 <Cell k="Profit" v={`${signedUsd(p.pnl)} (${pct(p.roe, 1)})`} cls={tone(p.pnl)} />
-                <button
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => void run(`close:${p.coin}`, () => trade.close(p, markets?.find((m) => m.coin === p.coin) ?? null))}
-                  className="col-span-2 sm:col-span-1 h-9 px-4 rounded-xl border border-line font-semibold hover:border-danger hover:text-danger disabled:opacity-50"
-                >
-                  {busy === `close:${p.coin}` ? "Closing…" : "Close"}
-                </button>
+                <div className="col-span-2 sm:col-span-1 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => setSheet({ kind: "tpsl", coin: p.coin })}
+                    className="h-9 px-3 rounded-xl border border-line font-semibold hover:border-ink-3 disabled:opacity-50"
+                  >
+                    TP/SL
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => setSheet({ kind: "close", coin: p.coin })}
+                    className="h-9 px-3 rounded-xl border border-line font-semibold hover:border-danger hover:text-danger disabled:opacity-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                {(() => {
+                  const own = orders.filter((o) => o.coin === p.coin && o.triggerPx);
+                  const tp = own.find((o) => o.tpsl === "tp");
+                  const sl = own.find((o) => o.tpsl === "sl");
+                  if (!tp && !sl) return null;
+                  return (
+                    <div className="col-span-2 sm:col-span-6 text-[0.75rem] text-ink-3 flex gap-3">
+                      {tp && <span>TP <b className="text-up font-mono">{px(tp.triggerPx)}</b></span>}
+                      {sl && <span>SL <b className="text-[#f59e0b] font-mono">{px(sl.triggerPx)}</b></span>}
+                    </div>
+                  );
+                })()}
               </li>
             ))}
           </ul>
@@ -827,6 +945,110 @@ function Positions({
         </ul>
       )}
     </section>
+  );
+}
+
+/** Close all of a position or a part of it. */
+function CloseSheet({ p, m, trade, onClose }: { p: PerpPosition; m: PerpMarket; trade: PerpsTrade; onClose: () => void }) {
+  const [part, setPart] = useState(100);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const f = part / 100;
+  const value = Math.abs(p.size) * m.mark * f;
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await trade.close(p, m, f);
+      onClose();
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet title={`Close ${p.coin} ${p.side === "long" ? "long" : "short"}`} onClose={onClose}>
+      <div className="flex flex-col gap-4 pb-2">
+        <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="How much to close">
+          {[25, 50, 75, 100].map((x) => (
+            <button
+              key={x}
+              type="button"
+              aria-pressed={part === x}
+              onClick={() => setPart(x)}
+              className={"h-11 rounded-xl border font-bold text-[0.9375rem] " + (part === x ? "border-ink bg-ink text-paper" : "border-line text-ink-2")}
+            >
+              {x === 100 ? "All" : `${x}%`}
+            </button>
+          ))}
+        </div>
+        <dl className="rounded-2xl bg-paper px-4 py-3 text-[0.875rem] grid grid-cols-[1fr_auto] gap-y-1.5">
+          <dt className="text-ink-3">Closing</dt>
+          <dd className="font-mono text-right">
+            {sizeString(Math.abs(p.size) * f, m.szDecimals)} {p.coin} · {usd(value)}
+          </dd>
+          <dt className="text-ink-3">At about</dt>
+          <dd className="font-mono text-right">{px(m.mark)}</dd>
+          <dt className="text-ink-3">Profit on this part</dt>
+          <dd className={"font-mono text-right font-semibold " + tone(p.pnl)}>≈ {signedUsd(p.pnl * f)}</dd>
+          {part < 100 && (
+            <>
+              <dt className="text-ink-3">Left open</dt>
+              <dd className="font-mono text-right">{usd(Math.abs(p.size) * m.mark * (1 - f))}</dd>
+            </>
+          )}
+        </dl>
+        <button type="button" disabled={busy} onClick={() => void go()} className="h-12 rounded-full bg-ink text-paper font-bold disabled:opacity-50">
+          {busy ? "Closing…" : part === 100 ? `Close all ${p.coin}` : `Close ${part}%`}
+        </button>
+        {err && <p className="rounded-xl px-3 py-2 text-[0.875rem] bg-warn-bg text-warn-ink">{err}</p>}
+      </div>
+    </Sheet>
+  );
+}
+
+/** Change, add or remove the take profit and stop loss of an open position. */
+function TpslSheet({ p, m, orders, trade, onClose }: { p: PerpPosition; m: PerpMarket; orders: PerpOrder[]; trade: PerpsTrade; onClose: () => void }) {
+  const own = orders.filter((o) => o.coin === p.coin);
+  const tpNow = own.find((o) => o.tpsl === "tp")?.triggerPx ?? null;
+  const slNow = own.find((o) => o.tpsl === "sl")?.triggerPx ?? null;
+  const [tp, setTp] = useState<TpslInput>({ px: tpNow ? String(tpNow) : "", pct: "", from: "px" });
+  const [sl, setSl] = useState<TpslInput>({ px: slNow ? String(slNow) : "", pct: "", from: "px" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const coins = Math.abs(p.size);
+  const tpN = tpslPrice(tp, "tp", p.side, p.entry, p.lev);
+  const slN = tpslPrice(sl, "sl", p.side, p.entry, p.lev);
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await trade.setTpsl(p, m, { tp: tpN || null, sl: slN || null }, orders);
+      onClose();
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet title={`TP/SL · ${p.coin} ${p.side === "long" ? "long" : "short"} ${p.lev}x`} onClose={onClose}>
+      <div className="flex flex-col gap-4 pb-2">
+        <div className="grid grid-cols-3 gap-2 text-[0.75rem]">
+          <Cell k="Entry" v={px(p.entry)} />
+          <Cell k="Now" v={px(m.mark)} />
+          <Cell k="Liquidation" v={px(p.liq)} cls="text-danger" />
+        </div>
+        <TpslRow kind="tp" v={tp} set={setTp} side={p.side} m={m} coins={coins} lev={p.lev} ref={p.entry} margin={p.margin} />
+        <TpslRow kind="sl" v={sl} set={setSl} side={p.side} m={m} coins={coins} lev={p.lev} ref={p.entry} margin={p.margin} />
+        <p className="text-[0.75rem] text-ink-3">ROI is counted from your entry. Leave a box empty to remove it.</p>
+        <button type="button" disabled={busy} onClick={() => void go()} className="h-12 rounded-full bg-ink text-paper font-bold disabled:opacity-50">
+          {busy ? "Saving…" : "Save"}
+        </button>
+        {err && <p className="rounded-xl px-3 py-2 text-[0.875rem] bg-warn-bg text-warn-ink">{err}</p>}
+      </div>
+    </Sheet>
   );
 }
 
