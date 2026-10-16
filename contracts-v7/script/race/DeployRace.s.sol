@@ -132,6 +132,9 @@ contract DeployRace is Script {
         c.usd = vm.envOr("USD_TOKEN", address(0));
         c.feed = vm.envOr("PRICE_FEED", address(0));
         c.maxFeedAge = vm.envOr("MAX_FEED_AGE", uint256(2 hours));
+        // Base's ETH/USD and BNB Chain's BNB/USD feeds update far more often than hourly: an
+        // older price there means something is wrong, so it is never accepted for a race result
+        if ((block.chainid == 8453 || block.chainid == 56) && c.maxFeedAge > 1 hours) c.maxFeedAge = 1 hours;
 
         require(ILayerZeroEndpointV2(endpoint).eid() == localEid, "LZ endpoint is not the one for LOCAL_EID");
         require(fdeployer != c.deployer, "RACE_FACTORY_KEY must be a separate wallet");

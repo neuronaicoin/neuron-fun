@@ -1,0 +1,9 @@
+# Every page: other sites can't show sasa inside a frame (a hidden frame could trick a click
+# into a trade; email wallets sign without a pop-up). sasa's own pages may (the games on /play).
+# Pages built by Pages Functions (coin, race, forum…) get the same headers from a Cloudflare
+# "Modify response header" rule, since this file only covers the static files.
+/*
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: frame-ancestors 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

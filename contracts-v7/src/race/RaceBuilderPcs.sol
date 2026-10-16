@@ -23,6 +23,10 @@ import {FixedPoint96} from "infinity-core/src/pool-cl/libraries/FixedPoint96.sol
 
 import {RaceLaunchHookPcs} from "./RaceLaunchHookPcs.sol";
 
+interface IRaceHubKeeperPcs {
+    function keeper() external view returns (address);
+}
+
 interface IRaceFactoryHubPcs {
     function hub() external view returns (address);
 }
@@ -102,6 +106,14 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         Lost
     }
 
+    /// @notice The race result written down at the end of the five minutes (see recordRaceEnd).
+    struct RaceEnd {
+        uint256 money; // BNB in the launch position when the race ended
+        uint256 coinsInPool; // coins in the launch position when the race ended
+        bool recorded;
+        int24 tick; // the pool's price when the race ended: arriving money is never placed above it
+    }
+
     struct Race {
         address seat;
         address creator;
@@ -148,6 +160,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
     mapping(address coin => uint256) public lostPending; // BNB of a losing pool waiting to be handed over
     mapping(address coin => Range[]) internal _extra; // salt of extra position i = i + 1
     mapping(address coin => uint256) public buybackFunds; // in BNB
+    mapping(address coin => RaceEnd) public raceEnd;
     mapping(address coin => uint256) public pendingDollars;
     mapping(address who => uint256) public heldFor; // BNB that could not be paid out
     uint256 public bnbReserved; // buyback BNB + held BNB + losing hand-overs waiting
@@ -187,6 +200,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
     error NotOurCall();
     error NotSelf();
     error Slippage(uint256 got, uint256 minimum);
+    error NotKeeper();
 
     constructor(
         IVault vault_,
@@ -256,7 +270,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         return poolKeyFor(coin).toId();
     }
 
-    function hub() external view returns (address) {
+    function hub() public view returns (address) {
         return factory == address(0) ? address(0) : IRaceFactoryHubPcs(factory).hub();
     }
 
@@ -365,11 +379,42 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         _;
     }
 
+    /**
+     * @notice Called by the hook before the first swap after the five minutes: writes down
+     * the BNB (and coins) in the pool as the race ended, before that swap moves anything.
+     * Returns true once written (or when the race is decided), false while it is still on.
+     * Never reverts for a race pool: a revert here would stop the swap. Anyone may call it too
+     * (sasa's keeper does, right at the end, so no trader's swap pays for writing it): until it
+     * is written, every swap writes it first, so the pool is still exactly as the race ended.
+     * The key only names the coin; the builder reads its own pool. (The dollar value is
+     * worked out at report time with Chainlink, as before.)
+     */
+    function recordRaceEnd(PoolKey calldata key) external returns (bool) {
+        address coin = Currency.unwrap(key.currency1); // BNB is always currency0
+        Race storage r = races[coin];
+        RaceEnd storage e = raceEnd[coin];
+        if (r.state != State.Racing || e.recorded) return true;
+        if (!raceOver(coin)) return false;
+        _writeRaceEnd(coin);
+        return true;
+    }
+
+    function _writeRaceEnd(address coin) private {
+        RaceEnd storage e = raceEnd[coin];
+        (e.money, e.coinsInPool) = poolAmounts(coin);
+        (, e.tick,,) = poolManager.getSlot0(poolIdFor(coin));
+        e.recorded = true;
+    }
+
+    /// @notice Race report: the BNB in this chain's pool when the five minutes ended (written
+    /// down before any later swap), in 6-decimal dollars at the Chainlink price.
     function report(address coin) external onlySeat(coin) returns (uint256 money, uint256 coinsOutside) {
         Race storage r = races[coin];
         if (r.state != State.Racing) revert RaceDone();
         if (!raceOver(coin)) revert RaceNotOver();
-        (uint256 bnb, uint256 inPool) = poolAmounts(coin);
+        RaceEnd storage e = raceEnd[coin];
+        if (!e.recorded) _writeRaceEnd(coin); // no swap since the end: the pool is still as it ended
+        (uint256 bnb, uint256 inPool) = (e.money, e.coinsInPool);
         money = Math.mulDiv(bnb, bnbPrice() * 10 ** REPORT_DECIMALS, 10 ** (18 + uint256(feedDecimals)));
         uint256 supply = IERC20(coin).totalSupply();
         coinsOutside = supply > inPool ? supply - inPool : 0;
@@ -496,6 +541,10 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         if (extra.length >= MAX_EXTRA_POSITIONS) return false;
         (, int24 tick,,) = poolManager.getSlot0(poolIdFor(coin));
         // BNB is currency0: a range entirely above the current tick holds only currency0
+        // never placed above the coin's price when the race ended (the coin's price falls as the
+        // tick rises): pushing the price up just before the money arrives then gains nothing
+        RaceEnd storage e = raceEnd[coin];
+        if (e.recorded && e.tick > tick) tick = e.tick;
         int24 lower = _tickFloor(tick) + TICK_SPACING;
         int24 upper = TickMath.maxUsableTick(TICK_SPACING);
         if (lower >= upper) return false;
@@ -514,7 +563,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         return true;
     }
 
-    // ------------------------------------------------------------------ fees and buybacks (anyone)
+    // ------------------------------------------------------------------ fees (anyone) and buybacks (keeper)
 
     function collectFees(address coin) external nonReentrant returns (uint256 bnbFees, uint256 coinFees) {
         Race storage r = races[coin];
@@ -550,7 +599,11 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         }
     }
 
-    function buyback(address coin) external nonReentrant returns (uint256 spent, uint256 burned) {
+    /// @notice One buyback chunk. Only sasa's keeper (the hub's keeper), with a minimum it worked
+    /// out just before: nobody can push the price up around a buyback and sell into it.
+    function buyback(address coin, uint256 minCoinsOut) external nonReentrant returns (uint256 spent, uint256 burned) {
+        address h = hub();
+        if (h == address(0) || msg.sender != IRaceHubKeeperPcs(h).keeper()) revert NotKeeper();
         Race storage r = races[coin];
         if (r.state != State.Won && r.state != State.Racing) revert NotOpen();
         spent = Math.min(buybackFunds[coin], BUYBACK_CHUNK);
@@ -558,6 +611,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         buybackFunds[coin] -= spent;
         bnbReserved -= spent;
         burned = _buy(coin, spent, address(this));
+        if (burned < minCoinsOut) revert Slippage(burned, minCoinsOut);
         if (burned > 0) IRaceCoinPcs(coin).burn(burned);
         emit BuybackDone(coin, spent, burned);
     }

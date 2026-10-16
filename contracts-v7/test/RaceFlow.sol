@@ -2,11 +2,13 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
@@ -88,6 +90,8 @@ contract MockDollarBridge is IUsdcBridge {
 }
 
 abstract contract RaceFlow is Test, DeployPermit2 {
+    using PoolIdLibrary for PoolKey;
+
     uint32 constant A = 40_001; // coordinator chain
     uint32 constant B = 40_002;
     uint256 constant D = 1e6;
@@ -459,7 +463,15 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         a.builder.collectFees(ca);
         assertGt(a.builder.buybackFunds(ca), 0);
         uint256 s0 = IERC20(ca).totalSupply();
-        a.builder.buyback(ca);
+        // only sasa's keeper runs buybacks, with a minimum
+        vm.prank(alice);
+        vm.expectRevert(RaceBuilder.NotKeeper.selector);
+        a.builder.buyback(ca, 1);
+        vm.prank(keeper);
+        vm.expectPartialRevert(RaceBuilder.Slippage.selector); // too high a minimum: nothing happens
+        a.builder.buyback(ca, type(uint256).max);
+        vm.prank(keeper);
+        a.builder.buyback(ca, 1);
         assertLt(IERC20(ca).totalSupply(), s0, "burned");
     }
 
@@ -697,8 +709,9 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         _endRace();
         vm.expectRevert(RaceBuilder.RaceDone.selector);
         b.builder.collectFees(cb);
+        vm.prank(keeper);
         vm.expectRevert(RaceBuilder.NotOpen.selector);
-        b.builder.buyback(cb);
+        b.builder.buyback(cb, 1);
         // money can't be delivered for a lost coin on its own chain either
         bytes32 id = _coinId();
         b.usdc.mint(address(b.builder), 1 * D);
@@ -799,6 +812,159 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         assertEq(b.ep.packetCount(), n0 + 1, "one cross-chain message sent");
     }
 
+    // ------------------------------------------------------------------ the race result is fixed at the five minutes
+
+    /// The attack the reviewers found: once the race is over, a big buy on the losing chain
+    /// (made just before that chain is frozen) must not make it win. Only the money in the
+    /// pool when the five minutes ended counts.
+    function _flow_lateBuyCantFlipRace() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 200 * D);
+        _buy(b, cb, bob, 60 * D);
+        vm.warp(block.timestamp + 301); // the race is over: A leads
+        // after the end: a big buy on B, and A's buyer sells most of A's money out
+        _buy(b, cb, bob, 2_000 * D);
+        _sell(a, ca, alice, (IERC20(ca).balanceOf(alice) * 9) / 10);
+        (uint256 liveA,) = a.builder.poolAmounts(ca);
+        (uint256 liveB,) = b.builder.poolAmounts(cb);
+        assertGt(liveB, liveA, "live pools would say B");
+        _endRace();
+        assertEq(uint8(_state(a, ca)), uint8(RaceBuilder.State.Won), "A won: it led when the race ended");
+        assertEq(uint8(_state(b, cb)), uint8(RaceBuilder.State.Lost));
+    }
+
+    /// The money written down is the pool exactly as the race ended (before the first late swap),
+    /// written once; the hook remembers it is done; only the hook can write it.
+    function _flow_raceEndRecorded() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 120 * D);
+        PoolKey memory ka = a.builder.poolKeyFor(ca);
+        // anyone may ask for the record, but during the race there is nothing to write
+        vm.prank(alice);
+        assertFalse(a.builder.recordRaceEnd(ka));
+
+        // a swap during the race writes nothing
+        vm.warp(block.timestamp + 299);
+        _buy(a, ca, bob, 10 * D);
+        (,, bool rec0,) = a.builder.raceEnd(ca);
+        assertFalse(rec0, "nothing written during the race");
+
+        vm.warp(block.timestamp + 1); // exactly the end
+        (uint256 atEnd, uint256 coinsAtEnd) = a.builder.poolAmounts(ca);
+        _buy(a, ca, bob, 500 * D);
+        (uint256 m, uint256 c, bool rec,) = a.builder.raceEnd(ca);
+        assertTrue(rec);
+        assertEq(m, atEnd, "the pool before the late swap");
+        assertEq(c, coinsAtEnd);
+        assertTrue(a.builder.hook().raceEndRecorded(ka.toId()));
+        // later swaps change nothing written
+        _sell(a, ca, bob, IERC20(ca).balanceOf(bob) / 2);
+        (uint256 m2,,,) = a.builder.raceEnd(ca);
+        assertEq(m2, atEnd);
+
+        // B had no swap after the end: its report reads the pool, which is still as it ended
+        (uint256 bEnd,) = b.builder.poolAmounts(cb);
+        (,, bool recB,) = b.builder.raceEnd(cb);
+        assertFalse(recB);
+        bytes32 id = _coinId();
+        vm.recordLogs();
+        vm.startPrank(keeper);
+        a.hub.freeze(id, "");
+        b.hub.freeze(id, "");
+        vm.stopPrank();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256("RaceReported(address,uint256)");
+        uint256 seen;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics.length < 2 || logs[i].topics[0] != sig) continue;
+            address coin = address(uint160(uint256(logs[i].topics[1])));
+            uint256 reported = abi.decode(logs[i].data, (uint256));
+            if (logs[i].emitter == address(a.builder)) assertEq(reported, atEnd, "A reports the money at the end");
+            if (logs[i].emitter == address(b.builder)) assertEq(reported, bEnd, "B reports its untouched pool");
+            assertTrue(coin == ca || coin == cb);
+            seen++;
+        }
+        assertEq(seen, 2);
+    }
+
+    /// Anyone (sasa's keeper) can write the record right at the end, before any swap: it is the
+    /// pool as the race ended, and the first trader's swap after that doesn't pay for writing it.
+    function _flow_anyoneRecordsAtTheEnd() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 150 * D);
+        vm.warp(block.timestamp + 300);
+        (uint256 atEnd,) = a.builder.poolAmounts(ca);
+        PoolKey memory ka = a.builder.poolKeyFor(ca);
+        vm.prank(bob);
+        assertTrue(a.builder.recordRaceEnd(ka));
+        (uint256 m,, bool rec,) = a.builder.raceEnd(ca);
+        assertTrue(rec);
+        assertEq(m, atEnd);
+        // a swap now doesn't change it, and a second call changes nothing
+        _buy(a, ca, bob, 900 * D);
+        vm.prank(alice);
+        assertTrue(a.builder.recordRaceEnd(ka));
+        (uint256 m2,,,) = a.builder.raceEnd(ca);
+        assertEq(m2, atEnd);
+        // a key that names an unknown coin writes nothing
+        PoolKey memory junk = ka;
+        junk.currency0 = Currency.wrap(address(0xBEEF));
+        junk.currency1 = Currency.wrap(address(0xBEEF));
+        assertTrue(a.builder.recordRaceEnd(junk));
+        (,, bool recJunk,) = a.builder.raceEnd(address(0xBEEF));
+        assertFalse(recJunk);
+    }
+
+    /// The race itself is unchanged: money that is in the pool when the five minutes end counts,
+    /// even if it came in the very last second.
+    function _flow_lastSecondBuyCounts() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 200 * D);
+        vm.warp(block.timestamp + 299);
+        _buy(b, cb, bob, 400 * D); // one second before the end
+        vm.warp(block.timestamp + 2);
+        _endRace();
+        assertEq(uint8(_state(b, cb)), uint8(RaceBuilder.State.Won));
+        assertEq(uint8(_state(a, ca)), uint8(RaceBuilder.State.Lost));
+    }
+
+    /// The losing chain's money arrives on the winner as buy orders. Pushing the price up just
+    /// before it arrives and selling into it afterwards must not pay: the money is never placed
+    /// above the price the race ended at.
+    function _flow_pumpBeforeArrivalGainsNothing() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 3_000 * D);
+        _buy(b, cb, alice, 2_000 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_state(a, ca)), uint8(RaceBuilder.State.Won));
+        assertGt(b.cons.pendingPool(_coinId()), 1_500 * D, "B's money is on its way");
+
+        uint256 before = a.usdc.balanceOf(bob);
+        _buy(a, ca, bob, 6_000 * D); // push the price up
+        b.cons.forward(_coinId()); // the money arrives and is placed
+        _sell(a, ca, bob, IERC20(ca).balanceOf(bob)); // sell into it
+        assertLt(a.usdc.balanceOf(bob), before, "no profit from pushing the price");
+    }
+
+    /// After the verdict the winning pool trades on normally (the record is never in the way).
+    function _flow_winnerTradesAfterRecord() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 100 * D);
+        vm.warp(block.timestamp + 301);
+        _buy(a, ca, bob, 5 * D);
+        _endRace();
+        assertEq(uint8(_state(a, ca)), uint8(RaceBuilder.State.Won));
+        assertGt(_buy(a, ca, bob, 5 * D), 0);
+        assertGt(_sell(a, ca, bob, IERC20(ca).balanceOf(bob)), 0);
+    }
+
     function _posId(Net memory c, address coin) internal view returns (uint256 id) {
         (id,,,,,,) = c.builder.races(coin);
     }
@@ -831,6 +997,12 @@ contract RaceLowTest is RaceFlow {
     function test_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
     function testFuzz_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
     function test_keeperMovesHolders() public { _flow_keeperMovesHolders(); }
+    function test_lateBuyCantFlipRace() public { _flow_lateBuyCantFlipRace(); }
+    function test_raceEndRecorded() public { _flow_raceEndRecorded(); }
+    function test_lastSecondBuyCounts() public { _flow_lastSecondBuyCounts(); }
+    function test_winnerTradesAfterRecord() public { _flow_winnerTradesAfterRecord(); }
+    function test_pumpBeforeArrivalGainsNothing() public { _flow_pumpBeforeArrivalGainsNothing(); }
+    function test_anyoneRecordsAtTheEnd() public { _flow_anyoneRecordsAtTheEnd(); }
 }
 
 /// dollars sort after the coins (USDC is currency1)
@@ -856,6 +1028,12 @@ contract RaceHighTest is RaceFlow {
     function test_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
     function testFuzz_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
     function test_keeperMovesHolders() public { _flow_keeperMovesHolders(); }
+    function test_lateBuyCantFlipRace() public { _flow_lateBuyCantFlipRace(); }
+    function test_raceEndRecorded() public { _flow_raceEndRecorded(); }
+    function test_lastSecondBuyCounts() public { _flow_lastSecondBuyCounts(); }
+    function test_winnerTradesAfterRecord() public { _flow_winnerTradesAfterRecord(); }
+    function test_pumpBeforeArrivalGainsNothing() public { _flow_pumpBeforeArrivalGainsNothing(); }
+    function test_anyoneRecordsAtTheEnd() public { _flow_anyoneRecordsAtTheEnd(); }
 }
 
 /// A smart wallet that accepts no signature (ERC-1271 always says no).

@@ -19,6 +19,8 @@ const ALLOWED = [
   ["POST", /^\/execute\/[a-z0-9/_-]{1,60}$/i],
 ];
 const MAX_BODY = 64 * 1024;
+// the only app fee a quote through sasa's key may carry: sasa's own (lib/config.ts SASA_TREASURY)
+const TREASURY = "0xe0ba5905940d748b23dc01266aa884e2391cca2f";
 
 const fail = (status, message) =>
   new Response(JSON.stringify({ message }), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -26,15 +28,21 @@ const fail = (status, message) =>
 export async function onRequest(ctx) {
   const { request, env } = ctx;
   const url = new URL(request.url);
-  // only sasa's own pages (a browser always sends Origin on POST; other sites' pages are refused)
-  const origin = request.headers.get("origin");
-  if (origin) {
-    let host = "";
+  // only sasa's own pages. A browser says where a call comes from (Sec-Fetch-Site, Origin or
+  // Referer); a call that says nothing (a script, curl) or comes from another site is refused.
+  const hostOf = (v) => {
     try {
-      host = new URL(origin).host;
-    } catch {}
-    if (host !== url.host) return fail(403, "Not allowed.");
-  }
+      return v ? new URL(v).host : "";
+    } catch {
+      return "";
+    }
+  };
+  const site = request.headers.get("sec-fetch-site");
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  if (site && site !== "same-origin") return fail(403, "Not allowed.");
+  if (origin && hostOf(origin) !== url.host) return fail(403, "Not allowed.");
+  if (!site && !origin && hostOf(referer) !== url.host) return fail(403, "Not allowed.");
   const path = url.pathname.replace(/^\/relay-proxy/, "") || "/";
   const method = request.method.toUpperCase();
   if (method === "OPTIONS") return new Response(null, { status: 204 });
@@ -53,6 +61,11 @@ export async function onRequest(ctx) {
       try {
         const j = JSON.parse(text);
         delete j.referrer;
+        // sasa's key carries sasa's fee only: no one else's fee can ride on it
+        if (j.appFees !== undefined) {
+          const ok = Array.isArray(j.appFees) && j.appFees.every((f) => String(f?.recipient ?? "").toLowerCase() === TREASURY);
+          if (!ok) return fail(400, "Bad request.");
+        }
         body = JSON.stringify(j);
       } catch {
         return fail(400, "Bad request.");

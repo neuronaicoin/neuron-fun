@@ -104,6 +104,7 @@ const v4KeyAbi = parseAbi([
 const builderRead = parseAbi([
   "function poolIdFor(address coin) view returns (bytes32)",
   "function poolAmounts(address coin) view returns (uint256 nativeAmount, uint256 coinAmount)",
+  "function raceEnd(address coin) view returns (uint256 money, uint256 coinsInPool, bool recorded, int24 tick)",
 ]);
 const racesEth = parseAbi([
   "function races(address coin) view returns (uint256 positionId, address seat, address creator, uint8 feeMode, uint64 launchedAt, uint8 state, uint32 winnerEid)",
@@ -601,7 +602,14 @@ async function liveRaceMoney(pool, chains, log) {
         if (!c) continue;
         try {
           await prepare(c);
-          const [nat] = await c.pub.readContract({ address: c.builder, abi: builderRead, functionName: "poolAmounts", args: [getAddress(row.coin)] });
+          // once the five minutes are over, the builder writes the result down before the next
+          // trade: show that, not the live pool (trades after the race don't count)
+          let nat = null;
+          try {
+            const [money, , recorded] = await c.pub.readContract({ address: c.builder, abi: builderRead, functionName: "raceEnd", args: [getAddress(row.coin)] });
+            if (recorded) nat = money;
+          } catch {} // builders from before the race-end record
+          if (nat === null) [nat] = await c.pub.readContract({ address: c.builder, abi: builderRead, functionName: "poolAmounts", args: [getAddress(row.coin)] });
           const natH = Number(formatUnits(nat, nativeDecimals(c)));
           const usd = natH * (await usdPerNative(c));
           await pool.query("update race_chains set pool_native = $3, pool_usd = $4, updated_at = now() where coin_id = $1 and chain_id = $2 and reported_usd is null", [

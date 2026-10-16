@@ -535,6 +535,30 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
     }
 
     /// USDC chain wins: the BNB pool is emptied once, its BNB swapped to USDC at a fair price.
+    /// Once the race is over, a big BNB buy on the losing BNB chain can't make it win: the BNB
+    /// in the pool when the five minutes ended is what counts (written down before that buy).
+    function test_lateBuyCantFlipRace() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        _buyBnb(coin, alice, 0.1 ether);
+        _buyUsd(bob, 500 * D);
+        vm.warp(block.timestamp + 301); // B leads
+        (uint256 bnbAtEnd, uint256 coinsAtEnd) = pb.poolAmounts(coin);
+        _buyBnb(coin, bob, 50 ether); // after the end
+        (uint256 liveBnb,) = pb.poolAmounts(coin);
+        assertGt(_usd(liveBnb), 500 * D, "the live pool would say A");
+        (uint256 m, uint256 c, bool rec,) = pb.raceEnd(coin);
+        assertTrue(rec);
+        assertEq(m, bnbAtEnd, "the BNB before the late buy");
+        assertEq(c, coinsAtEnd);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderPcs.State.Lost));
+        assertEq(uint8(_stateB(coinB)), uint8(RaceBuilder.State.Won));
+        // asking again (anyone may) changes nothing
+        PcsKey memory key = pb.poolKeyFor(coin);
+        vm.prank(alice);
+        assertTrue(pb.recordRaceEnd(key));
+    }
+
     function test_usdcChainWins() public {
         address coin = _launchBoth(5 * U, 5 * D, 0);
         _buyBnb(coin, alice, 0.1 ether);
@@ -641,13 +665,38 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         pb.convertLost(coin, 0);
     }
 
+    /// The losing chain's dollars arrive on the BNB chain as BNB buy orders. Pushing the price up
+    /// just before and selling into them afterwards must not pay.
+    function test_pumpBeforeArrivalGainsNothing() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        _buyBnb(coin, alice, 8 ether);
+        _buyUsd(bob, 2_000 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderPcs.State.Won));
+        uint256 b0 = bob.balance;
+        _buyBnb(coin, bob, 20 ether);
+        consB.forward(_coinId());
+        assertGt(pb.extraPositions(coin).length, 0, "the money was placed");
+        PcsKey memory k = pb.poolKeyFor(coin);
+        vm.startPrank(bob);
+        IERC20(coin).approve(address(desk), type(uint256).max);
+        desk.swap(k, false, IERC20(coin).balanceOf(bob));
+        vm.stopPrank();
+        assertLt(bob.balance, b0, "no profit from pushing the price");
+    }
+
     function test_buybackModeBnb() public {
         address coin = _launchBoth(5 * U, 5 * D, 1);
         _buyBnb(coin, alice, 1 ether);
         pb.collectFees(coin);
         assertGt(pb.buybackFunds(coin), 0);
         uint256 s0 = IERC20(coin).totalSupply();
-        (uint256 spent, uint256 burned) = pb.buyback(coin);
+        vm.prank(alice);
+        vm.expectRevert(RaceBuilderPcs.NotKeeper.selector);
+        pb.buyback(coin, 1);
+        vm.prank(keeper);
+        (uint256 spent, uint256 burned) = pb.buyback(coin, 1);
         assertGt(spent, 0);
         assertGt(burned, 0);
         assertEq(IERC20(coin).totalSupply(), s0 - burned);

@@ -21,7 +21,8 @@
 //   DRY_RUN       "true": decide and log, send nothing
 //   LZ_FEE_WEI    native sent per LayerZero message; the unused part is refunded (default 0.0003 ETH)
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readState, writeState } from "./statefile.mjs";
 import { alert } from "./alert.mjs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
@@ -166,7 +167,7 @@ async function main() {
       await alert("keeper", `gas-${c.chainId}`, `keeper wallet ${account.address} is low on ETH on chain ${c.chainId} (${Number(bal) / 1e18} ETH). Top it up.`);
     }
   }
-  const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
+  const state = readState(STATE_FILE, log);
 
   // Discover launches (each chain lists the coins launched there). Progress is kept per
   // chunk, so a long gap is caught up over a few runs.
@@ -307,7 +308,7 @@ async function main() {
     }
   }
 
-  if (!DRY) writeFileSync(STATE_FILE, JSON.stringify(state, null, 1));
+  if (!DRY) writeState(STATE_FILE, state);
   log("pass done");
 }
 

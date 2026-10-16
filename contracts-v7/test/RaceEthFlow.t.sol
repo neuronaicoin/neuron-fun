@@ -334,9 +334,14 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         (,,,,, st,) = ub.races(coin);
     }
 
+    /// ETH in chain A's dollars at the builder's Chainlink price (the builder's own maths, which is internal)
+    function _ethUsdc(uint256 wei_) internal view returns (uint256) {
+        return (wei_ * eb.ethPrice() * 10 ** uint256(eb.usdcDecimals())) / 10 ** (18 + uint256(feed.decimals()));
+    }
+
     /// ETH in 6-decimal dollars at the Chainlink price
     function _usd(uint256 wei_) internal view returns (uint256) {
-        return eb.ethToUsdc(wei_);
+        return _ethUsdc(wei_);
     }
 
     // ------------------------------------------------------------------ tests
@@ -377,9 +382,9 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Won));
         assertEq(uint8(_stateB(coinB)), uint8(RaceBuilder.State.Lost));
         assertGt(consB.pendingPool(_coinId()), 0);
-        uint256 extra0 = eb.extraPositions(coin).length;
+        uint256 extra0 = eb.extraPositionCount(coin);
         consB.forward(_coinId());
-        assertEq(eb.extraPositions(coin).length, extra0 + 1, "ETH pool got deeper");
+        assertEq(eb.extraPositionCount(coin), extra0 + 1, "ETH pool got deeper");
         assertEq(eb.pendingDollars(coin), 0);
         assertEq(usdcA.balanceOf(address(eb)), 0, "all arriving USDC became ETH");
         assertGt(_buyEth(coin, bob, 0.01 ether), 0);
@@ -410,6 +415,53 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(ub.extraPositions(coinB).length, 1);
     }
 
+    /// Once the race is over, a big ETH buy on the losing ETH chain can't make it win: the ETH
+    /// in the pool when the five minutes ended is what counts (written down before that buy).
+    function test_lateBuyCantFlipRace() public {
+        address coin = _launchBoth(5 * D, 5 * D, 0);
+        _buyEth(coin, alice, 0.02 ether);
+        _buyUsd(coin, bob, 500 * D);
+        vm.warp(block.timestamp + 301); // B leads
+        (uint256 ethAtEnd, uint256 coinsAtEnd) = eb.poolAmounts(coin);
+        _buyEth(coin, bob, 5 ether); // after the end: would be ~$12,500 more on A
+        (uint256 liveEth,) = eb.poolAmounts(coin);
+        assertGt(_usd(liveEth), 500 * D, "the live pool would say A");
+        (uint256 m, uint256 c, bool rec,) = eb.raceEnd(coin);
+        assertTrue(rec);
+        assertEq(m, ethAtEnd, "the ETH before the late buy");
+        assertEq(c, coinsAtEnd);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Lost));
+        assertEq(uint8(_stateB(coinB)), uint8(RaceBuilder.State.Won));
+        // asking again (anyone may) changes nothing
+        PoolKey memory key = eb.poolKeyFor(coin);
+        vm.prank(alice);
+        assertTrue(eb.recordRaceEnd(key));
+    }
+
+    /// The losing chain's dollars arrive on the ETH chain as ETH buy orders. Pushing the price up
+    /// just before and selling into them afterwards must not pay (never placed above the price
+    /// the race ended at).
+    function test_pumpBeforeArrivalGainsNothing() public {
+        address coin = _launchBoth(5 * D, 5 * D, 0);
+        _buyEth(coin, alice, 2 ether); // about $5,000
+        _buyUsd(coin, bob, 3_000 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Won));
+        uint256 b0 = bob.balance;
+        _buyEth(coin, bob, 6 ether);
+        uint256 extra0 = eb.extraPositionCount(coin);
+        consB.forward(_coinId());
+        assertEq(eb.extraPositionCount(coin), extra0 + 1, "the money was placed");
+        PoolKey memory k = eb.poolKeyFor(coin);
+        vm.startPrank(bob);
+        IERC20(coin).approve(address(desk), type(uint256).max);
+        desk.swap(k, false, IERC20(coin).balanceOf(bob));
+        vm.stopPrank();
+        assertLt(bob.balance, b0, "no profit from pushing the price");
+    }
+
     /// The race is judged with Chainlink, never the pool price: a stale feed stops the report.
     function test_staleFeedStopsReport() public {
         _launchBoth(5 * D, 5 * D, 0);
@@ -429,13 +481,13 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         uint256 ethGot = _ethDear();
         consB.forward(_coinId());
         assertGt(eb.pendingDollars(coin), 0, "USDC waits instead of a bad swap");
-        assertEq(eb.extraPositions(coin).length, 0);
+        assertEq(eb.extraPositionCount(coin), 0);
         // the market comes back; anyone completes the arrival
         vm.prank(bob);
         desk.swap{value: ethGot}(dollarKey, true, ethGot);
         eb.convertPending(coin);
         assertEq(eb.pendingDollars(coin), 0);
-        assertEq(eb.extraPositions(coin).length, 1);
+        assertEq(eb.extraPositionCount(coin), 1);
     }
 
     /// A losing hand-over at an unfair ETH price waits (the verdict still goes through);
@@ -498,7 +550,11 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         eb.collectFees(coin);
         assertGt(eb.buybackFunds(coin), 0);
         uint256 s0 = IERC20(coin).totalSupply();
-        (uint256 spent, uint256 burned) = eb.buyback(coin);
+        vm.prank(alice);
+        vm.expectRevert(RaceBuilderEth.NotKeeper.selector);
+        eb.buyback(coin, 1);
+        vm.prank(keeper);
+        (uint256 spent, uint256 burned) = eb.buyback(coin, 1);
         assertGt(spent, 0);
         assertGt(burned, 0);
         assertEq(IERC20(coin).totalSupply(), s0 - burned);

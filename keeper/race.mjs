@@ -34,7 +34,8 @@
 //   LOOP_SECONDS   run forever, one pass every N seconds (default: one pass, then exit)
 //   COLLECT_MINUTES / IDLE_COLLECT_HOURS   fee collection pace on the winner (default 30 / 24)
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readState, writeState } from "./statefile.mjs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, fallback, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -92,12 +93,13 @@ const builderAbi = parseAbi([
   "function buybackFunds(address coin) view returns (uint256)",
   "function collectFees(address coin) returns (uint256, uint256)",
   "function poolAmounts(address coin) view returns (uint256, uint256)",
-  "function buyback(address coin) returns (uint256 spent, uint256 burned)",
+  "function buyback(address coin, uint256 minCoinsOut) returns (uint256 spent, uint256 burned)",
   "function pendingDollars(address coin) view returns (uint256)",
   "function convertPending(address coin)",
   "function lostPending(address coin) view returns (uint256)",
   "function convertLost(address coin, uint256 amount) returns (uint256)",
 ]);
+const oldBuybackAbi = parseAbi(["function buyback(address coin) returns (uint256 spent, uint256 burned)"]);
 // RaceBuilderPcs keeps no positionId: its races() has a different shape
 const builderPcsAbi = parseAbi([
   "function races(address coin) view returns (address seat, address creator, uint8 feeMode, uint64 launchedAt, uint8 state, uint32 winnerEid, int24 launchLower, int24 launchUpper)",
@@ -186,25 +188,63 @@ async function send(c, what, params, bump) {
   if (DRY) return true;
   try {
     let sim;
-    try {
-      sim = await c.pub.simulateContract({ account, ...params });
-    } catch (e) {
-      const d = e?.cause?.data ?? e?.data;
-      if (d?.errorName !== "LZ_InsufficientFee" || params.value === undefined) throw e;
-      const required = BigInt(d.args[0]);
-      const retry = bump ? bump(required) : { ...params, value: (required * 12n) / 10n };
-      log(`   LayerZero fee: sent ${params.value}, needs ${required}; retrying with ${retry.value}`);
-      params = retry;
-      sim = await c.pub.simulateContract({ account, ...params });
+    // a message to several chains (finalize) can need a higher fee for each one in turn: ask
+    // again until the fee covers them all (a few tries at most)
+    for (let tries = 0; ; tries++) {
+      try {
+        sim = await c.pub.simulateContract({ account, ...params });
+        break;
+      } catch (e) {
+        const d = e?.cause?.data ?? e?.data;
+        if (d?.errorName !== "LZ_InsufficientFee" || params.value === undefined || tries >= 4) throw e;
+        const required = BigInt(d.args[0]);
+        const retry = bump ? bump(required) : { ...params, value: (required * 12n) / 10n };
+        if (retry.value <= params.value) throw e; // never loops on the same fee
+        log(`   LayerZero fee: sent ${params.value}, needs ${required}; retrying with ${retry.value}`);
+        params = retry;
+      }
     }
-    const hash = await c.wallet.writeContract(sim.request);
-    const r = await c.pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
-    if (r.status !== "success") throw new Error(`reverted ${hash}`);
-    log(`   ok ${hash}`);
+    const r = await sendAndWait(c, sim.request);
+    if (r.status !== "success") throw new Error(`reverted ${r.transactionHash}`);
+    log(`   ok ${r.transactionHash}`);
     return true;
   } catch (e) {
     log(`   failed: ${e.shortMessage || e.message}`);
+    if (/still not mined/.test(e.message || "")) await alert("race keeper", `stuck-tx-${c.chainId}`, `A keeper transaction on chain ${c.chainId} is stuck: ${e.message}`);
     return false;
+  }
+}
+
+/**
+ * Sends a transaction and waits for it. One that isn't mined after 90 seconds (fees jumped)
+ * is replaced: the same nonce again with 30% higher fees, up to three times, so it can never
+ * hold up every transaction after it. Whichever of them is mined, its receipt is returned.
+ */
+export async function sendAndWait(c, request) {
+  const hashes = [await c.wallet.writeContract(request)];
+  for (let round = 0; ; round++) {
+    try {
+      return await c.pub.waitForTransactionReceipt({ hash: hashes[hashes.length - 1], timeout: 90_000 });
+    } catch (e) {
+      if (!/timed? ?out|Timeout/i.test(`${e?.name} ${e?.message}`)) throw e;
+    }
+    // an earlier one may have been mined meanwhile
+    for (const h of hashes) {
+      const done = await c.pub.getTransactionReceipt({ hash: h }).catch(() => null);
+      if (done) return done;
+    }
+    if (round >= 3) throw new Error(`still not mined after ${hashes.length} tries (${hashes.join(", ")})`);
+    const tx = await c.pub.getTransaction({ hash: hashes[hashes.length - 1] }).catch(() => null);
+    if (!tx) continue; // not visible right now: wait once more
+    const up = (v) => (v == null ? undefined : (v * 13n) / 10n + 1n); // a 0 tip goes up to 1 wei, never left to guess
+    const fees = tx.maxFeePerGas ? { maxFeePerGas: up(tx.maxFeePerGas), maxPriorityFeePerGas: up(tx.maxPriorityFeePerGas) } : { gasPrice: up(tx.gasPrice) };
+    try {
+      hashes.push(await c.wallet.writeContract({ ...request, nonce: tx.nonce, ...fees }));
+      log(`   not mined after 90s: sent again with higher fees ${hashes[hashes.length - 1]}`);
+    } catch (e) {
+      // "nonce too low": one of them was mined just now (found on the next look)
+      log(`   replacing the slow transaction failed (${e.shortMessage || e.message}); waiting on`);
+    }
   }
 }
 
@@ -307,7 +347,7 @@ async function main() {
       log(`${c.chainId}: test feed check failed: ${e.shortMessage || e.message}`);
     }
   }
-  const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : { cursor: {}, coins: {} };
+  const state = readState(STATE_FILE, log);
 
   // Discover launches (each chain lists the coins launched there).
   // One chain's RPC being down or rate-limited must not stop the others: skip it this pass.
@@ -354,7 +394,7 @@ async function main() {
       log(`${coin.name} (${id.slice(0, 10)}): skipped this pass: ${e.shortMessage || e.message}`);
     }
   }
-  if (!DRY) writeFileSync(STATE_FILE, JSON.stringify(state, null, 1));
+  if (!DRY) writeState(STATE_FILE, state);
   log("pass done");
 
   // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.
@@ -394,8 +434,28 @@ async function main() {
           if (!DRY) coin.lastBuyback ??= Date.now() - IDLE_COLLECT_MS / 2; // a first small amount waits half a day at most
           const sinceBb = Date.now() - (coin.lastBuyback ?? 0);
           if ((usd !== null && usd >= MIN_COLLECT_USD) || sinceBb > IDLE_COLLECT_MS) {
-            const ok = await send(win, `buyback ${coin.name} (${bb} waiting)`, { address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin] });
-            if (ok && !DRY) coin.lastBuyback = Date.now();
+            // the contract takes a minimum: what a dry run gives now, less 2% (nobody can push the
+            // price up around the buyback and sell into it)
+            let min = null;
+            let old = false;
+            try {
+              const { result } = await win.pub.simulateContract({ account, address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin, 1n] });
+              min = (result[1] * 98n) / 100n;
+            } catch (e) {
+              // builders deployed before the keeper-only buyback (the testnet's) have buyback(coin)
+              old = await win.pub
+                .simulateContract({ account, address: win.builder, abi: oldBuybackAbi, functionName: "buyback", args: [coin.coin] })
+                .then(() => true)
+                .catch(() => false);
+              if (!old) log(`${win.chainId}: buyback dry run for ${coin.name} failed (${e.shortMessage || e.message})`);
+            }
+            if ((min !== null && min > 0n) || old) {
+              const params = old
+                ? { address: win.builder, abi: oldBuybackAbi, functionName: "buyback", args: [coin.coin] }
+                : { address: win.builder, abi: builderAbi, functionName: "buyback", args: [coin.coin, min] };
+              const ok = await send(win, `buyback ${coin.name} (${bb} waiting)`, params);
+              if (ok && !DRY) coin.lastBuyback = Date.now();
+            }
           }
         }
       }
@@ -485,7 +545,12 @@ async function main() {
       const open = await r.c.pub.readContract({ address: coin.coin, abi: coinAbi, functionName: "bridgeOpen" });
       if (!open) { allMoved = false; continue; }
       const latest = await r.c.pub.getBlockNumber();
-      const { logs } = await scan(r.c.pub, { address: coin.coin, event: transferEvt }, BigInt(coin.chains[r.e].block), latest);
+      // from where the last complete pass got to (holders found before were moved then; a new
+      // transfer to any of them shows up again in the new blocks)
+      const from = BigInt(coin.chains[r.e].moveFrom ?? coin.chains[r.e].block);
+      const { logs, next } = await scan(r.c.pub, { address: coin.coin, event: transferEvt }, from, latest);
+      let passOk = true;
+      if (next <= latest) allMoved = false; // the scan stopped early (time budget): not finished yet
       const seen = [...new Set(logs.map((l) => l.args.to).filter((a) => a && a !== zeroAddress))];
       const movable = [];
       for (const h of seen) {
@@ -500,8 +565,13 @@ async function main() {
         const gas = 120_000 + 45_000 * batch.length;
         const mv = (v) => ({ address: coin.coin, abi: coinAbi, functionName: "moveBatch", args: [batch, lzOptions(gas)], value: v });
         const ok = await send(r.c, `move ${batch.length} holders of ${coin.name} to ${winnerEid}`, mv(lzFee(r.c) * 2n), (req) => mv((req * 12n) / 10n));
-        if (!ok) allMoved = false;
+        if (!ok) {
+          allMoved = false;
+          passOk = false;
+        }
       }
+      // every holder found so far was moved: the next pass starts where this scan ended
+      if (passOk && !DRY) coin.chains[r.e].moveFrom = next.toString();
     }
 
     // A coin is finished once every losing chain handed over and nothing is left to move.

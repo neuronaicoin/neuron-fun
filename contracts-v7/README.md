@@ -10,10 +10,16 @@ cross to the winner and deepen its pool (dollars only: no coin is ever minted fo
 holders' coins on losing chains move to the winner automatically (v6 coin). Then the winning
 pool's liquidity is locked forever.
 
+The race result is the money in each pool when its five minutes end. The pool hook makes the
+builder write it down before the first swap after that moment (and the report writes it if
+nothing traded since), so trades after the race can't change who wins. Arriving dollars are never
+placed above the coin's price at the race end, and buybacks are run by sasa's keeper only, with
+a minimum, so neither can be squeezed by pushing the price around them.
+
 
 ## Layout
 - `src/race/`: the new v7 contracts
-  - `RaceLaunchHook`: pool hook (launch fee 10% → 2% over 2 min, builder-only pool creation, closed pools)
+  - `RaceLaunchHook`: pool hook (launch fee 10% → 2% over 2 min, builder-only pool creation, closed pools, race-end record)
   - `RaceBuilder`: USDC pools (Arc): opens pools, first buy, race report, losing-chain hand-over, winning-chain deepening, fees 70/30, buyback
   - `RaceBuilderEth` + `RaceTradeEth`: the same for coin/ETH pools on Uniswap v4 (Base, Robinhood Chain), Chainlink ETH/USD
   - `RaceBuilderPcs` + `RaceLaunchHookPcs` + `RaceTradePcs`: the same for coin/BNB pools on PancakeSwap Infinity (BNB Chain), Chainlink BNB/USD

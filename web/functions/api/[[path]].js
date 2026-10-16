@@ -3,7 +3,7 @@
  *
  * Who is who: the site asks the wallet to sign a short message once (free,
  * no transaction). We check the signature and hand back a session token
- * (HMAC, 30 days). Every other call carries that token.
+ * (HMAC, 7 days). Every other call carries that token.
  *
  * Env (Cloudflare Pages → Settings → Variables and secrets, Production):
  *   SUPABASE_SERVICE_KEY  Supabase secret key (the same one Railway uses)   [secret]
@@ -42,7 +42,7 @@ import { whalesRoute } from "../../edge/whales-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
-const SESSION_DAYS = 30;
+const SESSION_DAYS = 7; // a stolen token stops working within a week
 const MAX_ALERTS = 50;
 const COIN_ID = /^0x[0-9a-f]{40}:0x[0-9a-f]{64}$/;
 const KINDS = new Set(["mc", "price", "move", "bond", "grad"]);

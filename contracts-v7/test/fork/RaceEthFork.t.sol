@@ -110,9 +110,9 @@ contract RaceEthForkTest is EthRaceBase {
         minterA.mint(bob, 5_000 * D);
         vm.prank(bob);
         uint256 ethGot = desk.swap(dollarKey, false, 5_000 * D);
-        assertGe(eb.ethToUsdc(ethGot), (5_000 * D * 99) / 100, "USDC -> ETH");
+        assertGe(_ethUsdc(ethGot), (5_000 * D * 99) / 100, "USDC -> ETH");
         vm.prank(bob);
         uint256 usdcGot = desk.swap{value: ethGot}(dollarKey, true, ethGot);
-        assertGe(usdcGot, (eb.ethToUsdc(ethGot) * 99) / 100, "ETH -> USDC");
+        assertGe(usdcGot, (_ethUsdc(ethGot) * 99) / 100, "ETH -> USDC");
     }
 }

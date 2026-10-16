@@ -340,8 +340,22 @@ export async function runOrder(o, ctx) {
   let out;
   let gas;
   try {
-    const sim = await c.pub.simulateContract(params);
+    let sim = await c.pub.simulateContract(params);
     out = sim.result;
+    if (o.coin_kind === "race" && order.mode !== MODE_BUY_CROSS) {
+      // sasa's router gets its own minimum too: what the dry run gave, less 2%. Then nobody can
+      // push the price between this check and the trade and take the difference down to the
+      // user's own minimum (the user still never gets less than what they signed).
+      const routerOut = buying ? out : (out * 10_000n) / (10_000n - FEE_BPS); // a sale's fee comes off after the router
+      const routerMin = (routerOut * 98n) / 100n;
+      route = {
+        ...route,
+        data: encodeFunctionData({ abi: routerAbi, functionName: buying ? "buy" : "sell", args: [order[buying ? "tokenOut" : "tokenIn"], swapIn, routerMin, c.autoOrders, deadline] }),
+      };
+      params.args = [order, o.signature, route];
+      sim = await c.pub.simulateContract(params);
+      out = sim.result;
+    }
     gas = await c.pub.estimateGas({ account, to: c.autoOrders, data: encodeFunctionData({ abi: autoAbi, functionName: "execute", args: [order, o.signature, route] }) });
   } catch (e) {
     const n = errName(e);

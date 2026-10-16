@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -180,10 +181,12 @@ contract AutoOrders is Ownable, ReentrancyGuard, EIP712 {
             uint256 bal = IERC20(o.tokenIn).balanceOf(o.user);
             if (bal < take) {
                 if (bal == 0) revert BadOrder();
-                minOut = (o.minOut * bal) / take;
+                minOut = Math.ceilDiv(o.minOut * bal, take); // rounded up: never below the signed rate
                 take = bal;
             }
         }
+        // every order names a real minimum (a zero minimum would let any route through)
+        if (minOut == 0) revert BadOrder();
         // a token that charges on transfer gives less: use what came
         uint256 inBefore = IERC20(o.tokenIn).balanceOf(address(this));
         IERC20(o.tokenIn).safeTransferFrom(o.user, address(this), take);

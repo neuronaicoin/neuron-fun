@@ -28,6 +28,10 @@ import {PositionInfo, PositionInfoLibrary} from "@uniswap/v4-periphery/src/libra
 
 import {RaceLaunchHook} from "./RaceLaunchHook.sol";
 
+interface IRaceHubKeeperEth {
+    function keeper() external view returns (address);
+}
+
 interface IRaceFactoryHubEth {
     function hub() external view returns (address);
 }
@@ -94,6 +98,14 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         Lost
     }
 
+    /// @notice The race result written down at the end of the five minutes (see recordRaceEnd).
+    struct RaceEnd {
+        uint256 money; // ETH in the launch position when the race ended
+        uint256 coinsInPool; // coins in the launch position when the race ended
+        bool recorded;
+        int24 tick; // the pool's price when the race ended: arriving money is never placed above it
+    }
+
     struct Race {
         uint256 positionId;
         address seat;
@@ -136,6 +148,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     mapping(bytes32 coinId => address coin) public coinOf;
     mapping(address coin => uint256[]) internal _extraPositions;
     mapping(address coin => uint256) public buybackFunds; // in ETH
+    mapping(address coin => RaceEnd) public raceEnd;
     mapping(address coin => uint256) public pendingDollars; // arrived USDC waiting to be swapped to ETH
     mapping(address who => uint256) public heldFor; // ETH that could not be paid out
     mapping(address coin => uint256) public lostPending; // ETH of a losing pool waiting to be handed over
@@ -176,6 +189,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     error NotOurSwap();
     error NotSelf();
     error Slippage(uint256 got, uint256 minimum);
+    error NotKeeper();
 
     constructor(
         IPoolManager poolManager_,
@@ -243,7 +257,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         return PoolKey({currency0: dollar0, currency1: dollar1, fee: dollarFee, tickSpacing: dollarSpacing, hooks: IHooks(address(0))});
     }
 
-    function hub() external view returns (address) {
+    function hub() public view returns (address) {
         return factory == address(0) ? address(0) : IRaceFactoryHubEth(factory).hub();
     }
 
@@ -253,8 +267,10 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         return (0, r.creator);
     }
 
-    function extraPositions(address coin) external view returns (uint256[] memory) {
-        return _extraPositions[coin];
+    /// @notice How many dollars-only positions the coin's pool got (each one: a Deepened event
+    /// with its position id; the builder owns them in the PositionManager). Kept small for size.
+    function extraPositionCount(address coin) external view returns (uint256) {
+        return _extraPositions[coin].length;
     }
 
     /// @notice ETH and coins in the coin's launch position right now (fees excluded).
@@ -278,12 +294,12 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @notice `weiAmount` of ETH in this chain's USDC units.
-    function ethToUsdc(uint256 weiAmount) public view returns (uint256) {
+    function _ethToUsdc(uint256 weiAmount) internal view returns (uint256) {
         return Math.mulDiv(weiAmount, ethPrice() * 10 ** usdcDecimals, 10 ** (18 + uint256(feedDecimals)));
     }
 
     /// @notice `usdcAmount` (this chain's USDC units) in ETH.
-    function usdcToEth(uint256 usdcAmount) public view returns (uint256) {
+    function _usdcToEth(uint256 usdcAmount) internal view returns (uint256) {
         return Math.mulDiv(usdcAmount, 10 ** (18 + uint256(feedDecimals)), ethPrice() * 10 ** usdcDecimals);
     }
 
@@ -344,7 +360,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         if (usdcAmount == 0) revert NothingToDo();
         if (usdc.balanceOf(address(this)) < dollarsReserved + usdcAmount) revert NotDelivered();
         // the USDC -> ETH leg must get a fair price too (at least 98% of Chainlink)
-        uint256 minEth = (usdcToEth(usdcAmount) * (BPS - MAX_SLIP_BPS)) / BPS;
+        uint256 minEth = (_usdcToEth(usdcAmount) * (BPS - MAX_SLIP_BPS)) / BPS;
         coinsOut = _swap(Op.BuyWithUsdc, coin, usdcAmount, minEth, to);
         if (coinsOut < minCoinsOut) revert Slippage(coinsOut, minCoinsOut);
     }
@@ -356,13 +372,44 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         _;
     }
 
-    /// @notice Race report: the ETH in this chain's pool once the race is over, in 6-decimal
+    /**
+     * @notice Called by the hook before the first swap after the five minutes: writes down
+     * the ETH (and coins) in the pool as the race ended, before that swap moves anything.
+     * Returns true once written (or when the race is decided), false while it is still on.
+     * Never reverts for a race pool: a revert here would stop the swap. Anyone may call it too
+     * (sasa's keeper does, right at the end, so no trader's swap pays for writing it): until it
+     * is written, every swap writes it first, so the pool is still exactly as the race ended.
+     * The key only names the coin; the builder reads its own pool. (The dollar value is
+     * worked out at report time with Chainlink, as before.)
+     */
+    function recordRaceEnd(PoolKey calldata key) external returns (bool) {
+        address coin = Currency.unwrap(key.currency1); // ETH is always currency0
+        Race storage r = races[coin];
+        RaceEnd storage e = raceEnd[coin];
+        if (r.state != State.Racing || e.recorded) return true;
+        if (!raceOver(coin)) return false;
+        _writeRaceEnd(coin);
+        return true;
+    }
+
+    function _writeRaceEnd(address coin) private {
+        RaceEnd storage e = raceEnd[coin];
+        (uint160 sqrtP, int24 tick,,) = poolManager.getSlot0(poolKeyFor(coin).toId());
+        (e.money, e.coinsInPool) = _amountsIn(races[coin].positionId, sqrtP);
+        e.tick = tick;
+        e.recorded = true;
+    }
+
+    /// @notice Race report: the ETH in this chain's pool when the five minutes ended (written
+    /// down before any later swap), in 6-decimal
     /// dollars at the Chainlink price (the same unit on every chain of the race).
     function report(address coin) external onlySeat(coin) returns (uint256 money, uint256 coinsOutside) {
         Race storage r = races[coin];
         if (r.state != State.Racing) revert RaceDone();
         if (!raceOver(coin)) revert RaceNotOver();
-        (uint256 eth, uint256 inPool) = poolAmounts(coin);
+        RaceEnd storage e = raceEnd[coin];
+        if (!e.recorded) _writeRaceEnd(coin); // no swap since the end: the pool is still as it ended
+        (uint256 eth, uint256 inPool) = (e.money, e.coinsInPool);
         money = Math.mulDiv(eth, ethPrice() * 10 ** REPORT_DECIMALS, 10 ** (18 + uint256(feedDecimals)));
         uint256 supply = IERC20(coin).totalSupply();
         coinsOutside = supply > inPool ? supply - inPool : 0;
@@ -443,7 +490,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     function _handOver(address coin, uint256 amount) private returns (uint256 handed) {
         lostPending[coin] -= amount;
         ethReserved -= amount;
-        uint256 minUsdc = (ethToUsdc(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
+        uint256 minUsdc = (_ethToUsdc(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 usdcOut = _swap(Op.EthToUsdc, coin, amount, minUsdc, address(this));
         uint256 gradFee = (usdcOut * GRAD_FEE_BPS) / BPS;
         if (gradFee > 0) usdc.safeTransfer(treasury, gradFee);
@@ -496,7 +543,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         if (msg.sender != address(this)) revert NotSelf();
         pendingDollars[coin] -= amount;
         dollarsReserved -= amount;
-        uint256 minEth = (usdcToEth(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
+        uint256 minEth = (_usdcToEth(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 eth = _swap(Op.UsdcToEth, coin, amount, minEth, address(this));
         if (toBuyback || !_deepen(coin, eth)) {
             buybackFunds[coin] += eth;
@@ -509,6 +556,10 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         PoolKey memory key = poolKeyFor(coin);
         (, int24 tick,,) = poolManager.getSlot0(key.toId());
         // ETH is currency0: a range entirely above the current tick holds only currency0
+        // never placed above the coin's price when the race ended (the coin's price falls as the
+        // tick rises): pushing the price up just before the money arrives then gains nothing
+        RaceEnd storage e = raceEnd[coin];
+        if (e.recorded && e.tick > tick) tick = e.tick;
         int24 lower = _tickFloor(tick) + TICK_SPACING;
         int24 upper = TickMath.maxUsableTick(TICK_SPACING);
         if (lower >= upper) return false;
@@ -527,7 +578,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         return true;
     }
 
-    // ------------------------------------------------------------------ fees and buybacks (anyone)
+    // ------------------------------------------------------------------ fees (anyone) and buybacks (keeper)
 
     function collectFees(address coin) external nonReentrant returns (uint256 ethFees, uint256 coinFees) {
         Race storage r = races[coin];
@@ -577,7 +628,10 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @notice Spends up to BUYBACK_CHUNK of `coin`'s buyback ETH on the coin and burns it.
-    function buyback(address coin) external nonReentrant returns (uint256 spent, uint256 burned) {
+    /// @notice One buyback chunk. Only sasa's keeper (the hub's keeper), with a minimum it worked
+    /// out just before: nobody can push the price up around a buyback and sell into it.
+    function buyback(address coin, uint256 minCoinsOut) external nonReentrant returns (uint256 spent, uint256 burned) {
+        if (msg.sender != IRaceHubKeeperEth(hub()).keeper()) revert NotKeeper(); // no hub yet: the call itself fails
         Race storage r = races[coin];
         if (r.state != State.Won && r.state != State.Racing) revert NotOpen();
         spent = Math.min(buybackFunds[coin], BUYBACK_CHUNK);
@@ -585,6 +639,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         buybackFunds[coin] -= spent;
         ethReserved -= spent;
         burned = _swap(Op.BuyWithEth, coin, spent, 0, address(this));
+        if (burned < minCoinsOut) revert Slippage(burned, minCoinsOut);
         if (burned > 0) IRaceCoinEth(coin).burn(burned);
         emit BuybackDone(coin, spent, burned);
     }

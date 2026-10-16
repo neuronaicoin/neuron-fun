@@ -70,6 +70,10 @@ const codeOf = (e) => {
 const IDEAS_PER_DAY = 10;
 const LOGOS_PER_DAY = 40;
 const COINS_PER_DAY = 10;
+// New wallets are free to make, so the allowance is also counted per network address (3 accounts'
+// worth) and for everyone together, so no one can use up the whole day's AI for the site.
+const PER_IP = 3;
+const EVERYONE_PER_DAY = { ideas: 400, coin: 300, logo: 600 };
 
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 const fail = (status, error) => json({ error }, status);
@@ -88,6 +92,29 @@ async function take(env, me, kind, limit) {
     throw e;
   }
 }
+
+/** An IPv6 address's /64 network, written out in full ("2001:db8::1" → "2001:0db8:0000:0000::/64"). */
+export function net64(ip) {
+  const [head, tail = ""] = ip.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const all = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return all.slice(0, 4).map((g) => g.padStart(4, "0").toLowerCase()).join(":") + "::/64";
+}
+
+/** null when this use is allowed (and counted); otherwise who ran out: "you", "network" or "everyone". */
+async function allowance(ctx, me, kind, perAccount) {
+  const env = ctx.env;
+  if (!(await take(env, me, kind, perAccount))) return "you";
+  // IPv6: one home or server gets a whole /64, so the first four groups count as one network
+  let ip = String(ctx.request.headers.get("cf-connecting-ip") || "").slice(0, 64);
+  if (ip.includes(":")) ip = net64(ip);
+  if (ip && !(await take(env, `ip:${ip}`, kind, perAccount * PER_IP))) return "network";
+  if (!(await take(env, "everyone", kind, EVERYONE_PER_DAY[kind]))) return "everyone";
+  return null;
+}
+const usedUp = (who, mine) =>
+  fail(429, who === "you" ? mine : who === "network" ? "That's all the AI for this network today. Fill in the form below instead." : "The AI helper is busy for today. Fill in the form below instead.");
 
 function clean(s, max) {
   return String(s ?? "")
@@ -209,7 +236,8 @@ export async function aiRoute(ctx, me, parts, method, body) {
     const idea = clean(body.idea, 200);
     if (idea.length < 3) return fail(400, "Write a few words about your coin first.");
     if (BLOCK.test(idea)) return fail(400, "Let's keep it friendly. Try another idea.");
-    if (!(await take(env, me, "ideas", IDEAS_PER_DAY))) return fail(429, `That's your ${IDEAS_PER_DAY} AI ideas for today. Come back tomorrow, or fill in the form below.`);
+    const no = await allowance(ctx, me, "ideas", IDEAS_PER_DAY);
+    if (no) return usedUp(no, `That's your ${IDEAS_PER_DAY} AI ideas for today. Come back tomorrow, or fill in the form below.`);
 
     const ideas = await makeIdeas(env, idea, 3);
     if (ideas.error) return ideas.error;
@@ -220,7 +248,8 @@ export async function aiRoute(ctx, me, parts, method, body) {
     const idea = clean(body.idea, 200);
     if (idea.length < 3) return fail(400, "Write a few words about your coin first.");
     if (BLOCK.test(idea)) return fail(400, "Let's keep it friendly. Try another idea.");
-    if (!(await take(env, me, "coin", COINS_PER_DAY))) return fail(429, `That's your ${COINS_PER_DAY} AI coins for today. Come back tomorrow, or fill in the form yourself.`);
+    const no = await allowance(ctx, me, "coin", COINS_PER_DAY);
+    if (no) return usedUp(no, `That's your ${COINS_PER_DAY} AI coins for today. Come back tomorrow, or fill in the form yourself.`);
     const ideas = await makeIdeas(env, idea, 1);
     if (ideas.error) return ideas.error;
     const pick = ideas.list[0];
@@ -232,7 +261,8 @@ export async function aiRoute(ctx, me, parts, method, body) {
   if (parts[1] === "logo") {
     const art = clean(body.art, 240);
     if (art.length < 3 || BLOCK.test(art)) return fail(400, "Can't draw that one.");
-    if (!(await take(env, me, "logo", LOGOS_PER_DAY))) return fail(429, "That's all the AI pictures for today. Upload your own below.");
+    const no = await allowance(ctx, me, "logo", LOGOS_PER_DAY);
+    if (no) return usedUp(no, "That's all the AI pictures for today. Upload your own below.");
     const drawn = await drawLogo(env, art);
     if (!drawn.image) return fail(503, drawn.message);
     const image = drawn.image;

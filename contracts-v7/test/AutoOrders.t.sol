@@ -162,6 +162,16 @@ contract AutoOrdersTest is Test {
         ao.execute(late, lateSig, _sellRoute(11e6));
     }
 
+    /// An order with no minimum is never run (it would let any route through).
+    function test_zeroMinimumRefused() public {
+        AutoOrders.Order memory o = _order(address(coin), address(usd), 10e6, 0, 0);
+        bytes memory sig = _sign(o, pk);
+        vm.prank(keeper);
+        vm.expectRevert(AutoOrders.BadOrder.selector);
+        ao.execute(o, sig, _sellRoute(10e6));
+        assertFalse(ao.used(user, o.nonce));
+    }
+
     function test_cancel() public {
         AutoOrders.Order memory o = _order(address(coin), address(usd), 10e6, 1, 0);
         bytes memory sig = _sign(o, pk);
