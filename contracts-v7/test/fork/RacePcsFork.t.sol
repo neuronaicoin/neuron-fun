@@ -86,6 +86,25 @@ contract RacePcsForkTest is PcsRaceBase {
         return zeroForOne ? uint160((uint256(sqrtP) * 975) / 1000) : uint160((uint256(sqrtP) * 1025) / 1000);
     }
 
+    /// "BNB cheap in the pool" on the real chain: Chainlink is made to read 6% above the pool
+    /// instead of pushing the deep real pool 6% (that crosses thousands of ticks, and the public
+    /// node prunes the state before they are all read). Same situation for the builder: the
+    /// pool pays less than 98% of the Chainlink value. 0 = nothing to give back.
+    function _bnbCheap() internal override returns (uint256) {
+        (uint80 r, int256 a, uint256 s, uint256 u, uint80 ar) = feed.latestRoundData();
+        vm.mockCall(address(feed), abi.encodeWithSelector(IPriceFeedPcs.latestRoundData.selector), abi.encode(r, (a * 106) / 100, s, u, ar));
+        return 0;
+    }
+
+    /// "the market comes back": after `_bnbCheap` (0), Chainlink reads the real price again
+    function _dollarTrade(bool usdcIn, uint256 amountIn) internal override returns (uint256) {
+        if (amountIn == 0) {
+            vm.clearMockedCalls();
+            return 0;
+        }
+        return super._dollarTrade(usdcIn, amountIn);
+    }
+
     function _freshFeed() internal override {} // the real feed
     function _maxFeedAge() internal pure override returns (uint256) { return 1 days; }
     function _bigUsdc() internal pure override returns (uint256) { return 30_000_000 * U; }

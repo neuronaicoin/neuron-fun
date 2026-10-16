@@ -397,7 +397,7 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
     }
 
     /// bob trades in the dollar pool: USDC -> WBNB (BNB gets dear) or WBNB -> USDC (BNB gets cheap)
-    function _dollarTrade(bool usdcIn, uint256 amountIn) internal returns (uint256 out) {
+    function _dollarTrade(bool usdcIn, uint256 amountIn) internal virtual returns (uint256 out) {
         out = _dollarPush(usdcIn, amountIn);
     }
 
@@ -419,7 +419,7 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         wbnbGot = _dollarPush(true, _bigUsdc());
     }
 
-    function _bnbCheap() internal returns (uint256 usdcGot) {
+    function _bnbCheap() internal virtual returns (uint256 usdcGot) {
         vm.deal(bob, bob.balance + _bigBnb());
         vm.prank(bob);
         wbnb.deposit{value: _bigBnb()}();
