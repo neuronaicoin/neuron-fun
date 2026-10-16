@@ -139,6 +139,8 @@ export type StoredOrder = {
   createdAt: string;
   filledTx: string | null;
   filledAt: string | null;
+  /** The signed order's number (cancelled on chain with it). */
+  nonce?: string | null;
 };
 
 export type PlaceDeps = {
@@ -220,9 +222,25 @@ export async function myAutoOrders(sign: SignFn): Promise<StoredOrder[]> {
   return (await authedGet<{ orders: StoredOrder[] }>(sign, "auto")).orders;
 }
 
-export async function cancelAuto(sign: SignFn, id: number): Promise<void> {
+/**
+ * Cancels an order: at once on sasa (the keeper drops it), then on its chain too, so the signed
+ * order can never run whatever happens later. The chain step is a small transaction the user
+ * approves; if it doesn't go through (refused, no gas), the order is still cancelled on sasa.
+ * Returns whether the chain step went through.
+ */
+export async function cancelAuto(sign: SignFn, id: number, sendOn?: PlaceDeps["sendOn"]): Promise<boolean> {
+  const mine = sendOn ? await myAutoOrders(sign).catch(() => [] as StoredOrder[]) : [];
   await authedDelete(sign, `auto/${id}`);
   ordersChangedAuto();
+  const o = mine.find((x) => x.id === id);
+  const c = o ? RACE_CHAINS.find((x) => x.chainId === o.chainId && x.auto) : undefined;
+  if (!sendOn || !o?.nonce || !c) return false;
+  try {
+    await sendOn(c, [call(c.auto!, autoAbi, "cancel", [BigInt(o.nonce)])]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const AUTO_CHANGED = "sasa-auto-orders";

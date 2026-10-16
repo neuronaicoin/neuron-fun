@@ -215,6 +215,10 @@ export async function socialRoute(ctx, me, parts, method, body) {
     const id = typeof body.id === "string" ? body.id : "";
     const pts = QUESTS[id];
     if (!pts) return fail(400, "Unknown quest.");
+    // a tap can't be checked, so it only counts for a wallet that has used sasa (any other points:
+    // a trade, a launch…), never for a fresh wallet made just to collect it
+    const used = await sec(env, `points_events?owner=eq.${q(me)}&kind=neq.quest&select=owner&limit=1`).catch(() => []);
+    if (!Array.isArray(used) || !used.length) return fail(403, "Make your first trade on sasa, then this counts.");
     await sec(env, "points_events?on_conflict=owner,kind,ref", {
       method: "POST",
       body: { owner: me, kind: "quest", ref: id, pts },

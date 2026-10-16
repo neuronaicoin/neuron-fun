@@ -71,7 +71,10 @@ export default function PointsPage() {
       await claimQuest(signMessage, "follow_x");
       setMine((m) => (m && !m.quests.includes("follow_x") ? { ...m, quests: [...m.quests, "follow_x"], total: m.total + 50 } : m));
       toast("Thanks for following! +50 points");
-    } catch {}
+    } catch (e) {
+      // a fresh wallet: the points come once it has made its first trade (the server says so)
+      if (e instanceof Error && /first trade/i.test(e.message)) toast(e.message);
+    }
   }
 
   function shareOnX() {

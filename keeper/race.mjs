@@ -463,7 +463,16 @@ async function main() {
     }
 
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
-    if (here.length !== coin.eids.length) return; // not launched (or not configured) on every chain yet
+    coin.seenAt ??= Date.now();
+    if (here.length !== coin.eids.length) {
+      // not launched (or not configured) on every chain yet. A creator who never sends the other
+      // launches leaves the race unable to finish: say so once it's clearly not just slow.
+      if (Date.now() - coin.seenAt > 30 * 60_000) {
+        const missing = coin.eids.filter((e) => !coin.chains[e] || !byEid.has(e));
+        await alert("race keeper", `partial-${id}`, `${coin.name} was launched on only some of its chains (missing ${missing.join(", ")}) for over 30 minutes: its race can't finish until the rest launch.`);
+      }
+      return;
+    }
     const reads = await Promise.all(
       here.map(async (e) => {
         const c = byEid.get(e);
@@ -483,6 +492,11 @@ async function main() {
       coin.frozenSince ??= Date.now();
       if (Date.now() - coin.frozenSince > 30 * 60_000) await alert("race keeper", `stuck-${id}`, `${coin.name}'s race has been waiting for its verdict for over 30 minutes. Check the keeper log.`);
     } else delete coin.frozenSince;
+    // over everywhere but nobody reported for 20 minutes: freezing keeps failing
+    if (!anySettled && reads.every((r) => r.over) && !reads.some((r) => r.reported)) {
+      coin.overSince ??= Date.now();
+      if (Date.now() - coin.overSince > 20 * 60_000) await alert("race keeper", `nofreeze-${id}`, `${coin.name}'s race ended over 20 minutes ago but no chain has reported. Check the keeper's balance and log.`);
+    } else delete coin.overSince;
 
     // 1. freeze: every chain reports once its five minutes are over
     if (!anySettled) {
@@ -513,7 +527,14 @@ async function main() {
     // 3. losing chains: BNB/ETH still waiting for a fair price -> convert; dollars -> forward
     let allHandedOver = true;
     for (const r of reads.filter((x) => x.e !== winnerEid)) {
-      if (r.state === RACING) { allHandedOver = false; continue; } // its verdict message is still on the way
+      if (r.state === RACING) {
+        // its verdict message is still on the way; for over 30 minutes means it is stuck
+        allHandedOver = false;
+        coin.verdictLate ??= {};
+        coin.verdictLate[r.e] ??= Date.now();
+        if (Date.now() - coin.verdictLate[r.e] > 30 * 60_000) await alert("race keeper", `verdict-${id}-${r.e}`, `${coin.name}: chain ${r.e} still hasn't received the race verdict after 30 minutes (LayerZero message stuck?).`);
+        continue;
+      }
       if (hasNativePair(r.c)) {
         const lost = await r.c.pub.readContract({ address: r.c.builder, abi: builderAbi, functionName: "lostPending", args: [coin.coin] });
         if (lost > 0n) {

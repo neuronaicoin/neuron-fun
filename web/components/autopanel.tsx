@@ -23,6 +23,7 @@ import {
   planAuto,
   type AutoCoin,
   type AutoKind,
+  type PlaceDeps,
   type StoredOrder,
 } from "@/lib/auto";
 
@@ -34,6 +35,14 @@ const STEPS: Record<AutoKind, number[]> = { tp: [25, 50, 100], sl: [-10, -20, -3
 /** Price with a market cap next to it when the coin's supply is known (race coins: 1B). */
 function priceLine(p: number, mcFactor?: number) {
   return mcFactor ? `${fmtPrice(p)} · MC $${(p * mcFactor).toLocaleString("en-US", { maximumFractionDigits: 0 })}` : fmtPrice(p);
+}
+
+/** Sends an order's transactions: wallets pay their own gas; email accounts too, off the home chain. */
+function autoSendOn(w: ReturnType<typeof useWallet>): PlaceDeps["sendOn"] {
+  return (c, calls, onStep) => {
+    const home = homeChain();
+    return w.embedded && (!home || c.chainId !== home.chainId) ? w.sendOwnGas(c.chain, calls, onStep) : w.send(c.chain, calls, onStep);
+  };
 }
 
 export function AutoPanel({
@@ -109,12 +118,11 @@ export function AutoPanel({
     setBusy(true);
     setMsg(null);
     try {
-      const home = homeChain();
       const amountIn = kind === "dip" ? BigInt(Math.round((Number(dipUsd) || 0) * 10 ** (await usdDecimals(plan.runOn)))) : sellAmount;
       await placeAuto(
         {
           user: w.address as Address,
-          sendOn: (c, calls, onStep) => (w.embedded && (!home || c.chainId !== home.chainId) ? w.sendOwnGas(c.chain, calls, onStep) : w.send(c.chain, calls, onStep)),
+          sendOn: autoSendOn(w),
           signTyped: async (chain: Chain, typed) => {
             if (w.embeddedSigner) return w.embeddedSigner.signTypedData(typed as never);
             await w.switchTo(chain);
@@ -136,7 +144,8 @@ export function AutoPanel({
 
   const cancel = async (id: number) => {
     try {
-      await cancelAuto(w.signMessage, id);
+      const onChain = await cancelAuto(w.signMessage, id, autoSendOn(w));
+      setMsg({ ok: true, text: onChain ? "Cancelled, also on chain." : "Cancelled on sasa: it won't run. (The on-chain cancel didn't go through.)" });
       void load();
     } catch (e) {
       setMsg({ ok: false, text: friendlyError(e) });
@@ -354,8 +363,11 @@ export function MyAutoOrders() {
             <AutoOrderRows
               orders={open}
               onCancel={(id) =>
-                void cancelAuto(w.signMessage, id)
-                  .then(load)
+                void cancelAuto(w.signMessage, id, autoSendOn(w))
+                  .then((onChain) => {
+                    if (!onChain) setErr("Cancelled on sasa: it won't run. (The on-chain cancel didn't go through.)");
+                    return load();
+                  })
                   .catch((e) => setErr(friendlyError(e)))
               }
             />

@@ -5,6 +5,18 @@
 // Anyone signed in may write while the race runs and for 15 minutes after it ends.
 // Short, plain text: no links, 200 characters, one message every 4 seconds, 80 a day.
 import { q, sec } from "./forum-core.js";
+import { net64 } from "./ai-api.js";
+
+/** One use of a daily allowance, counted in one step in the database (ai.sql's ai_take), so
+ * parallel requests can't slip past it. A missing counter table lets the message through. */
+async function takeOne(env, who, kind, limit) {
+  try {
+    return (await sec(env, "rpc/ai_take", { method: "POST", body: { p_address: who, p_kind: kind, p_limit: limit } })) === true;
+  } catch (e) {
+    if (/ai_take|does not exist|schema cache/i.test(e.message || "")) return true;
+    throw e;
+  }
+}
 
 const RACE_ID = /^0x[0-9a-f]{64}$/;
 const AFTER_MS = 15 * 60_000;
@@ -22,7 +34,8 @@ export function cleanChat(s) {
     .trim();
 }
 
-export async function raceChatRoute(env, me, parts, method, body) {
+export async function raceChatRoute(ctx, me, parts, method, body) {
+  const env = ctx.env;
   if (!(parts.length === 1 && method === "POST")) return fail(404, "Not found.");
   const coinId = typeof body.coinId === "string" ? body.coinId.toLowerCase() : "";
   if (!RACE_ID.test(coinId)) return fail(400, "Unknown race.");
@@ -36,13 +49,13 @@ export async function raceChatRoute(env, me, parts, method, body) {
   const ends = Date.parse(races[0].decided_at || races[0].ends_at);
   if (Number.isFinite(ends) && Date.now() > ends + AFTER_MS) return fail(403, "The chat closed after the race.");
 
-  const since = new Date(Date.now() - 86400e3).toISOString();
-  const [last, today] = await Promise.all([
-    sec(env, `race_chat?author=eq.${q(me)}&select=created_at&order=created_at.desc&limit=1`),
-    sec(env, `race_chat?author=eq.${q(me)}&created_at=gt.${q(since)}&select=id&limit=${PER_DAY}`),
-  ]);
+  const last = await sec(env, `race_chat?author=eq.${q(me)}&select=created_at&order=created_at.desc&limit=1`);
   if (last.length && Date.now() - Date.parse(last[0].created_at) < GAP_MS) return fail(429, "One message every few seconds.");
-  if (today.length >= PER_DAY) return fail(429, "You've reached today's chat limit.");
+  // the daily limits: per wallet, and per network (new wallets are free to make)
+  if (!(await takeOne(env, me, "chat", PER_DAY))) return fail(429, "You've reached today's chat limit.");
+  let ip = String(ctx.request.headers.get("cf-connecting-ip") || "").slice(0, 64);
+  if (ip.includes(":")) ip = net64(ip);
+  if (ip && !(await takeOne(env, `ip:${ip}`, "chat", PER_DAY * 3))) return fail(429, "That's the chat limit for this network today.");
 
   const rows = await sec(env, "race_chat?select=id,coin_id,author,body,created_at", {
     method: "POST",

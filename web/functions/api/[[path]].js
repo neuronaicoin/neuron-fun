@@ -33,7 +33,7 @@ import { createPublicClient, defineChain, getAddress, http, isAddress, recoverMe
 import { forumRoute } from "../../edge/forum-api.js";
 import { socialRoute } from "../../edge/social-api.js";
 import { admins } from "../../edge/forum-core.js";
-import { aiRoute } from "../../edge/ai-api.js";
+import { aiRoute, net64 } from "../../edge/ai-api.js";
 import { raceChatRoute } from "../../edge/racechat-api.js";
 import { autoRoute } from "../../edge/auto-api.js";
 import { extTradeRoute } from "../../edge/exttrade-api.js";
@@ -157,6 +157,20 @@ async function readBody(request, limit = 8192) {
 
 // ------------------------------------------------------------------ routes
 
+/** A daily count per network address (ai.sql's ai_take). true while under `limit`; true too if
+ * the counter can't be reached (a missing table must not lock everyone out). */
+async function underLimit(env, request, kind, limit) {
+  let ip = String(request.headers.get("cf-connecting-ip") || "").slice(0, 64);
+  if (!ip) return true;
+  if (ip.includes(":")) ip = net64(ip);
+  try {
+    const { data } = await sb(env, "rpc/ai_take", { method: "POST", body: { p_address: `ip:${ip}`, p_kind: kind, p_limit: limit } });
+    return data !== false;
+  } catch {
+    return true;
+  }
+}
+
 async function session(env, request, body) {
   const { address, message, signature } = body || {};
   if (typeof address !== "string" || !isAddress(address)) return fail(400, "Bad address.");
@@ -179,6 +193,9 @@ async function session(env, request, body) {
   try {
     ok = (await recoverMessageAddress({ message, signature })).toLowerCase() === addr.toLowerCase();
   } catch {}
+  // Not a plain wallet signature: it may be a smart wallet's, checked on each chain (slow). At
+  // most 30 of those a day per network address, so nobody can keep sasa busy with junk.
+  if (!ok && !(await underLimit(env, request, "signin-check", 30))) return fail(429, "Too many sign-in tries from this network today. Try again tomorrow.");
   if (!ok) {
     for (const chain of VERIFY_CHAINS) {
       try {
@@ -323,10 +340,13 @@ async function readNotes(env, me, b) {
   return json({ ok: true });
 }
 
+// The browsers' own push services only (Chrome/Android, Firefox, Safari/iPhone, Edge): a
+// subscription can't point sasa's sender at any other address.
+const PUSH_HOSTS = /(^|\.)(fcm\.googleapis\.com|android\.googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)$/i;
 function validEndpoint(u) {
   try {
     const url = new URL(u);
-    return url.protocol === "https:" && u.length <= 1000;
+    return url.protocol === "https:" && u.length <= 1000 && PUSH_HOSTS.test(url.hostname);
   } catch {
     return false;
   }
@@ -408,7 +428,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "forum") return await forumRoute(ctx, me, parts, method, body, url);
     if (parts[0] === "social") return await socialRoute(ctx, me, parts, method, body);
     if (parts[0] === "ai") return await aiRoute(ctx, me, parts, method, body);
-    if (parts[0] === "racechat") return await raceChatRoute(env, me, parts, method, body);
+    if (parts[0] === "racechat") return await raceChatRoute(ctx, me, parts, method, body);
     if (parts[0] === "auto") return await autoRoute(env, me, parts, method, body);
     if (parts[0] === "perps") return await perpsRoute(env, me, parts, method);
     if (parts[0] === "whales") return await whalesRoute(env, me, parts, method, body);

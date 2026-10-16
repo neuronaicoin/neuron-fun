@@ -505,32 +505,50 @@ async function refreshLoop() {
   }
 }
 
+/**
+ * Runs one of the indexer's loops and starts it again if it crashes (after 30 s, then longer,
+ * at most 5 minutes apart), so one part failing never stops the others (or the whole indexer).
+ * A loop that simply returns (switched off) stays off.
+ */
+async function keep(name, start) {
+  for (let n = 1; ; n++) {
+    try {
+      await start();
+      return;
+    } catch (e) {
+      const wait = Math.min(300_000, 30_000 * n);
+      log(`${name} crashed (${e?.message ?? e}); starting it again in ${Math.round(wait / 1000)} s`);
+      await sleep(wait);
+    }
+  }
+}
+
 async function main() {
   await pool.query("select 1");
   log(`indexing ${CHAINS.map((c) => c.name).join(", ")}`);
   const chains = CHAINS.map((c) => makeChain(c));
   await Promise.all([
-    ...chains.map((c) => runChain(c)),
-    refreshLoop(),
-    cardLoop(pool, log),
-    extCardLoop(pool, log),
-    raceCardLoop(pool, log),
-    alertLoop(pool, log),
-    safetyLoop(pool, chains, log),
-    copyLoop(pool, log),
-    sparkLoop(pool, log),
-    pointsLoop(pool, log),
-    badgesLoop(pool, log),
-    marketsLoop(pool, log),
-    seoLoop(pool, log),
+    ...chains.map((c) => keep(`chain ${c.name ?? ""}`, () => runChain(c))),
+    keep("coin list", () => refreshLoop()),
+    keep("cards", () => cardLoop(pool, log)),
+    keep("ext cards", () => extCardLoop(pool, log)),
+    keep("race cards", () => raceCardLoop(pool, log)),
+    keep("alerts", () => alertLoop(pool, log)),
+    keep("safety", () => safetyLoop(pool, chains, log)),
+    keep("copy", () => copyLoop(pool, log)),
+    keep("sparklines", () => sparkLoop(pool, log)),
+    keep("points", () => pointsLoop(pool, log)),
+    keep("badges", () => badgesLoop(pool, log)),
+    keep("markets", () => marketsLoop(pool, log)),
+    keep("seo", () => seoLoop(pool, log)),
     // Market: the 300 biggest coins (topcoins.sql), from CoinGecko + DexScreener
-    topLoop(pool, log),
+    keep("top coins", () => topLoop(pool, log)),
     // Perps: 🔔 + push when a take profit, stop loss or liquidation closes a position (perps.sql)
-    perpsLoop(pool, log),
+    keep("perps", () => perpsLoop(pool, log)),
     // Data tab: top traders, Market Fear & Greed history, whale alerts (data.sql)
-    whalesLoop(pool, log),
+    keep("whales", () => whalesLoop(pool, log)),
     // v7 five-minute races (race.sql, race-chains.json, RPC_<chainId>); off when no race RPC is set
-    raceLoop(pool, log),
+    keep("races", () => raceLoop(pool, log)),
   ]);
 }
 
