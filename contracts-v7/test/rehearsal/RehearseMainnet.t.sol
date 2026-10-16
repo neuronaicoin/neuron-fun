@@ -170,7 +170,8 @@ contract RehearseMainnetTest is Test {
         }
         vm.prank(creator);
         IERC20(c.usd).approve(address(f), type(uint256).max);
-        uint256 t0 = IERC20(c.usd).balanceOf(TREASURY);
+        assertEq(f.raceFeeTo(), vm.addr(DEPLOYER_KEY), "race fee goes to the keeper");
+        uint256 t0 = IERC20(c.usd).balanceOf(f.raceFeeTo());
         RaceFactory.Launch memory l = RaceFactory.Launch("Rehearsal Cat", "RCAT", "", "", bytes32("rehearsal-1"), eids, 0, f.minFirstBuy(), 0);
         vm.prank(creator);
         try f.launch(l) returns (address got, address) {
@@ -185,7 +186,7 @@ contract RehearseMainnetTest is Test {
         }
         assertEq(coin, f.coinAddress(creator, bytes32("rehearsal-1")), "coin at the predicted address");
         assertGt(IERC20(coin).balanceOf(creator), 0, "creator got coins from the first buy");
-        assertGe(IERC20(c.usd).balanceOf(TREASURY) - t0, f.raceFee(), "race fee reached the treasury");
+        assertGe(IERC20(c.usd).balanceOf(f.raceFeeTo()) - t0, f.raceFee(), "race fee reached the keeper");
         console2.log("launched on chain", c.id, "coin", coin);
         return (true, coin);
     }
@@ -290,7 +291,8 @@ contract RehearseMainnetTest is Test {
         bytes memory m = abi.encode(uint8(1), abi.encode(RaceCross.LaunchOrder(user, l, gasUsd, dl, abi.encodePacked(r, sg, v))));
         uint256 amount = f.minFirstBuy() + f.raceFee() + _unit(c); // $1 first buy + 50c fee + $1 for gas and change
         deal(c.usd, address(x), amount);
-        uint256 t0 = IERC20(c.usd).balanceOf(TREASURY);
+        assertEq(f.raceFeeTo(), vm.addr(DEPLOYER_KEY), "race fee goes to the keeper");
+        uint256 t0 = IERC20(c.usd).balanceOf(f.raceFeeTo());
         vm.prank(c.across);
         uint256 g0 = gasleft();
         x.handleV3AcrossMessage(c.usd, amount, address(0xF111), m);
@@ -300,7 +302,7 @@ contract RehearseMainnetTest is Test {
         assertGt(IERC20(coin).balanceOf(user), 0, "first-buy coins are the creator's");
         assertGt(user.balance, 0, "gas topped up");
         assertEq(IERC20(c.usd).balanceOf(user), amount - f.minFirstBuy() - f.raceFee() - gasUsd, "change back to the creator");
-        assertGe(IERC20(c.usd).balanceOf(TREASURY) - t0, f.raceFee(), "race fee reached the treasury");
+        assertGe(IERC20(c.usd).balanceOf(f.raceFeeTo()) - t0, f.raceFee(), "race fee reached the keeper");
         assertEq(IERC20(c.usd).balanceOf(address(x)), 0, "cross contract keeps nothing");
         assertLt(used, 9_000_000, "a launch fill fits easily in a block");
         console2.log("cross launch ok on chain", c.id, "fill gas", used);

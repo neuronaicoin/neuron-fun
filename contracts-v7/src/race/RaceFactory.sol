@@ -37,7 +37,7 @@ interface IRaceBuilderLaunch {
  * Creators can always sell: there is no creator lock (lock is always 0).
  *
  * The creator also pays the race fee on each chain (`raceFee`, never above $2), straight to
- * the treasury: it pays the network fees of running the race, so sasa's keeper doesn't.
+ * `raceFeeTo` (sasa's keeper): it pays the network fees of running the race.
  *
  * The owner (sasa's admin) only sets things for FUTURE launches (launch price, minimum
  * first buy, race fee, routes to other chains, open/closed). It has no power over launched coins.
@@ -92,12 +92,15 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     uint256 public startMarketCap; // launch market cap of the whole supply, in USDC units
     uint256 public minFirstBuy; // smallest first buy per chain, in USDC units
     uint16 public moveFeeBps; // fee on the automatic coin move after the race (v6 coin)
-    /// @notice Paid by the creator on each chain the coin opens on, in USDC units, to the treasury:
+    /// @notice Paid by the creator on each chain the coin opens on, in USDC units, to `raceFeeTo`:
     /// it covers the network fees of running the race (closing it on every chain, the verdict,
     /// moving the losing chains' money and holders), so nobody else pays them.
     uint256 public raceFee;
     /// @notice The race fee can never be set above $2 per chain.
     uint256 public immutable maxRaceFee;
+    /// @notice Where the race fee goes: sasa's keeper, which pays the race's network fees
+    /// (the treasury until the owner sets it).
+    address public raceFeeTo;
     mapping(uint32 eid => Route) internal routes;
     bool public launchesOpen;
     mapping(address seat => bool) public isSeat;
@@ -124,6 +127,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
     event LaunchesOpenSet(bool open);
     event SettingsSet(uint256 startMarketCap, uint256 minFirstBuy, uint16 moveFeeBps);
     event RaceFeeSet(uint256 raceFee);
+    event RaceFeeToSet(address raceFeeTo);
     event LauncherSet(address launcher);
 
     error BadConfig();
@@ -164,6 +168,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
         hub = hub_;
         builder = builder_;
         treasury = treasury_;
+        raceFeeTo = treasury_;
         maxRaceFee = 2 * 10 ** IERC20Metadata(address(usdc_)).decimals();
         _setSettings(startMarketCap_, minFirstBuy_, moveFeeBps_);
     }
@@ -230,7 +235,7 @@ contract RaceFactory is Ownable, ReentrancyGuard {
 
         emit Launched(coinId, coin, seat, creator, l.eids, l.name, l.symbol, l.logo, l.description, l.feeMode);
 
-        if (raceFee > 0) usdc.safeTransferFrom(msg.sender, treasury, raceFee);
+        if (raceFee > 0) usdc.safeTransferFrom(msg.sender, raceFeeTo, raceFee);
         usdc.safeTransferFrom(msg.sender, builder, l.firstBuy);
         IRaceBuilderLaunch(builder).launchBuy(coin, l.firstBuy, l.minCoinsOut, creator);
     }
@@ -275,6 +280,13 @@ contract RaceFactory is Ownable, ReentrancyGuard {
         if (fee > maxRaceFee) revert BadConfig();
         raceFee = fee;
         emit RaceFeeSet(fee);
+    }
+
+    /// @notice Where future race fees go (sasa's keeper, so the races pay their own network fees).
+    function setRaceFeeTo(address to) external onlyOwner {
+        if (to == address(0)) revert BadConfig();
+        raceFeeTo = to;
+        emit RaceFeeToSet(to);
     }
 
     /// @notice Sets this chain's RaceCross, once. address(0) switches launching-for-others off

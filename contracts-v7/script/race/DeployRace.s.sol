@@ -260,11 +260,14 @@ contract DeployRace is Script {
         // race fee per chain in this chain's dollar units (mainnet: $0.50 -> 500000 for 6 decimals, 5e17 on BNB Chain)
         uint256 raceFee = vm.envOr("RACE_FEE", uint256(0));
         if (raceFee > 0) factory.setRaceFee(raceFee);
+        // the race fee goes to the keeper: it pays the race's network fees (gas, LayerZero)
+        factory.setRaceFeeTo(keeper);
         vm.stopBroadcast();
 
         require(o.hub == hubAt && o.bridge == bridgeAt && o.builder == builderAt, "address moved (hub/bridge/builder)");
         require(o.consolidator == consolidatorAt && o.router == routerAt, "address moved (consolidator/router)");
         require(factory.hub() == o.hub && factory.builder() == o.builder && address(factory.usdc()) == c.usd, "factory wiring");
+        require(factory.raceFeeTo() == keeper, "race fee to keeper");
         o.cross = _cross(key, c, o, spoke);
         vm.startBroadcast(key);
         // RaceCross launches for sasa accounts whose dollars are on Base (with their signature)

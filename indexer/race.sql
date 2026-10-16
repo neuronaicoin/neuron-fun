@@ -87,9 +87,13 @@ create table if not exists race_fees (
   coin_id       text    not null,
   native_amount numeric not null,   -- human units
   coin_amount   numeric not null,   -- human units
+  block_number  bigint,             -- where the collection sits (the trades before it paid it)
+  created_at    timestamptz not null default now(),
   primary key (chain_id, tx_hash, log_index)
 );
 create index if not exists race_fees_coin_idx on race_fees (coin_id);
+alter table race_fees add column if not exists block_number bigint;
+alter table race_fees add column if not exists created_at timestamptz not null default now();
 
 -- ------------------------------------------------------------------ chart
 

@@ -16,7 +16,18 @@ export type MyPoints = {
   friendsPts: number;
 };
 export type BoardRow = { owner: string; total: number; rank: number };
-export type Rewards = { earned: number; paid: number; pending: number; friends: number; friendsTraded: number };
+/** earned/paid/pending: older per-chain rewards in wei; usd*: dollar rewards (race coins, other
+ * DEXs' coins, futures) in USDC units (6 decimals), paid in USDC on Base. */
+export type Rewards = {
+  earned: number;
+  paid: number;
+  pending: number;
+  friends: number;
+  friendsTraded: number;
+  usdEarned: number;
+  usdPaid: number;
+  usdPending: number;
+};
 
 type Quest = { id: string; icon: string; title: string; note: string; pts: number; href?: string; action?: "follow" | "share" };
 const ALL_QUESTS: readonly Quest[] = [
@@ -64,13 +75,22 @@ export async function fetchBoard(limit = 50): Promise<BoardRow[]> {
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ owner: String(r.owner), total: n(r.total), rank: n(r.rank) }));
 }
 
-/** Referral + copy rewards in wei, summed over chains. */
+/** Invite + copy rewards: the older ones in wei (summed over chains), the dollar ones in USDC units. */
 export async function fetchRewards(address: string): Promise<Rewards | null> {
   const { data, error } = await db.rpc("reward_summary", { p_owner: address.toLowerCase() });
   if (error) return null;
   const r = ((data ?? []) as Record<string, unknown>[])[0];
   if (!r) return null;
-  return { earned: n(r.earned), paid: n(r.paid), pending: n(r.pending), friends: n(r.friends), friendsTraded: n(r.friends_traded) };
+  return {
+    earned: n(r.earned),
+    paid: n(r.paid),
+    pending: n(r.pending),
+    friends: n(r.friends),
+    friendsTraded: n(r.friends_traded),
+    usdEarned: n(r.usd_earned),
+    usdPaid: n(r.usd_paid),
+    usdPending: n(r.usd_pending),
+  };
 }
 
 /** Streak boost for a day's trading points: 1x, growing to 2x at 7 days in a row. */

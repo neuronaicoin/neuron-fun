@@ -19,6 +19,12 @@
 //   DATABASE_URL          Postgres (same as the indexer)
 //   REWARDS_PRIVATE_KEY   the rewards wallet's key (only here)
 //   CHAINS                JSON: [{ name, chainId, rpc, splitter, disperse, orders?, native?, token? }]
+//                         (the older per-chain rewards; "[]" or unset when there are none)
+//   USD_PAYOUT            JSON: { rpc, token }  Base RPC and USDC on Base: invite rewards from race
+//                         coins, other DEXs' coins and futures, paid in USDC (see usd.mjs)
+//   REWARD_CHAIN_IDS      race chains whose trades earn them (default 8453,4663,5042,56)
+//   HL_BUILDER            sasa's futures fee address on Hyperliquid (futures rewards; unset = off)
+//   HL_FILLS, HL_API      Hyperliquid's builder_fills files and info API (defaults: mainnet)
 //                         token: the USDC address on USDC chains (sasa v5); rewards are then
 //                         paid in USDC and counted as dollars. Without it, in the chain's coin.
 //                         orders: the SasaOrders contract; its auto orders get filled here too
@@ -36,6 +42,8 @@ import pg from "pg";
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, getAddress, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ordersLoop } from "./orders.mjs";
+import lz4 from "lz4js";
+import { buildPerpLedger, buildUsdLedger, builderAccountUsd, payUsd, reconcileUsd } from "./usd.mjs";
 
 const env = (k, d) => {
   const v = process.env[k];
@@ -84,7 +92,7 @@ const disperseAbi = parseAbi([
 
 const pool = new pg.Pool({ connectionString: env("DATABASE_URL"), max: 3 });
 const account = privateKeyToAccount(env("REWARDS_PRIVATE_KEY").trim().replace(/^(?!0x)/, "0x"));
-const CHAINS = JSON.parse(env("CHAINS")).map((c) => {
+const CHAINS = JSON.parse(env("CHAINS", "[]")).map((c) => {
   const chain = defineChain({
     id: c.chainId,
     name: c.name,
@@ -101,6 +109,21 @@ const CHAINS = JSON.parse(env("CHAINS")).map((c) => {
     wallet: createWalletClient({ chain, account, transport: http(c.rpc) }),
   };
 });
+
+// Invite rewards in dollars, paid in USDC on Base (usd.mjs)
+const USD = (() => {
+  const raw = process.env.USD_PAYOUT;
+  if (!raw) return null;
+  const u = JSON.parse(raw);
+  const chain = defineChain({ id: 8453, name: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [u.rpc] } } });
+  return {
+    token: getAddress(u.token),
+    pub: createPublicClient({ chain, transport: http(u.rpc) }),
+    wallet: createWalletClient({ chain, account, transport: http(u.rpc) }),
+  };
+})();
+const REWARD_CHAIN_IDS = env("REWARD_CHAIN_IDS", "8453,4663,5042,56").split(",").map((x) => Number(x.trim())).filter(Boolean);
+const HL_BUILDER = process.env.HL_BUILDER || "";
 
 // ------------------------------------------------------------------ prices
 
@@ -388,12 +411,44 @@ async function main() {
   for (const c of CHAINS) {
     void ordersLoop(c, pool, log, account).catch((e) => log(`${c.name} orders stopped: ${e.message}`));
   }
+  if (USD) log(`dollar rewards: paid in USDC on Base from ${account.address}`);
   let lastLedger = 0;
+  let lastPerp = 0;
   for (;;) {
     try {
       if (Date.now() - lastLedger > 5 * 60_000) {
         await buildLedger();
+        const u = await buildUsdLedger(pool, {
+          protocolBps: PROTOCOL_BPS,
+          referralBps: REFERRAL_BPS,
+          months: REFERRAL_MONTHS,
+          chainIds: REWARD_CHAIN_IDS,
+        });
+        if (u.race || u.ext) log(`ledger: +${u.race} race, +${u.ext} other-DEX rewards (dollars)`);
         lastLedger = Date.now();
+      }
+      if (HL_BUILDER && Date.now() - lastPerp > 10 * 60_000) {
+        lastPerp = Date.now();
+        const p = await buildPerpLedger(pool, {
+          builder: HL_BUILDER,
+          base: env("HL_FILLS", "https://stats-data.hyperliquid.xyz/Mainnet/builder_fills"),
+          referralBps: Number(REFERRAL_BPS),
+          months: REFERRAL_MONTHS,
+          decompress: (b) => lz4.decompress(b),
+        }).catch(async (e) => {
+          log(`futures rewards: ${e.message}`);
+          await alert("rewards", "perp-fills", `futures invite rewards: ${e.message}`);
+          return { fills: 0 };
+        });
+        if (p.fills) log(`ledger: +${p.fills} futures rewards (dollars)`);
+        if (p.missing?.length) {
+          await alert("rewards", `perp-missing-${p.missing[0]}`, `Hyperliquid's file of sasa's futures fills for ${p.missing.join(", ")} never appeared (HL_FILLS / builder address right?); those days count as no futures fills.`);
+        }
+        // Hyperliquid only charges sasa's futures fee while this account holds at least $100
+        const v = await builderAccountUsd(env("HL_API", "https://api.hyperliquid.xyz"), HL_BUILDER).catch(() => null);
+        if (v !== null && v < 100) {
+          await alert("rewards", "hl-builder", `sasa's futures fee account ${HL_BUILDER} holds $${v.toFixed(2)} on Hyperliquid; it needs at least $100 (USDC in its perps account) or sasa's futures fee stops being charged.`);
+        }
       }
       const paused = (await pool.query("select paused from rewards_state where id = 1")).rows[0]?.paused;
       for (const c of CHAINS) {
@@ -405,9 +460,28 @@ async function main() {
           await alert("rewards", `chain-${c.name}`, `${c.name}: ${e.shortMessage ?? e.message}`);
         }
       }
+      if (USD) {
+        try {
+          await reconcileUsd(pool, USD, log, account);
+          if (!paused && new Date().getUTCHours() >= PAYOUT_HOUR) {
+            const r = await payUsd(pool, USD, account, { minUsd: MIN_PAYOUT_USD, capUsd: DAILY_CAP_USD, minGasWei: MIN_GAS, log, dry: DRY });
+            if (r.refused?.length) {
+              await alert("rewards", "usd-refused", `USDC on Base won't send to ${r.refused.join(", ")}; their invite rewards stay owed and everyone else was paid.`);
+            }
+            if (r.noGas) {
+              await alert("rewards", "usd-gas", `the rewards wallet ${account.address} needs a little ETH on Base for gas; invite rewards wait until it's topped up.`);
+            } else if (r.short > 0n && !r.capped) {
+              await alert("rewards", "usd-short", `the rewards wallet ${account.address} is ${(Number(r.short) / 1e6).toFixed(2)} USDC short on Base for today's invite rewards. Send at least that much USDC (Base) to it; what's owed is paid on the next run.`);
+            }
+          }
+        } catch (e) {
+          log(`usd: ${e.shortMessage ?? e.message}`);
+          await alert("rewards", "usd", `invite rewards (USDC on Base): ${e.shortMessage ?? e.message}`);
+        }
+      }
     } catch (e) {
-      if (/relation "(reward_ledger|rewards_state|referrals|reward_payouts)" does not exist/.test(e.message)) {
-        log("run indexer/rewards.sql in Supabase first");
+      if (/relation "(reward_ledger|rewards_state|referrals|reward_payouts|reward_perp_users|race_trades|race_chains|ext_trades)" does not exist/.test(e.message)) {
+        log("run indexer/rewards.sql and indexer/rewards-v7.sql in Supabase first");
       } else {
         log(`rewards: ${e.message}`);
         await alert("rewards", "loop", e.message);

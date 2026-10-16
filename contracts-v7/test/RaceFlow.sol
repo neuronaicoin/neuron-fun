@@ -408,8 +408,9 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         a.factory.launch(l);
     }
 
-    /// The race fee: the creator pays it on each chain, straight to the treasury, on top of the
-    /// first buy; nothing else changes. Owner only, never above $2.
+    /// The race fee: the creator pays it on each chain, straight to `raceFeeTo` (the treasury
+    /// until set, sasa's keeper on mainnet), on top of the first buy; nothing else changes.
+    /// Owner only, never above $2.
     function _flow_raceFee() internal {
         assertEq(a.factory.raceFee(), 0, "off until set");
         assertEq(a.factory.maxRaceFee(), 2 * D, "cap is $2 in this chain's dollar");
@@ -441,6 +442,28 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         vm.prank(creator);
         vm.expectRevert();
         a.factory.launch(l);
+
+        // the fee can go to the keeper instead (owner only, never to nobody)
+        assertEq(a.factory.raceFeeTo(), treasury, "treasury until set");
+        vm.prank(alice);
+        vm.expectRevert();
+        a.factory.setRaceFeeTo(keeper);
+        vm.expectRevert(RaceFactory.BadConfig.selector);
+        a.factory.setRaceFeeTo(address(0));
+        vm.expectEmit(address(a.factory));
+        emit RaceFactory.RaceFeeToSet(keeper);
+        a.factory.setRaceFeeTo(keeper);
+        assertEq(a.factory.raceFeeTo(), keeper);
+        a.factory.setRaceFee(D / 2);
+        vm.prank(creator);
+        a.usdc.approve(address(a.factory), type(uint256).max);
+        uint256 k0 = a.usdc.balanceOf(keeper);
+        uint256 t0 = a.usdc.balanceOf(treasury);
+        l = RaceFactory.Launch("Three", "THREE", "", "", bytes32("k3"), _eids2(), 0, 5 * D, 0);
+        vm.prank(creator);
+        a.factory.launch(l);
+        assertEq(a.usdc.balanceOf(keeper) - k0, D / 2, "the fee went to the keeper");
+        assertEq(a.usdc.balanceOf(treasury), t0, "not to the treasury");
     }
 
     /// A coin on one chain: no race to wait for, it "wins" at once after five minutes.

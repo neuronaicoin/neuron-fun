@@ -68,8 +68,13 @@ do $$ begin
   end if;
 end $$;
 
--- A person's own rewards summary (safe to show publicly: totals only).
-create or replace function reward_summary(p_owner text)
+-- A person's own rewards summary (safe to show publicly: totals only). Made here only the first
+-- time: rewards-v7.sql replaces it with one that also counts the dollar rewards, and running
+-- this file again must not undo that.
+do $do$ begin
+  if not exists (select 1 from pg_proc where proname = 'reward_summary') then
+    execute $f$
+create function reward_summary(p_owner text)
 returns table (earned numeric, paid numeric, pending numeric, friends int, friends_traded int)
 language sql stable security definer set search_path = public as $$
   select
@@ -79,7 +84,10 @@ language sql stable security definer set search_path = public as $$
     (select count(*) from referrals where referrer = lower(p_owner))::int,
     (select count(*) from referrals r where r.referrer = lower(p_owner)
        and exists (select 1 from trades t where t.trader = r.referee and t.ts >= r.created_at))::int
-$$;
+$$
+    $f$;
+  end if;
+end $do$;
 grant execute on function reward_summary(text) to anon, authenticated;
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then

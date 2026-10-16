@@ -58,7 +58,9 @@ export default function PointsPage() {
   const inviteLink = me && typeof window !== "undefined" ? `${window.location.origin}/?ref=${myProfile?.username ?? me}` : "";
   const done = new Set(mine?.quests ?? []);
   const boost = boostFor(mine?.streak ?? 0);
-  const toUsd = (wei: number) => (ethUsd ? usd((wei / 1e18) * ethUsd, 2) : `${(wei / 1e18).toFixed(5)} ETH`);
+  // older rewards are in wei (ETH), the dollar ones in USDC units: shown together in dollars
+  const toUsd = (wei: number, usdc = 0) =>
+    wei === 0 || ethUsd ? usd((ethUsd ? (wei / 1e18) * ethUsd : 0) + usdc / 1e6, 2) : `${(wei / 1e18).toFixed(5)} ETH + ${usd(usdc / 1e6, 2)}`;
 
   async function questAction(a: "follow" | "share") {
     if (a === "share") {
@@ -223,11 +225,12 @@ export default function PointsPage() {
                 <div className="grid grid-cols-3 gap-2 mt-3 text-center">
                   <Mini value={fmt(mine?.friends ?? 0)} label="friends joined" />
                   <Mini value={`+${fmt(mine?.friendsPts ?? 0)}`} label="points from friends" />
-                  <Mini value={rewards ? toUsd(rewards.earned) : "—"} label="earned in fees" />
+                  <Mini value={rewards ? toUsd(rewards.earned, rewards.usdEarned) : "—"} label="earned in fees" />
                 </div>
-                {rewards && rewards.earned > 0 && (
+                {rewards && rewards.earned + rewards.usdEarned > 0 && (
                   <p className="text-[0.75rem] text-ink-3 mt-2">
-                    {toUsd(rewards.paid)} paid · {toUsd(rewards.pending)} on its way (paid once a day)
+                    {toUsd(rewards.paid, rewards.usdPaid)} paid · {toUsd(rewards.pending, rewards.usdPending)} on its way (paid once a day, from
+                    $0.50)
                   </p>
                 )}
                 {!myProfile?.username && (

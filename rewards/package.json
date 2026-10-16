@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Builds the rewards ledger and pays referral and copy-trading rewards once a day.",
+  "description": "Builds the rewards ledger and pays invite and copy-trading rewards once a day.",
   "scripts": {
     "start": "node rewards.mjs"
   },
   "dependencies": {
     "pg": "8.16.3",
-    "viem": "2.56.8"
+    "viem": "2.56.8",
+    "lz4js": "0.2.0"
   },
   "engines": {
     "node": ">=20"

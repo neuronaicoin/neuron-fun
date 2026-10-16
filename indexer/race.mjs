@@ -422,8 +422,8 @@ export async function raceRange(pool, c, byEid, from, to) {
       } else if (l.eventName === "FeesCollected") {
         const f = c.kind === "eth" ? a.ethFees : c.kind === "pcs" ? a.bnbFees : a.usdcFees;
         const ins = await db.query(
-          `insert into race_fees (chain_id, tx_hash, log_index, coin_id, native_amount, coin_amount) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1`,
-          [c.chainId, lc(l.transactionHash), l.logIndex, k.coin_id, human(f, nd), human(a.coinFees, 18)]
+          `insert into race_fees (chain_id, tx_hash, log_index, coin_id, native_amount, coin_amount, block_number) values ($1,$2,$3,$4,$5,$6,$7) on conflict do nothing returning 1`,
+          [c.chainId, lc(l.transactionHash), l.logIndex, k.coin_id, human(f, nd), human(a.coinFees, 18), l.blockNumber.toString()]
         );
         if (ins.rowCount)
           await db.query("update race_chains set fees_native = fees_native + $3 where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, human(f, nd)]);

@@ -21,6 +21,9 @@ create table if not exists ext_trades (
   unique (chain_id, tx)
 );
 alter table ext_trades add column if not exists request_id text unique;
+-- sasa's fee on the trade in dollars (what Relay paid the treasury) and when the trade was made
+alter table ext_trades add column if not exists fee_usd numeric;
+alter table ext_trades add column if not exists traded_at timestamptz;
 create index if not exists ext_trades_time_idx on ext_trades (created_at desc);
 
 alter table ext_trades enable row level security;

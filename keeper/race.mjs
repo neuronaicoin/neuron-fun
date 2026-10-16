@@ -33,6 +33,8 @@
 //                  LZ_FEE_WEI_<chainId> overrides it for one chain
 //   LOOP_SECONDS   run forever, one pass every N seconds (default: one pass, then exit)
 //   COLLECT_MINUTES / IDLE_COLLECT_HOURS   fee collection pace on the winner (default 30 / 24)
+//   MIN_GAS_WEI(_<chainId>), REFILL_USD, REFILL_EVERY_MIN, RELAY_API_KEY, GAS_REFILL
+//                  gas top-up from the keeper's own USDC (the race fees), see refill.mjs
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readState, writeState } from "./statefile.mjs";
@@ -40,6 +42,7 @@ import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, fallback, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { alert } from "./alert.mjs";
+import { refillGas } from "./refill.mjs";
 
 const env = (n, d) => {
   const v = process.env[n];
@@ -221,7 +224,9 @@ async function send(c, what, params, bump) {
  * hold up every transaction after it. Whichever of them is mined, its receipt is returned.
  */
 export async function sendAndWait(c, request) {
-  const hashes = [await c.wallet.writeContract(request)];
+  // a contract call (abi + functionName) or a plain transaction (to + data), e.g. a Relay swap
+  const write = (req) => (!req.abi && req.data ? c.wallet.sendTransaction(req) : c.wallet.writeContract(req));
+  const hashes = [await write(request)];
   for (let round = 0; ; round++) {
     try {
       return await c.pub.waitForTransactionReceipt({ hash: hashes[hashes.length - 1], timeout: 90_000 });
@@ -239,7 +244,7 @@ export async function sendAndWait(c, request) {
     const up = (v) => (v == null ? undefined : (v * 13n) / 10n + 1n); // a 0 tip goes up to 1 wei, never left to guess
     const fees = tx.maxFeePerGas ? { maxFeePerGas: up(tx.maxFeePerGas), maxPriorityFeePerGas: up(tx.maxPriorityFeePerGas) } : { gasPrice: up(tx.gasPrice) };
     try {
-      hashes.push(await c.wallet.writeContract({ ...request, nonce: tx.nonce, ...fees }));
+      hashes.push(await write({ ...request, nonce: tx.nonce, ...fees }));
       log(`   not mined after 90s: sent again with higher fees ${hashes[hashes.length - 1]}`);
     } catch (e) {
       // "nonce too low": one of them was mined just now (found on the next look)
@@ -329,11 +334,14 @@ async function main() {
   const chains = loadChains();
   if (chains.length === 0) throw new Error("no chains configured");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
+  // gas: the race fees arrive here as USDC; when ETH / BNB runs low a few are swapped into it
   for (const c of chains) {
-    const bal = await c.pub.getBalance({ address: account.address }).catch(() => null);
-    if (bal !== null && bal < BigInt(env("MIN_GAS_WEI", "2000000000000000"))) {
-      await alert("race keeper", `gas-${c.chainId}`, `keeper wallet ${account.address} is low on gas on chain ${c.chainId} (${Number(bal) / 1e18}). Top it up.`);
-    }
+    const res = await refillGas(c, account, {
+      send: sendAndWait,
+      log,
+      env: DRY ? { ...process.env, GAS_REFILL: "false" } : process.env,
+    }).catch((e) => `alert:keeper gas check on chain ${c.chainId} failed (${e.shortMessage || e.message})`);
+    if (res.startsWith("alert:")) await alert("race keeper", `gas-${c.chainId}`, res.slice(6));
   }
   // Testnets with no Chainlink use our TestFeed: anyone may refresh its timestamp, and the
   // builders refuse a feed older than maxFeedAge, so keep it fresh (never runs on a mainnet).

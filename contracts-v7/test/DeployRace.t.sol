@@ -199,6 +199,7 @@ contract DeployRaceTest is Test, DeployPermit2 {
         new DeployRace().run();
         vm.setEnv("RACE_FEE", "0");
         assertEq(RaceFactory(_read("factory")).raceFee(), 500_000, "race fee set at deploy");
+        assertEq(RaceFactory(_read("factory")).raceFeeTo(), vm.envOr("KEEPER", deployer), "race fee goes to the keeper");
         RaceBuilder b = RaceBuilder(_read("builder"));
         assertEq(b.factory(), _read("factory"));
         // the wiring step reads the dollar's decimals from here (Across routes need them)

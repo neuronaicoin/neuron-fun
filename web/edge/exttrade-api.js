@@ -94,11 +94,37 @@ async function relayRequests(hash, key) {
   return null;
 }
 
+const list = (x) => (Array.isArray(x) ? x : []);
+
+/**
+ * The request's app fees to sasa's treasury. Relay's requests v2 lists them in `appFees` (quoted)
+ * and `paidAppFees` (paid); v3 in one `appFees` object { quoted, actual }.
+ */
+function treasuryFees(req) {
+  const d = req.data || {};
+  const v3 = d.appFees && !Array.isArray(d.appFees) ? d.appFees : null;
+  const quoted = [...(v3 ? list(v3.quoted) : list(d.appFees)), ...list(req.appFees)].filter((f) => lower(f.recipient) === TREASURY);
+  const paid = (v3 ? list(v3.actual) : list(d.paidAppFees)).filter((f) => lower(f.recipient) === TREASURY);
+  return { quoted, paid };
+}
+
 /** sasa's fee is on the request (Relay pays it to the treasury). */
 export function sasaFee(req) {
-  const d = req.data || {};
-  const fees = [...(d.appFees || []), ...(d.paidAppFees || []), ...(req.appFees || [])];
-  return fees.some((f) => lower(f.recipient) === TREASURY);
+  const { quoted, paid } = treasuryFees(req);
+  return quoted.length > 0 || paid.length > 0;
+}
+
+/**
+ * sasa's fee on the trade in dollars: what Relay says it paid the treasury, else the fee rate on
+ * the trade's dollars. 0 when unknown (the trade still counts for the Stats page, not for rewards).
+ */
+export function sasaFeeUsd(req, usd) {
+  const { quoted, paid } = treasuryFees(req);
+  const sum = (a) => a.reduce((s, f) => s + (Number(f.amountUsd) > 0 ? Number(f.amountUsd) : 0), 0);
+  const paidUsd = sum(paid);
+  if (paidUsd > 0) return Math.min(paidUsd, usd);
+  const bps = Math.max(0, ...[...paid, ...quoted].map((f) => Number(f.bps ?? f.fee) || 0));
+  return bps > 0 ? Math.min((usd * bps) / 10_000, usd) : 0;
 }
 
 // answers already settled in this worker (stops the same hash costing lookups again and again)
@@ -163,7 +189,20 @@ export async function extTradeRoute(env, body) {
   await sb(env, "ext_trades?on_conflict=chain_id,tx", {
     method: "POST",
     prefer: "resolution=ignore-duplicates",
-    body: { chain_id: chainId, tx, request_id: id || null, trader, side: b.side, coin, coin_chain: coinChain, usd: Math.round(usd * 100) / 100, source: "trade" },
+    body: {
+      chain_id: chainId,
+      tx,
+      request_id: id || null,
+      trader,
+      side: b.side,
+      coin,
+      coin_chain: coinChain,
+      usd: Math.round(usd * 100) / 100,
+      source: "trade",
+      fee_usd: Math.round(sasaFeeUsd(req, usd) * 1e6) / 1e6,
+      // when Relay saw the trade (a trade reported late still counts from when it was made)
+      traded_at: Number.isFinite(Date.parse(req.createdAt)) ? new Date(req.createdAt).toISOString() : null,
+    },
   });
   return settle(tx, { ok: true });
 }

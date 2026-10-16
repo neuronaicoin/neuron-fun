@@ -27,6 +27,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, decodeEventLog, decodeFunctionData, defineChain, encodeFunctionData, fallback, http, parseAbi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { alert } from "./alert.mjs";
+import { gasFloor } from "./refill.mjs";
+
+// the treasury the site's Relay fee goes to: auto-order fees count for invite rewards only when
+// they go there too (TREASURY)
+const SASA_TREASURY = "0xe0ba5905940d748b23dc01266aa884e2391cca2f";
 
 const env = (n, d) => {
   const v = process.env[n];
@@ -453,7 +459,19 @@ export async function pass(ctx) {
       await sb("ext_trades?on_conflict=chain_id,tx", {
         method: "POST",
         prefer: "resolution=ignore-duplicates",
-        body: { chain_id: o.chain_id, tx: String(res.tx).toLowerCase(), trader: o.owner, side, coin: o.coin, coin_chain: o.coin_chain, usd: Math.round(res.usd * 100) / 100, source: "auto" },
+        body: {
+          chain_id: o.chain_id,
+          tx: String(res.tx).toLowerCase(),
+          trader: o.owner,
+          side,
+          coin: o.coin,
+          coin_chain: o.coin_chain,
+          usd: Math.round(res.usd * 100) / 100,
+          source: "auto",
+          // the 0.70% app fee this route paid the treasury (relayRoute), counted for invite rewards
+          fee_usd: String(ctx.treasury).toLowerCase() === SASA_TREASURY ? Math.round(res.usd * 0.007 * 1e6) / 1e6 : 0,
+          traded_at: now,
+        },
       }).catch((e) => log(`order ${o.id}: stats save failed ${e.message}`));
     }
     const sym = o.symbol ? `$${o.symbol}` : "your coin";
@@ -480,7 +498,19 @@ async function main() {
   if (!ctx.chains.size) throw new Error("no chain with AutoOrders (deployments + RPC_<chainId>)");
   log(`watching auto orders on chains ${[...ctx.chains.keys()].join(", ")} as ${account.address}`);
   const every = Number(env("LOOP_SECONDS", "8"));
+  let gasLook = 0;
   for (;;) {
+    // every 10 minutes: does this wallet still have gas to fill orders? (the race keeper tops
+    // it up from its USDC when both use the same wallet; otherwise a human does)
+    if (Date.now() - gasLook > 10 * 60_000) {
+      gasLook = Date.now();
+      for (const c of ctx.chains.values()) {
+        const bal = await c.pub.getBalance({ address: account.address }).catch(() => null);
+        if (bal !== null && bal < gasFloor(c)) {
+          await alert("auto orders", `gas-${c.chainId}`, `auto-order wallet ${account.address} is low on gas on chain ${c.chainId} (${Number(bal) / 1e18}); orders there can't run. Top it up.`);
+        }
+      }
+    }
     try {
       await pass(ctx);
     } catch (e) {
