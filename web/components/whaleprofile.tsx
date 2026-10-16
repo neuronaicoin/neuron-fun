@@ -11,7 +11,7 @@ import { FollowButton } from "./whalefollow";
 import { Avatar } from "./datapage";
 import { compactUsd } from "@/lib/format";
 import { fetchPerpAccount, fetchPerpFills, type PerpAccount, type PerpFill } from "@/lib/perps";
-import { fetchWhale, isAddress, whaleName, type Whale } from "@/lib/hldata";
+import { fetchWhale, fetchWhaleMoves, isAddress, moveVerb, whaleName, type Whale, type WhaleMove } from "@/lib/hldata";
 
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`);
 const tone = (v: number | null | undefined) => (!v ? "text-ink-3" : v > 0 ? "text-up" : "text-danger");
@@ -28,6 +28,7 @@ export function WhaleProfile({ address }: { address: string }) {
   const [whale, setWhale] = useState<Whale | null | undefined>(undefined);
   const [acct, setAcct] = useState<PerpAccount | null>(null);
   const [fills, setFills] = useState<PerpFill[] | null>(null);
+  const [moves, setMoves] = useState<WhaleMove[] | null>(null);
   const [err, setErr] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -37,6 +38,9 @@ export function WhaleProfile({ address }: { address: string }) {
     void fetchWhale(a)
       .then((w) => alive && setWhale(w))
       .catch(() => alive && setWhale(null));
+    void fetchWhaleMoves({ address: a, limit: 30 })
+      .then((m) => alive && setMoves(m))
+      .catch(() => alive && setMoves([]));
     const load = () =>
       Promise.all([fetchPerpAccount(a), fetchPerpFills(a)])
         .then(([x, f]) => {
@@ -180,6 +184,30 @@ export function WhaleProfile({ address }: { address: string }) {
           </ul>
         )}
       </section>
+
+      {moves && moves.length > 0 && (
+        <section className="mt-4 rounded-3xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="moves-title">
+          <h2 id="moves-title" className="font-display font-bold text-[1.125rem]">
+            Moves this week
+          </h2>
+          <ul className="mt-2 flex flex-col divide-y divide-line">
+            {moves.map((m) => (
+              <li key={m.id} className="py-2.5 grid grid-cols-[minmax(0,1fr)_auto] gap-3 text-[0.875rem]">
+                <span className="min-w-0">
+                  <span className="text-ink-2">{moveVerb(m)}</span> <b className="font-semibold">{m.coin}</b>{" "}
+                  <span className={"font-semibold " + (m.side === "long" ? "text-up" : "text-danger")}>{m.side}</span>
+                  <span className="block text-[0.75rem] text-ink-3">
+                    {new Date(m.t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {m.px > 0 ? ` · at ${px(m.px)}` : ""}
+                    {m.lev ? ` · ${m.lev}x` : ""}
+                  </span>
+                </span>
+                <span className="font-display font-bold tabular-nums">{compactUsd(m.usd)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-4 rounded-3xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="fills-title">
         <h2 id="fills-title" className="font-display font-bold text-[1.125rem]">

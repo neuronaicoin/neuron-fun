@@ -87,7 +87,7 @@ export async function fetchWhale(address: string): Promise<Whale | null> {
 }
 
 /** "Whale #3" for listed traders (their chosen name if they set one on Hyperliquid). */
-export const whaleName = (w: Pick<Whale, "rank" | "name"> | null, address: string) =>
+export const whaleName = (w: { rank: number | null; name: string | null } | null, address: string) =>
   w?.name ? w.name : w?.rank ? `Whale #${w.rank}` : `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 export const isAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
@@ -120,4 +120,52 @@ export async function followWhale(sign: SignFn, whale: string): Promise<void> {
 }
 export async function unfollowWhale(sign: SignFn, whale: string): Promise<void> {
   await authedDelete(sign, `whales/follow/${whale.toLowerCase()}`);
+}
+
+// ------------------------------------------------------------------ whale moves (indexer)
+
+export type WhaleMove = {
+  id: number;
+  address: string;
+  coin: string;
+  kind: "open" | "add" | "cut" | "flip" | "close";
+  side: "long" | "short";
+  usd: number;
+  px: number;
+  lev: number;
+  t: number;
+  rank: number | null;
+  name: string | null;
+};
+
+function toMove(r: Record<string, unknown>): WhaleMove {
+  return {
+    id: n(r.id),
+    address: String(r.address ?? "").toLowerCase(),
+    coin: String(r.coin ?? ""),
+    kind: (["open", "add", "cut", "flip", "close"].includes(String(r.kind)) ? r.kind : "open") as WhaleMove["kind"],
+    side: r.side === "short" ? "short" : "long",
+    usd: n(r.usd),
+    px: n(r.px),
+    lev: n(r.lev),
+    t: new Date(String(r.t)).getTime(),
+    rank: r.rank === null || r.rank === undefined ? null : n(r.rank),
+    name: typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 40) : null,
+  };
+}
+
+/** The latest moves of the top traders (or of one trader). */
+export async function fetchWhaleMoves(opts: { address?: string; limit?: number; minUsd?: number } = {}): Promise<WhaleMove[]> {
+  let q = db.from("whale_moves_pub").select("*").order("t", { ascending: false }).limit(opts.limit ?? 60);
+  // the public list: only traders on the top list (rank), never someone who is only followed
+  q = opts.address ? q.eq("address", opts.address.toLowerCase()) : q.not("rank", "is", null);
+  if (opts.minUsd) q = q.gte("usd", opts.minUsd);
+  const { data, error } = await q;
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(toMove);
+}
+
+/** The verb of a move: "opened", "added to", "cut", "flipped to", "closed" (then the coin and side). */
+export function moveVerb(m: Pick<WhaleMove, "kind">): string {
+  return { open: "opened", close: "closed", add: "added to", cut: "cut", flip: "flipped to" }[m.kind];
 }

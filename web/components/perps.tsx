@@ -209,10 +209,7 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
               <>
                 <PerpsChart coin={coin} decimals={chartDecimals(m)} lines={lines} />
                 <p className="mt-2 text-right text-[0.6875rem] text-ink-3">
-                  Powered by{" "}
-                  <a href="https://hyperliquid.xyz" target="_blank" rel="noopener noreferrer" className="font-semibold text-ink-2 hover:text-ink">
-                    Hyperliquid
-                  </a>
+                  Powered by <span className="font-semibold text-ink-2">Hyperliquid</span>
                 </p>
               </>
             ) : (

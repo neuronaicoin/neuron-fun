@@ -1,4 +1,4 @@
--- Data tab (update-51): top traders, whale alerts, Market Fear & Greed history.
+-- Data tab (update-51, whale moves update-52): top traders, whale moves and alerts, Market Fear & Greed history.
 -- Run once in the Supabase SQL editor (safe to run again).
 --
 -- The indexer (whales.mjs) refreshes the top traders from Hyperliquid's public leaderboard,
@@ -61,6 +61,29 @@ create table if not exists whale_state (
 alter table whale_state enable row level security;
 revoke all on whale_state from anon, authenticated;
 grant all on whale_state to service_role;
+
+-- what the top traders (and followed ones) did: opened, added, cut, flipped, closed (a week is kept)
+create table if not exists whale_moves (
+  id      bigserial   primary key,
+  address text        not null,
+  coin    text        not null,
+  kind    text        not null check (kind in ('open', 'add', 'cut', 'flip', 'close')),
+  side    text        not null check (side in ('long', 'short')),
+  usd     numeric     not null,
+  px      numeric,
+  lev     numeric,
+  t       timestamptz not null default now()
+);
+create index if not exists whale_moves_t_idx on whale_moves (t desc);
+create index if not exists whale_moves_addr_idx on whale_moves (address, t desc);
+alter table whale_moves enable row level security;
+revoke all on whale_moves from anon, authenticated;
+grant all on whale_moves to service_role;
+grant usage on sequence whale_moves_id_seq to service_role;
+create or replace view whale_moves_pub as
+  select m.id, m.address, m.coin, m.kind, m.side, m.usd, m.px, m.lev, m.t, w.rank, w.name
+  from whale_moves m left join whales w on w.address = m.address and w.listed;
+grant select on whale_moves_pub to anon, authenticated;
 
 alter table notifications add column if not exists pushed boolean not null default true;
 

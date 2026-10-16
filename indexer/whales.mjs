@@ -163,13 +163,21 @@ export function whaleChanges(before, now) {
     const b = before[coin];
     const n = now[coin];
     const side = (p) => (p.s > 0 ? "long" : "short");
-    if (!b && n) out.push({ coin, kind: "open", title: `opened a new ${coin} ${side(n)}`, body: `${money(n.v)} at ${price(n.e)} · ${n.l}x` });
-    else if (b && !n) out.push({ coin, kind: "close", title: `closed their ${coin} ${side(b)}`, body: `It was ${money(b.v)}, entered at ${price(b.e)}.` });
-    else if (b && n && Math.sign(b.s) !== Math.sign(n.s)) out.push({ coin, kind: "flip", title: `flipped ${coin} to ${side(n)}`, body: `Now ${money(n.v)} ${side(n)} at ${price(n.e)} · ${n.l}x` });
+    // usd: how much the move was worth; px: the price it happened around (entry, or the mark now)
+    const mark = (p) => (p.s ? p.v / Math.abs(p.s) : p.e);
+    if (!b && n)
+      out.push({ coin, kind: "open", side: side(n), usd: n.v, px: n.e, lev: n.l, title: `opened a new ${coin} ${side(n)}`, body: `${money(n.v)} at ${price(n.e)} · ${n.l}x` });
+    else if (b && !n)
+      out.push({ coin, kind: "close", side: side(b), usd: b.v, px: mark(b), lev: b.l, title: `closed their ${coin} ${side(b)}`, body: `It was ${money(b.v)}, entered at ${price(b.e)}.` });
+    else if (b && n && Math.sign(b.s) !== Math.sign(n.s))
+      out.push({ coin, kind: "flip", side: side(n), usd: n.v, px: n.e, lev: n.l, title: `flipped ${coin} to ${side(n)}`, body: `Now ${money(n.v)} ${side(n)} at ${price(n.e)} · ${n.l}x` });
     else if (b && n) {
       const ch = Math.abs(n.s) / Math.abs(b.s) - 1;
-      if (ch >= 0.2) out.push({ coin, kind: "add", title: `added to their ${coin} ${side(n)}`, body: `Now ${money(n.v)} (+${Math.round(ch * 100)}%) · entry ${price(n.e)}` });
-      else if (ch <= -0.2) out.push({ coin, kind: "cut", title: `cut their ${coin} ${side(n)}`, body: `Now ${money(n.v)} (${Math.round(ch * 100)}%)` });
+      const delta = Math.abs(Math.abs(n.s) - Math.abs(b.s)) * mark(n);
+      if (ch >= 0.2)
+        out.push({ coin, kind: "add", side: side(n), usd: delta, px: mark(n), lev: n.l, title: `added to their ${coin} ${side(n)}`, body: `Now ${money(n.v)} (+${Math.round(ch * 100)}%) · entry ${price(n.e)}` });
+      else if (ch <= -0.2)
+        out.push({ coin, kind: "cut", side: side(n), usd: delta, px: mark(n), lev: n.l, title: `cut their ${coin} ${side(n)}`, body: `Now ${money(n.v)} (${Math.round(ch * 100)}%)` });
     }
   }
   return out;
@@ -178,16 +186,19 @@ export function whaleChanges(before, now) {
 // the same trader and coin isn't announced more than once in 10 minutes (opens and closes always are)
 const lastNote = new Map();
 
-export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read = info, now = Date.now() } = {}) {
+export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read = info, now = Date.now(), topN = 30, log = () => {} } = {}) {
   const { rows } = await pool.query(
-    `select f.whale, count(*)::int as n, s.positions, s.checked_at, w.name, w.rank
-     from whale_follows f
-     left join whale_state s on s.address = f.whale
-     left join whales w on w.address = f.whale and w.listed
-     group by f.whale, s.positions, s.checked_at, w.name, w.rank
+    // the top 30 traders (their moves go on the Data page) and everyone someone follows
+    `select a.whale, s.positions, s.checked_at, w.name, w.rank
+     from (select address as whale from whales where listed and rank <= $1
+           union select whale from whale_follows) a
+     left join whale_state s on s.address = a.whale
+     left join whales w on w.address = a.whale and w.listed
      order by s.checked_at nulls first
-     limit 150`
+     limit 150`,
+    [topN]
   );
+  let moves = 0;
   let sent = 0;
   for (const r of rows) {
     let pos;
@@ -198,7 +209,8 @@ export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read
     }
     // a first look, or the first in a while (nobody followed them for a time): what they hold now
     // is the starting point, not news
-    const first = !r.checked_at || now - new Date(r.checked_at).getTime() > 5 * 60e3;
+    // (15 minutes: with many traders watched, a round checks 150 of them, the longest-unchecked first)
+    const first = !r.checked_at || now - new Date(r.checked_at).getTime() > 15 * 60e3;
     const changes = first ? [] : whaleChanges(r.positions || {}, pos);
     const who = r.name || (r.rank ? `Whale #${r.rank}` : `Trader ${r.whale.slice(0, 6)}…${r.whale.slice(-4)}`);
     // the same coin: an open or close at most every 2 minutes, other changes every 10
@@ -247,8 +259,37 @@ export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read
     } finally {
       db.release();
     }
+    // every move of a top trader (not only the ones told by alert) goes on the public list;
+    // someone only followed stays off it (who sasa users follow isn't shown to anyone)
+    if (changes.length && r.rank && r.rank <= topN) {
+      for (const c of changes) {
+        if (![c.usd, c.px, c.lev].every(Number.isFinite)) continue;
+        try {
+          await pool.query(`insert into whale_moves (address, coin, kind, side, usd, px, lev) values ($1,$2,$3,$4,$5,$6,$7)`, [
+            r.whale,
+            c.coin,
+            c.kind,
+            c.side,
+            Math.round(c.usd * 100) / 100,
+            c.px,
+            c.lev,
+          ]);
+          moves++;
+        } catch (e) {
+          const k = e.message.slice(0, 80);
+          if (!movesWarned.has(k)) log(`whales: moves: ${e.message}${/whale_moves/.test(e.message) ? " (run indexer/data.sql again)" : ""}`);
+          movesWarned.add(k);
+        }
+      }
+    }
   }
-  return { checked: rows.length, sent };
+  return { checked: rows.length, sent, moves };
+}
+const movesWarned = new Set();
+
+/** Old moves go (a week is kept). */
+export async function pruneMoves(pool) {
+  await pool.query("delete from whale_moves where t < now() - interval '7 days'");
 }
 
 export async function whalesLoop(pool, log) {
@@ -288,8 +329,9 @@ export async function whalesLoop(pool, log) {
       }
     }
     try {
-      await whaleAlertRound(pool, { site });
+      await whaleAlertRound(pool, { site, log });
       warned.delete("alerts");
+      if (new Date().getMinutes() === 30) await pruneMoves(pool).catch(() => {});
     } catch (e) {
       missing = warn("alerts", e) || missing;
     }

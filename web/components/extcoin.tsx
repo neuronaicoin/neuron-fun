@@ -41,15 +41,6 @@ export type MarketInfo = { id: string; rank: number | null; via: string | null; 
 export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; backLink?: boolean; market?: MarketInfo }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
-  const [chartFailed, setChartFailed] = useState(false);
-  const [light, setLight] = useState(false);
-  useEffect(() => {
-    const read = () => setLight(document.documentElement.dataset.theme === "light");
-    read();
-    const mo = new MutationObserver(read);
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => mo.disconnect();
-  }, []);
   const ch = coin.change24h;
   const kpis: [string, string, string?][] = [
     ["Price", price(coin.priceUsd)],
@@ -123,7 +114,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             )}
           </section>
 
-          {coin.pool && !chartFailed && (
+          {coin.pool && (
             <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5 min-w-0">
               <PriceChart
                 cacheKey={`ext:${coin.network}:${coin.pool}`}
@@ -131,20 +122,6 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 refreshMs={30_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No trades in this period yet."
-                onFail={() => setChartFailed(true)}
-              />
-            </section>
-          )}
-          {coin.pool && chartFailed && (
-            // our chart's data source didn't answer: fall back to GeckoTerminal's own chart
-            <section className="rounded-3xl border border-line bg-surface overflow-hidden">
-              <iframe
-                key={light ? "l" : "d"}
-                title={`${coin.symbol} chart`}
-                src={`https://www.geckoterminal.com/${coin.network}/pools/${coin.pool}?embed=1&info=0&swaps=0&light_chart=${light ? 1 : 0}`}
-                className="w-full h-[380px] sm:h-[460px] border-0 block"
-                loading="lazy"
-                allow="clipboard-write"
               />
             </section>
           )}

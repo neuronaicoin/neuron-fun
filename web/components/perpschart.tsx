@@ -222,6 +222,8 @@ export function ProChart({
   const [indsReady, setIndsReady] = useState(false);
   const [picker, setPicker] = useState(false);
   const [empty, setEmpty] = useState(false);
+  /** the data source didn't answer yet (and nothing was cached): "busy, trying again" */
+  const [waiting, setWaiting] = useState(false);
   const [live, setLive] = useState(false);
   const [legend, setLegend] = useState<Legend | null>(null);
   const [ready, setReady] = useState(0);
@@ -328,9 +330,11 @@ export function ProChart({
     let legendTimer: ReturnType<typeof setTimeout> | null = null;
     let indTimer: ReturnType<typeof setTimeout> | null = null;
     let stopRefresh: (() => void) | null = null;
+    let stopRetry: (() => void) | null = null;
     const key = `${cacheKey}:${frame}`;
     const first = loadRef.current(frame).catch(() => null);
     rowsRef.current = [];
+    setWaiting(false);
 
     (async () => {
       const lc = await import("lightweight-charts");
@@ -392,6 +396,9 @@ export function ProChart({
       const point = (r: PerpCandle) =>
         mode === "line" ? { time: r.t as UTCTimestamp, value: r.close } : { time: r.t as UTCTimestamp, open: r.open, high: r.high, low: r.low, close: r.close };
       const showAll = (rows: PerpCandle[], fit: boolean) => {
+        // something is drawn: the "loading" note and its retries end here
+        stopRetry?.();
+        setWaiting(false);
         rowsRef.current = rows.slice();
         setEmpty(rows.length === 0);
         (series as ISeriesApi<"Candlestick">).setData(rows.map(point) as never);
@@ -418,6 +425,34 @@ export function ProChart({
       if (cached) showAll(cached, true);
       const rows = await first;
       if (!alive) return;
+      if (!rows && !cached && rowsRef.current.length === 0) {
+        // the source is busy: say so and ask again a few times (one ask at a time); if it
+        // still has nothing after about a minute, the chart says there is no data
+        setWaiting(true);
+        let retry: ReturnType<typeof setTimeout> | null = null;
+        let tries = 0;
+        let stopped = false;
+        const again = () => {
+          retry = setTimeout(async () => {
+            retry = null;
+            const got = await loadRef.current(frame).catch(() => null);
+            if (!alive || stopped) return;
+            if (got) {
+              CACHE.set(key, got);
+              showAll(got, true);
+            } else if (++tries < 8) again();
+            else {
+              setWaiting(false);
+              setEmpty(true);
+            }
+          }, 4_000);
+        };
+        stopRetry = () => {
+          stopped = true;
+          if (retry) clearTimeout(retry);
+        };
+        again();
+      }
       if (rows) {
         CACHE.set(key, rows);
         // a live-built frame (no history) keeps what the feed already drew
@@ -445,6 +480,8 @@ export function ProChart({
           indTimer = null;
           drawInds(false);
           setEmpty(false);
+          stopRetry?.();
+          setWaiting(false);
         } else if (!indTimer)
           indTimer = setTimeout(() => {
             indTimer = null;
@@ -487,6 +524,7 @@ export function ProChart({
       priceLinesRef.current = [];
       stopWs?.();
       stopRefresh?.();
+      stopRetry?.();
       if (poll) clearInterval(poll);
       if (legendTimer) clearTimeout(legendTimer);
       if (indTimer) clearTimeout(indTimer);
@@ -719,7 +757,15 @@ export function ProChart({
             )}
           </div>
         )}
-        {empty && <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">{emptyText(frame)}</div>}
+        {empty && !waiting && <div className="absolute inset-0 grid place-items-center text-ink-3 text-[0.875rem] pointer-events-none">{emptyText(frame)}</div>}
+        {waiting && (
+          <div className="absolute inset-0 grid place-items-center pointer-events-none">
+            <span className="flex items-center gap-2 text-ink-3 text-[0.875rem]">
+              <span className="w-2 h-2 rounded-full bg-ink-3 animate-pulse" aria-hidden="true" />
+              Loading the chart…
+            </span>
+          </div>
+        )}
         {manualScale && (
           <button
             type="button"

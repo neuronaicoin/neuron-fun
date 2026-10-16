@@ -13,7 +13,7 @@ import { FollowButton } from "./whalefollow";
 import { compactUsd } from "@/lib/format";
 import { fetchPerpMarkets, type PerpMarket } from "@/lib/perps";
 import { fearGreed, fgLabel, type FearGreed } from "@/lib/feargreed.js";
-import { fetchFearHistory, fetchFundingVenues, fetchWhales, whaleName, type FgPoint, type FundingRow, type Whale } from "@/lib/hldata";
+import { fetchFearHistory, fetchFundingVenues, fetchWhaleMoves, fetchWhales, moveVerb, whaleName, type FgPoint, type FundingRow, type Whale, type WhaleMove } from "@/lib/hldata";
 import { hlOnStatus, hlSubscribe } from "@/lib/hlws";
 
 const pct = (v: number | null | undefined, d = 2) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`);
@@ -52,6 +52,22 @@ export function DataPage() {
     };
   }, []);
   const fg = useMemo(() => (markets ? fearGreed(markets) : null), [markets]);
+  // the top traders: their list, and who they are when they show up in the trades
+  const [whales, setWhales] = useState<Whale[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchWhales()
+        .then((w) => alive && setWhales(w))
+        .catch(() => alive && setWhales((x) => x ?? []));
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 5 * 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  const byAddress = useMemo(() => new Map((whales ?? []).map((w) => [w.address, w] as const)), [whales]);
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28 md:pb-12">
@@ -67,15 +83,21 @@ export function DataPage() {
         <Pulse markets={markets} fg={fg} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] items-start">
-        <WhaleTape markets={markets} />
-        <TopTraders />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 items-start">
+        <WhaleMoves />
+        <WhaleTape markets={markets} whales={byAddress} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-start">
-        <Funding markets={markets} />
+        <TopTraders whales={whales} />
         <Movers markets={markets} />
       </div>
+
+      <div className="mt-4">
+        <Funding markets={markets} />
+      </div>
+
+      <LearnMore />
 
       <p className="mt-6 text-[0.75rem] text-ink-3 max-w-2xl">
         Market data only, not advice. Fear &amp; Greed is sasa&apos;s own reading of Hyperliquid&apos;s markets: how many are up, Bitcoin&apos;s day, the average move, and what longs pay in
@@ -303,7 +325,8 @@ function Pulse({ markets, fg }: { markets: PerpMarket[] | null; fg: FearGreed | 
 
 // ------------------------------------------------------------------ whale trades
 
-type Big = { id: string; coin: string; buy: boolean; usd: number; px: number; time: number };
+/** who: a top trader on either side of it (the buyer if both) */
+type Big = { id: string; coin: string; buy: boolean; usd: number; px: number; time: number; who?: { w: Whale; buyer: boolean } };
 const TAPE_LEVELS = [100_000, 500_000, 1_000_000] as const;
 
 function usePageVisible() {
@@ -324,7 +347,9 @@ function ago(ms: number) {
   return `${Math.floor(s / 3600)}h`;
 }
 
-function WhaleTape({ markets }: { markets: PerpMarket[] | null }) {
+function WhaleTape({ markets, whales }: { markets: PerpMarket[] | null; whales: Map<string, Whale> }) {
+  const whalesRef = useRef(whales);
+  whalesRef.current = whales;
   const [rows, setRows] = useState<Big[]>([]);
   const [min, setMin] = useState<number>(TAPE_LEVELS[0]);
   const [live, setLive] = useState(false);
@@ -343,7 +368,7 @@ function WhaleTape({ markets }: { markets: PerpMarket[] | null }) {
     let pieces = new Map<string, Big>();
     const stops = coinsKey.split(",").map((c) =>
       hlSubscribe({ type: "trades", coin: c }, (d) => {
-        for (const t of (Array.isArray(d) ? d : []) as { coin: string; side: "B" | "A"; px: string; sz: string; time: number; tid: number; hash: string }[]) {
+        for (const t of (Array.isArray(d) ? d : []) as { coin: string; side: "B" | "A"; px: string; sz: string; time: number; tid: number; hash: string; users?: [string, string] }[]) {
           if (t.coin !== c) continue;
           const usd = Number(t.px) * Number(t.sz);
           if (!(usd > 0)) continue;
@@ -354,6 +379,15 @@ function WhaleTape({ markets }: { markets: PerpMarket[] | null }) {
             o.usd += usd;
             o.time = Math.max(o.time, Number(t.time));
           } else pieces.set(k, { id: k, coin: c, buy: t.side === "B", usd, px: Number(t.px), time: Number(t.time) });
+          // Hyperliquid names both sides of every trade: a top trader among them is shown by name
+          const p = pieces.get(k)!;
+          if (!p.who && Array.isArray(t.users)) {
+            const [buyer, seller] = t.users.map((u) => String(u).toLowerCase());
+            const wb = whalesRef.current.get(buyer);
+            const ws = whalesRef.current.get(seller);
+            if (wb) p.who = { w: wb, buyer: true };
+            else if (ws) p.who = { w: ws, buyer: false };
+          }
         }
       })
     );
@@ -451,11 +485,19 @@ function WhaleTape({ markets }: { markets: PerpMarket[] | null }) {
                 aria-hidden="true"
               />
               <span className="relative text-[0.75rem] text-ink-3 tabular-nums">{ago(r.time)}</span>
-              <Link href={`/futures/?c=${encodeURIComponent(r.coin)}`} className="relative min-w-0 flex items-baseline gap-2 hover:underline">
-                <b className="font-semibold text-[0.9375rem] truncate">{r.coin}</b>
-                <span className={"text-[0.75rem] font-semibold " + (r.buy ? "text-up" : "text-danger")}>{r.buy ? "bought" : "sold"}</span>
-                <span className="text-[0.75rem] text-ink-3 font-mono truncate">at {px(r.px)}</span>
-              </Link>
+              <span className="relative min-w-0">
+                <Link href={`/futures/?c=${encodeURIComponent(r.coin)}`} className="flex items-baseline gap-2 hover:underline min-w-0">
+                  <b className="font-semibold text-[0.9375rem] truncate">{r.coin}</b>
+                  <span className={"text-[0.75rem] font-semibold " + (r.buy ? "text-up" : "text-danger")}>{r.buy ? "bought" : "sold"}</span>
+                  <span className="text-[0.75rem] text-ink-3 font-mono truncate">at {px(r.px)}</span>
+                </Link>
+                {r.who && (
+                  <Link href={`/data/whale/?a=${r.who.w.address}`} className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] font-semibold text-ink hover:underline w-fit">
+                    <Avatar address={r.who.w.address} size={14} />
+                    {whaleName(r.who.w, r.who.w.address)} {r.who.buyer ? "bought" : "sold"}
+                  </Link>
+                )}
+              </span>
               <span className={"relative font-display font-bold tabular-nums " + (r.usd >= 1_000_000 ? "text-[1.0625rem]" : "text-[0.9375rem]") + (r.buy ? " text-up" : " text-danger")}>{compactUsd(r.usd)}</span>
             </li>
           ))
@@ -465,20 +507,134 @@ function WhaleTape({ markets }: { markets: PerpMarket[] | null }) {
   );
 }
 
+// ------------------------------------------------------------------ whale moves
+
+const MOVE_KINDS = [
+  { k: "all", label: "All" },
+  { k: "open", label: "Opened" },
+  { k: "close", label: "Closed" },
+] as const;
+
+function WhaleMoves() {
+  const [moves, setMoves] = useState<WhaleMove[] | null>(null);
+  const [kind, setKind] = useState<"all" | "open" | "close">("all");
+  const [, tick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchWhaleMoves({ limit: 80, minUsd: 25_000 })
+        .then((m) => alive && setMoves(m))
+        .catch(() => alive && setMoves((x) => x ?? []));
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 20_000);
+    const c = setInterval(() => tick((n) => n + 1), 10_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      clearInterval(c);
+    };
+  }, []);
+  const shown = (moves ?? []).filter((m) => kind === "all" || m.kind === kind || (kind === "open" && m.kind === "flip")).slice(0, 25);
+  return (
+    <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6 min-w-0" aria-labelledby="moves-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="moves-title" className="font-display font-bold text-[1.125rem]">
+            Whale moves
+          </h2>
+          <p className="text-[0.8125rem] text-ink-3">What the 30 biggest winners just did with their positions.</p>
+        </div>
+        <div className="flex gap-1" role="group" aria-label="Show">
+          {MOVE_KINDS.map((x) => (
+            <button
+              key={x.k}
+              type="button"
+              aria-pressed={kind === x.k}
+              onClick={() => setKind(x.k)}
+              className={"h-8 px-3 rounded-lg text-[0.8125rem] font-semibold " + (kind === x.k ? "bg-ink text-paper" : "text-ink-2 hover:bg-paper")}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {moves === null ? (
+        <div className="mt-4 flex flex-col gap-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="h-14 shimmer rounded-xl" />
+          ))}
+        </div>
+      ) : shown.length === 0 ? (
+        <p className="mt-6 py-14 text-center text-[0.875rem] text-ink-3">The next move of a top trader shows up here within a minute.</p>
+      ) : (
+        <ol className="mt-3 flex flex-col min-h-[22rem] max-h-[33rem] overflow-y-auto no-scrollbar">
+          {shown.map((m, i) => {
+            const opening = m.kind === "open" || m.kind === "add" || m.kind === "flip";
+            const sideTone = m.side === "long" ? "text-up" : "text-danger";
+            return (
+              <li key={m.id} className={i ? "border-t border-line" : ""}>
+                <Link href={`/data/whale/?a=${m.address}`} className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 py-3 px-1 rounded-xl hover:bg-paper">
+                  <Avatar address={m.address} size={36} />
+                  <span className="min-w-0">
+                    <span className="block text-[0.9375rem] leading-snug">
+                      <b className="font-semibold">{whaleName(m, m.address)}</b>{" "}
+                      <span className="text-ink-2">{moveVerb(m)}</span>{" "}
+                      <b className="font-semibold">{m.coin}</b>{" "}
+                      <span className={"font-semibold " + sideTone}>{m.side}</span>
+                    </span>
+                    <span className="block text-[0.75rem] text-ink-3 font-mono truncate">
+                      {[m.px > 0 ? `at ${px(m.px)}` : "", m.lev ? `${m.lev}x` : "", `${ago(m.t)} ago`].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                  <span className={"font-display font-bold tabular-nums text-right " + (opening ? sideTone : "text-ink-2")}>{compactUsd(m.usd)}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ learn more (guides)
+
+const GUIDES = [
+  { href: "/learn/how-to-track-crypto-whales/", label: "How to track crypto whales" },
+  { href: "/learn/hyperliquid-whale-tracker/", label: "Hyperliquid whale tracker: what the top traders hold" },
+  { href: "/learn/crypto-fear-and-greed-index/", label: "The crypto Fear & Greed index, explained" },
+  { href: "/learn/funding-rates-explained/", label: "Funding rates explained (and how to read them)" },
+  { href: "/learn/copy-trading-whales/", label: "Should you copy a whale's trades?" },
+  { href: "/learn/whale-alerts/", label: "Whale alerts on your phone" },
+];
+
+function LearnMore() {
+  return (
+    <section className="mt-6 rounded-3xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="learn-title">
+      <h2 id="learn-title" className="font-display font-bold text-[1.125rem]">
+        Learn to read the data
+      </h2>
+      <ul className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+        {GUIDES.map((g) => (
+          <li key={g.href}>
+            <Link href={g.href} className="text-[0.9375rem] font-semibold text-emerald hover:underline">
+              {g.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ------------------------------------------------------------------ top traders
 
 type Period = "pnlMonth" | "pnlWeek" | "pnlAll";
 
-function TopTraders() {
-  const [whales, setWhales] = useState<Whale[] | null>(null);
+function TopTraders({ whales }: { whales: Whale[] | null }) {
   const [period, setPeriod] = useState<Period>("pnlMonth");
-  useEffect(() => {
-    void fetchWhales()
-      .then(setWhales)
-      .catch(() => setWhales([]));
-  }, []);
   const [all, setAll] = useState(false);
-  const list = useMemo(() => (whales ? [...whales].sort((a, b) => b[period] - a[period]).slice(0, all ? 50 : 10) : null), [whales, period, all]);
+  const list = useMemo(() => (whales ? [...whales].sort((a, b) => b[period] - a[period]).slice(0, all ? 100 : 10) : null), [whales, period, all]);
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6 min-w-0" aria-labelledby="top-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -547,7 +703,7 @@ function TopTraders() {
                   </Link>
                 </td>
                 <td className={"py-2 group-hover:bg-paper text-right font-display font-bold tabular-nums " + tone(w[period])}>{signedUsd(w[period])}</td>
-                <td className={"py-2 group-hover:bg-paper text-right tabular-nums hidden sm:table-cell " + tone(w.roiMonth)}>{period === "pnlMonth" ? pct(w.roiMonth, 0) : "—"}</td>
+                <td className={"py-2 group-hover:bg-paper text-right tabular-nums hidden sm:table-cell " + tone(w.roiMonth)}>{period !== "pnlMonth" ? "—" : w.roiMonth > 1000 ? "1000%+" : pct(w.roiMonth, 0)}</td>
                 <td className="py-2 group-hover:bg-paper text-right tabular-nums hidden md:table-cell text-ink-2">{compactUsd(w.accountValue)}</td>
                 <td className="py-2 pr-2 rounded-r-xl group-hover:bg-paper text-right">
                   <FollowButton whale={w.address} compact />
@@ -559,7 +715,7 @@ function TopTraders() {
       )}
       {whales && whales.length > 10 && (
         <button type="button" onClick={() => setAll((v) => !v)} className="mt-2 w-full h-10 rounded-xl border border-line text-[0.875rem] font-semibold text-ink-2 hover:border-ink-3 hover:text-ink">
-          {all ? "Show the top 10" : `Show the top ${Math.min(50, whales.length)}`}
+          {all ? "Show the top 10" : `Show the top ${Math.min(100, whales.length)}`}
         </button>
       )}
       <p className="mt-3 text-[0.75rem] text-ink-3">Tap the bell to get a phone alert when a trader opens or closes a position.</p>

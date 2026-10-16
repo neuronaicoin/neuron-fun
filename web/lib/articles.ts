@@ -13,6 +13,8 @@ import { MAINNET_BASE_ARTICLES } from "./articles-mainnet-base";
 import { MAINNET_MORE_ARTICLES } from "./articles-mainnet-more";
 import { MAINNET_NEW_ARTICLES } from "./articles-mainnet-new";
 import { MAINNET_SEO_ARTICLES } from "./articles-mainnet-seo";
+import { DATA_ARTICLES_A } from "./articles-data-a";
+import { DATA_ARTICLES_B } from "./articles-data-b";
 
 export type Block =
   | { h2: string }
@@ -185,8 +187,11 @@ const BASE_ARTICLES: Article[] = [
  * slugs). The switch happens by itself on the mainnet build.
  */
 export const ARTICLES: Article[] = IS_TESTNET
-  ? [...SEO_ARTICLES, ...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES]
+  ? [...DATA_ARTICLES_A, ...DATA_ARTICLES_B, ...SEO_ARTICLES, ...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES]
   : [
+      // the Data tab's guides (whales, Fear & Greed, funding): on both networks
+      ...DATA_ARTICLES_A,
+      ...DATA_ARTICLES_B,
       ...V7_ARTICLES_A,
       ...V7_ARTICLES_B,
       ...V7_ARTICLES_C,
