@@ -11,7 +11,8 @@ import { NETWORK } from "../lib/network.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const RELAY = "https://api.relay.link";
-const TREASURY = "0xe0ba5905940d748b23dc01266aa884e2391cca2f";
+// sasa's Relay fee goes to the rewards wallet (lib/config.ts RELAY_FEE_TO); earlier to sasa admin
+const FEE_TO = new Set(["0x4670db0a98ac28d4093969e3dfbf16045e321073", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"]);
 const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 /** Each chain's dollar (what Relay takes and pays out on sasa) and its decimals. */
 export const DOLLARS = {
@@ -103,8 +104,8 @@ const list = (x) => (Array.isArray(x) ? x : []);
 function treasuryFees(req) {
   const d = req.data || {};
   const v3 = d.appFees && !Array.isArray(d.appFees) ? d.appFees : null;
-  const quoted = [...(v3 ? list(v3.quoted) : list(d.appFees)), ...list(req.appFees)].filter((f) => lower(f.recipient) === TREASURY);
-  const paid = (v3 ? list(v3.actual) : list(d.paidAppFees)).filter((f) => lower(f.recipient) === TREASURY);
+  const quoted = [...(v3 ? list(v3.quoted) : list(d.appFees)), ...list(req.appFees)].filter((f) => FEE_TO.has(lower(f.recipient)));
+  const paid = (v3 ? list(v3.actual) : list(d.paidAppFees)).filter((f) => FEE_TO.has(lower(f.recipient)));
   return { quoted, paid };
 }
 

@@ -37,6 +37,7 @@ import {RaceTradeEth, IRaceBuilderEthPools} from "../../src/race/RaceTradeEth.so
 import {RaceTradePcs, IRaceBuilderPcsPools} from "../../src/race/RaceTradePcs.sol";
 import {RaceCrossEth, RaceCrossPcs, RaceCrossUsdc, IRaceRouter} from "../../src/race/RaceCross.sol";
 import {AutoOrders} from "../../src/auto/AutoOrders.sol";
+import {SasaFeeVault} from "../../src/fees/SasaFeeVault.sol";
 import {TestUsdV7, TestFeed, TestDollarPool, ITestFeedPrice} from "../../src/race/testnet/TestnetSupport.sol";
 
 interface IFeedDescription {
@@ -79,6 +80,7 @@ contract DeployRace is Script {
         Kind kind;
         bool testnet;
         address deployer;
+        address feeVault; // sasa's fee vault: the race contracts' treasury (splits to keeper / rewards / treasury)
         address usd;
         bool usdIsTest;
         address feed;
@@ -185,6 +187,7 @@ contract DeployRace is Script {
         if (c.kind == Kind.Pcs) _dollarPoolPcs(c);
         if (c.kind == Kind.Eth) _dollarPoolEth(c);
         vm.stopBroadcast();
+        treasury = _feeVault(key, keeper, treasury, c);
 
         // ---- 2. addresses: the factory needs the hub and the builder before they exist
         address coinDeployerAt = vm.computeCreateAddress(fdeployer, 0);
@@ -471,6 +474,7 @@ contract DeployRace is Script {
         vm.serializeAddress(j, "router", o.router);
         vm.serializeAddress(j, "cross", o.cross);
         vm.serializeAddress(j, "autoOrders", o.autoOrders);
+        vm.serializeAddress(j, "feeVault", c.feeVault);
         vm.serializeAddress(j, "coinDeployer", o.coinDeployer);
         vm.serializeUint(j, "startMarketCap", startMc);
         vm.serializeUint(j, "minFirstBuy", minFirstBuy);
@@ -478,6 +482,28 @@ contract DeployRace is Script {
         vm.serializeUint(j, "startBlock", block.number);
         string memory out = vm.serializeAddress(j, "factory", o.factory);
         vm.writeJson(out, string.concat(vm.envOr("DEPLOY_DIR", string("./deployments/race/")), vm.toString(block.chainid), ".json"));
+    }
+
+    /// sasa's rewards wallet on mainnet (pays invite rewards); REWARDS overrides it.
+    address internal constant MAINNET_REWARDS = 0x4670db0a98Ac28D4093969E3Dfbf16045E321073;
+
+    /**
+     * @dev The fee vault: every fee the race contracts pay sasa goes here, and anyone can split it
+     * (10% keeper, 10% rewards, 80% treasury). Deployed on mainnet, or wherever REWARDS is set;
+     * it then stands in for the treasury everywhere. Owned by the treasury.
+     */
+    function _feeVault(uint256 key, address keeper, address treasury, Cfg memory c) internal returns (address) {
+        string memory raw = vm.envOr("REWARDS", string(""));
+        address rewards = bytes(raw).length > 0 ? vm.parseAddress(raw) : c.testnet ? address(0) : MAINNET_REWARDS;
+        if (rewards == address(0)) return treasury;
+        require(keeper != treasury && rewards != treasury, "fee vault: keeper / rewards must not be the treasury");
+        vm.startBroadcast(key);
+        SasaFeeVault v = new SasaFeeVault(keeper, rewards, treasury, IERC20(c.usd));
+        vm.stopBroadcast();
+        require(v.treasury() == treasury && v.keeper() == keeper && v.rewards() == rewards && v.owner() == treasury, "fee vault wiring");
+        c.feeVault = address(v);
+        console2.log("Fee vault:      ", address(v));
+        return address(v);
     }
 
     function _kind(string memory s) internal pure returns (Kind) {

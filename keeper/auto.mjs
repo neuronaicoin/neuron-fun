@@ -17,7 +17,8 @@
 //   DEPLOYMENTS            folder with <chainId>.json from DeployRace (default ../contracts-v7/deployments/race)
 //   RPC_<chainId>          RPC URL(s) per chain, comma-separated
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY
-//   TREASURY               receives sasa's 0.7% fee on other DEXs' coins (Relay app fee)
+//   TREASURY               receives sasa's 0.7% fee on other DEXs' coins (Relay app fee): the
+//                          rewards wallet 0x4670db0a98Ac28D4093969E3Dfbf16045E321073
 //   SITE_URL               default https://sasapad.fun
 //   HOME_CHAIN_ID          where sasa accounts keep their dollars (default 8453, Base)
 //   LOOP_SECONDS           default 8 (0: one pass, then exit)
@@ -27,12 +28,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, decodeEventLog, decodeFunctionData, defineChain, encodeFunctionData, fallback, http, parseAbi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { alert } from "./alert.mjs";
+import { alert, heartbeat } from "./alert.mjs";
 import { gasFloor } from "./refill.mjs";
 
-// the treasury the site's Relay fee goes to: auto-order fees count for invite rewards only when
-// they go there too (TREASURY)
-const SASA_TREASURY = "0xe0ba5905940d748b23dc01266aa884e2391cca2f";
+// where the site's Relay fee goes (the rewards wallet; earlier sasa admin): auto-order fees count
+// for invite rewards only when TREASURY is one of them
+const SASA_FEE_TO = new Set(["0x4670db0a98ac28d4093969e3dfbf16045e321073", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"]);
 
 const env = (n, d) => {
   const v = process.env[n];
@@ -469,7 +470,7 @@ export async function pass(ctx) {
           usd: Math.round(res.usd * 100) / 100,
           source: "auto",
           // the 0.70% app fee this route paid the treasury (relayRoute), counted for invite rewards
-          fee_usd: String(ctx.treasury).toLowerCase() === SASA_TREASURY ? Math.round(res.usd * 0.007 * 1e6) / 1e6 : 0,
+          fee_usd: SASA_FEE_TO.has(String(ctx.treasury).toLowerCase()) ? Math.round(res.usd * 0.007 * 1e6) / 1e6 : 0,
           traded_at: now,
         },
       }).catch((e) => log(`order ${o.id}: stats save failed ${e.message}`));
@@ -511,6 +512,7 @@ async function main() {
         }
       }
     }
+    await heartbeat("auto-keeper");
     try {
       await pass(ctx);
     } catch (e) {

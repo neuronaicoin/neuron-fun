@@ -243,7 +243,7 @@ function MarkAllButton() {
   );
 }
 
-const NOTE_ICON: Record<string, string> = { mc: "$", price: "$", move: "%", bond: "↑", grad: "✓", forum: "#", follow: "+", copy: "⇄", safety: "!", order: "•" };
+const NOTE_ICON: Record<string, string> = { mc: "$", price: "$", move: "%", bond: "↑", grad: "✓", forum: "#", follow: "+", copy: "⇄", safety: "!", system: "!", order: "•" };
 
 function NotesList({ onPick, pad = "px-4" }: { onPick: () => void; pad?: string }) {
   const { notes, signedIn } = useAlerts();

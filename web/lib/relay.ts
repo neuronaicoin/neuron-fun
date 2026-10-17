@@ -7,7 +7,7 @@
  * appear on their own. On mainnet sasa's own fee (FEE_BPS) is added to the quote and paid
  * by Relay straight to the treasury; on testnet there is none.
  */
-import { FEE_BPS, IS_TESTNET, SASA_TREASURY } from "./config";
+import { FEE_BPS, IS_TESTNET, RELAY_FEE_TO } from "./config";
 
 /**
  * Relay's API through sasa's own server (functions/relay-proxy): it adds sasa's Relay API key,
@@ -149,7 +149,7 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     body: JSON.stringify({
       ...Object.fromEntries(Object.entries(q).filter(([k]) => k !== "fee")),
       tradeType: "EXACT_INPUT",
-      ...(!IS_TESTNET && q.fee ? { appFees: [{ recipient: SASA_TREASURY, fee: String(FEE_BPS[q.fee]) }] } : {}),
+      ...(!IS_TESTNET && q.fee ? { appFees: [{ recipient: RELAY_FEE_TO, fee: String(FEE_BPS[q.fee]) }] } : {}),
     }),
   });
   const j = (await r.json().catch(() => ({}))) as RawQuote;

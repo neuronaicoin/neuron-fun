@@ -33,6 +33,7 @@
 //                  LZ_FEE_WEI_<chainId> overrides it for one chain
 //   LOOP_SECONDS   run forever, one pass every N seconds (default: one pass, then exit)
 //   COLLECT_MINUTES / IDLE_COLLECT_HOURS   fee collection pace on the winner (default 30 / 24)
+//   VAULT_MINUTES / VAULT_MIN_USD   how often / from how much the fee vault is split (60 / $5)
 //   MIN_GAS_WEI(_<chainId>), REFILL_USD, REFILL_EVERY_MIN, RELAY_API_KEY, GAS_REFILL
 //                  gas top-up from the keeper's own USDC (the race fees), see refill.mjs
 
@@ -41,7 +42,7 @@ import { readState, writeState } from "./statefile.mjs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, fallback, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { alert } from "./alert.mjs";
+import { alert, heartbeat, staleServices } from "./alert.mjs";
 import { refillGas } from "./refill.mjs";
 
 const env = (n, d) => {
@@ -132,6 +133,8 @@ const bridgeAbi = parseAbi([
   "function forwardHop(uint256 hopId)",
 ]);
 const priceFeedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
+const vaultAbi = parseAbi(["function distribute()"]);
+const balAbi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 const NONE = 0, RACING = 1, WON = 2, LOST = 3;
 
 // ------------------------------------------------------------------ chains
@@ -328,11 +331,44 @@ async function forwardOne(c, i, coinId, finalEid, amount, dec, sendFn) {
   return sendFn(c, `forward hop ${i} of ${String(coinId).slice(0, 10)}: ${amount} to eid ${finalEid} (tip ${tip})`, params);
 }
 
+// ------------------------------------------------------------------ fee vault
+
+// sasa's fee vault on each chain (the race contracts' treasury) is split at least every
+// VAULT_MINUTES (default 60) once it holds VAULT_MIN_USD (default $5): 10% to this keeper (its
+// gas), 10% to the rewards wallet, 80% to the treasury. Race coins it receives stay in it until
+// the treasury sweeps them (sending them costs more gas than most are worth).
+const VAULT_MS = Number(env("VAULT_MINUTES", "60")) * 60_000;
+const VAULT_MIN_USD = Number(env("VAULT_MIN_USD", "5"));
+
+/** Dollars held by the vault: the chain's coin (priced by the feed; Arc's is USDC) + the dollar. */
+export async function vaultUsd(c) {
+  const [nat, dol] = await Promise.all([
+    c.pub.getBalance({ address: c.feeVault }),
+    c.pub.readContract({ address: c.usd, abi: balAbi, functionName: "balanceOf", args: [c.feeVault] }),
+  ]);
+  // on Arc the chain's coin and the dollar are the same money: count it once
+  if (c.builderKind === "usdc") return Number(nat) / 1e18;
+  const natUsd18 = nat > 0n ? await gasUsd18(c, nat) : 0n;
+  if (natUsd18 === null) return null;
+  return Number(natUsd18) / 1e18 + Number(dol) / 10 ** Number(c.usdDecimals ?? 6);
+}
+
+export async function vaultPass(c, state, sendFn = send, now = Date.now()) {
+  if (!c.feeVault || c.feeVault === zeroAddress) return false;
+  state.vault ||= {};
+  if (now - Number(state.vault[c.chainId] ?? 0) < VAULT_MS) return false;
+  const usd = await vaultUsd(c);
+  state.vault[c.chainId] = now;
+  if (usd === null || usd < VAULT_MIN_USD) return false;
+  return sendFn(c, `split the fee vault ($${usd.toFixed(2)}: 10% keeper, 10% rewards, 80% treasury)`, { address: c.feeVault, abi: vaultAbi, functionName: "distribute" });
+}
+
 // ------------------------------------------------------------------ one pass
 
 async function main() {
   const chains = loadChains();
   if (chains.length === 0) throw new Error("no chains configured");
+  await heartbeat("race-keeper", "pass started");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
   // gas: the race fees arrive here as USDC; when ETH / BNB runs low a few are swapped into it
   for (const c of chains) {
@@ -402,7 +438,20 @@ async function main() {
       log(`${coin.name} (${id.slice(0, 10)}): skipped this pass: ${e.shortMessage || e.message}`);
     }
   }
+  for (const c of chains) {
+    if (!timeLeft()) break;
+    try {
+      await vaultPass(c, state);
+    } catch (e) {
+      log(`${c.chainId}: fee vault check failed this pass (${e.shortMessage || e.message})`);
+      await alert("race keeper", `vault-${c.chainId}`, `splitting the fee vault on chain ${c.chainId} failed: ${e.shortMessage || e.message}`);
+    }
+  }
   if (!DRY) writeState(STATE_FILE, state);
+  await heartbeat("race-keeper", `${Object.keys(state.coins).length} coins`);
+  // the indexer feeds the site: tell the admin if it went quiet
+  const quiet = await staleServices(["indexer"], 15).catch(() => []);
+  if (quiet.length) await alert("race keeper", "indexer-quiet", `the indexer hasn't reported for 15+ minutes; check it on Railway.`);
   log("pass done");
 
   // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.

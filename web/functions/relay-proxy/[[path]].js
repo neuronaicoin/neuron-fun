@@ -19,8 +19,9 @@ const ALLOWED = [
   ["POST", /^\/execute\/[a-z0-9/_-]{1,60}$/i],
 ];
 const MAX_BODY = 64 * 1024;
-// the only app fee a quote through sasa's key may carry: sasa's own (lib/config.ts SASA_TREASURY)
-const TREASURY = "0xe0ba5905940d748b23dc01266aa884e2391cca2f";
+// the only app fees a quote through sasa's key may carry: sasa's own (lib/config.ts RELAY_FEE_TO,
+// the rewards wallet; and sasa admin, the earlier recipient)
+const FEE_TO = new Set(["0x4670db0a98ac28d4093969e3dfbf16045e321073", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"]);
 
 const fail = (status, message) =>
   new Response(JSON.stringify({ message }), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -63,7 +64,7 @@ export async function onRequest(ctx) {
         delete j.referrer;
         // sasa's key carries sasa's fee only: no one else's fee can ride on it
         if (j.appFees !== undefined) {
-          const ok = Array.isArray(j.appFees) && j.appFees.every((f) => String(f?.recipient ?? "").toLowerCase() === TREASURY);
+          const ok = Array.isArray(j.appFees) && j.appFees.every((f) => FEE_TO.has(String(f?.recipient ?? "").toLowerCase()));
           if (!ok) return fail(400, "Bad request.");
         }
         body = JSON.stringify(j);

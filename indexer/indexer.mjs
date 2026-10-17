@@ -24,6 +24,7 @@
 import pg from "pg";
 import { cardLoop, extCardLoop, raceCardLoop } from "./cards.mjs";
 import { alertLoop } from "./alerts.mjs";
+import { watchdogLoop } from "./watchdog.mjs";
 import { safetyLoop } from "./safety.mjs";
 import { copyLoop } from "./copy.mjs";
 import { sparkLoop } from "./spark.mjs";
@@ -534,6 +535,7 @@ async function main() {
     keep("ext cards", () => extCardLoop(pool, log)),
     keep("race cards", () => raceCardLoop(pool, log)),
     keep("alerts", () => alertLoop(pool, log)),
+    keep("watchdog", () => watchdogLoop(pool, log)),
     keep("safety", () => safetyLoop(pool, chains, log)),
     keep("copy", () => copyLoop(pool, log)),
     keep("sparklines", () => sparkLoop(pool, log)),

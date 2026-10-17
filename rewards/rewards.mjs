@@ -25,6 +25,10 @@
 //   REWARD_CHAIN_IDS      race chains whose trades earn them (default 8453,4663,5042,56)
 //   HL_BUILDER            sasa's futures fee address on Hyperliquid (futures rewards; unset = off)
 //   HL_FILLS, HL_API      Hyperliquid's builder_fills files and info API (defaults: mainnet)
+//   RPC_8453, RPC_56, RPC_4663, RPC_5042   funding itself (fund.mjs): claim Relay's app fees, turn
+//                         what it holds on each chain into USDC on Base; FUND_EVERY_HOURS (6)
+//   TREASURY_WALLET       where USDC above what's owed + KEEP_USD (100) goes once a day
+//                         (default sasa treasury 0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F)
 //                         token: the USDC address on USDC chains (sasa v5); rewards are then
 //                         paid in USDC and counted as dollars. Without it, in the chain's coin.
 //                         orders: the SasaOrders contract; its auto orders get filled here too
@@ -37,13 +41,14 @@
 //   PROTOCOL_BPS, REFERRAL_BPS, COPY_BPS, REFERRAL_MONTHS   (defaults 7000, 2500, 1000, 12)
 //   FALLBACK_PRICE_USD    price to use if the live price can't be fetched (optional)
 
-import { alert } from "./alert.mjs";
+import { alert, heartbeat } from "./alert.mjs";
 import pg from "pg";
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, getAddress, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ordersLoop } from "./orders.mjs";
 import lz4 from "lz4js";
 import { buildPerpLedger, buildUsdLedger, builderAccountUsd, payUsd, reconcileUsd } from "./usd.mjs";
+import { FUND_DEFAULTS, claimRelayFees, convertToBase, sweepSurplus } from "./fund.mjs";
 
 const env = (k, d) => {
   const v = process.env[k];
@@ -122,6 +127,15 @@ const USD = (() => {
     wallet: createWalletClient({ chain, account, transport: http(u.rpc) }),
   };
 })();
+// Funding itself (fund.mjs): every chain with an RPC_<chainId> set
+const FUND = FUND_DEFAULTS.filter((f) => process.env[`RPC_${f.chainId}`]).map((f) => {
+  const rpc = process.env[`RPC_${f.chainId}`].split(",")[0].trim();
+  const chain = defineChain({ id: f.chainId, name: `c${f.chainId}`, nativeCurrency: { name: "N", symbol: "N", decimals: 18 }, rpcUrls: { default: { http: [rpc] } } });
+  return { ...f, pub: createPublicClient({ chain, transport: http(rpc) }), wallet: createWalletClient({ chain, account, transport: http(rpc) }) };
+});
+const FUND_MS = Number(env("FUND_EVERY_HOURS", "6")) * 3_600_000;
+const SASA_TREASURY = env("TREASURY_WALLET", "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F");
+const KEEP_USD = Number(env("KEEP_USD", "100"));
 const REWARD_CHAIN_IDS = env("REWARD_CHAIN_IDS", "8453,4663,5042,56").split(",").map((x) => Number(x.trim())).filter(Boolean);
 const HL_BUILDER = process.env.HL_BUILDER || "";
 
@@ -414,7 +428,10 @@ async function main() {
   if (USD) log(`dollar rewards: paid in USDC on Base from ${account.address}`);
   let lastLedger = 0;
   let lastPerp = 0;
+  let lastFund = 0;
+  let sweptDay = "";
   for (;;) {
+    await heartbeat("rewards");
     try {
       if (Date.now() - lastLedger > 5 * 60_000) {
         await buildLedger();
@@ -460,6 +477,20 @@ async function main() {
           await alert("rewards", `chain-${c.name}`, `${c.name}: ${e.shortMessage ?? e.message}`);
         }
       }
+      // funding itself: claim Relay's app fees, bring everything to USDC on Base
+      if (FUND.length && Date.now() - lastFund > FUND_MS) {
+        lastFund = Date.now();
+        try {
+          if (env("CLAIM_RELAY", "true") !== "false" && !DRY) await claimRelayFees({ account, apiKey: process.env.RELAY_API_KEY, log });
+        } catch (e) {
+          log(`relay claim: ${e.message}`);
+          await alert("rewards", "relay-claim", `claiming Relay's app fees failed: ${e.message}`);
+        }
+        if (!DRY) {
+          const f = await convertToBase({ chains: FUND, account, apiKey: process.env.RELAY_API_KEY, price: usdPrice, log }).catch((e) => ({ moved: 0, errors: [e.message] }));
+          if (f.errors.length) await alert("rewards", "fund", `moving the rewards wallet's money to USDC on Base: ${f.errors.join("; ")}`);
+        }
+      }
       if (USD) {
         try {
           await reconcileUsd(pool, USD, log, account);
@@ -471,7 +502,13 @@ async function main() {
             if (r.noGas) {
               await alert("rewards", "usd-gas", `the rewards wallet ${account.address} needs a little ETH on Base for gas; invite rewards wait until it's topped up.`);
             } else if (r.short > 0n && !r.capped) {
-              await alert("rewards", "usd-short", `the rewards wallet ${account.address} is ${(Number(r.short) / 1e6).toFixed(2)} USDC short on Base for today's invite rewards. Send at least that much USDC (Base) to it; what's owed is paid on the next run.`);
+              await alert("rewards", "usd-short", `the rewards wallet ${account.address} is ${(Number(r.short) / 1e6).toFixed(2)} USDC short on Base for today's invite rewards; they stay owed and are paid as the fee vault and Relay fees bring more in.`);
+            }
+            // once a day, after paying: what's above what's owed + the reserve goes to the treasury
+            const today = new Date().toISOString().slice(0, 10);
+            if (sweptDay !== today) {
+              sweptDay = today;
+              await sweepSurplus(pool, USD, account, { treasury: SASA_TREASURY, keepUsd: KEEP_USD, log, dry: DRY });
             }
           }
         } catch (e) {

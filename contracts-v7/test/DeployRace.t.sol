@@ -17,6 +17,7 @@ import {CLPoolManager} from "infinity-core/src/pool-cl/CLPoolManager.sol";
 
 import {DeployRace} from "../script/race/DeployRace.s.sol";
 import {RebalanceTestPool} from "../script/race/RebalanceTestPool.s.sol";
+import {SasaFeeVault} from "../src/fees/SasaFeeVault.sol";
 import {RaceFactory} from "../src/race/RaceFactory.sol";
 import {RaceBuilderEth} from "../src/race/RaceBuilderEth.sol";
 import {RaceBuilderPcs} from "../src/race/RaceBuilderPcs.sol";
@@ -188,6 +189,30 @@ contract DeployRaceTest is Test, DeployPermit2 {
         uint256 got = t.buy(coin, 20e6, 1, alice, block.timestamp);
         vm.stopPrank();
         assertGt(got, 0, "bought with USDC through BNB");
+    }
+
+    /// With a rewards wallet set, the fee vault is the treasury of everything that pays sasa.
+    function test_deployWithFeeVault() public {
+        (address pm, address posm) = _v4();
+        vm.setEnv("BUILDER_KIND", "usdc");
+        vm.setEnv("POOL_MANAGER", vm.toString(pm));
+        vm.setEnv("POSITION_MANAGER", vm.toString(posm));
+        vm.setEnv("TREASURY", vm.toString(address(0x7EA5)));
+        vm.setEnv("KEEPER", vm.toString(address(0x6EE9)));
+        vm.setEnv("REWARDS", vm.toString(address(0x4E4A)));
+        new DeployRace().run();
+        vm.setEnv("REWARDS", "");
+        vm.setEnv("KEEPER", vm.toString(deployer));
+        vm.setEnv("TREASURY", vm.toString(deployer));
+        string memory j = vm.readFile(string.concat(dir, vm.toString(block.chainid), ".json"));
+        SasaFeeVault fv = SasaFeeVault(payable(vm.parseJsonAddress(j, ".feeVault")));
+        assertEq(fv.treasury(), address(0x7EA5));
+        assertEq(fv.keeper(), address(0x6EE9));
+        assertEq(fv.rewards(), address(0x4E4A));
+        assertEq(fv.owner(), address(0x7EA5), "owned by the treasury");
+        assertEq(RaceBuilder(_read("builder")).treasury(), address(fv), "builder pays the vault");
+        assertEq(RaceFactory(_read("factory")).treasury(), address(fv), "coins' move fee goes to the vault");
+        assertEq(RaceFactory(_read("factory")).raceFeeTo(), address(0x6EE9), "race fee still to the keeper");
     }
 
     function test_deployUsdc() public {

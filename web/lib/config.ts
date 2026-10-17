@@ -18,7 +18,13 @@ export const SASA_TREASURY = "0xe0ba5905940D748b23Dc01266AA884E2391CcA2F" as con
  * must hold at least 100 USDC there (Hyperliquid's rule) or builder orders stop working.
  */
 export const HL_BUILDER = "0xe0ba5905940d748b23dc01266aa884e2391cca2f" as const;
-/** Fees taken on mainnet through Relay, in basis points (Relay sends them to the treasury). */
+/**
+ * Where Relay's app fees (sasa's swap and deposit fees) go: sasa's rewards wallet. Relay keeps them
+ * in an app balance that only this wallet can claim; the rewards service claims them by itself,
+ * keeps what invite rewards need and sends the rest to sasa's treasury. No one claims by hand.
+ */
+export const RELAY_FEE_TO = "0x4670db0a98Ac28D4093969E3Dfbf16045E321073" as const;
+/** Fees taken on mainnet through Relay, in basis points (paid to RELAY_FEE_TO). */
 export const FEE_BPS = { deposit: 25, swap: 70 } as const;
 
 /** Public, read-only database (Supabase). The key is the public "publishable" key. */
