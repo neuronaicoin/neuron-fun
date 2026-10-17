@@ -140,7 +140,10 @@ function throttled(pub, gapMs) {
 }
 
 export function loadRaceChains(log = console.log) {
-  const file = env("RACE_CHAINS_FILE", join(HERE, "race-chains.json"));
+  // RACE_CHAINS_FILE: race-chains.json (testnet) or race-chains-mainnet.json; a bare name is
+  // looked up next to this file
+  const name = env("RACE_CHAINS_FILE", "race-chains.json");
+  const file = name.startsWith("/") ? name : join(HERE, name);
   let all;
   try {
     all = JSON.parse(readFileSync(file, "utf8"));

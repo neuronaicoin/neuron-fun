@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SasaMark } from "./landing";
+import { SasaMark, SasaWordmark } from "./landing";
 import type { Block } from "@/lib/articles";
 import { CurveSim } from "./curvesim";
 
@@ -11,7 +11,7 @@ export function LearnHeader() {
       <div className="max-w-3xl mx-auto px-5 h-16 flex items-center justify-between">
         <a href="/" className="flex items-center gap-2.5" aria-label="sasa home">
           <SasaMark size={32} />
-          <span className="font-display font-bold text-[1.3125rem] tracking-tight">sasa</span>
+          <SasaWordmark height={20} className="text-ink" />
         </a>
         <nav className="flex items-center gap-2 text-[0.875rem]">
           <Link href="/learn/" className="h-9 px-3 rounded-full flex items-center font-semibold text-ink-2 hover:text-ink">Learn</Link>

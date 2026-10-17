@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { useWallet, walletAppLinks, type WalletOption } from "./wallet";
 import { CHAINS, IS_TESTNET, V6 } from "@/lib/config";
 import { useSafety } from "@/lib/safety";
-import { SasaMark } from "./landing";
+import { SasaMark, SasaWordmark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
 import { BalancePill, MoneyHost } from "./portfolio";
@@ -255,7 +255,7 @@ export function Header() {
       <div className="max-w-7xl mx-auto h-14 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
         <Link href="/explore/" className="flex items-center gap-2 text-ink shrink-0">
           <LogoMark size={26} />
-          <span className="font-display font-bold text-[1.25rem] tracking-tight">sasa</span>
+          <SasaWordmark height={17} />
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 text-[0.8125rem] lg:text-[0.875rem] xl:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
@@ -529,7 +529,7 @@ export function Footer() {
         <div className="max-w-2xl">
           <div className="flex items-center gap-2.5">
             <LogoMark size={26} />
-            <span className="font-display font-bold">sasa</span>
+            <SasaWordmark height={16} className="text-ink" />
           </div>
           <p className="text-[0.8125rem] leading-relaxed text-ink-2 mt-3">
             Meme coins are risky and can lose all their value. Only use money you can afford to lose. Nothing on this

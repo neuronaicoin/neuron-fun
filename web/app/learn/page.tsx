@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description:
     "Plain-language guides to meme coin launches: Robinhood Chain, multi-chain launches, bonding curves, graduation and staying safe.",
   alternates: { canonical: "/learn/" },
-  openGraph: { title: "Learn | sasa", description: "Guides to launching and trading meme coins across chains.", url: "/learn/", type: "website", images: ["/og.png"] },
+  openGraph: { title: "Learn | sasa", description: "Guides to launching and trading meme coins across chains.", url: "/learn/", type: "website", images: ["/og-sasa.png"] },
 };
 
 export default function LearnIndex() {

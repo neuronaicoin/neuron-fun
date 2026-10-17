@@ -28,6 +28,9 @@ const CHAIN = {
   56: { name: "BNB", color: "#F3BA2F" },
 };
 
+// The "sasa" wordmark, beside the mark at the top left of every card.
+const WORDMARK = `<svg x="146" y="67" width="108" height="30" viewBox="15 -574 2161 598"><g transform="matrix(1,0,0.2,-1,0,0)"><path d="M253.0 -18.0Q133.0 -18.0 64.0 31.5Q-5.0 81.0 -10.0 171.0H150.0Q154.0 146.0 181.0 128.0Q208.0 110.0 257.0 110.0Q292.0 110.0 317.5 120.5Q343.0 131.0 343.0 155.0Q343.0 176.0 323.0 189.5Q303.0 203.0 250.0 208.0L212.0 212.0Q106.0 223.0 56.0 270.0Q6.0 317.0 6.0 388.0Q6.0 449.0 36.0 488.5Q66.0 528.0 119.0 548.0Q172.0 568.0 240.0 568.0Q351.0 568.0 419.0 519.5Q487.0 471.0 491.0 380.0H331.0Q327.0 405.0 304.0 422.5Q281.0 440.0 238.0 440.0Q207.0 440.0 187.5 429.0Q168.0 418.0 168.0 398.0Q168.0 377.0 186.5 367.0Q205.0 357.0 246.0 352.0L284.0 348.0Q390.0 337.0 447.5 289.5Q505.0 242.0 505.0 165.0Q505.0 108.0 474.5 67.0Q444.0 26.0 387.5 4.0Q331.0 -18.0 253.0 -18.0Z" fill="#FFF4EC"/><path d="M605,440 C645,490 705,500 785,500 C905,500 955,450 955,360 M955,380 L955,0 M955,290 L765,290 C655,290 595,240 595,170 C595,95 655,60 755,60 C865,60 945,110 955,200" stroke="#FFF4EC" fill="none" stroke-width="124" stroke-linejoin="round"/><path d="M1328.0 -18.0Q1208.0 -18.0 1139.0 31.5Q1070.0 81.0 1065.0 171.0H1225.0Q1229.0 146.0 1256.0 128.0Q1283.0 110.0 1332.0 110.0Q1367.0 110.0 1392.5 120.5Q1418.0 131.0 1418.0 155.0Q1418.0 176.0 1398.0 189.5Q1378.0 203.0 1325.0 208.0L1287.0 212.0Q1181.0 223.0 1131.0 270.0Q1081.0 317.0 1081.0 388.0Q1081.0 449.0 1111.0 488.5Q1141.0 528.0 1194.0 548.0Q1247.0 568.0 1315.0 568.0Q1426.0 568.0 1494.0 519.5Q1562.0 471.0 1566.0 380.0H1406.0Q1402.0 405.0 1379.0 422.5Q1356.0 440.0 1313.0 440.0Q1282.0 440.0 1262.5 429.0Q1243.0 418.0 1243.0 398.0Q1243.0 377.0 1261.5 367.0Q1280.0 357.0 1321.0 352.0L1359.0 348.0Q1465.0 337.0 1522.5 289.5Q1580.0 242.0 1580.0 165.0Q1580.0 108.0 1549.5 67.0Q1519.0 26.0 1462.5 4.0Q1406.0 -18.0 1328.0 -18.0Z" fill="#FF6B1A"/><path d="M1680,440 C1720,490 1780,500 1860,500 C1980,500 2030,450 2030,360 M2030,380 L2030,0 M2030,290 L1840,290 C1730,290 1670,240 1670,170 C1670,95 1730,60 1830,60 C1940,60 2020,110 2030,200" stroke="#FF6B1A" fill="none" stroke-width="124" stroke-linejoin="round"/></g></svg>`;
+
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
@@ -76,7 +79,7 @@ export function cardFacts(row, ethUsd, targetUsd) {
 export function cardSignature(f) {
   const mc = f.marketCap ? Number(f.marketCap.toPrecision(2)) : 0;
   return createHash("sha1")
-    .update(JSON.stringify([f.name, f.symbol, f.logo?.length ?? 0, Math.round(f.progress * 100), mc, f.graduated, f.chains.map((c) => `${c.name}${c.state}`)]))
+    .update(JSON.stringify(["wm2", f.name, f.symbol, f.logo?.length ?? 0, Math.round(f.progress * 100), mc, f.graduated, f.chains.map((c) => `${c.name}${c.state}`)]))
     .digest("hex");
 }
 
@@ -139,7 +142,7 @@ export function cardSvg(f) {
 </defs>
 <rect width="${W}" height="${H}" fill="#0B0806"/><rect width="${W}" height="${H}" fill="url(#glow)"/>
 ${mark(80, 56, 52)}
-<text x="146" y="94" font-family="Sora" font-weight="700" font-size="32" fill="#FFF4EC">sasa</text>
+${WORDMARK}
 <text x="1120" y="92" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">sasapad.fun</text>
 <rect x="78" y="148" width="304" height="304" rx="42" fill="none" stroke="#2E231A" stroke-width="2"/>
 ${pic}
@@ -282,7 +285,7 @@ export function extCardFacts(row, logo) {
 /** Changes only when what people would notice changes (about 5% steps). */
 export function extCardSignature(f) {
   const step = (v) => (v ? Math.round(Math.log(v) / Math.log(1.05)) : 0);
-  return createHash("sha1").update(JSON.stringify([f.name, f.symbol, f.net.name, step(f.marketCap), step(f.volume), f.change ? Math.round(parseFloat(f.change.replace("−", "-")) / 5) : null, !!f.logo])).digest("hex");
+  return createHash("sha1").update(JSON.stringify(["wm2", f.name, f.symbol, f.net.name, step(f.marketCap), step(f.volume), f.change ? Math.round(parseFloat(f.change.replace("−", "-")) / 5) : null, !!f.logo])).digest("hex");
 }
 
 export function extCardSvg(f) {
@@ -303,7 +306,7 @@ export function extCardSvg(f) {
 </defs>
 <rect width="${W}" height="${H}" fill="#0B0806"/><rect width="${W}" height="${H}" fill="url(#glow)"/>
 ${mark(80, 56, 52)}
-<text x="146" y="94" font-family="Sora" font-weight="700" font-size="32" fill="#FFF4EC">sasa</text>
+${WORDMARK}
 <text x="1120" y="92" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">sasapad.fun</text>
 <rect x="78" y="148" width="304" height="304" rx="42" fill="none" stroke="#2E231A" stroke-width="2"/>
 ${pic}
@@ -405,7 +408,7 @@ export function raceCardFacts(row, logo) {
 export function raceCardSignature(f) {
   const step = (v) => (v ? Math.round(Math.log(v) / Math.log(1.05)) : 0);
   return createHash("sha1")
-    .update(JSON.stringify([f.name, f.symbol, !!f.logo, f.winner, f.decided, step(f.total), f.lanes.map((l) => `${l.name}${l.state}:${step(l.usd)}`)]))
+    .update(JSON.stringify(["wm2", f.name, f.symbol, !!f.logo, f.winner, f.decided, step(f.total), f.lanes.map((l) => `${l.name}${l.state}:${step(l.usd)}`)]))
     .digest("hex");
 }
 
@@ -447,7 +450,7 @@ export function raceCardSvg(f) {
 </defs>
 <rect width="${W}" height="${H}" fill="#0B0806"/><rect width="${W}" height="${H}" fill="url(#glow)"/>
 ${mark(80, 56, 52)}
-<text x="146" y="94" font-family="Sora" font-weight="700" font-size="32" fill="#FFF4EC">sasa</text>
+${WORDMARK}
 <text x="1120" y="92" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">sasapad.fun</text>
 <rect x="78" y="148" width="304" height="304" rx="42" fill="none" stroke="#2E231A" stroke-width="2"/>
 ${pic}

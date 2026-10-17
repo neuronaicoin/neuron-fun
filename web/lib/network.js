@@ -3,4 +3,4 @@
  * (forum, sitemaps, llms files) all read it from here. Switch day: set it to "mainnet" (after
  * the mainnet contracts are deployed and lib/mainnet.json and lib/race.ts are filled in).
  */
-export const NETWORK = "testnet";
+export const NETWORK = "mainnet";

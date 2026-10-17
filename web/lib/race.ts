@@ -159,8 +159,134 @@ const TESTNET: RaceChain[] = [
   },
 ];
 
-/** Mainnet: filled in from contracts-v7/deployments on deploy day. Empty = races hidden. */
-const MAINNET: RaceChain[] = [];
+const baseMain = defineChain({
+  id: 8453,
+  name: "Base",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://mainnet.base.org"] } },
+  blockExplorers: { default: { name: "Basescan", url: "https://basescan.org" } },
+});
+const bscMain = defineChain({
+  id: 56,
+  name: "BNB Chain",
+  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+  rpcUrls: { default: { http: ["https://bsc-dataseed.bnbchain.org"] } },
+  blockExplorers: { default: { name: "BscScan", url: "https://bscscan.com" } },
+});
+const robinhoodMain = defineChain({
+  id: 4663,
+  name: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
+  blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
+});
+const arcMain = defineChain({
+  id: 5042,
+  name: "Arc",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.arc.io"] } },
+  blockExplorers: { default: { name: "Arc Explorer", url: "https://explorer.arc.io" } },
+});
+
+// Addresses from contracts-v7/deployments/race-mainnet/*.json (mainnet, deployed Oct 17 2026).
+const MAINNET: RaceChain[] = [
+  {
+    chainId: 8453,
+    eid: 30184,
+    key: "base",
+    name: "Base",
+    short: "Base",
+    color: "#2f6bff",
+    chain: baseMain,
+    factory: "0x88e21D24C35034f80E854efBD5ACD16507a9169B",
+    router: "0xc8c1C173a1d3057619fCf45941c41f02B9E7E5dD",
+    usd: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    system: [
+      "0x498581fF718922c3f8e6A244956aF099B2652b2b", // PoolManager
+      "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4", // builder
+      "0xFD619EeF0dB5E653c2a43C236032895633E4A080", // hook
+      "0xd4D6F84658C98F6BAd57f9E46B3FB69717675FBA", // consolidator
+      "0xf11CB4abe59DFEDF361D4a9927711718dd8DaaB1", // bridge
+      "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
+    ],
+    faucet: false,
+    spoke: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+    auto: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
+  },
+  {
+    chainId: 56,
+    eid: 30102,
+    key: "bnb",
+    name: "BNB Chain",
+    short: "BNB",
+    color: "#f0b90b",
+    chain: bscMain,
+    factory: "0x88e21D24C35034f80E854efBD5ACD16507a9169B",
+    router: "0xc8c1C173a1d3057619fCf45941c41f02B9E7E5dD",
+    usd: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+    system: [
+      "0x238a358808379702088667322f80aC48bAd5e6c4", // Vault
+      "0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b", // CLPoolManager
+      "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4", // builder
+      "0x6e4Dd763fa80469a69CAd1D8427Dea958FF7b30A", // hook
+      "0xd4D6F84658C98F6BAd57f9E46B3FB69717675FBA", // consolidator
+      "0xf11CB4abe59DFEDF361D4a9927711718dd8DaaB1", // bridge
+      "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
+    ],
+    faucet: false,
+    spoke: "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+    cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
+    auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
+  },
+  {
+    chainId: 4663,
+    eid: 30416,
+    key: "robinhood",
+    name: "Robinhood Chain",
+    short: "Robinhood",
+    color: "#1fd15a",
+    chain: robinhoodMain,
+    factory: "0x88e21D24C35034f80E854efBD5ACD16507a9169B",
+    router: "0xc8c1C173a1d3057619fCf45941c41f02B9E7E5dD",
+    usd: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    system: [
+      "0x8366a39CC670B4001A1121B8F6A443A643e40951", // PoolManager
+      "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4", // builder
+      "0x3B0A89f5d19189077a24320a3939bf3308bAE080", // hook
+      "0xd4D6F84658C98F6BAd57f9E46B3FB69717675FBA", // consolidator
+      "0xf11CB4abe59DFEDF361D4a9927711718dd8DaaB1", // bridge
+      "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
+    ],
+    faucet: false,
+    spoke: "0xD29C85F15DF544bA632C9E25829fd29d767d7978",
+    cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
+    auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
+  },
+  {
+    chainId: 5042,
+    eid: 30417,
+    key: "arc",
+    name: "Arc",
+    short: "Arc",
+    color: "#19b3e6",
+    chain: arcMain,
+    factory: "0x88e21D24C35034f80E854efBD5ACD16507a9169B",
+    router: "0xc8c1C173a1d3057619fCf45941c41f02B9E7E5dD",
+    usd: "0x3600000000000000000000000000000000000000",
+    system: [
+      "0x8366a39CC670B4001A1121B8F6A443A643e40951", // PoolManager
+      "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4", // builder
+      "0x3B0A89f5d19189077a24320a3939bf3308bAE080", // hook
+      "0xd4D6F84658C98F6BAd57f9E46B3FB69717675FBA", // consolidator
+      "0xf11CB4abe59DFEDF361D4a9927711718dd8DaaB1", // bridge
+      "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
+    ],
+    faucet: false,
+    spoke: "0x9b4A302A548c7e313c2b74C461db7b84d3074A84",
+    cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
+    auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
+  },
+];
 
 export const RACE_CHAINS: RaceChain[] = IS_TESTNET ? TESTNET : MAINNET;
 export const raceChain = (chainId: number) => RACE_CHAINS.find((c) => c.chainId === chainId);
