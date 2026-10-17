@@ -28,6 +28,10 @@
 //   DEPLOYMENTS    folder with <chainId>.json from DeployRace (default ../contracts-v7/deployments/race)
 //   RPC_<chainId>  RPC URL(s) per chain, comma-separated for fallback (e.g. RPC_84532)
 //   STATE_FILE     where scan progress is kept between runs (default ./race-state.json)
+//                  (on Railway put it on a volume, e.g. /data/race-state.json, so a restart keeps it)
+//   RACE_FROM_<chainId>  first block to look for launches on that chain, when it is later than the
+//                  deployment's start block (blocks before it are skipped even with no state file;
+//                  set it only to a block before that chain's first launch)
 //   DRY_RUN        "true": decide and log, send nothing
 //   LZ_FEE_WEI     native sent per LayerZero message; the unused part is refunded (default 0.0003);
 //                  LZ_FEE_WEI_<chainId> overrides it for one chain
@@ -398,7 +402,9 @@ async function main() {
   for (const c of chains) {
     try {
       const latest = await c.pub.getBlockNumber();
-      const from = BigInt(state.cursor[c.chainId] ?? c.startBlock);
+      const floor = BigInt(env(`RACE_FROM_${c.chainId}`, "0"));
+      let from = BigInt(state.cursor[c.chainId] ?? c.startBlock);
+      if (from < floor) from = floor;
       if (from > latest) continue;
       const { logs, next } = await scan(c.pub, { address: c.factory, event: launched }, from, latest);
       for (const l of logs) {
