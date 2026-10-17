@@ -91,7 +91,7 @@ export async function crossBuy(o: {
   const minCoinsOut = (coins * (10_000n - o.slipBps)) / 10_000n;
   const message = buyMessage({ user: s.user, coin, minCoinsOut, gasUsd: gas > 0n ? ask : 0n, deadline });
   const q = await acrossQuote({ from: home, to: dest, amount: o.amountHome, recipient: dest.cross, message });
-  const dep = depositCalls(home, dest, s.user, o.amountHome, homeDec, destDec, q, message, Number(deadline));
+  const dep = depositCalls(home, dest, s.user, o.amountHome, homeDec, destDec, q, message, 30 * 60);
 
   const tx = await sendKeepingTrack(() => s.sendHome(home.chain, dep.calls, o.onStep), (tx) =>
     addPending({ kind: "buy", originChainId: home.chainId, tx, usd: usd(o.amountHome, homeDec), chainId: dest.chainId, coin })
@@ -237,12 +237,25 @@ export type LaunchPlan = {
 /** Longest message sent inside Across's price request (hex characters). */
 const QUOTE_MESSAGE_MAX = 6_000;
 
-/** Cross launches must land within this; after it Across returns the dollars to Base. */
-export const LAUNCH_WINDOW_S = 15 * 60;
+/**
+ * How long the user's launch signature stays good. Deliveries normally land in seconds; the
+ * long window only matters when the Base bundle itself waits before it's mined, so the
+ * deliveries still go through instead of coming back. (Each delivery also has its own
+ * window counted from the block the deposit lands in, see depositCalls.)
+ */
+export const LAUNCH_WINDOW_S = 60 * 60;
+/** Stands in for a signature when only the message length matters. */
+const SIG_SHAPE = `0x${"11".repeat(65)}` as Hex;
+/** Room for the Base bundle to be mined, on top of a delivery's own window. */
+const MINE_ROOM_S = 5 * 60;
+
+/** One cross chain's part of a launch: its Base calls and what it costs there. */
+type CrossPart = { chainId: number; calls: Call[]; amount: bigint; until: number };
 
 /**
  * The single Base bundle that launches `d` on every chain where it isn't live yet: directly
  * on Base, and through Across + RaceCross (with the user's signature) everywhere else.
+ * Every chain is prepared at the same time.
  */
 export async function planLaunch(o: {
   user: Address;
@@ -255,7 +268,6 @@ export async function planLaunch(o: {
 }): Promise<LaunchPlan> {
   const { user, home, d } = o;
   const eids = o.picked.map((c) => c.eid).sort((a, b) => a - b);
-  const homeDec = await usdDecimals(home);
   const params = (dec: number): LaunchParams => ({
     name: d.name,
     symbol: d.symbol,
@@ -267,31 +279,31 @@ export async function planLaunch(o: {
     firstBuy: parseUnits(d.firstBuy, dec),
     minCoinsOut: 0n,
   });
-  const calls: Call[] = [];
-  let totalHome = 0n;
-  const crossUntil: Record<number, number> = {};
-  let homeLaunch = false;
+  const until = now() + LAUNCH_WINDOW_S;
 
-  if (o.picked.some((c) => c.chainId === home.chainId) && !o.live.has(home.chainId)) {
-    const fee = (await raceClient(home).readContract({ address: home.factory, abi: raceFactoryAbi, functionName: "raceFee" })) as bigint;
+  const homePart = async (): Promise<{ calls: Call[]; amount: bigint } | null> => {
+    if (!o.picked.some((c) => c.chainId === home.chainId) || o.live.has(home.chainId)) return null;
+    const [homeDec, fee] = await Promise.all([
+      usdDecimals(home),
+      raceClient(home).readContract({ address: home.factory, abi: raceFactoryAbi, functionName: "raceFee" }) as Promise<bigint>,
+    ]);
     const l = params(homeDec);
     const spend = l.firstBuy + fee;
-    calls.push(call(home.usd, raceErc20Abi, "approve", [home.factory, spend]));
-    calls.push(call(home.factory, raceFactoryAbi as never, "launch", [l]));
-    totalHome += spend;
-    homeLaunch = true;
-  }
+    return {
+      calls: [call(home.usd, raceErc20Abi, "approve", [home.factory, spend]), call(home.factory, raceFactoryAbi as never, "launch", [l])],
+      amount: spend,
+    };
+  };
 
-  const until = now() + LAUNCH_WINDOW_S;
-  for (const c of o.picked) {
-    if (c.chainId === home.chainId || o.live.has(c.chainId)) continue;
+  const crossPart = async (c: RaceChain): Promise<CrossPart | null> => {
+    if (c.chainId === home.chainId || o.live.has(c.chainId)) return null;
     // still on its way from an earlier try: don't send it twice
-    if (d.sent?.[c.chainId] && d.sent[c.chainId] > now()) continue;
+    if (d.sent?.[c.chainId] && d.sent[c.chainId] > now()) return null;
     if (!c.cross) throw new Error(`${c.short} isn't open to sasa accounts yet. Untick it.`);
-    o.onStep?.(`Preparing ${c.short}…`);
-    const dec = await usdDecimals(c);
     const pub = raceClient(c);
-    const [fee, open] = await Promise.all([
+    const [homeDec, dec, fee, open] = await Promise.all([
+      usdDecimals(home),
+      usdDecimals(c),
       pub.readContract({ address: c.factory, abi: raceFactoryAbi, functionName: "raceFee" }) as Promise<bigint>,
       pub.readContract({ address: c.factory, abi: raceFactoryAbi, functionName: "launchesOpen" }) as Promise<boolean>,
     ]);
@@ -302,19 +314,19 @@ export async function planLaunch(o: {
     // what must arrive there, plus 1% so a slightly lower fill still covers it (the rest comes back as change)
     const need = ((l.firstBuy + fee + gas) * 101n) / 100n;
     const needHome = convertDecimals(need, dec, homeDec) + 1n;
-    const sig = await signLaunch(o.signer, c, l, gas, BigInt(until));
-    const message = launchMessage({ user, launch: l, gasUsd: gas, deadline: BigInt(until), signature: sig });
     // A picture makes the message too long to send in Across's price request (a web address):
-    // the price is asked without it, plus a margin for delivering the extra bytes.
-    const long = message.length > QUOTE_MESSAGE_MAX;
-    // Across dry-runs the delivery, signature check included, so the shorter stand-in carries its
-    // own signature. It launches a different coin (a throwaway key) and is never deposited.
-    let probe = message;
-    if (long) {
-      const stand = { ...l, logo: "", launchKey: keccak256(toHex(crypto.getRandomValues(new Uint8Array(32)))) };
-      const standSig = await signLaunch(o.signer, c, stand, gas, BigInt(until));
-      probe = launchMessage({ user, launch: stand, gasUsd: gas, deadline: BigInt(until), signature: standSig });
-    }
+    // the price is asked without it, plus a margin for delivering the extra bytes. Across
+    // dry-runs the delivery, signature check included, so the shorter stand-in carries its own
+    // signature. It launches a different coin (a throwaway key) and is never deposited.
+    // (a signature is always 65 bytes, so the length is known before signing)
+    const long = launchMessage({ user, launch: l, gasUsd: gas, deadline: BigInt(until), signature: SIG_SHAPE }).length > QUOTE_MESSAGE_MAX;
+    const stand = { ...l, logo: "", launchKey: keccak256(toHex(crypto.getRandomValues(new Uint8Array(32)))) };
+    const [sig, standSig] = await Promise.all([
+      signLaunch(o.signer, c, l, gas, BigInt(until)),
+      long ? signLaunch(o.signer, c, stand, gas, BigInt(until)) : Promise.resolve(null),
+    ]);
+    const message = launchMessage({ user, launch: l, gasUsd: gas, deadline: BigInt(until), signature: sig });
+    const probe = long && standSig ? launchMessage({ user, launch: stand, gasUsd: gas, deadline: BigInt(until), signature: standSig }) : message;
     const margin = (fee0: bigint) => (long ? fee0 / 4n + cents(10, homeDec) : 0n);
     const q0 = await acrossQuote({ from: home, to: c, amount: needHome, recipient: c.cross, message: probe });
     // the fee on top, asked again for the final amount (the fee moves a little with the amount)
@@ -322,13 +334,27 @@ export async function planLaunch(o: {
     const q1 = await acrossQuote({ from: home, to: c, amount, recipient: c.cross, message: probe });
     if (q1.tooLow) throw new Error(`Across won't take this amount to ${c.short}. Raise the first buy.`);
     const q = { ...q1, fee: q1.fee + margin(q1.fee) };
-    const dep = depositCalls(home, c, user, amount, homeDec, dec, q, message, until);
+    const dep = depositCalls(home, c, user, amount, homeDec, dec, q, message);
     if (dep.outputAmount < l.firstBuy + fee + gas) throw new Error("Across's fee moved. Try again.");
-    calls.push(...dep.calls);
-    totalHome += amount;
-    crossUntil[c.chainId] = dep.fillDeadline;
+    return { chainId: c.chainId, calls: dep.calls, amount, until: dep.fillDeadline + MINE_ROOM_S };
+  };
+
+  o.onStep?.("Preparing…");
+  const [hp, ...parts] = await Promise.all([homePart(), ...o.picked.map((c) => crossPart(c))]);
+  const calls: Call[] = [];
+  let totalHome = 0n;
+  const crossUntil: Record<number, number> = {};
+  if (hp) {
+    calls.push(...hp.calls);
+    totalHome += hp.amount;
   }
-  return { calls, totalHome, crossUntil, homeLaunch };
+  for (const p of parts) {
+    if (!p) continue;
+    calls.push(...p.calls);
+    totalHome += p.amount;
+    crossUntil[p.chainId] = p.until;
+  }
+  return { calls, totalHome, crossUntil, homeLaunch: !!hp };
 }
 
 /** Sends the plan (one Base bundle) after checking the balance; returns the transaction. */

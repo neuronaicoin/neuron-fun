@@ -672,6 +672,12 @@ const LOOP_SECONDS = Number(env("LOOP_SECONDS", "0"));
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   if (LOOP_SECONDS > 0) {
+    // sasa's own Across relayer runs alongside (only with RELAYER_KEY set; its own wallet)
+    if (process.env.RELAYER_KEY) {
+      import("./relay.mjs")
+        .then((m) => m.startRelayer())
+        .catch((e) => log(`relayer failed to start: ${e?.message ?? e}`));
+    }
     (async () => {
       log(`race keeper: looping every ${LOOP_SECONDS}s`);
       let failures = 0;

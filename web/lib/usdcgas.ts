@@ -181,9 +181,13 @@ export async function sendWithUsdcGas(
       bundler = bc;
       break;
     } catch (e) {
+      const text = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "") + " " + String((e as { details?: string })?.details ?? "");
+      // An earlier bundler did take it (only its answer got lost): this one now finds the account
+      // already set up or the nonce used. The operation is on its way, it didn't fail.
+      if (lastErr !== null && /already been deployed|AA10|AA25|invalid (account )?nonce|nonce too low/i.test(text)) throw new Error("SENT_UNCONFIRMED");
       lastErr = e;
       // the calls themselves fail: another bundler won't change that
-      if (/revert/i.test(String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? ""))) throw e;
+      if (/revert/i.test(text)) throw e;
     }
   }
   if (!bundler || !hash) throw lastErr ?? new Error("Couldn't send. Try again in a moment.");

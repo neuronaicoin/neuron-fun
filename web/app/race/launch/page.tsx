@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits, keccak256, parseUnits, toHex, type Address, type Hex } from "viem";
 import { NO_ANSWER, SENT_UNCONFIRMED, useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
@@ -18,7 +18,7 @@ import { isImageUrl } from "@/lib/data";
 import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 import { GAS_ASK_CENTS, crossReady, homeChain } from "@/lib/racecross";
-import { liveOn, planLaunch, sendLaunch } from "@/lib/racecrossflow";
+import { liveOn, planLaunch, sendLaunch, type LaunchPlan } from "@/lib/racecrossflow";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -60,6 +60,9 @@ const saveDraft = (d: Draft | null) => {
     else localStorage.removeItem(SAVE);
   } catch {}
 };
+/** A prepared launch is used for this long; it's prepared again a little before. */
+const PREP_FRESH_MS = 90_000;
+const PREP_RENEW_MS = 20_000;
 const newKey = (): Hex => keccak256(toHex(`${Date.now()}-${Math.random()}-${Math.random()}`));
 /** "Robinhood and Arc can't race together yet." for the first pair that isn't linked. */
 function unlinkedText(ids: number[], links: Map<number, Set<number> | null>): string {
@@ -241,7 +244,7 @@ export default function RaceLaunchPage() {
    * every other chain through Across (signed by the user); then each chain is watched until the
    * coin is live there. Anything Across can't deliver goes back to the user's balance on Base.
    */
-  const runViaBase = async (d: Draft) => {
+  const runViaBase = async (d: Draft, ready?: LaunchPlan) => {
     const home = homeChain();
     if (!w.address || !home || !w.embeddedSigner || busy) return;
     setBusy(true);
@@ -253,16 +256,19 @@ export default function RaceLaunchPage() {
     const set = (id: number, st: ChainStatus) => setStatus((s) => ({ ...s, [id]: st }));
     try {
       const live = new Set<number>();
-      await Promise.all(
-        order.map(async (c) => {
-          set(c.chainId, { state: "working", note: "Checking…" });
-          if (await liveOn(c, me, d.key)) {
-            live.add(c.chainId);
-            set(c.chainId, { state: "done", note: "Live" });
-          }
-        })
-      );
-      const plan = await planLaunch({
+      // a plan prepared while the form was filled in is for a brand-new key: nothing is live yet
+      if (!ready) {
+        await Promise.all(
+          order.map(async (c) => {
+            set(c.chainId, { state: "working", note: "Checking…" });
+            if (await liveOn(c, me, d.key)) {
+              live.add(c.chainId);
+              set(c.chainId, { state: "done", note: "Live" });
+            }
+          })
+        );
+      }
+      const plan = ready ?? await planLaunch({
         user: me,
         signer: w.embeddedSigner,
         home,
@@ -272,6 +278,8 @@ export default function RaceLaunchPage() {
         onStep: (m) => order.forEach((c) => !live.has(c.chainId) && set(c.chainId, { state: "working", note: m })),
       });
       let tx: string | undefined;
+      // the Base bundle went out but its confirmation didn't come back: watch the chains instead
+      let unconfirmed = false;
       if (plan.calls.length) {
         // remembered BEFORE sending: if the send is unconfirmed or the tab closes, Continue
         // waits for these deliveries instead of paying for them a second time
@@ -288,21 +296,30 @@ export default function RaceLaunchPage() {
           if (m !== SENT_UNCONFIRMED && m !== NO_ANSWER) {
             saveDraft(before);
             setDraft(before);
+            throw e;
           }
-          throw e;
+          if (m === NO_ANSWER) throw e;
+          unconfirmed = true;
         }
       }
-      if (plan.homeLaunch) set(home.chainId, { state: "done", note: "Live", tx });
+      const homeWatch = plan.homeLaunch && unconfirmed;
+      if (plan.homeLaunch && !unconfirmed) set(home.chainId, { state: "done", note: "Live", tx });
       // watch every chain until the coin is live there, or its delivery window has passed
-      const waiting = new Set(order.filter((c) => !live.has(c.chainId) && c.chainId !== home.chainId).map((c) => c.chainId));
-      waiting.forEach((id) => set(id, { state: "working", note: "On its way… (about a minute)" }));
+      const homeUntil = Math.floor(Date.now() / 1000) + 5 * 60;
+      const waiting = new Set(order.filter((c) => !live.has(c.chainId) && (c.chainId !== home.chainId || homeWatch)).map((c) => c.chainId));
+      waiting.forEach((id) => set(id, { state: "working", note: "On its way…" }));
       while (waiting.size) {
-        await new Promise((r) => setTimeout(r, 3_000));
+        await new Promise((r) => setTimeout(r, 1_500));
         for (const id of [...waiting]) {
           const c = order.find((x) => x.chainId === id)!;
           if (await liveOn(c, me, d.key).catch(() => false)) {
             waiting.delete(id);
             set(id, { state: "done", note: "Live" });
+          } else if (id === home.chainId) {
+            if (Math.floor(Date.now() / 1000) > homeUntil) {
+              waiting.delete(id);
+              set(id, { state: "error", note: "Not confirmed yet. Check your balance, then press Continue (nothing is paid twice)." });
+            }
           } else if (Math.floor(Date.now() / 1000) > (d.sent?.[id] ?? 0) + 60) {
             waiting.delete(id);
             set(id, { state: "error", note: "Didn't arrive in time. Across returns the dollars for this chain to your balance on Base (this can take a few hours)." });
@@ -416,9 +433,62 @@ export default function RaceLaunchPage() {
     }
   };
 
+  // Email accounts: the launch is prepared in the background once the form is complete (prices
+  // from Across, the signatures), so pressing Create sends it right away. Prepared again when
+  // the form changes or the prices get old. It uses its own new key and is sent only on Create.
+  const prep = useRef<{ sig: string; key: Hex; plan: LaunchPlan; at: number } | null>(null);
+  const prepKey = useRef<Hex>(newKey());
+  const [prepTick, setPrepTick] = useState(0);
+  const prepSig = JSON.stringify([w.address, name.trim(), sym, logo, description.trim(), feeMode, chains, perChain]);
+  const prepOk = viaBase && !problem && !viaBaseShort() && !busy && !draft && !!w.address && !!w.embeddedSigner;
+  useEffect(() => {
+    if (!prepOk || !home || !w.address || !w.embeddedSigner) return;
+    // time left before the prepared launch should be prepared again (0: prepare now)
+    const cur = prep.current;
+    const left = cur && cur.sig === prepSig ? Math.max(0, cur.at + PREP_FRESH_MS - PREP_RENEW_MS - Date.now()) : 0;
+    let alive = true;
+    const user = w.address as Address;
+    const signer = w.embeddedSigner;
+    const prepare = async () => {
+      const key = prepKey.current;
+      const order = RACE_CHAINS.filter((c) => chains.includes(c.chainId));
+      try {
+        const plan = await planLaunch({
+          user,
+          signer,
+          home,
+          picked: order,
+          d: { key, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain },
+          live: new Set(),
+        });
+        if (alive && key === prepKey.current) prep.current = { sig: prepSig, key, plan, at: Date.now() };
+      } catch {
+        // not ready (a price, a chain): Create prepares it again itself
+      }
+    };
+    const t = left === 0 ? setTimeout(() => void prepare(), 1_200) : null;
+    // prices get old: look again a little before they do
+    const renew = setTimeout(() => alive && setPrepTick((n) => n + 1), left > 0 ? left + 500 : PREP_FRESH_MS - PREP_RENEW_MS + 5_000);
+    return () => {
+      alive = false;
+      if (t) clearTimeout(t);
+      clearTimeout(renew);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepOk, prepSig, prepTick]);
+
   const start = () => {
     if (problem || !w.address) return;
     // the draft keeps each chain's share, so a resumed launch buys the same on the chains left
+    const p = prep.current;
+    prep.current = null;
+    if (viaBase && p && p.sig === prepSig && Date.now() - p.at < PREP_FRESH_MS) {
+      // prepared while the form was filled in: goes out at once
+      prepKey.current = newKey();
+      void runViaBase({ key: p.key, creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain, socials }, p.plan);
+      return;
+    }
+    prepKey.current = newKey();
     void run({ key: newKey(), creator: w.address, name: name.trim(), symbol: sym, logo, description: description.trim(), feeMode, chains, firstBuy: perChain, socials });
   };
 

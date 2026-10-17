@@ -20,6 +20,7 @@ const ACROSS_API = ["https://across.to/api", "https://app.across.to/api"];
 
 export const spokeAbi = parseAbi([
   "function depositV3(address depositor, address recipient, address inputToken, address outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, address exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes message) payable",
+  "function depositV3Now(address depositor, address recipient, address inputToken, address outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, address exclusiveRelayer, uint32 fillDeadlineOffset, uint32 exclusivityParameter, bytes message) payable",
 ]);
 
 export const raceCrossAbi = parseAbi([
@@ -351,13 +352,21 @@ export type CrossDeposit = {
   outputAmount: bigint;
   /** Across's fee, in Base dollars. */
   feeHome: bigint;
+  /** Latest time the delivery can land if the deposit is mined right now (it counts from the block). */
   fillDeadline: number;
 };
+
+/** How long a delivery may take, counted from the block the deposit lands in. */
+export const FILL_WINDOW_S = 15 * 60;
 
 /**
  * The Base calls that send `inputAmount` (Base units) from `user` to RaceCross on `to` with
  * `message`: approve Across's SpokePool, then deposit. `user` is the depositor, so anything
  * Across can't deliver comes back to the user on Base.
+ *
+ * The deposit's fill deadline counts from the block it lands in (depositV3Now), so a bundle
+ * that waits a while before it's mined still gets its full window. No exclusive relayer: the
+ * first relayer there (sasa's own included) delivers it at once.
  */
 export function depositCalls(
   home: RaceChain,
@@ -368,18 +377,20 @@ export function depositCalls(
   toDec: number,
   quote: AcrossQuote,
   message: Hex,
-  fillDeadline?: number
+  windowS: number = FILL_WINDOW_S
 ): CrossDeposit {
   if (!to.cross) throw new Error(`${to.short} isn't open to sasa accounts yet.`);
   if (quote.fee >= inputAmount) throw new Error("That amount is too small to send across. Try a bigger one.");
   let outputAmount = convertDecimals(inputAmount - quote.fee, homeDec, toDec);
   // never ask the relayers for more than Across itself says arrives (it can differ across decimals)
   if (quote.outputAmount !== null && outputAmount > quote.outputAmount) outputAmount = quote.outputAmount;
-  const deadline = fillDeadline && quote.fillDeadline ? Math.min(fillDeadline, quote.fillDeadline) : fillDeadline || quote.fillDeadline;
+  // never longer than the window Across itself suggests (the SpokePool caps it)
+  const suggested = quote.fillDeadline > quote.timestamp && quote.timestamp > 0 ? quote.fillDeadline - quote.timestamp : 0;
+  const offset = Math.max(60, suggested > 0 ? Math.min(windowS, suggested) : windowS);
   return {
     calls: [
       call(home.usd, raceErc20Abi, "approve", [quote.spoke, inputAmount]),
-      call(quote.spoke, spokeAbi, "depositV3", [
+      call(quote.spoke, spokeAbi, "depositV3Now", [
         user,
         to.cross,
         home.usd,
@@ -387,16 +398,15 @@ export function depositCalls(
         inputAmount,
         outputAmount,
         BigInt(to.chainId),
-        quote.exclusiveRelayer,
-        quote.timestamp,
-        deadline,
-        quote.exclusivityDeadline,
+        ZERO,
+        offset,
+        0,
         message,
       ]),
     ],
     outputAmount,
     feeHome: quote.fee,
-    fillDeadline: deadline,
+    fillDeadline: Math.floor(Date.now() / 1000) + offset,
   };
 }
 
