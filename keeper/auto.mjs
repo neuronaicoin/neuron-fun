@@ -215,6 +215,8 @@ export async function acrossFee({ acrossApi, from, to, amount, recipient, fetchF
     destinationChainId: String(to.chainId),
     amount: amount.toString(),
     recipient,
+    // USDC has 18 decimals on BNB Chain and 6 elsewhere: Across refuses such a route unless told it's meant
+    allowUnmatchedDecimals: "true",
   });
   const r = await fetchFn(`${acrossApi}/suggested-fees?${p}`);
   const j = await r.json().catch(() => ({}));

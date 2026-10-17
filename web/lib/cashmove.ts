@@ -32,6 +32,7 @@ export async function quoteMove(from: NeuronChain, to: NeuronChain, amount: bigi
       originChainId: String(from.chain.id),
       destinationChainId: String(to.chain.id),
       amount: amount.toString(),
+      allowUnmatchedDecimals: "true",
     });
     const r = await fetch(`https://app.across.to/api/suggested-fees?${q}`);
     if (!r.ok) throw new Error(String(r.status));

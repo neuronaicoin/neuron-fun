@@ -79,6 +79,8 @@ export type AcrossQuote = {
   /** Most that can be sent in one deposit right now (input units), if Across says. */
   maxDeposit: bigint | null;
   expectedSeconds: number | null;
+  /** What Across says arrives (OUTPUT token units), when it says; a deposit never asks for more. */
+  outputAmount: bigint | null;
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000" as Address;
@@ -113,6 +115,8 @@ export async function acrossQuote(
     destinationChainId: String(q.to.chainId),
     amount: q.amount.toString(),
     recipient: q.recipient,
+    // USDC has 18 decimals on BNB Chain and 6 elsewhere: Across refuses such a route unless told it's meant
+    allowUnmatchedDecimals: "true",
   });
   if (q.message && q.message !== "0x") p.set("message", q.message);
   const r = (await acrossGet(`/suggested-fees?${p.toString()}`, signal)) as Record<string, unknown>;
@@ -133,6 +137,7 @@ export async function acrossQuote(
     tooLow: !!r.isAmountTooLow,
     maxDeposit: limits.maxDeposit ? BigInt(limits.maxDeposit) : null,
     expectedSeconds: r.expectedFillTimeSec === undefined ? null : Number(r.expectedFillTimeSec),
+    outputAmount: typeof r.outputAmount === "string" && /^\d+$/.test(r.outputAmount) ? BigInt(r.outputAmount) : null,
   };
 }
 
@@ -367,7 +372,9 @@ export function depositCalls(
 ): CrossDeposit {
   if (!to.cross) throw new Error(`${to.short} isn't open to sasa accounts yet.`);
   if (quote.fee >= inputAmount) throw new Error("That amount is too small to send across. Try a bigger one.");
-  const outputAmount = convertDecimals(inputAmount - quote.fee, homeDec, toDec);
+  let outputAmount = convertDecimals(inputAmount - quote.fee, homeDec, toDec);
+  // never ask the relayers for more than Across itself says arrives (it can differ across decimals)
+  if (quote.outputAmount !== null && outputAmount > quote.outputAmount) outputAmount = quote.outputAmount;
   const deadline = fillDeadline && quote.fillDeadline ? Math.min(fillDeadline, quote.fillDeadline) : fillDeadline || quote.fillDeadline;
   return {
     calls: [
