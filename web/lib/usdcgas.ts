@@ -17,7 +17,7 @@ import {
 } from "viem";
 import { createBundlerClient, toSimple7702SmartAccount } from "viem/account-abstraction";
 import type { Call } from "./tx";
-import { PIMLICO_KEY } from "./config";
+import { ALCHEMY_KEY, PIMLICO_KEY } from "./config";
 
 /**
  * Network fees paid in USDC (Circle Paymaster v0.8 + EIP-7702) for email / Google accounts.
@@ -27,16 +27,24 @@ import { PIMLICO_KEY } from "./config";
  *
  * Only on chains where Circle runs the paymaster: Base (and Base Sepolia on testnet).
  */
-type CircleSetup = { usdc: Address; paymaster: Address; bundler: string };
+/** A bundler: Alchemy (its own fee hint) or Pimlico (its gas-price method). Tried in order. */
+type Bundler = { kind: "alchemy" | "pimlico"; url: string };
+type CircleSetup = { usdc: Address; paymaster: Address; bundlers: Bundler[] };
 const CIRCLE: Record<number, CircleSetup> = {
   // Base Sepolia: Circle's test USDC and testnet paymaster; Pimlico's public bundler
-  84532: { usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", paymaster: "0x3BA9A96eE3eFf3A69E2B18886AcF52027EFF8966", bundler: "https://public.pimlico.io/v2/84532/rpc" },
+  84532: { usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", paymaster: "0x3BA9A96eE3eFf3A69E2B18886AcF52027EFF8966", bundlers: [{ kind: "pimlico", url: "https://public.pimlico.io/v2/84532/rpc" }] },
   // Base: native USDC and Circle's mainnet paymaster. With a Pimlico key (lib/config.ts) the keyed
   // bundler is used; the public one is rate-limited and meant for testing.
   8453: {
     usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     paymaster: "0x0578cFB241215b77442a541325d6A4E6dFE700Ec",
-    bundler: PIMLICO_KEY ? `https://api.pimlico.io/v2/8453/rpc?apikey=${PIMLICO_KEY}` : "https://public.pimlico.io/v2/8453/rpc",
+    // Alchemy's bundler first (sasa's key, free plan); Pimlico's public one if Alchemy can't take it
+    bundlers: [
+      ...(ALCHEMY_KEY ? [{ kind: "alchemy" as const, url: `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}` }] : []),
+      PIMLICO_KEY
+        ? { kind: "pimlico" as const, url: `https://api.pimlico.io/v2/8453/rpc?apikey=${PIMLICO_KEY}` }
+        : { kind: "pimlico" as const, url: "https://public.pimlico.io/v2/8453/rpc" },
+    ],
   },
 };
 
@@ -123,20 +131,30 @@ export async function sendWithUsdcGas(
     },
   };
 
-  const bundler = createBundlerClient({
-    account,
-    client,
-    paymaster,
-    transport: http(setup.bundler),
-    userOperation: {
-      estimateFeesPerGas: async ({ bundlerClient }) => {
-        const { standard } = (await bundlerClient.request({ method: "pimlico_getUserOperationGasPrice" as never })) as {
-          standard: { maxFeePerGas: Hex; maxPriorityFeePerGas: Hex };
-        };
-        return { maxFeePerGas: hexToBigInt(standard.maxFeePerGas), maxPriorityFeePerGas: hexToBigInt(standard.maxPriorityFeePerGas) };
+  const makeBundler = (b: Bundler) =>
+    createBundlerClient({
+      account,
+      client,
+      paymaster,
+      transport: http(b.url),
+      userOperation: {
+        estimateFeesPerGas: async ({ bundlerClient }) => {
+          if (b.kind === "pimlico") {
+            const { standard } = (await bundlerClient.request({ method: "pimlico_getUserOperationGasPrice" as never })) as {
+              standard: { maxFeePerGas: Hex; maxPriorityFeePerGas: Hex };
+            };
+            return { maxFeePerGas: hexToBigInt(standard.maxFeePerGas), maxPriorityFeePerGas: hexToBigInt(standard.maxPriorityFeePerGas) };
+          }
+          // Alchemy: at least its own priority-fee hint (+25%), and room for the base fee to double
+          const [hint, block] = await Promise.all([
+            bundlerClient.request({ method: "rundler_maxPriorityFeePerGas" as never }) as Promise<Hex>,
+            client.getBlock({ blockTag: "latest" }),
+          ]);
+          const tip = (hexToBigInt(hint) * 125n) / 100n + 1n;
+          return { maxFeePerGas: (block.baseFeePerGas ?? 0n) * 2n + tip, maxPriorityFeePerGas: tip };
+        },
       },
-    },
-  });
+    });
 
   // The address must point at the smart-account code (EIP-7702). Only signed when it doesn't yet.
   const impl = account.authorization.address;
@@ -147,15 +165,32 @@ export async function sendWithUsdcGas(
     : await signAuthorization({ contractAddress: impl, chainId: chain.id, nonce: await client.getTransactionCount({ address: account.address }) });
 
   onStep?.("Sending…");
-  const hash = await bundler.sendUserOperation({
-    account,
-    calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
-    ...(authorization ? { authorization } : {}),
-  });
+  // Try each bundler in turn. Every try uses the account's same nonce, so even if a bundler took an
+  // operation and only its answer was lost, the next try can't run the calls a second time.
+  let bundler: ReturnType<typeof makeBundler> | null = null;
+  let hash: Hex | null = null;
+  let lastErr: unknown = null;
+  for (const b of setup.bundlers) {
+    const bc = makeBundler(b);
+    try {
+      hash = await bc.sendUserOperation({
+        account,
+        calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value ?? 0n })),
+        ...(authorization ? { authorization } : {}),
+      });
+      bundler = bc;
+      break;
+    } catch (e) {
+      lastErr = e;
+      // the calls themselves fail: another bundler won't change that
+      if (/revert/i.test(String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? ""))) throw e;
+    }
+  }
+  if (!bundler || !hash) throw lastErr ?? new Error("Couldn't send. Try again in a moment.");
   onStep?.("Almost done…");
   let receipt: Awaited<ReturnType<typeof bundler.waitForUserOperationReceipt>>;
   try {
-    receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 90_000, pollingInterval: 1_000 });
+    receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 180_000, pollingInterval: 1_500 });
   } catch {
     // sent, but the bundler never confirmed it back: say so instead of "failed"
     throw new Error("SENT_UNCONFIRMED");
