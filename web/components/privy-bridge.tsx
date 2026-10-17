@@ -14,6 +14,14 @@ import { RACE_CHAINS } from "@/lib/race";
 import { usdcGasChain } from "@/lib/usdcgas";
 import { base, baseSepolia, mainnet } from "viem/chains";
 
+/** A copy of `v` with every bigint turned into its decimal string (same values, JSON-safe). */
+export function jsonSafe(v: unknown): unknown {
+  if (typeof v === "bigint") return v.toString();
+  if (Array.isArray(v)) return v.map(jsonSafe);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, jsonSafe(x)]));
+  return v;
+}
+
 export type PrivyState = {
   ready: boolean;
   authenticated: boolean;
@@ -91,7 +99,10 @@ function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void
   useEffect(() => {
     let alive = true;
     (async () => {
-      const signer = authenticated && embedded ? ((await toViemAccount({ wallet: embedded })) as LocalAccount) : null;
+      const raw = authenticated && embedded ? ((await toViemAccount({ wallet: embedded })) as LocalAccount) : null;
+      // Privy sends typed data to its servers as JSON, which can't hold the bigints viem uses for
+      // uint256 values ("JSON.stringify cannot serialize BigInt"): pass them as decimal strings.
+      const signer: LocalAccount | null = raw ? { ...raw, signTypedData: (td) => raw.signTypedData(jsonSafe(td) as never) } : null;
       if (!alive) return;
       onState({
         ready,
