@@ -1,4 +1,4 @@
-import { formatUnits, maxUint256, parseUnits, type Address, type Chain, type Hex, type LocalAccount } from "viem";
+import { formatUnits, keccak256, maxUint256, parseUnits, toHex, type Address, type Chain, type Hex, type LocalAccount } from "viem";
 import { raceClient, raceErc20Abi, raceFactoryAbi, withGas, type RaceChain } from "./race";
 import {
   GAS_ASK_CENTS,
@@ -307,7 +307,14 @@ export async function planLaunch(o: {
     // A picture makes the message too long to send in Across's price request (a web address):
     // the price is asked without it, plus a margin for delivering the extra bytes.
     const long = message.length > QUOTE_MESSAGE_MAX;
-    const probe = long ? launchMessage({ user, launch: { ...l, logo: "" }, gasUsd: gas, deadline: BigInt(until), signature: sig }) : message;
+    // Across dry-runs the delivery, signature check included, so the shorter stand-in carries its
+    // own signature. It launches a different coin (a throwaway key) and is never deposited.
+    let probe = message;
+    if (long) {
+      const stand = { ...l, logo: "", launchKey: keccak256(toHex(crypto.getRandomValues(new Uint8Array(32)))) };
+      const standSig = await signLaunch(o.signer, c, stand, gas, BigInt(until));
+      probe = launchMessage({ user, launch: stand, gasUsd: gas, deadline: BigInt(until), signature: standSig });
+    }
     const margin = (fee0: bigint) => (long ? fee0 / 4n + cents(10, homeDec) : 0n);
     const q0 = await acrossQuote({ from: home, to: c, amount: needHome, recipient: c.cross, message: probe });
     // the fee on top, asked again for the final amount (the fee moves a little with the amount)
