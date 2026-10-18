@@ -24,7 +24,7 @@ HUB=0x173b228d343E174D2671a61C294D3AF06946DEBf
 FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
 CHAINS="8453 56 4663 5042"
 DVN_NAMES=("LayerZero Labs" "Nethermind" "Horizen" "Canary")
-declare -A RPC NAME EID EP SEND RECV EXEC DVNS CONF FORK PIDS
+declare -A RPC NAME EID EP SEND RECV EXEC DVNS CONF FORK PIDS NONCE
 RPC[8453]="${RPC_8453:-https://mainnet.base.org}";                NAME[8453]="Base";      CONF[8453]=10
 RPC[56]="${RPC_56:-https://bsc-dataseed.bnbchain.org}";               NAME[56]="BNB";         CONF[56]=20
 RPC[4663]="${RPC_4663:-https://rpc.mainnet.chain.robinhood.com}";  NAME[4663]="Robinhood"; CONF[4663]=5
@@ -130,7 +130,14 @@ send() { # chain, label, to, sig, args...
   local a=$1 label=$2; shift 2
   local out
   if [ "$MODE" = "apply" ]; then
-    out=$(cast send --rpc-url "${FORK[$a]}" --private-key "$PRIVATE_KEY" "$@" 2>&1)
+    # our own nonce count: a public node answering a block behind would hand out the last
+    # transaction's nonce again ("replacement transaction underpriced")
+    if [ -z "${NONCE[$a]:-}" ]; then
+      NONCE[$a]=$(c nonce "$OWNER" --block pending --rpc-url "${FORK[$a]}")
+      [ "${NONCE[$a]}" = "ERR" ] && fail "${NAME[$a]}: can't read the owner's nonce"
+    fi
+    out=$(cast send --rpc-url "${FORK[$a]}" --private-key "$PRIVATE_KEY" --nonce "${NONCE[$a]}" "$@" 2>&1)
+    echo "$out" | grep -qE "^status +1" && NONCE[$a]=$(( ${NONCE[$a]} + 1 ))
   else
     out=$(cast send --rpc-url "${FORK[$a]}" --unlocked --from "$OWNER" "$@" 2>&1)
   fi
