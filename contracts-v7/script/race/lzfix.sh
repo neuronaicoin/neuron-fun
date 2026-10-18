@@ -26,7 +26,7 @@ CHAINS="8453 56 4663 5042"
 DVN_NAMES=("LayerZero Labs" "Nethermind" "Horizen" "Canary")
 declare -A RPC NAME EID EP SEND RECV EXEC DVNS CONF FORK PIDS
 RPC[8453]="${RPC_8453:-https://mainnet.base.org}";                NAME[8453]="Base";      CONF[8453]=10
-RPC[56]="${RPC_56:-https://bsc-rpc.publicnode.com}";               NAME[56]="BNB";         CONF[56]=20
+RPC[56]="${RPC_56:-https://bsc-dataseed.bnbchain.org}";               NAME[56]="BNB";         CONF[56]=20
 RPC[4663]="${RPC_4663:-https://rpc.mainnet.chain.robinhood.com}";  NAME[4663]="Robinhood"; CONF[4663]=5
 RPC[5042]="${RPC_5042:-https://rpc.mainnet.arc.io}";               NAME[5042]="Arc";       CONF[5042]=5
 HUB32=$(echo "0x000000000000000000000000${HUB#0x}" | tr 'A-F' 'a-f')
@@ -111,21 +111,20 @@ for a in 56 4663 5042; do
 done
 
 # ------------------------------------------------------------------ the steps
-# where each chain's steps go: a copy (dry run) or the chain itself
-port=18600
-for a in $CHAINS; do
-  if [ "$MODE" = "apply" ]; then
-    FORK[$a]="${RPC[$a]}"
-  else
-    port=$((port + 1))
-    anvil --fork-url "${RPC[$a]}" --port $port --auto-impersonate --silent --no-rate-limit > /tmp/anvil_$a.log 2>&1 &
-    PIDS[$a]=$!
-    FORK[$a]="http://127.0.0.1:$port"
-  fi
-done
-if [ "$MODE" != "apply" ]; then
-  for a in $CHAINS; do for i in $(seq 1 60); do cast chain-id --rpc-url "${FORK[$a]}" >/dev/null 2>&1 && break; sleep 1; done; done
-fi
+# Chain by chain: (dry run) a fresh copy of the chain right before its steps, so the copy's block
+# is recent (public nodes refuse old-state reads); steps; read back; done.
+
+start_fork() { # chain -> FORK[chain]
+  local a=$1
+  if [ "$MODE" = "apply" ]; then FORK[$a]="${RPC[$a]}"; return; fi
+  local port=$((18600 + RANDOM % 300))
+  anvil --fork-url "${RPC[$a]}" --port $port --auto-impersonate --silent --no-rate-limit > /tmp/anvil_$a.log 2>&1 &
+  PIDS[$a]=$!
+  FORK[$a]="http://127.0.0.1:$port"
+  for i in $(seq 1 60); do cast chain-id --rpc-url "${FORK[$a]}" >/dev/null 2>&1 && return; sleep 1; done
+  fail "${NAME[$a]}: the copy of the chain didn't start"
+}
+stop_fork() { local a=$1; [ -n "${PIDS[$a]:-}" ] && kill "${PIDS[$a]}" 2>/dev/null; PIDS[$a]=""; }
 
 send() { # chain, label, to, sig, args...
   local a=$1 label=$2; shift 2
@@ -136,6 +135,11 @@ send() { # chain, label, to, sig, args...
     out=$(cast send --rpc-url "${FORK[$a]}" --unlocked --from "$OWNER" "$@" 2>&1)
   fi
   if ! echo "$out" | grep -qE "^status +1"; then
+    # dry run: the copy's block got too old for the public node (it only keeps recent state)
+    if [ "$MODE" != "apply" ] && echo "$out" | grep -qiE "archive|missing trie node|pruned|header not found|state (is )?not available|historical state"; then
+      say "- ${NAME[$a]}: the public node no longer has the copy's block; starting a fresh copy"
+      return 2
+    fi
     say "- ${NAME[$a]}: $label **FAILED**"; say '```'; echo "$out" | tail -15 >> "$REPORT"; say '```'
     fail "${NAME[$a]}: $label failed (nothing after it was sent)"
   fi
@@ -146,49 +150,73 @@ uln_of() { # local chain, remote chain -> abi-encoded UlnConfig
   local conf; conf=$(pair_conf "$1" "$2")
   cast abi-encode "f((uint64,uint8,uint8,uint8,address[],address[]))" "($conf,4,0,0,[${DVNS[$1]}],[])"
 }
-
-say ""; say "### Steps"
-for a in $CHAINS; do
-  execcfg=$(cast abi-encode "f(uint32,address)" 10000 "${EXEC[$a]}")
-  for b in $CHAINS; do
-    [ "$a" = "$b" ] && continue
-    uln=$(uln_of "$a" "$b")
-    send "$a" "hub sends to ${NAME[$b]}: 4 DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]"
-    send "$a" "hub receives from ${NAME[$b]}: same" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${RECV[$a]}" "[(${EID[$b]},2,$uln)]"
-    send "$a" "new coins' route to ${NAME[$b]}: same" $FACTORY "setRoute(uint32,(address,address,bytes,bytes))" "${EID[$b]}" "(${SEND[$a]},${RECV[$a]},$execcfg,$uln)"
-  done
-  open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
-  if [ "$open" = "true" ]; then send "$a" "launches closed" $FACTORY "setLaunchesOpen(bool)" false; else say "- ${NAME[$a]}: launches already closed"; fi
-done
-for a in 56 4663 5042; do
-  n=$(( ${IN[$a]} + 1 ))
-  while [ "$n" -le "${OUT[$a]}" ]; do
-    send 8453 "skip stuck report $n from ${NAME[$a]}" "${EP[8453]}" "skip(address,uint32,bytes32,uint64)" $HUB "${EID[$a]}" "$HUB32" "$n"
-    n=$((n + 1))
-  done
-done
-
-# ------------------------------------------------------------------ read back
-say ""; say "### Read back"
-bad=0
 want_uln() { echo "($(pair_conf "$1" "$2"), 4, 0, 0, [${DVNS[$1]//,/, }], [])"; }
-for a in $CHAINS; do
+
+bad=0
+check_chain() { # chain: read back what was set (a few tries: the node answering may lag a block)
+  local a=$1 b w s r rt u ok open lz
   for b in $CHAINS; do
     [ "$a" = "$b" ] && continue
-    w=$(lc "$(want_uln "$a" "$b")")
-    s=$(lc "$(c call "${SEND[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
-    r=$(lc "$(c call "${RECV[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
-    rt=$(lc "$(c call $FACTORY "routeOf(uint32)((address,address,bytes,bytes))" "${EID[$b]}" --rpc-url "${FORK[$a]}")")
-    u=$(lc "$(uln_of "$a" "$b")")
-    ok=1; [ "$s" = "$w" ] || ok=0; [ "$r" = "$w" ] || ok=0; echo "$rt" | grep -q "${u#0x}" || ok=0
+    w=$(lc "$(want_uln "$a" "$b")"); u=$(lc "$(uln_of "$a" "$b")")
+    for try in 1 2 3 4 5; do
+      s=$(lc "$(c call "${SEND[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
+      r=$(lc "$(c call "${RECV[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
+      rt=$(lc "$(c call $FACTORY "routeOf(uint32)((address,address,bytes,bytes))" "${EID[$b]}" --rpc-url "${FORK[$a]}")")
+      ok=1; [ "$s" = "$w" ] || ok=0; [ "$r" = "$w" ] || ok=0; echo "$rt" | grep -q "${u#0x}" || ok=0
+      [ $ok = 1 ] && break
+      # dry run: a read the node couldn't answer for the copy's (old) block: start over fresh
+      if [ "$MODE" != "apply" ] && { [ "$s" = "err" ] || [ "$r" = "err" ] || [ "$rt" = "err" ]; }; then say "- ${NAME[$a]}: couldn't read the copy back; starting a fresh copy"; return 2; fi
+      sleep 3
+    done
     if [ $ok = 1 ]; then say "- ${NAME[$a]} -> ${NAME[$b]}: hub send, hub receive, new-coin route: ok"; else bad=1; say "- ${NAME[$a]} -> ${NAME[$b]}: **MISMATCH** send=\`$s\` receive=\`$r\` want=\`$w\`"; fi
   done
   open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
   [ "$open" = "false" ] && say "- ${NAME[$a]}: launches closed: ok" || { bad=1; say "- ${NAME[$a]}: launches **still open**"; }
-done
-for a in 56 4663 5042; do
-  lz=$(c call "${EP[8453]}" "lazyInboundNonce(address,uint32,bytes32)(uint64)" $HUB "${EID[$a]}" "$HUB32" --rpc-url "${FORK[8453]}" | awk '{print $1}')
-  [ "$lz" = "${OUT[$a]}" ] && say "- Base: stuck reports from ${NAME[$a]} skipped (next expected: $((lz + 1))): ok" || { bad=1; say "- Base: reports from ${NAME[$a]}: lazy nonce $lz, expected ${OUT[$a]}"; }
+  if [ "$a" = "8453" ]; then
+    for b in 56 4663 5042; do
+      lz=$(c call "${EP[8453]}" "lazyInboundNonce(address,uint32,bytes32)(uint64)" $HUB "${EID[$b]}" "$HUB32" --rpc-url "${FORK[8453]}" | awk '{print $1}')
+      [ "$lz" = "${OUT[$b]}" ] && say "- Base: stuck reports from ${NAME[$b]} skipped (next expected: $((lz + 1))): ok" || { bad=1; say "- Base: reports from ${NAME[$b]}: lazy nonce $lz, expected ${OUT[$b]}"; }
+    done
+  fi
+}
+
+run_chain() { # chain -> 0 done, 2 retry with a fresh copy
+  local a=$1 b uln execcfg open n
+  start_fork "$a"
+  execcfg=$(cast abi-encode "f(uint32,address)" 10000 "${EXEC[$a]}")
+  for b in $CHAINS; do
+    [ "$a" = "$b" ] && continue
+    uln=$(uln_of "$a" "$b")
+    send "$a" "hub sends to ${NAME[$b]}: 4 DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]" || return 2
+    send "$a" "hub receives from ${NAME[$b]}: same" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${RECV[$a]}" "[(${EID[$b]},2,$uln)]" || return 2
+    send "$a" "new coins' route to ${NAME[$b]}: same" $FACTORY "setRoute(uint32,(address,address,bytes,bytes))" "${EID[$b]}" "(${SEND[$a]},${RECV[$a]},$execcfg,$uln)" || return 2
+  done
+  open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
+  if [ "$open" = "true" ]; then send "$a" "launches closed" $FACTORY "setLaunchesOpen(bool)" false || return 2; else say "- ${NAME[$a]}: launches already closed"; fi
+  if [ "$a" = "8453" ]; then
+    for b in 56 4663 5042; do
+      n=$(( ${IN[$b]} + 1 ))
+      while [ "$n" -le "${OUT[$b]}" ]; do
+        send 8453 "skip stuck report $n from ${NAME[$b]}" "${EP[8453]}" "skip(address,uint32,bytes32,uint64)" $HUB "${EID[$b]}" "$HUB32" "$n" || return 2
+        n=$((n + 1))
+      done
+    done
+  fi
+  say "Read back:"
+  check_chain "$a" || return 2
+  return 0
+}
+
+for a in $CHAINS; do
+  say ""; say "### ${NAME[$a]}"
+  done_ok=0
+  for attempt in 1 2 3; do
+    run_chain "$a"; rc=$?
+    stop_fork "$a"
+    [ $rc = 0 ] && { done_ok=1; break; }
+    [ "$MODE" = "apply" ] && fail "${NAME[$a]}: stopped"
+  done
+  [ $done_ok = 1 ] || fail "${NAME[$a]}: the public node kept dropping the copy's state; try again later"
 done
 say ""
 if [ $bad = 0 ]; then say "**ALL OK ($MODE).**"; else say "**SOMETHING DIDN'T MATCH (see above).**"; exit 1; fi
