@@ -13,7 +13,7 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
 import { safetyAbi } from "@/lib/abis";
-import { CHAINS, SASA_TREASURY, USD_MODE, explorerAddress, type NeuronChain } from "@/lib/config";
+import { CHAINS, SASA_TREASURY, USD_MODE, V6, explorerAddress, type NeuronChain } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError, shortAddr } from "@/lib/format";
 import { fetchPrices } from "@/lib/price";
@@ -142,7 +142,7 @@ export default function AdminPage() {
   }
 
   // sasa's admin wallet: sees sasa's money (and the safety controls below, where it has a role)
-  const isAdmin = eq(address, SASA_TREASURY);
+  const isAdmin = eq(address, SASA_TREASURY) || eq(address, "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F");
 
   if (loaded && !anyAccess && !isAdmin) {
     return (
@@ -165,6 +165,9 @@ export default function AdminPage() {
           <MoneyPanel />
         </div>
       )}
+      {/* the v6 factories' safety controls (testnet only: on mainnet launches are paused in "sasa money") */}
+      {V6 && (
+        <>
       <h1 className="font-display font-bold text-[1.625rem] sm:text-[2rem]">Safety controls</h1>
       <p className="text-ink-3 mt-1 max-w-[60ch]">Pausing stops new launches and buys. Selling, fee claims and graduation always stay open.</p>
 
@@ -368,6 +371,8 @@ export default function AdminPage() {
       <p className="text-[0.8125rem] text-ink-3 mt-6 max-w-[65ch]">
         You get a notification when a chain is paused or resumed, passes 80% of its cap, or fills up.
       </p>
+        </>
+      )}
 
       {safeTx && <SafeSheet tx={safeTx} onClose={() => setSafeTx(null)} />}
       {address && <HelpInbox />}

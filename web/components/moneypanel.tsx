@@ -13,11 +13,11 @@
  *   3. distribute: the vault splits 80% treasury / 10% keeper / 10% rewards
  */
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbi, type Address } from "viem";
+import { formatUnits, maxUint256, parseAbi, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
-import { RACE_CHAINS, fetchRaceCoins, raceClient, raceErc20Abi, raceExplorerAddress, type RaceChain, type RaceCoin } from "@/lib/race";
+import { RACE_CHAINS, fetchRaceCoins, raceClient, raceErc20Abi, raceExplorerAddress, raceRouterAbi, type RaceChain, type RaceCoin } from "@/lib/race";
 import { HL_BUILDER } from "@/lib/config";
-import { call } from "@/lib/tx";
+import { call, type Call } from "@/lib/tx";
 import { friendlyError } from "@/lib/format";
 
 /** sasa's wallets (the same address on every chain). */
@@ -38,13 +38,26 @@ const builderAbi = parseAbi([
   "function collectFees(address coin) returns (uint256, uint256)",
   "function raceOver(address coin) view returns (bool)",
 ]);
-const vaultAbi = parseAbi(["function distribute()"]);
+const vaultAbi = parseAbi(["function distribute()", "function sweep(address token)"]);
+const factoryAbi = parseAbi(["function owner() view returns (address)", "function launchesOpen() view returns (bool)", "function setLaunchesOpen(bool open)"]);
+const TREASURY = WALLETS[0].address;
+/** The race coins looked at for fees and for coins sasa holds (the newest first). */
+const COINS_LOOKED_AT = 100;
+/** Coins worth less than this aren't worth the gas of selling. */
+const SELL_MIN_USD = 1;
+/** Slippage allowed when selling sasa's coins (from the exact dry-run amount). */
+const SELL_SLIP_BPS = 500n;
+const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+const same = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 /** Arc's gas IS its USDC: one balance, not two. */
 const isArc = (c: RaceChain) => c.usd.toLowerCase() === ARC_USDC;
 
 type Bal = { native: bigint; usd: bigint; usdDec: number };
-type Pending = { coin: RaceCoin; chain: RaceChain; native: bigint; coins: bigint; usdValue: number; over: boolean };
+type Pending = { coin: RaceCoin; chain: RaceChain; native: bigint; coins: bigint; usdValue: number; nativeValue: number; over: boolean };
+/** Race coins sasa holds on a chain: in the vault (not yet swept) and in the treasury. */
+type Held = { coin: RaceCoin; chain: RaceChain; inVault: bigint; inTreasury: bigint; usdValue: number };
+type Launches = { chain: RaceChain; owner: Address | null; open: boolean | null };
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -90,6 +103,8 @@ export function MoneyPanel() {
   const [p, setP] = useState({ ETH: 0, BNB: 0 });
   const [bals, setBals] = useState<Record<string, Bal>>({});
   const [pending, setPending] = useState<Pending[] | null>(null);
+  const [held, setHeld] = useState<Held[] | null>(null);
+  const [launches, setLaunches] = useState<Launches[]>([]);
   const [hl, setHl] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -119,7 +134,39 @@ export function MoneyPanel() {
     );
     setBals(out);
     // fees waiting in each coin's pool, chain by chain (a dry run of collectFees: it says how much)
-    const coins = await fetchRaceCoins(30).catch(() => [] as RaceCoin[]);
+    const coins = await fetchRaceCoins(COINS_LOOKED_AT).catch(() => [] as RaceCoin[]);
+    // launches open or paused on each chain, and who may change it (the factory's owner)
+    void Promise.all(
+      RACE_CHAINS.map(async (c): Promise<Launches> => {
+        const pub = raceClient(c);
+        const [owner, open] = await Promise.all([
+          pub.readContract({ address: c.factory, abi: factoryAbi, functionName: "owner" }).catch(() => null) as Promise<Address | null>,
+          pub.readContract({ address: c.factory, abi: factoryAbi, functionName: "launchesOpen" }).catch(() => null) as Promise<boolean | null>,
+        ]);
+        return { chain: c, owner, open };
+      })
+    ).then(setLaunches);
+    // race coins sasa holds (its share of the sell fees), in the vault and in the treasury
+    const hrows: Held[] = [];
+    await Promise.all(
+      coins.flatMap((coin) =>
+        coin.lanes.map(async (lane) => {
+          const c = lane.chain;
+          try {
+            const pub = raceClient(c);
+            const [v, t] = await Promise.all(
+              [VAULT, TREASURY].map((a) => pub.readContract({ address: coin.coin, abi: raceErc20Abi, functionName: "balanceOf", args: [a] }) as Promise<bigint>)
+            );
+            if (v + t === 0n) return;
+            hrows.push({ coin, chain: c, inVault: v, inTreasury: t, usdValue: Number(formatUnits(v + t, 18)) * (lane.priceUsd ?? 0) });
+          } catch {
+            // that chain didn't answer
+          }
+        })
+      )
+    );
+    hrows.sort((a, b) => b.usdValue - a.usdValue);
+    setHeld(hrows);
     const rows: Pending[] = [];
     await Promise.all(
       coins.flatMap((coin) =>
@@ -136,7 +183,7 @@ export function MoneyPanel() {
             // pools trade against the chain's coin (ETH/BNB) or, on Arc, against USDC itself
             const natUsd = isArc(c) ? Number(formatUnits(nat, 6)) : nativeUsd(c, nat, pr);
             const coinUsd = Number(formatUnits(cn, 18)) * (lane.priceUsd ?? 0);
-            rows.push({ coin, chain: c, native: nat, coins: cn, usdValue: (natUsd + coinUsd) * SASA_SHARE, over });
+            rows.push({ coin, chain: c, native: nat, coins: cn, usdValue: (natUsd + coinUsd) * SASA_SHARE, nativeValue: natUsd * SASA_SHARE, over });
           } catch {
             // a pool that lost its race was closed out (its fees already went to the vault)
           }
@@ -153,7 +200,7 @@ export function MoneyPanel() {
     return () => clearInterval(t);
   }, [load]);
 
-  const run = async (key: string, c: RaceChain, to: Address, abi: typeof builderAbi | typeof vaultAbi, fn: string, args: readonly unknown[], done: string) => {
+  const run = async (key: string, c: RaceChain, to: Address, abi: typeof builderAbi | typeof vaultAbi | typeof factoryAbi, fn: string, args: readonly unknown[], done: string) => {
     setBusy(key);
     setMsg(null);
     try {
@@ -167,10 +214,94 @@ export function MoneyPanel() {
     }
   };
 
+  const isTreasury = same(w.address, TREASURY);
+
+  const sellCalls = (c: RaceChain, rows: Held[]) =>
+    sellBatch({ pub: raceClient(c), router: c.router, vault: VAULT, treasury: TREASURY, rows: rows.map((r) => ({ coin: r.coin.coin, inVault: r.inVault, inTreasury: r.inTreasury })) });
+
+  /** Without a batch dry run: the sweeps and approvals first, then each sale priced on its own. */
+  const sellStepByStep = async (c: RaceChain, prep: Call[], rows: Held[]) => {
+    const pub = raceClient(c);
+    if (prep.length) await w.send(c.chain, prep, () => {});
+    for (const r of rows) {
+      const amount = r.inVault + r.inTreasury;
+      let out = 0n;
+      for (let i = 0; i < 8 && out === 0n; i++) {
+        // the node answering may be a block behind the approval
+        const sim = await pub
+          .simulateContract({ account: TREASURY, address: c.router, abi: raceRouterAbi, functionName: "sell", args: [r.coin.coin, amount, 0n, TREASURY, deadline()] })
+          .catch(() => null);
+        if (sim) out = sim.result as bigint;
+        else await new Promise((res) => setTimeout(res, 1000));
+      }
+      if (out === 0n) throw new Error(`${r.coin.symbol} can't be sold on ${c.short} right now.`);
+      await w.send(c.chain, [call(c.router, raceRouterAbi, "sell", [r.coin.coin, amount, (out * (10_000n - SELL_SLIP_BPS)) / 10_000n, TREASURY, deadline()])], () => {});
+    }
+  };
+
+  /** One confirmation for the whole batch where the wallet can (EIP-5792), else one per step. */
+  const sendBatch = async (c: RaceChain, calls: Call[]) => {
+    try {
+      await w.switchTo(c.chain);
+      const wc = w.walletClient(c.chain);
+      const { id } = await wc.sendCalls({ account: TREASURY, chain: c.chain, calls: calls.map((x) => ({ to: x.to, data: x.data })) });
+      const st = await wc.waitForCallsStatus({ id, timeout: 120_000 });
+      if (st.status !== "success") throw new Error("The network rejected the transaction.");
+    } catch (e) {
+      const m = String((e as { shortMessage?: string; message?: string; code?: number })?.message ?? "");
+      const code = (e as { code?: number })?.code;
+      // the wallet can't batch: the same steps, one confirmation each
+      if (code === 4200 || code === -32601 || /not supported|does not support|unsupported|method not found|wallet_sendCalls/i.test(m)) {
+        await w.send(c.chain, calls, () => {});
+        return;
+      }
+      throw e;
+    }
+  };
+
+  const sellChain = async (c: RaceChain) => {
+    const rows = (held ?? []).filter((r) => r.chain.chainId === c.chainId && r.usdValue >= SELL_MIN_USD);
+    if (!rows.length) return;
+    const key = `sellall-${c.chainId}`;
+    setBusy(key);
+    setMsg(null);
+    try {
+      const { prep, sells } = await sellCalls(c, rows);
+      if (sells) await sendBatch(c, [...prep, ...sells]);
+      else await sellStepByStep(c, prep, rows);
+      setMsg({ ok: true, text: `Sold. The dollars are in the treasury on ${c.short}.` });
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: friendlyError(e) });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const sellOne = async (r: Held) => {
+    const key = `sell-${r.coin.id}-${r.chain.chainId}`;
+    setBusy(key);
+    setMsg(null);
+    try {
+      const { prep, sells } = await sellCalls(r.chain, [r]);
+      if (sells) await w.send(r.chain.chain, [...prep, ...sells], () => {});
+      else await sellStepByStep(r.chain, prep, [r]);
+      setMsg({ ok: true, text: `Sold ${r.coin.symbol}. The dollars are in the treasury on ${r.chain.short}.` });
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: friendlyError(e) });
+    } finally {
+      setBusy("");
+    }
+  };
+
   const sumOf = (key: string) => RACE_CHAINS.reduce((s, c) => s + balUsd(c, bals[`${key}-${c.chainId}`], p), 0);
   const treasury = sumOf("treasury");
   const vault = sumOf("vault");
   const inPools = (pending ?? []).reduce((s, r) => s + r.usdValue, 0);
+  const inPoolsNative = (pending ?? []).reduce((s, r) => s + r.nativeValue, 0);
+  const heldUsd = (held ?? []).reduce((s, r) => s + r.usdValue, 0);
+  const sellable = (held ?? []).filter((r) => r.usdValue >= SELL_MIN_USD);
   const lowGas = (c: RaceChain, b?: Bal) => {
     if (!b) return false;
     if (isArc(c)) return Number(formatUnits(b.usd, b.usdDec)) < 1;
@@ -193,7 +324,7 @@ export function MoneyPanel() {
         {[
           { label: "In the treasury", value: money(treasury), note: "Yours" },
           { label: "In the fee vault", value: money(vault), note: `${money(vault * 0.8)} goes to the treasury on Split` },
-          { label: "Waiting in pools", value: pending === null ? "…" : money(inPools), note: "sasa's 70%, after Collect" },
+          { label: "Waiting in pools", value: pending === null ? "…" : money(inPools), note: `${money(inPoolsNative)} in ETH/BNB/USDC, the rest in coins` },
           { label: "Hyperliquid (perps fees)", value: hl === null ? "…" : money(hl), note: "Keep at least $100 there" },
         ].map((x) => (
           <div key={x.label} className="rounded-2xl bg-night p-3 sm:p-4 min-w-0">
@@ -222,7 +353,9 @@ export function MoneyPanel() {
                 <div className="font-semibold truncate">
                   {r.coin.name} <span className="text-ink-3">{r.coin.symbol}</span> · {r.chain.short}
                 </div>
-                <div className="text-[0.8125rem] text-ink-3">sasa&apos;s share: {money(r.usdValue)}</div>
+                <div className="text-[0.8125rem] text-ink-3">
+                  sasa&apos;s share: {money(r.usdValue)} ({money(r.nativeValue)} in {isArc(r.chain) ? "USDC" : r.chain.chain.nativeCurrency.symbol}, the rest in {r.coin.symbol})
+                </div>
               </div>
               <button
                 type="button"
@@ -263,6 +396,82 @@ export function MoneyPanel() {
           })}
         </div>
         <p className="text-[0.75rem] text-ink-3">The keeper also does both by itself (after each race, and when the vault holds $5 or more). The buttons only make it happen now; your wallet pays a few cents of gas.</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="font-semibold">Coins sasa holds {held && heldUsd > 0 ? <span className="text-ink-3 font-normal">· about {money(heldUsd)}</span> : null}</h3>
+        <p className="text-[0.8125rem] text-ink-3">
+          Sell fees are paid in the coin itself. Selling turns them into dollars (USDC) in the treasury. Coins under {money(SELL_MIN_USD)} are left alone (not worth the gas).
+          {!isTreasury && " To sell, connect the treasury wallet (0x3C4E…a6F)."}
+        </p>
+        {held === null && <div className="h-16 rounded-2xl bg-night animate-pulse" />}
+        {held && held.length === 0 && <p className="text-[0.875rem] text-ink-3">None yet.</p>}
+        {held?.map((r) => {
+          const key = `sell-${r.coin.id}-${r.chain.chainId}`;
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-3 rounded-2xl border border-line p-3">
+              <div className="flex-1 min-w-[10rem]">
+                <div className="font-semibold truncate">
+                  {r.coin.name} <span className="text-ink-3">{r.coin.symbol}</span> · {r.chain.short}
+                </div>
+                <div className="text-[0.8125rem] text-ink-3">
+                  {Number(formatUnits(r.inVault + r.inTreasury, 18)).toLocaleString("en-US", { maximumFractionDigits: 0 })} {r.coin.symbol} · about {money(r.usdValue)}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={!!busy || !isTreasury || r.usdValue < SELL_MIN_USD}
+                onClick={() => void sellOne(r)}
+                className="h-10 px-5 rounded-full border border-line font-semibold text-[0.875rem] disabled:opacity-40"
+              >
+                {busy === key ? "Selling…" : "Sell"}
+              </button>
+            </div>
+          );
+        })}
+        {sellable.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {RACE_CHAINS.filter((c) => sellable.some((r) => r.chain.chainId === c.chainId)).map((c) => (
+              <button
+                key={c.chainId}
+                type="button"
+                disabled={!!busy || !isTreasury}
+                onClick={() => void sellChain(c)}
+                className="h-11 px-5 rounded-full bg-ink text-paper font-semibold text-[0.875rem] disabled:opacity-40"
+              >
+                {busy === `sellall-${c.chainId}` ? "Selling…" : `Sell all on ${c.short} for USDC`}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="font-semibold">Launches</h3>
+        <p className="text-[0.8125rem] text-ink-3">Emergency stop: pausing a chain stops new coins there. Trading, selling and races keep working.</p>
+        <div className="grid sm:grid-cols-2 gap-2">
+          {launches.map((l) => {
+            const key = `launch-${l.chain.chainId}`;
+            const mine = same(w.address, l.owner);
+            return (
+              <div key={key} className="flex items-center gap-3 rounded-2xl border border-line p-3">
+                <div className="flex-1">
+                  <div className="font-semibold">{l.chain.short}</div>
+                  <div className={"text-[0.8125rem] " + (l.open === false ? "text-danger" : "text-ink-3")}>{l.open === null ? "Couldn't read" : l.open ? "Open" : "Paused"}</div>
+                </div>
+                <button
+                  type="button"
+                  disabled={!!busy || !mine || l.open === null}
+                  title={mine ? "" : "Only the factory's owner can do this"}
+                  onClick={() => void run(key, l.chain, l.chain.factory, factoryAbi as never, "setLaunchesOpen", [!l.open], l.open ? `Launches paused on ${l.chain.short}.` : `Launches open again on ${l.chain.short}.`)}
+                  className={"h-10 px-5 rounded-full font-semibold text-[0.875rem] disabled:opacity-40 " + (l.open ? "bg-danger text-white" : "bg-ink text-paper")}
+                >
+                  {busy === key ? "…" : l.open ? "Pause" : "Open"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 min-w-0">
@@ -312,4 +521,45 @@ export function MoneyPanel() {
       </div>
     </section>
   );
+}
+
+/**
+ * The calls that sell sasa's coins on one chain for dollars to the treasury: sweep each coin out
+ * of the vault, approve the router, sell. Each sale's minimum is the exact amount from a dry run of
+ * the whole batch, less 5%. `sells` is null when the node can't dry-run a batch (then the caller
+ * sends the sweeps and approvals first and prices each sale on its own).
+ */
+export async function sellBatch(o: {
+  pub: ReturnType<typeof raceClient>;
+  router: Address;
+  vault: Address;
+  treasury: Address;
+  rows: { coin: Address; inVault: bigint; inTreasury: bigint }[];
+}): Promise<{ prep: Call[]; sells: Call[] | null }> {
+  const prep: Call[] = [];
+  const sells: { coin: Address; amount: bigint }[] = [];
+  for (const r of o.rows) {
+    const amount = r.inVault + r.inTreasury;
+    if (r.inVault > 0n) prep.push(call(o.vault, vaultAbi, "sweep", [r.coin]));
+    const allowance = (await o.pub.readContract({ address: r.coin, abi: raceErc20Abi, functionName: "allowance", args: [o.treasury, o.router] })) as bigint;
+    if (allowance < amount) prep.push(call(r.coin, raceErc20Abi, "approve", [o.router, maxUint256]));
+    sells.push({ coin: r.coin, amount });
+  }
+  const probe = [...prep, ...sells.map((x) => call(o.router, raceRouterAbi, "sell", [x.coin, x.amount, 0n, o.treasury, deadline()]))];
+  let outs: { status: string; data: Hex }[];
+  try {
+    const sim = await o.pub.simulateCalls({ account: o.treasury, calls: probe.map((x) => ({ to: x.to, data: x.data })) });
+    outs = sim.results.slice(prep.length) as never;
+  } catch {
+    // this chain's node can't dry-run several steps at once
+    return { prep, sells: null };
+  }
+  if (outs.some((x) => x.status !== "success" || !x.data || x.data.length < 66)) throw new Error("One of these coins can't be sold on this chain right now. Sell them one by one.");
+  return {
+    prep,
+    sells: sells.map((x, i) => {
+      const out = BigInt(outs[i].data.slice(0, 66));
+      return call(o.router, raceRouterAbi, "sell", [x.coin, x.amount, (out * (10_000n - SELL_SLIP_BPS)) / 10_000n, o.treasury, deadline()]);
+    }),
+  };
 }
