@@ -101,22 +101,43 @@ export async function crossBuy(o: {
 
 // ------------------------------------------------------------------ sell and send home
 
-async function needGasThere(dest: RaceChain, user: Address) {
-  const bal = await raceClient(dest).getBalance({ address: user });
-  if (bal === 0n) {
-    throw new Error(`No ${dest.chain.nativeCurrency.symbol} on ${dest.short} for the network fee. Any buy there brings a little with it.`);
+/** Gas a sale there takes at most (approval ~50k, sell + the deposit home ~300k). */
+const APPROVE_GAS = 60_000n;
+const SELL_HOME_GAS = 300_000n;
+
+/** Refuses up front when the account's gas coin there can't pay for the steps (rather than a send that never lands). */
+async function needGasThere(dest: RaceChain, user: Address, gas: bigint = SELL_HOME_GAS) {
+  const pub = raceClient(dest);
+  const sym = dest.chain.nativeCurrency.symbol;
+  const [bal, price] = await Promise.all([pub.getBalance({ address: user }), pub.getGasPrice().catch(() => 0n)]);
+  if (bal === 0n) throw new Error(`No ${sym} on ${dest.short} for the network fee. Any buy there brings a little with it.`);
+  if (price > 0n && bal < price * gas) {
+    const need = Number(formatUnits(price * gas, 18));
+    throw new Error(`Not enough ${sym} on ${dest.short} for the network fee (about ${need.toPrecision(2)} ${sym} needed). Any buy there brings a little with it.`);
   }
 }
 
+async function allowanceOf(dest: RaceChain, token: Address, owner: Address, spender: Address): Promise<bigint> {
+  return (await raceClient(dest).readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [owner, spender] }).catch(() => 0n)) as bigint;
+}
+
 async function approveThere(s: Senders, dest: RaceChain, token: Address, spender: Address, amount: bigint, onStep?: (m: string) => void) {
-  const pub = raceClient(dest);
-  const a = (await pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [s.user, spender] })) as bigint;
-  if (a >= amount) return;
-  await s.sendThere(dest.chain, [call(token, raceErc20Abi, "approve", [spender, maxUint256])], (m) => onStep?.(`Approve: ${m}`));
+  if ((await allowanceOf(dest, token, s.user, spender)) >= amount) return;
+  try {
+    await s.sendThere(dest.chain, [call(token, raceErc20Abi, "approve", [spender, maxUint256])], (m) => onStep?.(`Approve: ${m}`));
+  } catch (e) {
+    // sent, but the receipt didn't show up in time: what matters is the allowance, so look at that
+    if (!String((e as Error)?.message ?? "").includes("SENT_UNCONFIRMED")) throw e;
+    onStep?.(`Approve: waiting for ${dest.short}…`);
+    for (let i = 0; i < 45; i++) {
+      if ((await allowanceOf(dest, token, s.user, spender)) >= amount) return;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`${dest.short} hasn't confirmed the approval yet. Try again in a minute.`);
+  }
   // the node answering next may be a block behind the approval
   for (let i = 0; i < 8; i++) {
-    const b = (await pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [s.user, spender] }).catch(() => 0n)) as bigint;
-    if (b >= amount) return;
+    if ((await allowanceOf(dest, token, s.user, spender)) >= amount) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
@@ -150,14 +171,18 @@ export async function crossSell(o: {
   coin: Address;
   coinsIn: bigint;
   slipBps: bigint;
+  /** The dollars the sale should bring (dest units, from the last price): Across's fee is asked for while the approval runs. */
+  estOut?: bigint;
   onStep?: (m: string) => void;
 }): Promise<CrossSellResult> {
   const { s, home, dest, coin } = o;
   if (!dest.cross) throw new Error(`${dest.short} isn't open to sasa accounts yet.`);
   const pub = raceClient(dest);
   const destDec = await usdDecimals(dest);
-  await needGasThere(dest, s.user);
-  await approveThere(s, dest, coin, dest.cross, o.coinsIn, o.onStep);
+  const approved = (await allowanceOf(dest, coin, s.user, dest.cross)) >= o.coinsIn;
+  await needGasThere(dest, s.user, SELL_HOME_GAS + (approved ? 0n : APPROVE_GAS));
+  const early = o.estOut && o.estOut > 0n ? homeFee(dest, home, s.user, o.estOut).catch(() => null) : Promise.resolve(null);
+  if (!approved) await approveThere(s, dest, coin, dest.cross, o.coinsIn, o.onStep);
 
   o.onStep?.("Getting the price…");
   const deadline = BigInt(now() + 600);
@@ -170,7 +195,10 @@ export async function crossSell(o: {
   });
   const out = sim.result as bigint;
   const minOut = (out * (10_000n - o.slipBps)) / 10_000n;
-  const fee = await homeFee(dest, home, s.user, out);
+  // the fee asked for early holds while the sale is within 15% of the estimate (it has a 20% buffer)
+  const pre = await early;
+  const close = !!o.estOut && out * 100n >= o.estOut * 85n && out * 100n <= o.estOut * 115n;
+  const fee = pre !== null && close ? pre : await homeFee(dest, home, s.user, out);
   if (fee >= minOut) throw new Error("That's too little to send back to Base. Sell a bit more.");
 
   const trade = await withGas(pub, s.user, call(dest.cross, raceCrossAbi, "sellAndSendHome", [coin, o.coinsIn, minOut, fee, deadline]));

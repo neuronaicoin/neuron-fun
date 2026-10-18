@@ -3,10 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type LocalAccount, type WalletClient } from "viem";
 import dynamic from "next/dynamic";
-import { createPublicClient, http, type Hex } from "viem";
+import { createPublicClient, type Hex } from "viem";
 import { ALCHEMY_KEY, CHAINS, WALLETCONNECT_PROJECT_ID } from "@/lib/config";
 import type { Call } from "@/lib/tx";
 import { clientFor } from "@/lib/data";
+import { chainTransport } from "@/lib/race";
 import type { PrivyState } from "./privy-bridge";
 import type { SmartWalletClient } from "@alchemy/wallet-apis";
 import { sendWithUsdcGas, usdcGasChain } from "@/lib/usdcgas";
@@ -402,7 +403,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       await within(switchTo(chain), WALLET_MS);
       const wc = createWalletClient({ account: address, chain, transport: custom(active.provider) });
       const conf = CHAINS.find((c) => c.chain.id === chain.id);
-      const pub = conf ? clientFor(conf) : createPublicClient({ chain, transport: http() });
+      const pub = conf ? clientFor(conf) : createPublicClient({ chain, transport: chainTransport(chain), pollingInterval: 1_000 });
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}: confirm in your wallet…` : "Confirm in your wallet…");
@@ -447,12 +448,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     async (chain: Chain, calls: Call[], onStep?: (msg: string) => void): Promise<Hex> => {
       if (active || !privy?.authenticated || !privy.sendTransaction) throw new Error("Log in first.");
       if (calls.length === 0) throw new Error("Nothing to send.");
-      const pub = createPublicClient({ chain, transport: http() });
+      // every RPC the chain lists: one public node that doesn't answer mustn't leave this hanging
+      const pub = createPublicClient({ chain, transport: chainTransport(chain), pollingInterval: 1_000 });
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}…` : "Sending…");
         last = await within(privy.sendTransaction(chain.id, calls[i]), SERVICE_MS);
-        onStep?.("Almost done…");
+        onStep?.(`Waiting for ${chain.name}…`);
         let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
         for (let attempt = 0; attempt < 3 && !r; attempt++) {
           try {

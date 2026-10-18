@@ -11,6 +11,11 @@
 // SpokePool checks: it can't send money anywhere else, and a delivery RaceCross refuses (a bad
 // signature, a launch that already happened) is dry-run first and never sent.
 //
+// It also brings sales home fast: a sasa account that sells on another chain gets its dollars on
+// Base through Across (RaceCross.sellAndSendHome: a deposit from the user to the user, no message).
+// The relayer watches those chains too and pays the user on Base from its own Base dollars right
+// away; Across pays it back on Base.
+//
 // Its dollars come back on the chain it asks for (RELAY_REPAY: the chain it delivered on, by
 // default; Across uses Base when it can't). Dollars that come back on Base are sent on to the
 // chains that run low (an ordinary Across deposit to itself), so each chain keeps about
@@ -24,6 +29,8 @@
 //   RELAY_TARGET_USD       dollars kept ready on each chain (default 50); RELAY_TARGET_USD_<chainId>
 //   RELAY_REPAY            "dest" (default) or "origin": where Across pays it back
 //   RELAY_REBALANCE=false  never moves its Base dollars on to the other chains
+//   RELAY_BASE_KEEP_USD    dollars kept on Base for sales coming home (default: RELAY_TARGET_USD)
+//   RELAY_HOME=false       doesn't deliver sales coming home
 //   RELAY_DRY_RUN=true     decide and log, send nothing
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -116,6 +123,24 @@ export function whyNot(rd, { origin, dest, me, nowS, maxUsd }) {
   return null;
 }
 
+/**
+ * Whether to pay out a sale coming home (`rd`, deposited on `from`, to Base = `home`): only from a
+ * RaceCross on `from` (`viaCross`, checked on the receipt), dollars to dollars, to the depositor
+ * itself, with no message, no bigger than `maxUsd`, in time, and never more than comes in.
+ */
+export function whyNotHome(rd, { from, home, me, nowS, maxUsd, viaCross }) {
+  if (!viaCross) return "not a RaceCross sale";
+  if (String(rd.recipient).toLowerCase() !== String(rd.depositor).toLowerCase()) return "not to the seller";
+  if (rd.message && rd.message !== "0x") return "has a message";
+  if (!same32(rd.inputToken, from.usd) || !same32(rd.outputToken, home.usd)) return "not dollars to dollars";
+  if (rd.fillDeadline <= nowS + 15) return "too late";
+  const ex = String(rd.exclusiveRelayer).toLowerCase();
+  if (ex !== b32(zeroAddress) && ex !== b32(me) && rd.exclusivityDeadline >= nowS) return "another relayer's for now";
+  if (rd.outputAmount > usdUnits(maxUsd, home.usdDecimals)) return `over $${maxUsd}`;
+  if (convertDecimals(rd.inputAmount, from.usdDecimals, home.usdDecimals) < rd.outputAmount) return "pays out more than comes in";
+  return null;
+}
+
 /** The chains (deployment files + RPCs), each with a public client and the relayer's wallet. */
 export function loadChains({ deployments, account, env = process.env }) {
   const out = [];
@@ -195,8 +220,12 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
       await alert("relayer", `relay-low-${dest.chainId}`, `The relayer ${me} has only $${toUsd(bal, dest.usdDecimals).toFixed(2)} on chain ${dest.chainId}; launches there go through Across's own relayers (slower) until it gets more.`);
       return;
     }
+    await fill(dest, rd, key, repayDest ? BigInt(dest.chainId) : BigInt(origin.chainId), t0);
+  }
+
+  /** Delivers `rd` on `dest` from the relayer's dollars there (dry run first), repaid on `repay`. */
+  async function fill(dest, rd, key, repay, t0) {
     await ensureApproval(dest, dest.usd, dest.spoke, rd.outputAmount);
-    const repay = repayDest ? BigInt(dest.chainId) : BigInt(origin.chainId);
     const args = [rd, repay, b32(me)];
     let sim;
     try {
@@ -226,7 +255,7 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
 
   /** One look at the origin chain: new sasa deposits are delivered (in the background). */
   async function tick() {
-    const head = await origin.pub.getBlockNumber();
+    const head = await origin.pub.getBlockNumber({ cacheTime: 0 }); // viem keeps it 4 s otherwise
     if (from === null) from = head > lookback ? head - lookback : 0n;
     if (head < from) return [];
     const to = head - from > 500n ? from + 500n : head;
@@ -250,6 +279,81 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
     }
     // forget old ones (a deposit is never seen again once the scan moved past it)
     if (seen.size > 5_000) for (const k of [...seen.keys()].slice(0, 1_000)) seen.delete(k);
+    return jobs;
+  }
+
+  // ------------------------------------------------------------------ sales coming home
+
+  const homeOn = env.RELAY_HOME !== "false";
+  const homeFrom = new Map(); // chainId -> next block to look at
+  const crossTx = new Map(); // tx hash -> came through RaceCross
+
+  async function viaCrossOf(c, hash) {
+    if (crossTx.has(hash)) return crossTx.get(hash);
+    const r = await c.pub.getTransactionReceipt({ hash });
+    const v = r.logs.some((l) => String(l.address).toLowerCase() === String(c.cross).toLowerCase());
+    crossTx.set(hash, v);
+    if (crossTx.size > 2_000) for (const k of [...crossTx.keys()].slice(0, 500)) crossTx.delete(k);
+    return v;
+  }
+
+  async function deliverHome(from, rd, key, txHash) {
+    const t0 = Date.now();
+    const viaCross = await viaCrossOf(from, txHash);
+    const why = whyNotHome(rd, { from, home: origin, me, nowS: nowS(), maxUsd, viaCross });
+    if (why) {
+      seen.set(key, `skip: ${why}`);
+      return;
+    }
+    const bal = await origin.pub.readContract({ address: origin.usd, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+    if (bal < rd.outputAmount) {
+      seen.set(key, "skip: not enough dollars");
+      log(`relay home: sale ${from.chainId}-${rd.depositId} needs $${toUsd(rd.outputAmount, origin.usdDecimals)} on Base, has $${toUsd(bal, origin.usdDecimals)}: left to other relayers`);
+      await alert("relayer", "relay-low-home", `The relayer ${me} has only $${toUsd(bal, origin.usdDecimals).toFixed(2)} on Base; sales coming home go through Across's own relayers (slower) until it gets more.`);
+      return;
+    }
+    // repaid on Base, where the next sale home needs it
+    await fill(origin, rd, key, BigInt(origin.chainId), t0);
+  }
+
+  /** One look at every other chain: sasa sales on their way to Base are paid out there (in the background). */
+  let homeBusy = false;
+  async function tickHome() {
+    if (!homeOn || homeBusy) return [];
+    homeBusy = true;
+    try {
+      return await lookHome();
+    } finally {
+      homeBusy = false;
+    }
+  }
+  async function lookHome() {
+    const jobs = [];
+    await Promise.all(
+      dests.map(async (c) => {
+        try {
+          const head = await c.pub.getBlockNumber({ cacheTime: 0 });
+          let start = homeFrom.get(c.chainId);
+          if (start === undefined) start = head > lookback ? head - lookback : 0n;
+          if (head < start) return;
+          const to = head - start > 500n ? start + 500n : head;
+          const logs = await c.pub.getLogs({ address: c.spoke, event: fundsDeposited, args: { destinationChainId: BigInt(origin.chainId) }, fromBlock: start, toBlock: to });
+          homeFrom.set(c.chainId, to + 1n);
+          for (const l of logs) {
+            const key = `home-${c.chainId}-${l.args.depositId}`;
+            if (seen.has(key)) continue;
+            // cheap checks before the receipt is read
+            if (!same32(l.args.outputToken, origin.usd) || (l.args.message && l.args.message !== "0x")) continue;
+            if (String(l.args.recipient).toLowerCase() !== String(l.args.depositor).toLowerCase()) continue;
+            seen.set(key, "queued");
+            const rd = relayDataOf(l, c.chainId);
+            jobs.push(enqueue(origin.chainId, () => deliverHome(c, rd, key, l.transactionHash)));
+          }
+        } catch (e) {
+          log(`relay home: look at ${c.chainId} failed (${e.shortMessage || e.message})`);
+        }
+      })
+    );
     return jobs;
   }
 
@@ -289,7 +393,8 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
     if (env.RELAY_REBALANCE === "false") return [];
     const moved = [];
     let spare = await origin.pub.readContract({ address: origin.usd, abi: erc20Abi, functionName: "balanceOf", args: [me] });
-    spare -= usdUnits(env.RELAY_BASE_KEEP_USD || "1", origin.usdDecimals);
+    // Base keeps its own share for sales coming home (Across pays those back on Base)
+    spare -= usdUnits(env.RELAY_BASE_KEEP_USD || (homeOn ? env[`RELAY_TARGET_USD_${origin.chainId}`] || env.RELAY_TARGET_USD || "50" : "1"), origin.usdDecimals);
     for (const dest of dests) {
       if (spare <= 0n) break;
       const target = usdUnits(env[`RELAY_TARGET_USD_${dest.chainId}`] || env.RELAY_TARGET_USD || "50", dest.usdDecimals);
@@ -309,13 +414,23 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
           log(`[dry] relay: would move $${toUsd(amount, origin.usdDecimals)} to ${dest.chainId}`);
           continue;
         }
-        await ensureApproval(origin, origin.usd, origin.spoke, amount);
-        const hash = await origin.wallet.writeContract({
-          address: origin.spoke,
-          abi: spokeAbi,
-          functionName: "depositV3Now",
-          args: [me, me, origin.usd, dest.usd, amount, out, BigInt(dest.chainId), zeroAddress, 4 * 3600, 0, "0x"],
+        // through Base's queue: payouts of sales coming home send from the same wallet there
+        let hash = null;
+        let failure = null;
+        await enqueue(origin.chainId, async () => {
+          try {
+            await ensureApproval(origin, origin.usd, origin.spoke, amount);
+            hash = await origin.wallet.writeContract({
+              address: origin.spoke,
+              abi: spokeAbi,
+              functionName: "depositV3Now",
+              args: [me, me, origin.usd, dest.usd, amount, out, BigInt(dest.chainId), zeroAddress, 4 * 3600, 0, "0x"],
+            });
+          } catch (e) {
+            failure = e;
+          }
         });
+        if (failure) throw failure;
         const r = await origin.pub.waitForTransactionReceipt({ hash, timeout: 90_000 });
         if (r.status !== "success") throw new Error(`reverted ${hash}`);
         spare -= amount;
@@ -346,9 +461,10 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
   /** Approves each chain's SpokePool up front, so the first delivery doesn't wait for it. */
   async function warmUp() {
     for (const d of dests) await enqueue(d.chainId, () => ensureApproval(d, d.usd, d.spoke, 1n));
+    if (homeOn) await enqueue(origin.chainId, () => ensureApproval(origin, origin.usd, origin.spoke, 1n));
   }
 
-  return { tick, rebalance, gasCheck, warmUp, seen, results, queues, origin, dests };
+  return { tick, tickHome, rebalance, gasCheck, warmUp, seen, results, queues, origin, dests };
 }
 
 /** Starts the relayer loop (inside the race keeper, or on its own: `node relay.mjs`). */
@@ -365,13 +481,16 @@ export function startRelayer({ env = process.env, log = (...a) => console.log(ne
   const chains = loadChains({ deployments, account, env });
   const r = createRelayer({ chains, account, env, log, alert: sendAlert });
   const poll = Number(env.RELAY_POLL_MS || "1000");
-  log(`relayer ${account.address}: watching Base for ${r.dests.map((d) => d.chainId).join(", ")} every ${poll}ms`);
+  log(`relayer ${account.address}: watching Base for ${r.dests.map((d) => d.chainId).join(", ")} every ${poll}ms${env.RELAY_HOME === "false" ? "" : "; sales home from them too"}`);
   void r.warmUp().catch((e) => log(`relayer: approvals failed (${e.shortMessage || e.message})`));
   let fails = 0;
+  let looks = 0;
   (async () => {
     for (;;) {
       try {
         await r.tick();
+        // the other chains every other look (sales home are less hurried than launches)
+        if ((looks++ & 1) === 0) void r.tickHome();
         fails = 0;
       } catch (e) {
         fails += 1;

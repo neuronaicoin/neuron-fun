@@ -163,14 +163,14 @@ const baseMain = defineChain({
   id: 8453,
   name: "Base",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://mainnet.base.org"] } },
+  rpcUrls: { default: { http: ["https://mainnet.base.org", "https://base-rpc.publicnode.com"] } },
   blockExplorers: { default: { name: "Basescan", url: "https://basescan.org" } },
 });
 const bscMain = defineChain({
   id: 56,
   name: "BNB Chain",
   nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-  rpcUrls: { default: { http: ["https://bsc-dataseed.bnbchain.org"] } },
+  rpcUrls: { default: { http: ["https://bsc-dataseed.bnbchain.org", "https://bsc-dataseed1.bnbchain.org", "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org"] } },
   blockExplorers: { default: { name: "BscScan", url: "https://bscscan.com" } },
 });
 const robinhoodMain = defineChain({
@@ -184,7 +184,7 @@ const arcMain = defineChain({
   id: 5042,
   name: "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.mainnet.arc.io"] } },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.arc.io", "https://rpc.drpc.mainnet.arc.io", "https://rpc.blockdaemon.mainnet.arc.io", "https://rpc.quicknode.mainnet.arc.io"] } },
   blockExplorers: { default: { name: "Arc Explorer", url: "https://explorer.arc.io" } },
 });
 
@@ -333,11 +333,17 @@ export const raceErc20Abi = parseAbi([
   "error TooSoon(uint256 next)",
 ]);
 
+/** Every RPC the chain lists, the next one taking over when one fails or is slow (public nodes come and go). */
+export function chainTransport(chain: Chain) {
+  const urls = chain.rpcUrls.default.http;
+  return fallback(urls.length ? urls.map((u) => http(u, { timeout: 10_000, retryCount: 1 })) : [http()]);
+}
+
 const clients = new Map<number, PublicClient>();
 export function raceClient(c: RaceChain): PublicClient {
   let p = clients.get(c.chainId);
   if (!p) {
-    p = createPublicClient({ chain: c.chain, transport: fallback([http()]), pollingInterval: 1_000 }) as PublicClient;
+    p = createPublicClient({ chain: c.chain, transport: chainTransport(c.chain), pollingInterval: 1_000 }) as PublicClient;
     clients.set(c.chainId, p);
   }
   return p;

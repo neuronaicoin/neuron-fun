@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import { usdcGasChain } from "@/lib/usdcgas";
 import { IS_TESTNET } from "@/lib/config";
 import { crossReady, homeChain, onPending, pendingList, removePending, watchPending, type Pending } from "@/lib/racecross";
 import { crossBuy, crossSell, crossSendHome, spareThere, type Senders } from "@/lib/racecrossflow";
+import { readLegs, sellEverywhere, share, type SellLeg } from "@/lib/racesell";
 import { AutoPanel } from "@/components/autopanel";
 import { autoAnywhere } from "@/lib/auto";
 import { RACE_SUPPLY } from "@/lib/race";
@@ -189,6 +190,65 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     }
   };
 
+  // ------------------------------------------------------------ one Sell, every chain
+  const [legs, setLegs] = useState<SellLeg[] | null>(null);
+  const [sellPct, setSellPct] = useState(100);
+  const [selling, setSelling] = useState(false);
+  const sellingRef = useRef(false);
+  const canSellOn = useCallback(
+    (c: RaceLane["chain"]) => (!emailMain ? true : (!!home && home.chainId === c.chainId) || crossReady(c)),
+    [emailMain, home]
+  );
+  const loadLegs = useCallback(async () => {
+    if (!w.address) return setLegs(null);
+    const fresh = await readLegs(coin, w.address as Address, canSellOn).catch(() => null);
+    if (fresh && !sellingRef.current) setLegs(fresh);
+  }, [w.address, coin, canSellOn]);
+  useEffect(() => {
+    if (side !== "sell") return;
+    void loadLegs();
+    const t = setInterval(() => void loadLegs(), 15_000);
+    return () => clearInterval(t);
+  }, [side, loadLegs]);
+
+  const sellAll = async () => {
+    if (!w.address || !legs || selling) return;
+    const ready = legs.filter((l) => l.state === "ready" || l.state === "failed").map((l) => ({ ...l, state: "ready" as const }));
+    if (!ready.length) return;
+    sellingRef.current = true;
+    setSelling(true);
+    setMsg(null);
+    setLegs((old) => (old ?? []).map((l) => ready.find((r) => r.chain.chainId === l.chain.chainId) ?? l));
+    try {
+      const done = await sellEverywhere({
+        legs: ready,
+        coin: coin.coin,
+        bps: BigInt(sellPct * 100),
+        slipBps: slip,
+        s: emailMain && home ? senders() : null,
+        home: emailMain ? home : null,
+        send: (c, calls, st) => w.send(c.chain, calls, st),
+        user: w.address as Address,
+        onLeg: (chainId, p) => setLegs((old) => (old ?? []).map((l) => (l.chain.chainId === chainId ? { ...l, ...p } : l))),
+      });
+      const ok = done.filter((l) => l.state === "done");
+      for (const l of ok) signalTrade({ chainId: l.chain.chainId, curve: l.chain.router, coinId: coin.id, nativePerToken: null });
+      const now = ok.filter((l) => !emailMain || l.chain.chainId === home?.chainId).reduce((a, l) => a + (l.usd ?? 0), 0);
+      const later = ok.filter((l) => emailMain && l.chain.chainId !== home?.chainId);
+      const laterUsd = later.reduce((a, l) => a + (l.usd ?? 0), 0);
+      if (ok.length) {
+        const parts = [];
+        if (now > 0) parts.push(emailMain ? `$${fmtAmount(now)} is in your balance` : `Sold for about $${fmtAmount(now)}`);
+        if (later.length) parts.push(`$${fmtAmount(laterUsd)} from ${later.map((l) => l.chain.short).join(", ")} lands in your balance in about a minute`);
+        setMsg({ ok: true, text: `Sold. ${parts.join("; ")}.` });
+      }
+    } finally {
+      sellingRef.current = false;
+      setSelling(false);
+      for (const ms of [1_500, 5_000, 12_000]) setTimeout(() => { void loadLegs(); void refresh(); }, ms);
+    }
+  };
+
   const n = Number(amount);
   const valid = Number.isFinite(n) && n > 0;
   // Sell amounts are typed in coins.
@@ -292,7 +352,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
 
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0">
-      {open.length > 1 && (
+      {open.length > 1 && side !== "sell" && (
         <div className="flex flex-col gap-2">
           <span className="text-[0.8125rem] text-ink-3">Trade on</span>
           <div className="grid grid-cols-2 gap-2">
@@ -329,7 +389,21 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         ))}
       </div>
 
-      {side === "auto" && tradable ? (
+      {side === "sell" ? (
+        <SellPanel
+          coin={coin}
+          legs={legs}
+          pct={sellPct}
+          onPct={setSellPct}
+          selling={selling}
+          onSell={sellAll}
+          connected={!!w.address}
+          testnetEmail={w.embedded && IS_TESTNET}
+          emailMain={emailMain}
+          homeShort={home?.short ?? "Base"}
+          returning={mine.filter((p) => p.kind === "home")}
+        />
+      ) : side === "auto" && tradable ? (
         <AutoPanel
           coin={{ address: coin.coin, symbol: coin.symbol, decimals: 18, kind: "race", raceId: coin.id }}
           coinChain={chain}
@@ -490,5 +564,116 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         </div>
       )}
     </div>
+  );
+}
+
+/** The sell side: one button for every chain the account holds the coin on. */
+function SellPanel(p: {
+  coin: RaceCoin;
+  legs: SellLeg[] | null;
+  pct: number;
+  onPct: (v: number) => void;
+  selling: boolean;
+  onSell: () => void;
+  connected: boolean;
+  testnetEmail: boolean;
+  emailMain: boolean;
+  homeShort: string;
+  returning: Pending[];
+}) {
+  const { coin, legs, pct } = p;
+  const bps = BigInt(pct * 100);
+  const sellable = (legs ?? []).filter((l) => l.state === "ready" || l.state === "failed" || l.state === "selling");
+  const moving = (legs ?? []).filter((l) => l.state === "moving");
+  const coinsOf = (ls: SellLeg[]) => ls.reduce((a, l) => a + Number(formatUnits(share(l.coins, bps), 18)), 0);
+  const total = coinsOf(sellable);
+  const usd = sellable.reduce((a, l) => a + Number(formatUnits(share(l.coins, bps), 18)) * (l.lane.priceUsd ?? 0), 0);
+  const allCoins = (legs ?? []).filter((l) => l.state !== "closed").reduce((a, l) => a + Number(formatUnits(l.coins, 18)), 0);
+  const shown = (legs ?? []).filter((l) => l.state !== "ready" || p.selling || sellable.length > 1);
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between items-baseline gap-2 text-[0.8125rem] text-ink-3">
+          <span>Sell {coin.symbol}</span>
+          {p.connected && <span className="truncate tabular-nums">{legs === null ? "…" : `You have ${fmtAmount(allCoins)}`}</span>}
+        </div>
+        <div className="text-[2rem] font-bold leading-none tabular-nums text-ink truncate">{legs === null ? "—" : fmtAmount(total)}</div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        {QUICK_SELL.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => p.onPct(v)}
+            disabled={p.selling}
+            className={"h-10 rounded-xl border text-[0.875rem] disabled:opacity-40 " + (pct === v ? "border-ink font-semibold" : "border-line text-ink-2")}
+          >
+            {v === 100 ? "All" : `${v}%`}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex justify-between gap-3 text-[0.875rem] text-ink-2">
+        <span>You get about</span>
+        <span className="font-semibold text-ink tabular-nums truncate">{legs === null || usd === 0 ? "—" : `$${fmtAmount(usd)}`}</span>
+      </div>
+
+      {shown.length > 0 && (
+        <ul className="flex flex-col gap-1.5 text-[0.8125rem]">
+          {shown.map((l) => (
+            <li key={l.chain.chainId} className="flex items-start gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full shrink-0 mt-[0.4rem]" style={{ background: l.chain.color }} aria-hidden="true" />
+              <span className="font-semibold shrink-0">{l.chain.short}</span>
+              <span className={"min-w-0 break-words " + (l.state === "failed" ? "text-danger" : "text-ink-2")}>
+                {l.state === "selling"
+                  ? (l.step ?? "Selling…")
+                  : l.state === "done"
+                    ? `Sold for about $${fmtAmount(l.usd ?? 0)}${p.emailMain && l.chain.short !== p.homeShort ? `, on its way to ${p.homeShort}` : ""}`
+                    : l.state === "failed"
+                      ? l.error
+                      : l.state === "moving"
+                        ? `${fmtAmount(Number(formatUnits(l.coins, 18)))} moving to ${coin.winner?.short ?? "the winner"}; sell them here once they arrive`
+                        : l.state === "closed"
+                          ? "not open to email accounts yet"
+                          : `${fmtAmount(Number(formatUnits(share(l.coins, bps), 18)))} ${coin.symbol}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!p.connected ? (
+        <ConnectButton />
+      ) : p.testnetEmail ? (
+        <p className="text-[0.875rem] text-ink-2">Races on testnet need a browser wallet (MetaMask, Rabby, Coinbase Wallet…). Email accounts join with the USDC deposit at mainnet.</p>
+      ) : (
+        <button
+          type="button"
+          onClick={p.onSell}
+          disabled={p.selling || legs === null || !sellable.some((l) => share(l.coins, bps) > 0n)}
+          className="h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold text-white bg-danger disabled:opacity-50"
+        >
+          {p.selling ? "Selling…" : legs !== null && !sellable.length ? (moving.length ? "On the way to the winner" : `No ${coin.symbol} to sell`) : `Sell ${pct === 100 ? "all" : `${pct}%`}`}
+        </button>
+      )}
+
+      {p.returning.length > 0 && (
+        <div className="flex flex-col gap-1.5 text-[0.8125rem]">
+          {p.returning.map((r) => (
+            <div key={r.id} className="flex items-center gap-2 text-ink-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald animate-pulse shrink-0" aria-hidden="true" />
+              Returning to {p.homeShort}: ${fmtAmount(r.usd)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[0.75rem] text-ink-3 text-center">
+        {p.emailMain
+          ? `One tap sells on every chain you hold ${coin.symbol} on. The dollars go to your balance on ${p.homeShort}: right away from ${p.homeShort}, in about a minute from the other chains.`
+          : `One tap sells on every chain you hold ${coin.symbol} on, one wallet confirmation per chain. You pay each chain's network fee.`}
+      </p>
+    </>
   );
 }
