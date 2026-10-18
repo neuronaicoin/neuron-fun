@@ -1,0 +1,41 @@
+name: lz-fix-mainnet
+
+# Moves the race hub and new coins to 4 LayerZero DVNs on all four chains (see
+# contracts-v7/script/race/lzfix.sh). "dry-run" copies each chain and does everything there as
+# the owner, then checks it: nothing real is sent. "apply" sends it for real with the deployer key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (nothing is sent) or apply (sent for real)"
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      confirm:
+        description: "For apply only: type APPLY"
+        required: false
+        default: ""
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Run
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+        run: |
+          set -uo pipefail
+          if [ "$MODE" = "apply" ]; then
+            if [ "$CONFIRM" != "APPLY" ]; then echo "To apply, type APPLY in the confirm box." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; fi
+            k="$(printf '%s' "${RAW_KEY:-}" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+            echo "::add-mask::$k"
+            [ "$k" = "0x" ] && { echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; }
+            export PRIVATE_KEY="$k"
+          fi
+          REPORT="$GITHUB_STEP_SUMMARY" bash contracts-v7/script/race/lzfix.sh
