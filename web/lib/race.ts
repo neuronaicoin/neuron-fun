@@ -646,14 +646,18 @@ export async function fetchRaceHolders(chain: RaceChain, coin: string, limit = 2
 // ------------------------------------------------------------------ helpers
 
 /** Where the race stands right now. */
-export type RacePhase = "racing" | "deciding" | "decided";
+export type RacePhase = "racing" | "deciding" | "decided" | "open";
+/** A verdict normally lands within a few minutes; a race still undecided after this keeps trading on every chain. */
+export const DECIDE_MS = 10 * 60_000;
 /** An hour after its end with no result: the race is stuck, so lists stop showing it as live. */
 export const STUCK_MS = 3600_000;
 export const raceStuck = (c: RaceCoin, now: number) => !c.winner && !c.decidedAt && c.endsAt > 0 && now > c.endsAt + STUCK_MS;
 
 export function racePhase(c: RaceCoin, now: number): RacePhase {
   if (c.winner || c.decidedAt) return "decided";
-  return now < c.endsAt ? "racing" : "deciding";
+  if (now < c.endsAt) return "racing";
+  // races launched before Oct 18 2026 can't be decided (old LayerZero settings): they trade on every chain
+  return now > c.endsAt + DECIDE_MS ? "open" : "deciding";
 }
 
 /** Lane money: the official report once it's in, the live pool before. */

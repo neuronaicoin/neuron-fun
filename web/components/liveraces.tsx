@@ -45,7 +45,7 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   if (races === null) return null;
   if (races.length === 0) return <>{fallback}</>;
   // stuck races (no result an hour after the end) aren't live: their pages stay, the wall skips them
-  const live = races.filter((r) => racePhase(r, now) !== "decided" && !raceStuck(r, now));
+  const live = races.filter((r) => (racePhase(r, now) === "racing" || racePhase(r, now) === "deciding") && !raceStuck(r, now));
   const done = races.filter((r) => racePhase(r, now) === "decided").slice(0, 6);
   if (!live.length && !done.length) return <>{fallback}</>;
   const liveUsd = live.reduce((s, r) => s + r.lanes.reduce((a, l) => a + laneUsd(l), 0), 0);

@@ -211,36 +211,60 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     return () => clearInterval(t);
   }, [side, loadLegs]);
 
+  const sellRound = async (ready: SellLeg[]) => {
+    setLegs((old) => (old ?? []).map((l) => ready.find((r) => r.chain.chainId === l.chain.chainId) ?? l));
+    const done = await sellEverywhere({
+      legs: ready,
+      coin: coin.coin,
+      bps: BigInt(sellPct * 100),
+      slipBps: slip,
+      s: emailMain && home ? senders() : null,
+      home: emailMain ? home : null,
+      send: (c, calls, st) => w.send(c.chain, calls, st),
+      user: w.address as Address,
+      onLeg: (chainId, p) => setLegs((old) => (old ?? []).map((l) => (l.chain.chainId === chainId ? { ...l, ...p } : l))),
+    });
+    const ok = done.filter((l) => l.state === "done");
+    for (const l of ok) signalTrade({ chainId: l.chain.chainId, curve: l.chain.router, coinId: coin.id, nativePerToken: null });
+    const now = ok.filter((l) => !emailMain || l.chain.chainId === home?.chainId).reduce((a, l) => a + (l.usd ?? 0), 0);
+    const later = ok.filter((l) => emailMain && l.chain.chainId !== home?.chainId);
+    const laterUsd = later.reduce((a, l) => a + (l.usd ?? 0), 0);
+    if (ok.length) {
+      const parts = [];
+      if (now > 0) parts.push(emailMain ? `$${fmtAmount(now)} is in your balance` : `Sold for about $${fmtAmount(now)}`);
+      if (later.length) parts.push(`$${fmtAmount(laterUsd)} from ${later.map((l) => l.chain.short).join(", ")} lands in your balance in about a minute`);
+      setMsg({ ok: true, text: `Sold. ${parts.join("; ")}.` });
+    }
+  };
+
   const sellAll = async () => {
     if (!w.address || !legs || selling) return;
     const ready = legs.filter((l) => l.state === "ready" || l.state === "failed").map((l) => ({ ...l, state: "ready" as const }));
-    if (!ready.length) return;
+    // coins on a losing chain are on their way to the winner: "Sell all" waits for them and sells them there
+    const moving = sellPct === 100 ? legs.filter((l) => l.state === "moving") : [];
+    if (!ready.length && !moving.length) return;
     sellingRef.current = true;
     setSelling(true);
     setMsg(null);
-    setLegs((old) => (old ?? []).map((l) => ready.find((r) => r.chain.chainId === l.chain.chainId) ?? l));
     try {
-      const done = await sellEverywhere({
-        legs: ready,
-        coin: coin.coin,
-        bps: BigInt(sellPct * 100),
-        slipBps: slip,
-        s: emailMain && home ? senders() : null,
-        home: emailMain ? home : null,
-        send: (c, calls, st) => w.send(c.chain, calls, st),
-        user: w.address as Address,
-        onLeg: (chainId, p) => setLegs((old) => (old ?? []).map((l) => (l.chain.chainId === chainId ? { ...l, ...p } : l))),
-      });
-      const ok = done.filter((l) => l.state === "done");
-      for (const l of ok) signalTrade({ chainId: l.chain.chainId, curve: l.chain.router, coinId: coin.id, nativePerToken: null });
-      const now = ok.filter((l) => !emailMain || l.chain.chainId === home?.chainId).reduce((a, l) => a + (l.usd ?? 0), 0);
-      const later = ok.filter((l) => emailMain && l.chain.chainId !== home?.chainId);
-      const laterUsd = later.reduce((a, l) => a + (l.usd ?? 0), 0);
-      if (ok.length) {
-        const parts = [];
-        if (now > 0) parts.push(emailMain ? `$${fmtAmount(now)} is in your balance` : `Sold for about $${fmtAmount(now)}`);
-        if (later.length) parts.push(`$${fmtAmount(laterUsd)} from ${later.map((l) => l.chain.short).join(", ")} lands in your balance in about a minute`);
-        setMsg({ ok: true, text: `Sold. ${parts.join("; ")}.` });
+      if (ready.length) await sellRound(ready);
+      if (moving.length) {
+        const to = coin.winner?.short ?? "the winner";
+        setMsg({ ok: true, text: `Your ${coin.symbol} from ${moving.map((l) => l.chain.short).join(", ")} are on their way to ${to}. They're sold there as soon as they arrive (about a minute).` });
+        const until = Date.now() + 4 * 60_000;
+        let sold = false;
+        while (Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 3_000));
+          const fresh = await readLegs(coin, w.address as Address, canSellOn, emailMain && home ? home.chainId : null).catch(() => null);
+          if (!fresh) continue;
+          setLegs(fresh);
+          if (fresh.some((l) => l.state === "moving")) continue;
+          const arrived = fresh.filter((l) => l.state === "ready");
+          if (arrived.length) await sellRound(arrived);
+          sold = true;
+          break;
+        }
+        if (!sold) setMsg({ ok: false, text: `Your ${coin.symbol} are still on their way to ${to}. Tap Sell again in a minute.` });
       }
     } finally {
       sellingRef.current = false;
@@ -348,7 +372,8 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     }
   };
 
-  const open = lanes.filter((l) => l.state !== 3);
+  // once decided only the winner trades (a losing chain's pool is closed even before the indexer says so)
+  const open = coin.winner ? lanes.filter((l) => l.chain.chainId === coin.winner!.chainId) : lanes.filter((l) => l.state !== 3);
 
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0">
@@ -651,10 +676,10 @@ function SellPanel(p: {
         <button
           type="button"
           onClick={p.onSell}
-          disabled={p.selling || legs === null || !sellable.some((l) => share(l.coins, bps) > 0n)}
+          disabled={p.selling || legs === null || (!sellable.some((l) => share(l.coins, bps) > 0n) && !(moving.length > 0 && pct === 100))}
           className="h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold text-white bg-danger disabled:opacity-50"
         >
-          {p.selling ? "Selling…" : legs !== null && !sellable.length ? (moving.length ? "On the way to the winner" : `No ${coin.symbol} to sell`) : `Sell ${pct === 100 ? "all" : `${pct}%`}`}
+          {p.selling ? "Selling…" : legs !== null && !sellable.length ? (moving.length ? (pct === 100 ? "Sell all when they arrive" : "On the way to the winner") : `No ${coin.symbol} to sell`) : `Sell ${pct === 100 ? "all" : `${pct}%`}`}
         </button>
       )}
 

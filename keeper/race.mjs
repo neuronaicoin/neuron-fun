@@ -35,7 +35,12 @@
 //   DRY_RUN        "true": decide and log, send nothing
 //   LZ_FEE_WEI     native sent per LayerZero message; the unused part is refunded (default 0.0003);
 //                  LZ_FEE_WEI_<chainId> overrides it for one chain
-//   LOOP_SECONDS   run forever, one pass every N seconds (default: one pass, then exit)
+//   LOOP_SECONDS   run forever, one full pass every N seconds (default: one pass, then exit)
+//   FAST_SECONDS   while a race is about to end or being decided, a quick pass (only those races)
+//                  every N seconds in between (default 3), so a verdict never waits for the slow loop
+//   COIN_PARALLEL  how many coins are handled at once (default 25); sends on one chain still go out
+//                  one after the other (own nonce count), their confirmations are awaited in parallel
+//   STUCK_ALERT_MIN  a report or verdict LayerZero hasn't delivered after N minutes alerts (default 3)
 //   COLLECT_MINUTES / IDLE_COLLECT_HOURS   fee collection pace on the winner (default 30 / 24)
 //   VAULT_MINUTES / VAULT_MIN_USD   how often / from how much the fee vault is split (60 / $5)
 //   MIN_GAS_WEI(_<chainId>), REFILL_USD, REFILL_EVERY_MIN, RELAY_API_KEY, GAS_REFILL
@@ -157,7 +162,8 @@ function loadChains() {
     out.push({
       ...d,
       eid: Number(d.eid),
-      pub: createPublicClient({ chain, transport }),
+      // a receipt is looked for every second (viem's default is 4 s: most of a race's wait)
+      pub: createPublicClient({ chain, transport, pollingInterval: 1_000 }),
       wallet: createWalletClient({ chain, account, transport }),
     });
   }
@@ -225,6 +231,49 @@ async function send(c, what, params, bump) {
   }
 }
 
+// ------------------------------------------------------------------ sending, many at once
+
+// Sends on one chain go out one after the other with the keeper's own nonce count (a public node
+// a block behind would hand out the same nonce twice); waiting for them happens in parallel.
+const chainLocks = new Map();
+const nextNonce = new Map();
+export function withChainLock(c, fn) {
+  const prev = chainLocks.get(c.chainId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  chainLocks.set(c.chainId, run.catch(() => {}));
+  return run;
+}
+export function broadcast(c, req) {
+  const write = (r) => (!r.abi && r.data ? c.wallet.sendTransaction(r) : c.wallet.writeContract(r));
+  // a replacement names its nonce itself
+  if (req.nonce !== undefined) return withChainLock(c, () => write(req));
+  return withChainLock(c, async () => {
+    const pending = await c.pub.getTransactionCount({ address: account.address, blockTag: "pending" });
+    const mine = nextNonce.get(c.chainId);
+    const nonce = mine !== undefined && mine > pending ? mine : pending;
+    try {
+      const hash = await write({ ...req, nonce });
+      nextNonce.set(c.chainId, nonce + 1);
+      return hash;
+    } catch (e) {
+      nextNonce.delete(c.chainId); // read it again next time
+      throw e;
+    }
+  });
+}
+
+/** Runs `fn` over `items`, at most `limit` at a time. */
+export async function eachLimited(items, limit, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const item = items[i++];
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
 /**
  * Sends a transaction and waits for it. One that isn't mined after 90 seconds (fees jumped)
  * is replaced: the same nonce again with 30% higher fees, up to three times, so it can never
@@ -232,7 +281,7 @@ async function send(c, what, params, bump) {
  */
 export async function sendAndWait(c, request) {
   // a contract call (abi + functionName) or a plain transaction (to + data), e.g. a Relay swap
-  const write = (req) => (!req.abi && req.data ? c.wallet.sendTransaction(req) : c.wallet.writeContract(req));
+  const write = (req) => broadcast(c, req);
   const hashes = [await write(request)];
   for (let round = 0; ; round++) {
     try {
@@ -263,10 +312,10 @@ export async function sendAndWait(c, request) {
 async function raceState(c, coin) {
   if (c.builderKind === "pcs") {
     const r = await c.pub.readContract({ address: c.builder, abi: builderPcsAbi, functionName: "races", args: [coin] });
-    return { state: Number(r[4]), feeMode: Number(r[2]), winnerEid: Number(r[5]) };
+    return { state: Number(r[4]), feeMode: Number(r[2]), winnerEid: Number(r[5]), launchedAt: Number(r[3]) };
   }
   const r = await c.pub.readContract({ address: c.builder, abi: builderAbi, functionName: "races", args: [coin] });
-  return { state: Number(r[5]), feeMode: Number(r[3]), winnerEid: Number(r[6]) };
+  return { state: Number(r[5]), feeMode: Number(r[3]), winnerEid: Number(r[6]), launchedAt: Number(r[4]) };
 }
 
 const hasNativePair = (c) => c.builderKind === "eth" || c.builderKind === "pcs";
@@ -369,13 +418,48 @@ export async function vaultPass(c, state, sendFn = send, now = Date.now()) {
 
 // ------------------------------------------------------------------ one pass
 
-async function main() {
-  const chains = loadChains();
+// LayerZero settings of a coin: those launched before Oct 18 2026 have one DVN, which LayerZero
+// Labs' DVN never verifies; their races can't be decided, so they keep trading on every chain and
+// the keeper leaves them alone (no reports, no alerts).
+const oappAbi = parseAbi(["function endpoint() view returns (address)"]);
+const endpointAbi = parseAbi(["function getSendLibrary(address sender, uint32 dstEid) view returns (address)"]);
+const ulnAbi = parseAbi([
+  "struct UlnConfig { uint64 confirmations; uint8 requiredDVNCount; uint8 optionalDVNCount; uint8 optionalDVNThreshold; address[] requiredDVNs; address[] optionalDVNs; }",
+  "function getUlnConfig(address oapp, uint32 remoteEid) view returns (UlnConfig)",
+]);
+export async function oneDvnCoin(coin, byEid) {
+  if (coin.eids.length < 2) return false;
+  const e = coin.eids.find((x) => coin.chains[x] && byEid.has(x));
+  if (e === undefined) return null;
+  const c = byEid.get(e);
+  const other = coin.eids.find((x) => x !== e);
+  c.endpointAddr ??= await c.pub.readContract({ address: c.hub, abi: oappAbi, functionName: "endpoint" });
+  const lib = await c.pub.readContract({ address: c.endpointAddr, abi: endpointAbi, functionName: "getSendLibrary", args: [coin.coin, other] });
+  const cfg = await c.pub.readContract({ address: lib, abi: ulnAbi, functionName: "getUlnConfig", args: [coin.coin, other] });
+  return Number(cfg.requiredDVNCount) + Number(cfg.optionalDVNThreshold) < 2;
+}
+
+const FAST_MS = Number(env("FAST_SECONDS", "3")) * 1000;
+const COIN_PARALLEL = Number(env("COIN_PARALLEL", "25"));
+const STUCK_MS = Number(env("STUCK_ALERT_MIN", "3")) * 60_000;
+/** A race that needs quick passes: about to end (last minute), or ended and not finished. */
+const hot = (coin, now = Date.now()) => !coin.finished && coin.oneDvn !== true && (coin.endsAt === undefined || now >= coin.endsAt - 60_000);
+
+let CHAINS = null;
+let STATE = null;
+
+/**
+ * One pass. "full": everything (gas, hops, vault, fees, new launches, every coin). "fast": only
+ * the races about to end or being decided. Returns how many races are hot.
+ */
+export async function main(mode = "full") {
+  const fast = mode === "fast";
+  const chains = (CHAINS ??= loadChains());
   if (chains.length === 0) throw new Error("no chains configured");
-  await heartbeat("race-keeper", "pass started");
+  if (!fast) await heartbeat("race-keeper", "pass started");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
   // gas: the race fees arrive here as USDC; when ETH / BNB runs low a few are swapped into it
-  for (const c of chains) {
+  for (const c of fast ? [] : chains) {
     const res = await refillGas(c, account, {
       send: sendAndWait,
       log,
@@ -385,7 +469,7 @@ async function main() {
   }
   // Testnets with no Chainlink use our TestFeed: anyone may refresh its timestamp, and the
   // builders refuse a feed older than maxFeedAge, so keep it fresh (never runs on a mainnet).
-  for (const c of chains) {
+  for (const c of fast ? [] : chains) {
     if (!c.feedIsTest || !c.feed) continue;
     try {
       const [, , , updatedAt] = await c.pub.readContract({ address: c.feed, abi: testFeedAbi, functionName: "latestRoundData" });
@@ -395,11 +479,11 @@ async function main() {
       log(`${c.chainId}: test feed check failed: ${e.shortMessage || e.message}`);
     }
   }
-  const state = readState(STATE_FILE, log);
+  const state = (STATE ??= readState(STATE_FILE, log));
 
   // Discover launches (each chain lists the coins launched there).
   // One chain's RPC being down or rate-limited must not stop the others: skip it this pass.
-  for (const c of chains) {
+  for (const c of fast ? [] : chains) {
     try {
       const latest = await c.pub.getBlockNumber();
       const floor = BigInt(env(`RACE_FROM_${c.chainId}`, "0"));
@@ -418,17 +502,17 @@ async function main() {
       log(`${c.chainId}: launch scan failed this pass (${e.shortMessage || e.message}); continuing with the other chains`);
     }
   }
-  log(`${Object.keys(state.coins).length} v7 coins known`);
+  if (!fast) log(`${Object.keys(state.coins).length} v7 coins known`);
 
-  let coordEid = null;
-  for (const c of chains) {
-    try { coordEid = Number(await c.pub.readContract({ address: c.hub, abi: hubAbi, functionName: "coordEid" })); break; } catch {}
+  let coordEid = CHAINS.coordEid ?? null;
+  for (const c of coordEid === null ? chains : []) {
+    try { coordEid = Number(await c.pub.readContract({ address: c.hub, abi: hubAbi, functionName: "coordEid" })); CHAINS.coordEid = coordEid; break; } catch {}
   }
   const coord = coordEid === null ? null : byEid.get(coordEid);
   if (!coord) throw new Error("the coordinator chain is not configured (or no RPC answered)");
 
   // Money waiting halfway on a two-step route goes first: it is already late.
-  for (const c of chains) {
+  for (const c of fast ? [] : chains) {
     try {
       await forwardHops(c, state);
     } catch (e) {
@@ -436,13 +520,22 @@ async function main() {
     }
   }
 
-  for (const [id, coin] of Object.entries(state.coins)) {
-    if (!timeLeft()) { log("time budget spent; the next run continues"); break; }
+  // races first (they're the ones people wait on), many at once
+  const entries = Object.entries(state.coins).filter(([, coin]) => !fast || hot(coin));
+  entries.sort(([, a], [, b]) => Number(hot(b)) - Number(hot(a)));
+  await eachLimited(entries, COIN_PARALLEL, async ([id, coin]) => {
+    if (!timeLeft()) return;
     try {
       await handleCoin(id, coin);
     } catch (e) {
       log(`${coin.name} (${id.slice(0, 10)}): skipped this pass: ${e.shortMessage || e.message}`);
     }
+  });
+  if (!timeLeft()) log("time budget spent; the next run continues");
+  const hotCount = Object.values(state.coins).filter((x) => hot(x)).length;
+  if (fast) {
+    if (!DRY) writeState(STATE_FILE, state);
+    return hotCount;
   }
   for (const c of chains) {
     if (!timeLeft()) break;
@@ -459,6 +552,7 @@ async function main() {
   const quiet = await staleServices(["indexer"], 15).catch(() => []);
   if (quiet.length) await alert("race keeper", "indexer-quiet", `the indexer hasn't reported for 15+ minutes; check it on Railway.`);
   log("pass done");
+  return hotCount;
 
   // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.
   async function handleCoin(id, coin) {
@@ -525,6 +619,16 @@ async function main() {
       return;
     }
 
+    // launched with the old one-DVN LayerZero settings: can't be decided, keeps trading everywhere
+    if (coin.oneDvn === undefined) {
+      const v = await oneDvnCoin(coin, byEid).catch(() => null);
+      if (v !== null) {
+        coin.oneDvn = v;
+        if (v) log(`${coin.name}: launched with the old one-DVN settings; it keeps trading on every chain, no race steps`);
+      }
+    }
+    if (coin.oneDvn) return;
+
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
     coin.seenAt ??= Date.now();
     if (here.length !== coin.eids.length) {
@@ -548,27 +652,35 @@ async function main() {
         return { e, c, seat, over, reported, ...rs };
       })
     );
+    const startedAt = Math.max(...reads.map((r) => Number(r.launchedAt ?? 0)));
+    if (startedAt > 0) coin.endsAt = (startedAt + RACE_SECONDS) * 1000;
     const anySettled = reads.some((r) => r.state === WON || r.state === LOST);
 
     // A race takes five minutes; frozen (reported, no verdict) for more than 30 minutes means trouble.
     if (!anySettled && reads.some((r) => r.reported)) {
       coin.frozenSince ??= Date.now();
-      if (Date.now() - coin.frozenSince > 30 * 60_000) await alert("race keeper", `stuck-${id}`, `${coin.name}'s race has been waiting for its verdict for over 30 minutes. Check the keeper log.`);
+      if (Date.now() - coin.frozenSince > STUCK_MS) {
+        const missing = reads.filter((r) => !r.reported).map((r) => r.e);
+        await alert("race keeper", `stuck-${id}`, `${coin.name}'s race reports haven't all reached Base after ${Math.round(STUCK_MS / 60_000)} minutes${missing.length ? ` (not reported yet: ${missing.join(", ")})` : " (LayerZero delivering slowly or stuck: check layerzeroscan for the hub)"}.`);
+      }
     } else delete coin.frozenSince;
     // over everywhere but nobody reported for 20 minutes: freezing keeps failing
     if (!anySettled && reads.every((r) => r.over) && !reads.some((r) => r.reported)) {
       coin.overSince ??= Date.now();
-      if (Date.now() - coin.overSince > 20 * 60_000) await alert("race keeper", `nofreeze-${id}`, `${coin.name}'s race ended over 20 minutes ago but no chain has reported. Check the keeper's balance and log.`);
+      if (Date.now() - coin.overSince > STUCK_MS) await alert("race keeper", `nofreeze-${id}`, `${coin.name}'s race ended over 20 minutes ago but no chain has reported. Check the keeper's balance and log.`);
     } else delete coin.overSince;
 
     // 1. freeze: every chain reports once its five minutes are over
     if (!anySettled) {
-      for (const r of reads.filter((x) => x.state === RACING && !x.reported && x.over)) {
-        const remote = r.c.eid !== coord.eid && coin.eids.length > 1;
-        await send(r.c, `freeze ${coin.name}: five minutes over, report`, {
-          address: r.c.hub, abi: hubAbi, functionName: "freeze", args: [id, remote ? lzOptions(300_000) : "0x"], value: remote ? lzFee(r.c) : 0n,
-        });
-      }
+      // every chain at once (each chain's sends still go out in order)
+      await Promise.all(
+        reads.filter((x) => x.state === RACING && !x.reported && x.over).map((r) => {
+          const remote = r.c.eid !== coord.eid && coin.eids.length > 1;
+          return send(r.c, `freeze ${coin.name}: five minutes over, report`, {
+            address: r.c.hub, abi: hubAbi, functionName: "freeze", args: [id, remote ? lzOptions(300_000) : "0x"], value: remote ? lzFee(r.c) : 0n,
+          });
+        })
+      );
       // 2. finalize on the coordinator once every report is in
       const [ready, graduate, winner] = await coord.pub.readContract({ address: coord.hub, abi: hubAbi, functionName: "preview", args: [id] });
       if (ready) {
@@ -595,7 +707,7 @@ async function main() {
         allHandedOver = false;
         coin.verdictLate ??= {};
         coin.verdictLate[r.e] ??= Date.now();
-        if (Date.now() - coin.verdictLate[r.e] > 30 * 60_000) await alert("race keeper", `verdict-${id}-${r.e}`, `${coin.name}: chain ${r.e} still hasn't received the race verdict after 30 minutes (LayerZero message stuck?).`);
+        if (Date.now() - coin.verdictLate[r.e] > STUCK_MS) await alert("race keeper", `verdict-${id}-${r.e}`, `${coin.name}: chain ${r.e} still hasn't received the race verdict after ${Math.round(STUCK_MS / 60_000)} minutes (LayerZero message stuck?).`);
         continue;
       }
       if (hasNativePair(r.c)) {
@@ -625,9 +737,10 @@ async function main() {
 
     // 5. move holders on losing chains (each to the same address on the winner)
     let allMoved = true;
-    for (const r of reads.filter((x) => x.e !== winnerEid)) {
+    // every losing chain at once
+    await Promise.all(reads.filter((x) => x.e !== winnerEid).map(async (r) => {
       const open = await r.c.pub.readContract({ address: coin.coin, abi: coinAbi, functionName: "bridgeOpen" });
-      if (!open) { allMoved = false; continue; }
+      if (!open) { allMoved = false; return; }
       const latest = await r.c.pub.getBlockNumber();
       // from where the last complete pass got to (holders found before were moved then; a new
       // transfer to any of them shows up again in the new blocks)
@@ -656,7 +769,7 @@ async function main() {
       }
       // every holder found so far was moved: the next pass starts where this scan ended
       if (passOk && !DRY) coin.chains[r.e].moveFrom = next.toString();
-    }
+    }));
 
     // A coin is finished once every losing chain handed over and nothing is left to move.
     // (Arrivals on the winner are placed by the bridge itself; step 4 only retries.)
@@ -679,18 +792,32 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
         .catch((e) => log(`relayer failed to start: ${e?.message ?? e}`));
     }
     (async () => {
-      log(`race keeper: looping every ${LOOP_SECONDS}s`);
+      log(`race keeper: full pass every ${LOOP_SECONDS}s, quick passes every ${FAST_MS / 1000}s while a race ends`);
       let failures = 0;
+      let hotNow = 0;
       for (;;) {
-        STARTED = Date.now();
-        await main()
-          .then(() => (failures = 0))
+        const t0 = Date.now();
+        STARTED = t0;
+        hotNow = await main("full")
+          .then((n) => ((failures = 0), n))
           .catch(async (e) => {
             failures += 1;
             log(`pass failed: ${e?.shortMessage ?? e?.message ?? e}`);
             if (failures >= 3) await alert("race keeper", "pass", `${failures} passes in a row failed: ${e?.shortMessage ?? e?.message ?? e}`);
+            return hotNow;
           });
-        await new Promise((r) => setTimeout(r, LOOP_SECONDS * 1000));
+        // until the next full pass: quick passes while a race is ending or being decided
+        while (Date.now() - t0 < LOOP_SECONDS * 1000) {
+          if (hotNow > 0) {
+            STARTED = Date.now();
+            hotNow = await main("fast").catch((e) => {
+              log(`quick pass failed: ${e?.shortMessage ?? e?.message ?? e}`);
+              return hotNow;
+            });
+          }
+          const wait = Math.min(FAST_MS, LOOP_SECONDS * 1000 - (Date.now() - t0));
+          if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        }
       }
     })();
   } else {

@@ -383,7 +383,8 @@ const raceLiq = (r: RaceCoin) => (r.totalUsd ?? r.lanes.reduce((s, l) => s + lan
 function raceRow(r: RaceCoin): Row {
   const lead = leadLane(r);
   const price = lead?.priceUsd ?? null;
-  const decided = racePhase(r, Date.now()) === "decided";
+  const phase = racePhase(r, Date.now());
+  const decided = phase === "decided";
   return {
     key: `race:${r.id}`,
     href: raceHref(r.id),
@@ -401,7 +402,7 @@ function raceRow(r: RaceCoin): Row {
     graduated: false,
     graduating: false,
     where: decided ? (r.winner?.short ?? null) : `${r.lanes.length} chains`,
-    badge: decided ? (r.winner ? `Won on ${r.winner.short}` : "Finished") : "Racing",
+    badge: decided ? (r.winner ? `Won on ${r.winner.short}` : "Finished") : phase === "open" ? "Every chain" : "Racing",
   };
 }
 
