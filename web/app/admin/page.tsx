@@ -13,13 +13,14 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { ChainChip, usd } from "@/components/coins";
 import { safetyAbi } from "@/lib/abis";
-import { CHAINS, USD_MODE, explorerAddress, type NeuronChain } from "@/lib/config";
+import { CHAINS, SASA_TREASURY, USD_MODE, explorerAddress, type NeuronChain } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError, shortAddr } from "@/lib/format";
 import { fetchPrices } from "@/lib/price";
 import { readSafety, refreshSafety, type Safety } from "@/lib/safety";
 import { call } from "@/lib/tx";
 import { HelpInbox } from "@/components/helpinbox";
+import { MoneyPanel } from "@/components/moneypanel";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -140,7 +141,10 @@ export default function AdminPage() {
     );
   }
 
-  if (loaded && !anyAccess) {
+  // sasa's admin wallet: sees sasa's money (and the safety controls below, where it has a role)
+  const isAdmin = eq(address, SASA_TREASURY);
+
+  if (loaded && !anyAccess && !isAdmin) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.625rem]">This page is for sasa admins</h1>
@@ -156,6 +160,11 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-10">
+      {isAdmin && (
+        <div className="mb-8">
+          <MoneyPanel />
+        </div>
+      )}
       <h1 className="font-display font-bold text-[1.625rem] sm:text-[2rem]">Safety controls</h1>
       <p className="text-ink-3 mt-1 max-w-[60ch]">Pausing stops new launches and buys. Selling, fee claims and graduation always stay open.</p>
 
