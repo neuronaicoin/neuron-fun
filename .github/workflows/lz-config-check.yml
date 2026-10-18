@@ -1,0 +1,94 @@
+name: lz-config-check
+
+# Read-only check, no keys, no transactions. Why do the race reports to Base sit "Inflight"?
+# For every pair of sasa's four mainnet chains it puts side by side, on both ends:
+#   - what sasa's race hub uses (its own LayerZero settings),
+#   - what new coins get (the factory's route),
+#   - LayerZero's own default for that pathway (DVN names, confirmations; "dead" = closed),
+# plus where LayerZero Scan says the keeper's messages are. Everything goes into the Summary.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check
+        run: |
+          set -uo pipefail
+          S="$GITHUB_STEP_SUMMARY"
+          HUB=0x173b228d343E174D2671a61C294D3AF06946DEBf
+          FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
+          KEEPER=0x9F832eea4f7c246d196d8E9362Fe2fC75202C528
+          NOBODY=0x000000000000000000000000000000000000dEaD   # no settings of its own: shows the default
+          CHAINS="8453 56 4663 5042"
+          declare -A RPC NAME EID SEND RECV
+          RPC[8453]="https://mainnet.base.org";               NAME[8453]="Base"
+          RPC[56]="https://bsc-rpc.publicnode.com";            NAME[56]="BNB"
+          RPC[4663]="https://rpc.mainnet.chain.robinhood.com"; NAME[4663]="Robinhood"
+          RPC[5042]="https://rpc.mainnet.arc.io";              NAME[5042]="Arc"
+          c() { for i in 1 2 3 4 5; do out=$(cast "$@" 2>/dev/null) && { echo "$out"; return 0; }; sleep 3; done; echo "ERR"; }
+
+          curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lz.json
+          for id in $CHAINS; do
+            E=$(jq -c --argjson id "$id" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|test("testnet|sepolia")|not))][0].value' /tmp/lz.json)
+            V2=$(echo "$E" | jq -c '[.deployments[] | select(.version == 2)][0]')
+            EID[$id]=$(echo "$V2" | jq -r '.eid'); SEND[$id]=$(echo "$V2" | jq -r '.sendUln302.address'); RECV[$id]=$(echo "$V2" | jq -r '.receiveUln302.address')
+            # DVN address -> name on this chain
+            echo "$E" | jq -r '.dvns // {} | to_entries[] | "\(.key|ascii_downcase) \(.value.canonicalName // .value.id // "?")\(if .value.deprecated then " (deprecated)" else "" end)"' > "/tmp/dvn_$id.txt"
+          done
+          names() { # chain, "(a,b)" list from cast -> names
+            local list; list=$(echo "$2" | tr -d '[]()' | tr ',' ' ')
+            local out=""
+            for a in $list; do
+              a=$(echo "$a" | tr 'A-Z' 'a-z' | tr -d ' ')
+              [ -z "$a" ] && continue
+              n=$(grep -i "^$a " "/tmp/dvn_$1.txt" | head -1 | cut -d' ' -f2-)
+              out="$out ${n:-$a};"
+            done
+            echo "${out:- none}"
+          }
+          # UlnConfig = (confirmations, requiredDVNCount, optionalDVNCount, optionalDVNThreshold, requiredDVNs, optionalDVNs)
+          uln() { # chain, lib, oapp, eid -> "conf N | required: names | optional: names (threshold)"
+            local raw; raw=$(c call "$2" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" "$3" "$4" --rpc-url "${RPC[$1]}")
+            if [ "$raw" = "ERR" ]; then echo "read failed"; return; fi
+            local conf req opt thr
+            conf=$(echo "$raw" | sed -E 's/^\(([0-9]+).*/\1/')
+            thr=$(echo "$raw" | sed -E 's/^\([0-9]+[^,]*, [0-9]+, [0-9]+, ([0-9]+).*/\1/')
+            req=$(echo "$raw" | sed -E 's/^[^[]*(\[[^]]*\]).*/\1/')
+            opt=$(echo "$raw" | sed -E 's/^[^[]*\[[^]]*\][^[]*(\[[^]]*\]).*/\1/')
+            echo "conf $conf; required:$(names "$1" "$req") optional:$(names "$1" "$opt") (need $thr)"
+          }
+
+          echo "## Our race hub vs LayerZero's default, every direction" >> "$S"
+          echo "Sending side is read on the sending chain, receiving side on the receiving chain. Both must name the same DVN providers; a DVN called Dead means the default path is closed." >> "$S"
+          for a in $CHAINS; do for b in $CHAINS; do
+            [ "$a" = "$b" ] && continue
+            echo "" >> "$S"; echo "### ${NAME[$a]} -> ${NAME[$b]}" >> "$S"
+            echo "| what | sending (${NAME[$a]}) | receiving (${NAME[$b]}) |" >> "$S"; echo "|---|---|---|" >> "$S"
+            echo "| race hub (ours) | $(uln "$a" "${SEND[$a]}" $HUB "${EID[$b]}") | $(uln "$b" "${RECV[$b]}" $HUB "${EID[$a]}") |" >> "$S"
+            echo "| LayerZero default | $(uln "$a" "${SEND[$a]}" $NOBODY "${EID[$b]}") | $(uln "$b" "${RECV[$b]}" $NOBODY "${EID[$a]}") |" >> "$S"
+            ex=$(c call "${SEND[$a]}" "getExecutorConfig(address,uint32)((uint32,address))" $HUB "${EID[$b]}" --rpc-url "${RPC[$a]}")
+            exd=$(c call "${SEND[$a]}" "getExecutorConfig(address,uint32)((uint32,address))" $NOBODY "${EID[$b]}" --rpc-url "${RPC[$a]}")
+            echo "| executor (ours / default) | $ex / $exd | |" >> "$S"
+          done; done
+
+          echo "" >> "$S"; echo "## Route new coins get (factory, raw)" >> "$S"
+          for a in $CHAINS; do for b in $CHAINS; do
+            [ "$a" = "$b" ] && continue
+            r=$(c call $FACTORY "routeOf(uint32)((address,address,bytes,bytes))" "${EID[$b]}" --rpc-url "${RPC[$a]}")
+            echo "- ${NAME[$a]} -> ${NAME[$b]}: \`$(echo "$r" | cut -c1-400)\`" >> "$S"
+          done; done
+
+          echo "" >> "$S"; echo "## The keeper's messages on LayerZero Scan" >> "$S"
+          curl -fsSL "https://scan.layerzero-api.com/v1/messages/wallet/$KEEPER" -o /tmp/msgs.json || echo '{}' > /tmp/msgs.json
+          echo '```' >> "$S"
+          jq -r '.data // [] | .[] | "\(.pathway.srcEid)->\(.pathway.dstEid) nonce \(.pathway.nonce // "?") status \(.status.name) | dvn \(.verification.dvn.status // "?") \(.verification.dvn.dvns // {} | tostring | .[0:300]) | exec \(.destination.status // "?") | created \(.created)"' /tmp/msgs.json >> "$S" 2>/dev/null || true
+          echo '```' >> "$S"
+          echo "<details><summary>first message, raw</summary>" >> "$S"; echo "" >> "$S"; echo '```json' >> "$S"
+          jq '.data[0] // {}' /tmp/msgs.json | head -c 6000 >> "$S"; echo "" >> "$S"; echo '```' >> "$S"; echo "</details>" >> "$S"
+          echo "done"
