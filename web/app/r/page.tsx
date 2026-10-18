@@ -271,6 +271,7 @@ function PhaseBadge({ coin, phase, now }: { coin: RaceCoin; phase: string; now: 
     return (
       <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full font-semibold text-[0.75rem] text-white" style={{ background: coin.winner.color }}>
         Won on {coin.winner.short}
+        {!coin.confirmed && <span className="font-normal opacity-80">· confirming</span>}
       </span>
     );
   return <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-night text-ink-2 font-semibold text-[0.75rem]">Race over</span>;
@@ -300,9 +301,15 @@ function RaceLanes({ coin, phase, now }: { coin: RaceCoin; phase: string; now: n
 function LaneRow({ lane, max, coin, phase, now }: { lane: RaceLane; max: number; coin: RaceCoin; phase: string; now: number }) {
   const usd = laneUsd(lane);
   const pct = Math.max(2, Math.round((usd / max) * 100));
-  const won = lane.state === 2;
-  const lost = lane.state === 3;
-  const note = won ? "Winner · locked" : lost ? `Moved to ${coin.winner?.short ?? "winner"}` : phase === "racing" && lane.endsAt ? clock(lane.endsAt - now) : phase === "open" ? "Open" : "Racing";
+  // the winner is known from the chains' reports right at the end; the pools close once the verdict lands
+  const isWinner = !!coin.winner && coin.winner.chainId === lane.chain.chainId;
+  const won = lane.state === 2 || isWinner;
+  const lost = lane.state === 3 || (!!coin.winner && !isWinner);
+  const note = won
+    ? lane.state === 2 ? "Winner · locked" : "Winner"
+    : lost
+      ? lane.state === 3 ? `Moved to ${coin.winner?.short ?? "winner"}` : `Lost · moving to ${coin.winner?.short ?? "winner"}`
+      : phase === "racing" && lane.endsAt ? clock(lane.endsAt - now) : phase === "open" ? "Open" : "Counting…";
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_4.5rem] sm:grid-cols-[7rem_minmax(0,1fr)_5.5rem_8.5rem] gap-2 sm:gap-3 items-center text-[0.8125rem] sm:text-[0.875rem]">
       <span className={"font-semibold truncate " + (lost ? "text-ink-3" : "text-ink")}>{lane.chain.short}</span>

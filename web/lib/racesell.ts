@@ -30,9 +30,13 @@ export type SellLeg = {
 
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 600);
 
-/** The chains to sell on now, from the race's state (lanes the indexer marks lost are skipped too). */
+/**
+ * The chains to sell on now, from the race's state (lanes the indexer marks lost are skipped too).
+ * Once the verdict is in only the winner sells; between the reports and the verdict a losing
+ * chain's pool is still open, so its holders can still sell there.
+ */
 export function sellLanes(coin: RaceCoin): RaceLane[] {
-  if (coin.winner) return coin.lanes.filter((l) => l.chain.chainId === coin.winner!.chainId);
+  if (coin.winner && coin.confirmed) return coin.lanes.filter((l) => l.chain.chainId === coin.winner!.chainId);
   return coin.lanes.filter((l) => l.state !== 3);
 }
 

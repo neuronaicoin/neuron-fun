@@ -31,7 +31,7 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
         })
         .catch(() => alive && setRaces((cur) => cur ?? []));
     load();
-    const t = setInterval(load, 10_000);
+    const t = setInterval(load, 5_000);
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       alive = false;

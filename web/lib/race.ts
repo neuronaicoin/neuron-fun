@@ -447,7 +447,13 @@ export type RaceCoin = {
   feeMode: number;
   launchedAt: number; // ms
   endsAt: number; // ms
+  /**
+   * The winning chain. Known the moment every chain has reported its money at the end of the
+   * five minutes (the same numbers and rule the hub on Base decides with), before LayerZero
+   * has carried the official verdict; `confirmed` once that verdict is in.
+   */
   winner: RaceChain | null;
+  confirmed: boolean;
   totalUsd: number | null;
   decidedAt: number | null;
   lanes: RaceLane[];
@@ -458,6 +464,20 @@ export const RACE_SUPPLY = 1_000_000_000;
 
 const ms = (v: unknown) => (v ? new Date(v as string).getTime() : null);
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+
+/**
+ * The winner from the chains' own reports, as the hub works it out: the most money wins, a tie
+ * goes to the lower LayerZero endpoint id. Null until every chain has reported.
+ */
+export function reportedWinner(lanes: RaceLane[]): RaceChain | null {
+  if (!lanes.length || lanes.some((l) => l.reportedUsd === null)) return null;
+  const best = lanes.reduce((a, b) => {
+    const x = a.reportedUsd ?? 0;
+    const y = b.reportedUsd ?? 0;
+    return y > x || (y === x && b.chain.eid < a.chain.eid) ? b : a;
+  });
+  return (best.reportedUsd ?? 0) > 0 ? best.chain : null;
+}
 
 function toCoin(r: Record<string, unknown>): RaceCoin {
   const lanes = ((r.race_chains as Record<string, unknown>[]) ?? [])
@@ -491,7 +511,8 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
     feeMode: Number(r.fee_mode ?? 0),
     launchedAt: ms(r.launched_at) ?? 0,
     endsAt: ms(r.ends_at) ?? 0,
-    winner: r.winner_chain ? (raceChain(Number(r.winner_chain)) ?? null) : null,
+    winner: (r.winner_chain ? raceChain(Number(r.winner_chain)) : null) ?? reportedWinner(lanes),
+    confirmed: !!r.winner_chain && !!raceChain(Number(r.winner_chain)),
     totalUsd: num(r.total_usd),
     decidedAt: ms(r.decided_at),
     lanes,
@@ -647,7 +668,7 @@ export async function fetchRaceHolders(chain: RaceChain, coin: string, limit = 2
 
 /** Where the race stands right now. */
 export type RacePhase = "racing" | "deciding" | "decided" | "open";
-/** A verdict normally lands within a few minutes; a race still undecided after this keeps trading on every chain. */
+/** No chain reported this long after the end: a race from the old settings, which keeps trading on every chain. */
 export const DECIDE_MS = 10 * 60_000;
 /** An hour after its end with no result: the race is stuck, so lists stop showing it as live. */
 export const STUCK_MS = 3600_000;
@@ -656,8 +677,10 @@ export const raceStuck = (c: RaceCoin, now: number) => !c.winner && !c.decidedAt
 export function racePhase(c: RaceCoin, now: number): RacePhase {
   if (c.winner || c.decidedAt) return "decided";
   if (now < c.endsAt) return "racing";
-  // races launched before Oct 18 2026 can't be decided (old LayerZero settings): they trade on every chain
-  return now > c.endsAt + DECIDE_MS ? "open" : "deciding";
+  // the chains report within seconds of the end; races launched before Oct 18 2026 never do (old
+  // LayerZero settings) and trade on every chain
+  const anyReport = c.lanes.some((l) => l.reportedUsd !== null);
+  return !anyReport && now > c.endsAt + DECIDE_MS ? "open" : "deciding";
 }
 
 /** Lane money: the official report once it's in, the live pool before. */
