@@ -131,14 +131,23 @@ function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void
                 // one at a time: the wallet has one current chain, so two sends on different
                 // chains at once would switch it under each other
                 oneAtATime(async () => {
-                  await embedded.switchChain(chainId);
+                  // The chain goes in the transaction itself: Privy signs and sends it on that chain
+                  // whatever network its provider happens to be on (switching the provider first
+                  // didn't stick on BNB Chain and Arc, and the send went to the old network).
                   const provider = await embedded.getEthereumProvider();
-                  const now = Number(await provider.request({ method: "eth_chainId" }));
-                  if (now !== chainId) throw new Error(`The wallet is on another network (${now}, not ${chainId}). Try again.`);
                   const hex = (v: bigint) => `0x${v.toString(16)}`;
                   return (await provider.request({
                     method: "eth_sendTransaction",
-                    params: [{ from: embedded.address, to: tx.to, data: tx.data, value: hex(tx.value ?? 0n), ...(tx.gas ? { gas: hex(tx.gas) } : {}) }],
+                    params: [
+                      {
+                        from: embedded.address,
+                        to: tx.to,
+                        data: tx.data,
+                        value: hex(tx.value ?? 0n),
+                        chainId: hex(BigInt(chainId)),
+                        ...(tx.gas ? { gas: hex(tx.gas) } : {}),
+                      },
+                    ],
                   })) as `0x${string}`;
                 })
             : null,
