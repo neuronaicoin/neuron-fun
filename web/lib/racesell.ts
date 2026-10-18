@@ -24,6 +24,8 @@ export type SellLeg = {
   usd?: number;
   tx?: Hex;
   error?: string;
+  /** why a "closed" leg isn't sold */
+  note?: string;
 };
 
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 600);
@@ -35,18 +37,29 @@ export function sellLanes(coin: RaceCoin): RaceLane[] {
 }
 
 /** The account's coins on every chain of the race (a chain that can't be read counts as none for now). */
-export async function readLegs(coin: RaceCoin, user: Address, canSell: (c: RaceChain) => boolean): Promise<SellLeg[]> {
+/** Below this, coins on a chain other than Base aren't worth Across's fee to bring home. */
+export const MIN_AWAY_USD = 1;
+
+export async function readLegs(coin: RaceCoin, user: Address, canSell: (c: RaceChain) => boolean, homeChainId: number | null = null): Promise<SellLeg[]> {
   const open = new Set(sellLanes(coin).map((l) => l.chain.chainId));
   const legs = await Promise.all(
     coin.lanes.map(async (lane): Promise<SellLeg> => {
       const coins = (await raceClient(lane.chain)
         .readContract({ address: coin.coin, abi: raceErc20Abi, functionName: "balanceOf", args: [user] })
         .catch(() => 0n)) as bigint;
-      const state: LegState = !open.has(lane.chain.chainId) ? "moving" : canSell(lane.chain) ? "ready" : "closed";
-      return { chain: lane.chain, lane, coins, state };
+      let state: LegState = !open.has(lane.chain.chainId) ? "moving" : canSell(lane.chain) ? "ready" : "closed";
+      let note: string | undefined = state === "closed" ? "not open to email accounts yet" : undefined;
+      const usd = lane.priceUsd ? Number(formatUnits(coins, 18)) * lane.priceUsd : null;
+      // dollars sold away from Base travel home through Across: a few cents can't pay its fee
+      if (state === "ready" && homeChainId !== null && lane.chain.chainId !== homeChainId && usd !== null && usd < MIN_AWAY_USD) {
+        state = "closed";
+        note = "too little to bring back to Base";
+      }
+      return { chain: lane.chain, lane, coins, state, note, usd: usd ?? undefined };
     })
   );
-  return legs.filter((l) => l.coins > 0n);
+  // dust (under a cent) isn't shown at all
+  return legs.filter((l) => l.coins > 0n && (l.usd === undefined || l.usd >= 0.01));
 }
 
 /** `bps` (1..10000) of `coins`; all of it at 10000, so nothing is left behind by rounding. */

@@ -201,9 +201,9 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
   );
   const loadLegs = useCallback(async () => {
     if (!w.address) return setLegs(null);
-    const fresh = await readLegs(coin, w.address as Address, canSellOn).catch(() => null);
+    const fresh = await readLegs(coin, w.address as Address, canSellOn, emailMain && home ? home.chainId : null).catch(() => null);
     if (fresh && !sellingRef.current) setLegs(fresh);
-  }, [w.address, coin, canSellOn]);
+  }, [w.address, coin, canSellOn, emailMain, home]);
   useEffect(() => {
     if (side !== "sell") return;
     void loadLegs();
@@ -635,7 +635,7 @@ function SellPanel(p: {
                       : l.state === "moving"
                         ? `${fmtAmount(Number(formatUnits(l.coins, 18)))} moving to ${coin.winner?.short ?? "the winner"}; sell them here once they arrive`
                         : l.state === "closed"
-                          ? "not open to email accounts yet"
+                          ? (l.note ?? "not open here")
                           : `${fmtAmount(Number(formatUnits(share(l.coins, bps), 18)))} ${coin.symbol}`}
               </span>
             </li>

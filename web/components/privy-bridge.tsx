@@ -47,6 +47,14 @@ const SUPPORTED = [
   ...(CHAINS[0].chain.testnet ? [] : [mainnet]),
 ].filter((c, i, a) => a.findIndex((x) => x.id === c.id) === i);
 
+let sendLane: Promise<unknown> = Promise.resolve();
+/** Runs `job` after every job started before it (each wallet send: switch network, then send). */
+function oneAtATime<T>(job: () => Promise<T>): Promise<T> {
+  const run = sendLane.then(job, job);
+  sendLane = run.catch(() => {});
+  return run;
+}
+
 export default function PrivyBridge({ onState, loginRequests }: { onState: (s: PrivyState) => void; loginRequests: number }) {
   return (
     <PrivyProvider
@@ -119,15 +127,20 @@ function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void
         email: user?.email?.address ?? user?.google?.email ?? null,
         sendTransaction:
           authenticated && embedded
-            ? async (chainId, tx) => {
-                await embedded.switchChain(chainId);
-                const provider = await embedded.getEthereumProvider();
-                const hex = (v: bigint) => `0x${v.toString(16)}`;
-                return (await provider.request({
-                  method: "eth_sendTransaction",
-                  params: [{ from: embedded.address, to: tx.to, data: tx.data, value: hex(tx.value ?? 0n), ...(tx.gas ? { gas: hex(tx.gas) } : {}) }],
-                })) as `0x${string}`;
-              }
+            ? (chainId, tx) =>
+                // one at a time: the wallet has one current chain, so two sends on different
+                // chains at once would switch it under each other
+                oneAtATime(async () => {
+                  await embedded.switchChain(chainId);
+                  const provider = await embedded.getEthereumProvider();
+                  const now = Number(await provider.request({ method: "eth_chainId" }));
+                  if (now !== chainId) throw new Error(`The wallet is on another network (${now}, not ${chainId}). Try again.`);
+                  const hex = (v: bigint) => `0x${v.toString(16)}`;
+                  return (await provider.request({
+                    method: "eth_sendTransaction",
+                    params: [{ from: embedded.address, to: tx.to, data: tx.data, value: hex(tx.value ?? 0n), ...(tx.gas ? { gas: hex(tx.gas) } : {}) }],
+                  })) as `0x${string}`;
+                })
             : null,
         login,
         logout,
