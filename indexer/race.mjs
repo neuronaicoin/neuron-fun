@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
 import {
+  fallback,
   createPublicClient,
   defineChain,
   encodeAbiParameters,
@@ -179,7 +180,8 @@ export function loadRaceChains(log = console.log) {
       usd: getAddress(d.usd),
       startBlock: BigInt(d.startBlock),
       pub: throttled(
-        createPublicClient({ chain, transport: http(rpcs[0], { retryCount: 3, timeout: 20_000 }) }),
+        // every RPC listed, in order: the next one answers when one refuses (limit, outage)
+        createPublicClient({ chain, transport: rpcs.length > 1 ? fallback(rpcs.map((u) => http(u, { retryCount: 1, timeout: 20_000 }))) : http(rpcs[0], { retryCount: 3, timeout: 20_000 }) }),
         Number(env(`RACE_RPC_GAP_MS_${d.chainId}`, env("RACE_RPC_GAP_MS", "150")))
       ),
       logMode: MODES.includes(env(`RACE_LOG_MODE_${d.chainId}`, "")) ? env(`RACE_LOG_MODE_${d.chainId}`, "") : "split",
