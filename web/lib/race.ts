@@ -434,6 +434,8 @@ export type RaceLane = {
   sells: number;
   volumeUsd: number;
   handedOver: boolean;
+  /** Money from the losing chains added to this (the winner's) pool after the race. */
+  mergedUsd: number;
 };
 
 export type RaceCoin = {
@@ -496,6 +498,7 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
         sells: Number(l.sells ?? 0),
         volumeUsd: Number(l.volume_usd ?? 0),
         handedOver: !!l.handed_over,
+        mergedUsd: Number(l.merged_usd ?? 0),
       };
     })
     .filter((l): l is RaceLane => l !== null)
@@ -521,7 +524,7 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
 
 const COIN_COLS =
   "id,coin,creator,name,symbol,logo,description,fee_mode,launched_at,ends_at,winner_chain,total_usd,decided_at," +
-  "race_chains(chain_id,state,launched_at,ends_at,pool_usd,reported_usd,price_usd,buys,sells,volume_usd,handed_over)";
+  "race_chains(chain_id,state,launched_at,ends_at,pool_usd,reported_usd,price_usd,buys,sells,volume_usd,handed_over,merged_usd)";
 
 export async function fetchRaceCoin(id: string): Promise<RaceCoin | null> {
   const { data, error } = await db.from("race_coins").select(COIN_COLS).eq("id", id.toLowerCase()).maybeSingle();

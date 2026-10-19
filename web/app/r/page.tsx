@@ -278,7 +278,7 @@ function PhaseBadge({ coin, phase, now }: { coin: RaceCoin; phase: string; now: 
 }
 
 function RaceLanes({ coin, phase, now }: { coin: RaceCoin; phase: string; now: number }) {
-  const max = Math.max(1, ...coin.lanes.map(laneUsd));
+  const max = Math.max(1, ...coin.lanes.map((l) => laneUsd(l) + (l.mergedUsd || 0)));
   return (
     <section className="rounded-2xl border border-line p-4 sm:p-5 flex flex-col gap-3 min-w-0">
       <div className="flex justify-between items-baseline gap-3 flex-wrap">
@@ -299,14 +299,15 @@ function RaceLanes({ coin, phase, now }: { coin: RaceCoin; phase: string; now: n
 }
 
 function LaneRow({ lane, max, coin, phase, now }: { lane: RaceLane; max: number; coin: RaceCoin; phase: string; now: number }) {
-  const usd = laneUsd(lane);
+  const merged = lane.mergedUsd > 0.005 ? lane.mergedUsd : 0;
+  const usd = laneUsd(lane) + merged;
   const pct = Math.max(2, Math.round((usd / max) * 100));
   // the winner is known from the chains' reports right at the end; the pools close once the verdict lands
   const isWinner = !!coin.winner && coin.winner.chainId === lane.chain.chainId;
   const won = lane.state === 2 || isWinner;
   const lost = lane.state === 3 || (!!coin.winner && !isWinner);
   const note = won
-    ? lane.state === 2 ? "Winner · locked" : "Winner"
+    ? merged ? `Winner · +${compactUsd(merged)} merged` : lane.state === 2 ? "Winner · locked" : "Winner"
     : lost
       ? lane.state === 3 ? `Moved to ${coin.winner?.short ?? "winner"}` : `Lost · moving to ${coin.winner?.short ?? "winner"}`
       : phase === "racing" && lane.endsAt ? clock(lane.endsAt - now) : phase === "open" ? "Open" : "Counting…";

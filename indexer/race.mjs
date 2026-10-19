@@ -67,6 +67,7 @@ const builderEvts = {
     "event RaceLost(address indexed coin, uint32 winnerEid, uint256 ethOut, uint256 coinsBurned)",
     "event HandedOver(address indexed coin, uint256 ethIn, uint256 usdcOut, uint256 gradFee)",
     "event FeesCollected(address indexed coin, uint256 ethFees, uint256 coinFees)",
+    "event Deepened(address indexed coin, uint256 indexed positionId, uint256 ethIn)",
   ]),
   pcs: parseAbi([
     "event RaceReported(address indexed coin, uint256 poolBnb, uint256 dollars)",
@@ -74,12 +75,14 @@ const builderEvts = {
     "event RaceLost(address indexed coin, uint32 winnerEid, uint256 bnbOut, uint256 coinsBurned)",
     "event HandedOver(address indexed coin, uint256 bnbIn, uint256 usdcOut, uint256 gradFee)",
     "event FeesCollected(address indexed coin, uint256 bnbFees, uint256 coinFees)",
+    "event Deepened(address indexed coin, uint256 indexed index, uint256 bnbIn)",
   ]),
   usdc: parseAbi([
     "event RaceReported(address indexed coin, uint256 poolUsdc)",
     "event RaceWon(address indexed coin, uint32 winnerEid)",
     "event RaceLost(address indexed coin, uint32 winnerEid, uint256 usdcOut, uint256 coinsBurned, uint256 gradFee)",
     "event FeesCollected(address indexed coin, uint256 usdcFees, uint256 coinFees)",
+    "event Deepened(address indexed coin, uint256 indexed positionId, uint256 usdcIn)",
   ]),
 };
 // Who traded: our routers say it in their own event (needed for smart wallets, where the
@@ -423,6 +426,13 @@ export async function raceRange(pool, c, byEid, from, to) {
       } else if (l.eventName === "RaceLost") {
         await db.query("update race_chains set state = $3, pool_native = 0, pool_usd = 0, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId, LOST]);
         if (c.kind === "usdc") await db.query("update race_chains set handed_over = true where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
+      } else if (l.eventName === "Deepened") {
+        // money from the losing chains reached the winner's pool (dollars, or ETH/BNB bought with them)
+        const raw = c.kind === "eth" ? a.ethIn : c.kind === "pcs" ? a.bnbIn : a.usdcIn;
+        const usd = c.kind === "usdc" ? Number(formatUnits(raw, c.usdDecimals)) : Number(formatUnits(raw, 18)) * (await usdPerNative(c));
+        await db.query("update race_chains set merged_usd = coalesce(merged_usd, 0) + $3, updated_at = now() where coin_id = $1 and chain_id = $2", [
+          k.coin_id, c.chainId, fixed(usd),
+        ]);
       } else if (l.eventName === "HandedOver") {
         await db.query("update race_chains set handed_over = true, updated_at = now() where coin_id = $1 and chain_id = $2", [k.coin_id, c.chainId]);
       } else if (l.eventName === "FeesCollected") {
