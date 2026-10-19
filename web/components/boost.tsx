@@ -11,7 +11,7 @@ import { usdcAbi } from "@/lib/abis";
 import { BOOST_ON, BOOST_PLANS, boostCalls, boostChains, fetchBoosted, leftText, useBoostedUntil } from "@/lib/boost";
 import { clientFor, coinHref, fetchCoin, type Coin } from "@/lib/data";
 import { compactUsd, friendlyError } from "@/lib/format";
-import { openMoney, refreshPortfolio } from "@/lib/portfolio";
+import { openMoney, refreshPortfolio, afterTrade } from "@/lib/portfolio";
 
 /** Explore: the coins someone paid to show here, above the (unchanged) ranking. */
 export function BoostedRow() {
@@ -100,7 +100,7 @@ function BoostSheet({ coin, token, onClose }: { coin: Coin; token: Address; onCl
       }
       await send(chain.chain, boostCalls(chain, token, plan), () => {});
       toast(`$${coin.symbol} promoted for ${BOOST_PLANS[plan].hours} hours`);
-      void refreshPortfolio(true);
+      afterTrade();
       onClose();
     } catch (e) {
       toast(friendlyError(e));

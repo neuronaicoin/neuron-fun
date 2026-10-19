@@ -6,13 +6,14 @@ import { useWallet } from "./wallet";
 import { toast } from "./alerts";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
-import { refreshPortfolio } from "@/lib/portfolio";
+import { refreshPortfolio, afterTrade } from "@/lib/portfolio";
 import { chainForNetwork, quoteCalls, quoteSwap } from "@/lib/extswap";
 import type { Quote } from "@/lib/relay";
 import { crossExtBuy, crossExtSell, extRoute, gasTopup, quoteCrossBuy, quoteCrossSell, xClient, type ExtSenders } from "@/lib/extcross";
 import { autoReady, chainForNetwork as autoForNetwork } from "@/lib/auto";
 import { raceClient } from "@/lib/race";
 import { reportExtTrade } from "@/lib/exttrades";
+import { rememberExtBuy } from "@/lib/extheld";
 import { AutoPanel } from "./autopanel";
 
 import { ContractAddress } from "./contract";
@@ -327,7 +328,9 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
         toast(side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`);
       }
       void reportExtTrade({ chainId, tx, network: coin.network, coin: token, side });
-      void refreshPortfolio(true);
+      // it shows under "You" right away (the server's verified record follows)
+      if (side === "buy") rememberExtBuy(address, { network: coin.network, address: token, name: coin.name, symbol: coin.symbol, image: coin.image });
+      afterTrade();
       for (const ms of [1500, 6000, 15000, 30000]) setTimeout(() => void loadHeld(), ms);
     } catch (e) {
       toast(friendlyError(e));

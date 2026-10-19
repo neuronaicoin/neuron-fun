@@ -223,7 +223,7 @@ const NAV_ALL = [
   { href: "/market/", label: "Market", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
-  { href: "/me/", label: "Your coins", from: "lg" },
+  { href: "/me/", label: "You", from: "lg" },
   // in "More" on computers too: a short, calm top bar
   { href: "/traders/", label: "Traders", from: "never" },
   { href: "/copy/", label: "Copy", from: "never" },
@@ -252,10 +252,10 @@ export function Header() {
   }, []);
   return (
     <header className="sticky top-0 z-40 bg-paper border-b border-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-      <div className="max-w-7xl mx-auto h-14 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
+      <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
         <Link href="/explore/" className="flex items-center gap-2 text-ink shrink-0">
-          <LogoMark size={26} />
-          <SasaWordmark height={17} />
+          <LogoMark size={32} />
+          <SasaWordmark height={21} />
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 text-[0.8125rem] lg:text-[0.875rem] xl:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
@@ -296,7 +296,7 @@ export function Header() {
 const MORE_ALL = [
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
-  { href: "/me/", label: "Your coins", note: "Portfolio and profile", tablet: true },
+  { href: "/me/", label: "You", note: "Your coins, futures and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
   { href: "/copy/", label: "Copy trading", note: "Signals from traders you copy" },
   { href: "/points/", label: "Points", note: "Quests, invites, leaderboard" },
@@ -452,7 +452,7 @@ export function BottomNav() {
               className={"flex flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-medium " + (active ? "text-ink" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
-              {n.label === "Create a coin" ? "Create" : n.label === "Your coins" ? "You" : n.label === "Terminal" ? "Trade" : n.label}
+              {n.label === "Create a coin" ? "Create" : n.label === "Terminal" ? "Trade" : n.label}
             </Link>
           );
         })}
@@ -499,7 +499,7 @@ function NavIcon({ name }: { name: string }) {
         <path d="M15 6 H20 V11" />
       </svg>
     );
-  if (name === "Your coins")
+  if (name === "You" || name === "Your coins")
     return (
       <svg {...common}>
         <circle cx="12" cy="8" r="4" />

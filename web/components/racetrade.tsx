@@ -1,5 +1,6 @@
 "use client";
 
+import { afterTrade } from "@/lib/portfolio";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import { usdcGasChain } from "@/lib/usdcgas";
@@ -164,6 +165,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         setAmount("");
       }
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });
+      afterTrade();
       for (const ms of [0, 1_500, 4_000, 8_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const t = String((e as Error)?.message ?? "") + JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v));
@@ -181,6 +183,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     try {
       const r = await crossSendHome({ s: senders(), home, dest: chain, amount: spare, onStep: setStep });
       setMsg({ ok: true, text: `About $${fmtAmount(r.usdOut)} is on its way to your balance on Base.`, tx: r.tx });
+      afterTrade();
       for (const ms of [0, 2_000, 6_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       setMsg({ ok: false, text: friendlyError(e) });
@@ -269,6 +272,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     } finally {
       sellingRef.current = false;
       setSelling(false);
+      afterTrade();
       for (const ms of [1_500, 5_000, 12_000]) setTimeout(() => { void loadLegs(); void refresh(); }, ms);
     }
   };
@@ -343,6 +347,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });
       if (side === "sell") setAmount("");
       // public nodes can be a block behind: read the balances again over the next seconds
+      afterTrade();
       for (const ms of [0, 1_500, 4_000, 8_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const text = /RaceLostPoolShut/.test(String((e as Error)?.message) + JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v)))
@@ -362,6 +367,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
     try {
       await w.send(chain.chain, [call(chain.usd, raceErc20Abi, "faucet", [w.address])], (s) => setStep(s));
       setMsg({ ok: true, text: `$100 test USDC added on ${chain.short}.` });
+      afterTrade();
       for (const ms of [0, 1_500, 4_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const t = JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v));

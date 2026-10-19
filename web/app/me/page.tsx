@@ -10,7 +10,7 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
 import { TradesFeed } from "@/components/market";
-import { PositionRow, RacePositionRow } from "@/components/portfolio";
+import { ExtPositionRow, FuturesBlock, PositionRow, RacePositionRow } from "@/components/portfolio";
 import { V6 } from "@/lib/config";
 import { RACE_CHAINS, fetchRaceCoins, type RaceCoin } from "@/lib/race";
 import { CoinAvatar } from "@/components/coins";
@@ -185,7 +185,7 @@ export default function MePage() {
         <div className="mt-3 rounded-3xl border border-line bg-surface px-4 sm:px-5">
           {!p ? (
             <SkeletonRows rows={3} avatar="square" className="py-2" />
-          ) : p.positions.length === 0 && p.racePositions.length === 0 ? (
+          ) : p.positions.length === 0 && p.racePositions.length === 0 && p.extPositions.length === 0 ? (
             <p className="py-6 text-ink-2 text-[0.9375rem]">
               Nothing yet. <Link href="/explore/" className="text-emerald font-semibold">Find a coin you like</Link>.
             </p>
@@ -197,10 +197,23 @@ export default function MePage() {
               {p.positions.map((pos) => (
                 <PositionRow key={pos.coin.id} pos={pos} big />
               ))}
+              {p.extPositions.map((h) => (
+                <ExtPositionRow key={`${h.network}:${h.address}`} h={h} big />
+              ))}
             </ul>
           )}
         </div>
       </section>
+
+      {/* Futures: balance and open positions */}
+      {p?.futures && (
+        <section className="mt-8">
+          <h2 className="font-display font-semibold text-[1.25rem]">Futures</h2>
+          <div className="mt-3 rounded-3xl border border-line bg-surface px-4 sm:px-5 py-2">
+            <FuturesBlock f={p.futures} big />
+          </div>
+        </section>
+      )}
 
       {/* Created */}
       <section className="mt-8">

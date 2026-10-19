@@ -61,7 +61,7 @@ const pos = (v: unknown) => {
   return x !== null && x > 0 && x < 1e12 ? x : null;
 };
 
-function toExt(r: Record<string, unknown>): ExtCoin {
+export function toExt(r: Record<string, unknown>): ExtCoin {
   return {
     network: String(r.network),
     chainId: n(r.chain_id),

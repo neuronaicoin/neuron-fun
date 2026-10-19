@@ -11,6 +11,8 @@ import { CHAINS, USD_MODE, type NeuronChain } from "./config";
 import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
 import { fetchRacePositions, type RacePosition } from "./race";
+import { fetchExtHoldings, type ExtHolding } from "./extheld";
+import { PERPS_TRADING, fetchPerpAccount, type PerpPosition } from "./perps";
 
 /** What cash is held in: dollars (USDC; USDG on Robinhood mainnet) in the dollar edition. */
 export const CASH_SYMBOL = USD_MODE ? "USDC" : "ETH";
@@ -42,6 +44,10 @@ export type Portfolio = {
   positions: Position[];
   /** Race coins held (counted in coinsUsd and totalUsd). */
   racePositions: RacePosition[];
+  /** Other DEXs' coins and Market coins bought on sasa (counted in coinsUsd and totalUsd). */
+  extPositions: ExtHolding[];
+  /** The futures (Hyperliquid) account: its value counts in totalUsd; open positions listed. */
+  futures: { valueUsd: number; available: number; positions: PerpPosition[] } | null;
   ethUsd: number | null;
 };
 
@@ -92,8 +98,27 @@ export function setMoneyAddress(address: string | null) {
     void refreshPortfolio();
     timer = setInterval(() => {
       if (document.visibilityState === "visible") void refreshPortfolio();
-    }, 30_000);
+    }, 15_000);
   }
+}
+
+// back to the app (another tab, the phone unlocked): the numbers are fresh at once
+if (typeof window !== "undefined") {
+  const wake = () => {
+    if (document.visibilityState === "visible" && state.address) void refreshPortfolio();
+  };
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("focus", wake);
+}
+
+/**
+ * Right after any trade or money move: cash at once (chain reads only), then everything again
+ * a few times while the chains and the lists catch up (a trade to another chain lands in seconds).
+ */
+export function afterTrade(): void {
+  void refreshCash();
+  void refreshPortfolio(true);
+  for (const ms of [2_500, 6_000, 12_000, 25_000, 45_000]) setTimeout(() => void refreshPortfolio(true), ms);
 }
 
 /**
@@ -136,7 +161,7 @@ export async function refreshCash(): Promise<void> {
       return { chain, wei, usd: Number(wei) * perWei };
     });
     const cashUsd = cashByChain.reduce((a, c) => a + c.usd, 0);
-    set({ portfolio: { ...cur, cashByChain, cashUsd, totalUsd: cur.coinsUsd + cashUsd }, version: state.version + 1 });
+    set({ portfolio: { ...cur, cashByChain, cashUsd, totalUsd: cur.coinsUsd + cashUsd + (cur.futures?.valueUsd ?? 0) }, version: state.version + 1 });
   } catch {
     /* the full reload will fix it */
   }
@@ -193,7 +218,12 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
   ]);
-  const racePositions = await fetchRacePositions(address).catch(() => [] as RacePosition[]);
+  const [racePositions, extPositions, perp] = await Promise.all([
+    fetchRacePositions(address).catch(() => [] as RacePosition[]),
+    fetchExtHoldings(address).catch(() => [] as ExtHolding[]),
+    PERPS_TRADING ? fetchPerpAccount(address).catch(() => null) : Promise.resolve(null),
+  ]);
+  const futures = perp && (perp.accountValue > 0.005 || perp.positions.length) ? { valueUsd: perp.accountValue, available: perp.withdrawable, positions: perp.positions } : null;
   const prices = pf.prices ?? {};
   const ethUsd = prices.ETH ?? null;
   const px = (c: NeuronChain) => (c.priceSymbol === "USD" ? 1 : prices[c.priceSymbol] ?? 0);
@@ -256,10 +286,11 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     })
     .sort((a, b) => b.valueUsd - a.valueUsd);
 
-  const coinsUsd = positions.reduce((a, p) => a + p.valueUsd, 0) + racePositions.reduce((a, p) => a + p.valueUsd, 0);
+  const coinsUsd =
+    positions.reduce((a, p) => a + p.valueUsd, 0) + racePositions.reduce((a, p) => a + p.valueUsd, 0) + extPositions.reduce((a, p) => a + p.valueUsd, 0);
   const openPnlUsd = positions.reduce((a, p) => a + (p.pnlUsd ?? 0), 0);
   const dayUsd = positions.reduce((a, p) => a + p.dayUsd, 0);
-  const totalUsd = cashUsd + coinsUsd;
+  const totalUsd = cashUsd + coinsUsd + (futures?.valueUsd ?? 0);
   const start = totalUsd - dayUsd;
   return {
     totalUsd,
@@ -272,6 +303,8 @@ async function loadPortfolio(address: string): Promise<Portfolio> {
     dayPct: start > 0 ? dayUsd / start : 0,
     positions,
     racePositions,
+    extPositions,
+    futures,
     ethUsd,
   };
 }

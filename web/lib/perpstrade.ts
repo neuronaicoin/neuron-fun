@@ -23,7 +23,8 @@ import { useWallet } from "@/components/wallet";
 import { CHAINS, HL_BUILDER } from "./config";
 import { getQuote } from "./relay";
 import { quoteCallsOn } from "./extcross";
-import { BUILDER_FEE_TENTHS_BP, HL_API, MIN_NOTIONAL, PERPS_TRADING, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
+import { BUILDER_FEE, BUILDER_FEE_TENTHS_BP, HL_API, HL_TAKER_FEE, MIN_NOTIONAL, PERPS_TRADING, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
+import { cashOf } from "./portfolio";
 
 /** Hyperliquid's perps USDC, as Relay names it. */
 const HL_PERPS_USDC = "0x00000000000000000000000000000000";
@@ -145,6 +146,45 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
 
     const builder = { b: HL_BUILDER as `0x${string}`, f: BUILDER_FEE_TENTHS_BP };
 
+    const futuresFree = async () => Number((await infoClient.clearinghouseState({ user: user! }).catch(() => null))?.withdrawable ?? 0);
+
+    /**
+     * Makes sure the futures balance can pay `need` dollars: the difference (at least $5, Relay's
+     * smallest move) comes from the user's cash on Base, then the order waits for it to land.
+     */
+    async function fundFutures(need: number, onStep: (m: string | null) => void) {
+      if (!user || !base) throw new Error("Log in first.");
+      const have = await futuresFree();
+      if (have + 1e-6 >= need) return;
+      const top = Math.max(MIN_MOVE, Math.ceil(((need - have) * 1.02 + 0.25) * 100) / 100);
+      const cash = Number(await cashOf(base, user)) / 1e6;
+      if (cash + 1e-6 < top)
+        throw new Error(
+          have + cash + 1e-6 >= need
+            ? `Futures takes at least $${MIN_MOVE} from your cash at a time, and you have $${cash.toFixed(2)}. Add a little money first.`
+            : `Not enough money: $${have.toFixed(2)} in futures and $${cash.toFixed(2)} cash. Add money first.`
+        );
+      onStep(`Moving $${top.toFixed(2)} from your cash to futures…`);
+      const q = await getQuote({
+        user,
+        recipient: user,
+        originChainId: base.chain.id,
+        originCurrency: base.usdc,
+        destinationChainId: HL_CHAIN_ID,
+        destinationCurrency: HL_PERPS_USDC,
+        amount: String(Math.round(top * 1e6)),
+      });
+      await w.send(base.chain, quoteCallsOn(q, base.chain.id), (s) => onStep(s));
+      void after();
+      onStep("Waiting for the money to land in futures…");
+      const until = Date.now() + 120_000;
+      while (Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 2_000));
+        if ((await futuresFree()) + 1e-6 >= need) return;
+      }
+      throw new Error(`Your $${top.toFixed(2)} is on its way to futures (usually under a minute). Tap again in a moment.`);
+    }
+
     return {
       async deposit(amount, onStep) {
         if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
@@ -198,6 +238,8 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         const ex = await ready(onStep);
         const m = o.market;
         const buy = o.side === "long";
+        // the margin and the fee, brought over from the cash balance when futures holds less
+        await fundFutures(o.margin + o.margin * o.lev * (HL_TAKER_FEE + BUILDER_FEE) + 0.05, onStep);
         try {
           onStep(`Setting ${o.lev}x…`);
           await ex.updateLeverage({ asset: m.index, isCross: false, leverage: o.lev });

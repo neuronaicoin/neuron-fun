@@ -14,7 +14,7 @@ import { usdcAbi } from "@/lib/abis";
 import { CHAINS, type NeuronChain } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
-import { refreshPortfolio } from "@/lib/portfolio";
+import { refreshPortfolio, afterTrade } from "@/lib/portfolio";
 import { depositsTo, getQuote, refundFor, relayChains, type Quote, type RelayChain, type RelayToken } from "@/lib/relay";
 import { call } from "@/lib/tx";
 
@@ -227,7 +227,7 @@ function OtherDeposit() {
           if (mine.status === "success") {
             setArrived(`$${mine.outUsd.toFixed(2)} added to your cash ✓`);
             toast("Deposit arrived");
-            void refreshPortfolio(true);
+            afterTrade();
             return;
           }
           setArrived(mine.status === "failure" || mine.status === "refund" ? "This deposit was refunded to where it came from." : "Deposit seen, turning it into dollars…");
@@ -364,7 +364,7 @@ export function MainnetWithdrawSheet({ onClose }: { onClose: () => void }) {
       await send(c.chain, [call(c.usdc, usdcAbi, "transfer", [dest as Address, units])], () => {});
       toast(`Sent $${(Number(units) / 1e6).toFixed(2)} ✓`);
       setAmount("");
-      void refreshPortfolio(true);
+      afterTrade();
       void load();
     } catch (e) {
       toast(friendlyError(e));

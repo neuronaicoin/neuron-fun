@@ -38,7 +38,7 @@ export function xClient(c: XChain): PublicClient {
   }) as PublicClient;
   return ethClient;
 }
-const xChain = (chainId: number): XChain | null => (chainId === 1 ? ETHEREUM : (raceChain(chainId) ?? null));
+export const xChain = (chainId: number): XChain | null => (chainId === 1 ? ETHEREUM : (raceChain(chainId) ?? null));
 
 /** Below this much gas coin on a chain, a buy brings a little with it. */
 const GAS_FLOOR: Record<number, bigint> = { 4663: 50_000_000_000_000n, 56: 200_000_000_000_000n, 5042: 100_000_000_000_000_000n, 1: 600_000_000_000_000n };

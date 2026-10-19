@@ -5,6 +5,7 @@
  * panel (long / short, leverage, amount, TP/SL), the perps balance with Add / Move to main, and
  * the user's positions, orders and history. Trading itself is in lib/perpstrade.ts.
  */
+import { afterTrade, useMoney } from "@/lib/portfolio";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PerpsChart, type ChartLine } from "./perpschart";
 import { OrderBook } from "./perpsbook";
@@ -17,6 +18,7 @@ import {
   BUILDER_FEE,
   DEFAULT_LEV,
   HL_TAKER_FEE,
+  MIN_NOTIONAL,
   PERPS_TRADING,
   fetchPerpAccount,
   fetchPerpFills,
@@ -165,7 +167,12 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
     if (hit) setCoin(hit.coin);
   }, [markets, coin]);
 
-  const trade = usePerpsTrade(loadMine);
+  // the header total counts the futures balance too: refresh it with every trade and money move
+  const afterPerps = useCallback(async () => {
+    await loadMine();
+    afterTrade();
+  }, [loadMine]);
+  const trade = usePerpsTrade(afterPerps);
   const m = markets?.find((x) => x.coin === coin) ?? null;
   const screen = useScreen();
   // the user's position and its TP / SL, drawn on the chart
@@ -576,7 +583,11 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
     if (lev > maxLev) setLev(maxLev);
   }, [maxLev, lev]);
   const margin = Number(amount.replace(",", ".")) || 0;
-  const available = account?.withdrawable ?? 0;
+  const futuresFree = account?.withdrawable ?? 0;
+  // cash on Base moves over by itself when an order needs it (at least $5 at a time)
+  const { portfolio } = useMoney();
+  const cash = PERPS_TRADING ? (portfolio?.cashByChain.find((c) => c.chain.key === "base")?.usd ?? 0) : 0;
+  const available = futuresFree + (cash >= 5 ? cash : 0);
   const limitN = kind === "limit" ? Number(limit) || 0 : 0;
   // where the position starts: the limit price, or today's price
   const entry = m ? (limitN > 0 ? limitN : m.mark) : 0;
@@ -670,7 +681,12 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
 
       <div className="mt-4 flex items-center justify-between text-[0.8125rem]">
         <span className="text-ink-3">Amount (your money in)</span>
-        {signedIn && account && <span className="text-ink-3">Free: <span className="font-mono">{usd(available)}</span></span>}
+        {signedIn && account && (
+          <span className="text-ink-3">
+            Available: <span className="font-mono">{usd(available)}</span>
+            {futuresFree < available - 0.005 && <span className="hidden sm:inline"> (incl. cash)</span>}
+          </span>
+        )}
       </div>
       <label className="mt-1.5 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
         <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
@@ -750,6 +766,27 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
         </div>
       )}
       {why && signedIn && <p className="mt-2 text-[0.8125rem] text-ink-2">{why}</p>}
+      {signedIn && m && margin > 0 && margin * lev < MIN_NOTIONAL && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {(() => {
+            // a little over $10, so rounding the coin amount down never lands under it
+            const needLev = Math.ceil((MIN_NOTIONAL * 1.02) / margin);
+            const needAmt = Math.ceil(((MIN_NOTIONAL * 1.02) / lev) * 100) / 100;
+            return (
+              <>
+                {needLev <= maxLev && (
+                  <button type="button" onClick={() => setLev(needLev)} className="h-10 rounded-xl border border-emerald text-emerald font-semibold text-[0.875rem]">
+                    Use {needLev}x
+                  </button>
+                )}
+                <button type="button" onClick={() => setAmount(needAmt.toFixed(2))} className={"h-10 rounded-xl border border-emerald text-emerald font-semibold text-[0.875rem]" + (needLev <= maxLev ? "" : " col-span-2")}>
+                  Use ${needAmt.toFixed(2)}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
       {!PERPS_TRADING && !signedIn && <p className="mt-2 text-[0.8125rem] text-ink-2">Trading opens at mainnet. Prices and charts are live.</p>}
       {msg && <p className={"mt-2 rounded-xl px-3 py-2 text-[0.875rem] " + (msg.ok ? "bg-emerald-soft" : "bg-warn-bg text-warn-ink")}>{msg.text}</p>}
       {msg?.ok && alertsOffer && <AlertsOffer onDone={hideOffer} />}

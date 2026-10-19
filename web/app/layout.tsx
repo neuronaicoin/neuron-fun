@@ -9,6 +9,7 @@ import "@fontsource/instrument-sans/600.css";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";
+import { PullToRefresh } from "@/components/pulltorefresh";
 import { IS_TESTNET } from "@/lib/config";
 
 const SITE = "https://sasapad.fun";
@@ -99,6 +100,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="app-chrome">
             <Footer />
             <BottomNav />
+            <PullToRefresh />
           </div>
         </WalletProvider>
       </body>

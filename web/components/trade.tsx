@@ -21,7 +21,7 @@ import { coinShareUrl } from "./share";
 import { clientFor, nativePerToken, type Coin, type CurveInfo } from "@/lib/data";
 import { fmtEth, fmtTokens, friendlyError, retryNetwork } from "@/lib/format";
 import { usd } from "./coins";
-import { openMoney, optimisticTrade, refreshCash, refreshPortfolio } from "@/lib/portfolio";
+import { afterTrade, openMoney, optimisticTrade, refreshPortfolio } from "@/lib/portfolio";
 import { routerOf, setOf } from "@/lib/contracts";
 import { AutoOrders } from "./autoorders";
 import { overCap, refreshSafety, useSafety } from "@/lib/safety";
@@ -479,10 +479,9 @@ export function QuickTrade({
       // Refresh in the background; the trade is already confirmed.
       loadBalances().catch(() => {});
       // Cash updates at once (read from the chain); holdings follow the indexer a moment later.
-      void refreshCash();
-      // Public nodes can answer from a block or two behind; read again until they caught up,
-      // so the header settles on the real numbers without a page reload.
-      for (const ms of [1_500, 4_000, 8_000, 15_000]) setTimeout(() => void refreshPortfolio(true), ms);
+      // Public nodes can answer from a block or two behind: afterTrade reads again until they
+      // caught up, so the header settles on the real numbers without a page reload.
+      afterTrade();
       onTraded();
       // A sell that made 5% or more gets a card to share.
       if (side === "sell" && proceeds !== null) {
@@ -741,7 +740,7 @@ export function QuickTrade({
                 await send(c.chain, [call(c.usdc, usdcAbi, "faucet", [address])], () => {});
                 toast("+$100 free test cash ✓");
                 await loadBalances();
-                void refreshPortfolio(true);
+                afterTrade();
               } catch (e) {
                 toast(friendlyError(e));
               } finally {

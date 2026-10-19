@@ -29,8 +29,11 @@ import {
   signed,
   tokensText,
   useMoney,
+  type Portfolio,
   type Position,
 } from "@/lib/portfolio";
+import { extNetwork } from "@/lib/extcoins";
+import type { ExtHolding } from "@/lib/extheld";
 
 /** Logged-in header control: total balance, and the cash left to spend under it. Opens the portfolio. */
 const NO_PENDING: Pending[] = [];
@@ -54,12 +57,12 @@ export function BalancePill() {
     } catch {}
   }, [address, total, cash]);
   return (
-    <div className="h-10 flex items-center gap-1 pl-1 pr-1 rounded-xl shrink-0">
+    <div className="h-12 flex items-center gap-1 pl-1 pr-1 rounded-xl shrink-0">
       <button
         type="button"
         onClick={() => openMoney({ kind: "portfolio" })}
         aria-label={total ? `Total ${total} (cash plus your coins), cash to spend ${cash}` : "Your portfolio"}
-        className="h-9 flex items-center gap-2 pl-1 pr-1.5 rounded-xl"
+        className="h-11 flex items-center gap-2 pl-1 pr-1.5 rounded-xl"
       >
         <span className="hidden sm:flex w-8 h-8 rounded-lg text-ink-3 items-center justify-center shrink-0" aria-hidden="true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -70,11 +73,11 @@ export function BalancePill() {
         {total ? (
           <span className="flex flex-col items-start leading-none min-w-[3.75rem]">
             <span className="whitespace-nowrap">
-              <span className="text-[0.6875rem] text-ink-3 mr-1">Total</span>
-              <span className="font-mono text-[0.9375rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
+              <span className="text-[0.75rem] text-ink-3 mr-1">Total</span>
+              <span className="font-mono text-[1.0625rem] font-bold tabular-nums tracking-tight text-ink">{total}</span>
             </span>
-            <span className="text-[0.6875rem] text-ink-3 mt-1 whitespace-nowrap">
-              Cash <span className="font-mono text-ink-2 font-semibold tabular-nums">{cash}</span>
+            <span className="text-[0.75rem] text-ink-3 mt-1 whitespace-nowrap">
+              Cash <span className="font-mono text-ink-2 font-semibold tabular-nums text-[0.8125rem]">{cash}</span>
               {coming > 0 && (
                 <span className="text-emerald-dark font-semibold" title="On its way back to your balance">
                   {" "}+{money(coming)}
@@ -91,9 +94,9 @@ export function BalancePill() {
         onClick={() => openMoney({ kind: "deposit" })}
         aria-label="Deposit or withdraw"
         title="Deposit or withdraw"
-        className="w-8 h-8 rounded-[0.625rem] bg-emerald text-on-accent flex items-center justify-center shrink-0 hover:bg-emerald-dark"
+        className="w-10 h-10 rounded-xl bg-emerald text-on-accent flex items-center justify-center shrink-0 hover:bg-emerald-dark"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
           <path d="M12 5v14M5 12h14" />
         </svg>
       </button>
@@ -226,7 +229,7 @@ function PortfolioSheet() {
               </span>
             )}
           </div>
-          {p.positions.length === 0 && p.racePositions.length === 0 ? (
+          {p.positions.length === 0 && p.racePositions.length === 0 && p.extPositions.length === 0 ? (
             <p className="text-[0.875rem] text-ink-2 py-2">No coins yet. Buy something and it shows up here.</p>
           ) : (
             <ul>
@@ -236,8 +239,12 @@ function PortfolioSheet() {
               {p.positions.map((pos) => (
                 <PositionRow key={pos.coin.id} pos={pos} />
               ))}
+              {p.extPositions.map((h) => (
+                <ExtPositionRow key={`${h.network}:${h.address}`} h={h} />
+              ))}
             </ul>
           )}
+          {p.futures && <FuturesBlock f={p.futures} />}
         </>
       )}
 
@@ -339,5 +346,67 @@ export function RacePositionRow({ pos, big = false }: { pos: RacePosition; big?:
         </span>
       </Link>
     </li>
+  );
+}
+
+/** A coin from another DEX (or Market) bought on sasa: value now; trading happens on its page. */
+export function ExtPositionRow({ h, big = false }: { h: ExtHolding; big?: boolean }) {
+  const net = extNetwork(h.network);
+  return (
+    <li className="py-3 border-t border-line first:border-t-0">
+      <Link href={h.href} onClick={closeMoney} className="flex items-center gap-3">
+        <CoinAvatar logo={h.image ?? ""} symbol={h.symbol} size={40} />
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold truncate">{h.name}</span>
+          <span className="flex items-center gap-1.5 text-[0.8125rem] text-ink-3 min-w-0">
+            <span className="truncate">
+              {tokensText(h.tokens)} ${h.symbol}
+            </span>
+            {net && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: net.color }} title={net.label} aria-hidden="true" />}
+            {net && <span className="shrink-0">{net.label}</span>}
+          </span>
+        </span>
+        <span className="text-right shrink-0">
+          <span className={"block font-mono " + (big ? "text-[1.0625rem] font-semibold" : "")}>{h.priceUsd ? money(h.valueUsd) : "—"}</span>
+          <span className="block text-[0.75rem] text-emerald-dark font-semibold">Trade →</span>
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+/** The futures account: balance and each open position with its profit; managed on the Futures page. */
+export function FuturesBlock({ f, big = false }: { f: NonNullable<Portfolio["futures"]>; big?: boolean }) {
+  return (
+    <div className={big ? "" : "mt-5"}>
+      {!big && <h3 className="font-display font-semibold text-[1rem] mb-1">Futures</h3>}
+      <Link href="/perps/" onClick={closeMoney} className="flex items-center justify-between py-2 text-[0.875rem]">
+        <span className="text-ink-2">Futures balance</span>
+        <span className="font-mono font-semibold">{money(f.valueUsd)}</span>
+      </Link>
+      {f.positions.length === 0 ? (
+        <p className="text-[0.8125rem] text-ink-3 pb-1">No open positions. {money(f.available)} free to trade.</p>
+      ) : (
+        <ul>
+          {f.positions.map((pos) => (
+            <li key={pos.coin} className="py-3 border-t border-line">
+              <Link href={`/perps/?c=${encodeURIComponent(pos.coin)}`} onClick={closeMoney} className="flex items-center gap-3">
+                <span className={"shrink-0 h-7 px-2.5 rounded-lg text-[0.75rem] font-bold flex items-center " + (pos.side === "long" ? "bg-emerald-soft text-up" : "bg-warn-bg text-danger")}>
+                  {pos.side === "long" ? "Long" : "Short"} {pos.lev}x
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold truncate">{pos.coin}</span>
+                  <span className="block text-[0.8125rem] text-ink-3 truncate">Size {money(Math.abs(pos.value))} · margin {money(pos.margin)}</span>
+                </span>
+                <span className="text-right shrink-0">
+                  <span className={"block font-mono font-semibold " + (pos.pnl >= 0 ? "text-up" : "text-danger") + (big ? " text-[1.0625rem]" : "")}>{signed(pos.pnl)}</span>
+                  <span className="block text-[0.75rem] text-emerald-dark font-semibold">Manage →</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

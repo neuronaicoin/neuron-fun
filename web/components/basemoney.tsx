@@ -16,7 +16,7 @@ import { usdcAbi } from "@/lib/abis";
 import { CHAINS, IS_TESTNET } from "@/lib/config";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
-import { openMoney, refreshPortfolio } from "@/lib/portfolio";
+import { openMoney, refreshPortfolio, afterTrade } from "@/lib/portfolio";
 import { call } from "@/lib/tx";
 import { gasUsdcOf, usdcGasChain } from "@/lib/usdcgas";
 
@@ -118,7 +118,7 @@ export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
     else if (bal > first.current) {
       toast(`Deposit arrived: +${fmt(bal - first.current)}`);
       first.current = bal;
-      void refreshPortfolio(true);
+      afterTrade();
     }
   }, [bal]);
 
@@ -227,7 +227,7 @@ export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
       setDone(tx);
       toast(`Sent ${fmt(units)} ✓`);
       void reload();
-      void refreshPortfolio(true);
+      afterTrade();
     } catch (e) {
       setError(friendlyError(e));
     } finally {

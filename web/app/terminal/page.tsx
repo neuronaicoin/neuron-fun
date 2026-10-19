@@ -195,7 +195,7 @@ function Terminal() {
       )}
 
       <div className={(phoneView === "list" ? "hidden lg:grid " : "grid ") + "grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[300px_minmax(0,1fr)_360px] lg:items-start"}>
-        <aside className="hidden lg:block lg:sticky lg:top-[76px]">
+        <aside className="hidden lg:block lg:sticky lg:top-[84px]">
           <Markets
             coins={coins}
             ext={ext}
@@ -219,7 +219,7 @@ function Terminal() {
           {coin ? <Center coin={coin} ethUsd={ethUsd} /> : <Skeleton className="h-[640px]" />}
         </section>
 
-        <aside className="min-w-0 lg:sticky lg:top-[76px]">
+        <aside className="min-w-0 lg:sticky lg:top-[84px]">
           {coin ? (
             <>
               <div className="hidden lg:block">

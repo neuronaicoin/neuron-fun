@@ -47,3 +47,15 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function ext_stats(timestamptz) from public;
 grant execute on function ext_stats(timestamptz) to anon, authenticated, service_role;
+
+-- The coins someone bought on sasa (for the "You" page: every coin of another DEX they hold).
+-- Only which coins, never amounts or dollars: the page reads the amounts on chain itself.
+create or replace function ext_held(p_trader text)
+returns table (coin text, coin_chain integer)
+language sql stable security definer set search_path = public as $$
+  select distinct coin, coin_chain from ext_trades
+  where trader = lower(p_trader) and side = 'buy' and coin <> ''
+  limit 200;
+$$;
+revoke all on function ext_held(text) from public;
+grant execute on function ext_held(text) to anon, authenticated, service_role;
