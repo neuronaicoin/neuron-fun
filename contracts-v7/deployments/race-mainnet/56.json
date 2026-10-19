@@ -28,7 +28,7 @@
   "raceFee": 500000000000000000,
   "router": "0xc8c1C173a1d3057619fCf45941c41f02B9E7E5dD",
   "startBlock": 128126149,
-  "startMarketCap": 3000000000000000000000,
+  "startMarketCap": 3000000000,
   "testnet": false,
   "usd": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
   "usdDecimals": 18,
