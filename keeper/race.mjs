@@ -441,6 +441,7 @@ export async function oneDvnCoin(coin, byEid) {
 
 const FAST_MS = Number(env("FAST_SECONDS", "3")) * 1000;
 const COIN_PARALLEL = Number(env("COIN_PARALLEL", "25"));
+const PEND_CHECK_MS = Number(env("PEND_CHECK_SECONDS", "120")) * 1000; // finished coins: arrived-dollars check
 const STUCK_MS = Number(env("STUCK_ALERT_MIN", "3")) * 60_000;
 /** A race that needs quick passes: about to end (last minute), or ended and not finished. */
 const hot = (coin, now = Date.now()) => !coin.finished && coin.oneDvn !== true && (coin.endsAt === undefined || now >= coin.endsAt - 60_000);
@@ -554,12 +555,26 @@ export async function main(mode = "full") {
   log("pass done");
   return hotCount;
 
+  // Dollars that reached the winner but could not be swapped into its pool when they arrived.
+  async function placeArrived(winner, coin) {
+    if (!hasNativePair(winner)) return;
+    const pend = await winner.pub.readContract({ address: winner.builder, abi: builderAbi, functionName: "pendingDollars", args: [coin.coin] });
+    if (pend > 0n) await send(winner, `place ${coin.name}'s arrived ${pend} dollars into the pool`, { address: winner.builder, abi: builderAbi, functionName: "convertPending", args: [coin.coin] });
+  }
+
   // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.
   async function handleCoin(id, coin) {
     const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
 
     // ---- after the race: fees and buybacks on the winner, every COLLECT_MINUTES if it traded
     if (coin.finished) {
+      // money from the losing chains can arrive after the coin was marked finished (a two-step
+      // route, a slow bridge fill); the bridge places it itself, but when the price check fails
+      // at that moment it waits as pendingDollars: keep retrying it here too
+      if (win && Date.now() - (coin.lastPendCheck ?? 0) > PEND_CHECK_MS) {
+        if (!DRY) coin.lastPendCheck = Date.now();
+        await placeArrived(win, coin);
+      }
       const since = Date.now() - (coin.lastCollect ?? 0);
       if (win && since > COLLECT_MS) {
         // Any trade moves the pool's price, so the launch position's amounts change.
@@ -730,10 +745,7 @@ export async function main(mode = "full") {
     }
 
     // 4. the winner: arrived dollars that could not be placed yet
-    if (winner && hasNativePair(winner)) {
-      const pend = await winner.pub.readContract({ address: winner.builder, abi: builderAbi, functionName: "pendingDollars", args: [coin.coin] });
-      if (pend > 0n) await send(winner, `place ${coin.name}'s arrived ${pend} dollars into the pool`, { address: winner.builder, abi: builderAbi, functionName: "convertPending", args: [coin.coin] });
-    }
+    if (winner) await placeArrived(winner, coin);
 
     // 5. move holders on losing chains (each to the same address on the winner)
     let allMoved = true;
