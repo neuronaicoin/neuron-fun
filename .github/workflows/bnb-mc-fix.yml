@@ -1,0 +1,38 @@
+name: bnb-mc-fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (nothing is sent) or apply (sent for real)"
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      confirm:
+        description: "For apply only: type APPLY"
+        required: false
+        default: ""
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Run
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+          RAW_FKEY: ${{ secrets.MAINNET_RACE_FACTORY_KEY }}
+        run: |
+          set -uo pipefail
+          norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; [ -z "$k" ] && { echo ""; return; }; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
+          if [ "$MODE" = "apply" ]; then
+            if [ "$CONFIRM" != "APPLY" ]; then echo "To apply, type APPLY in the confirm box." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; fi
+            K=$(norm "${RAW_KEY:-}"); F=$(norm "${RAW_FKEY:-}")
+            [ -n "$K" ] && echo "::add-mask::$K"; [ -n "$F" ] && echo "::add-mask::$F"
+            export PRIVATE_KEY="$K" FACTORY_KEY="$F"
+          fi
+          REPORT="$GITHUB_STEP_SUMMARY" bash contracts-v7/script/race/bnbmcfix.sh
