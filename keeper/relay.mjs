@@ -485,6 +485,7 @@ export function startRelayer({ env = process.env, log = (...a) => console.log(ne
   void r.warmUp().catch((e) => log(`relayer: approvals failed (${e.shortMessage || e.message})`));
   let fails = 0;
   let looks = 0;
+  let lastBeat = 0;
   (async () => {
     for (;;) {
       try {
@@ -492,6 +493,12 @@ export function startRelayer({ env = process.env, log = (...a) => console.log(ne
         // the other chains every other look (sales home are less hurried than launches)
         if ((looks++ & 1) === 0) void r.tickHome();
         fails = 0;
+        // alive = it can still read Base; told every minute from here, so a slow gas check or a
+        // waiting rebalance can never make it look down
+        if (Date.now() - lastBeat > 60_000) {
+          lastBeat = Date.now();
+          void heartbeat("relayer").catch(() => {});
+        }
       } catch (e) {
         fails += 1;
         if (fails % 30 === 1) log(`relayer: look failed (${e.shortMessage || e.message})`);
