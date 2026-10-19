@@ -130,7 +130,9 @@ export function refreshPortfolio(fresh = false): Promise<void> {
   if (!address) return Promise.resolve();
   if (inflight) return fresh ? inflight.then(() => refreshPortfolio()) : inflight;
   set({ loading: true });
-  inflight = loadPortfolio(address)
+  inflight = loadPortfolio(address, state.address === address ? state.portfolio : null, (partial) => {
+    if (state.address === address) set({ portfolio: partial, version: state.version + 1 });
+  })
     .then((p) => {
       if (state.address === address) set({ portfolio: p, version: state.version + 1 });
     })
@@ -210,20 +212,40 @@ function uniqueChains(): NeuronChain[] {
   return CHAINS.filter((c) => !seen.has(c.chain.id) && seen.add(c.chain.id));
 }
 
-async function loadPortfolio(address: string): Promise<Portfolio> {
+/**
+ * Everything at once. Other DEXs' coins and futures (reads on several chains and Hyperliquid) can
+ * take longer than the rest: if they do, `onPartial` gets the portfolio first with their last
+ * known values, so the page never waits on the slowest chain.
+ */
+async function loadPortfolio(address: string, prev: Portfolio | null = null, onPartial?: (p: Portfolio) => void): Promise<Portfolio> {
   const chains = uniqueChains();
-  const [pf, cash, trades] = await Promise.all([
+  let extrasDone = false;
+  const extras = Promise.all([
+    fetchExtHoldings(address).catch(() => prev?.extPositions ?? ([] as ExtHolding[])),
+    PERPS_TRADING ? fetchPerpAccount(address).catch(() => null) : Promise.resolve(null),
+  ]).finally(() => (extrasDone = true));
+  const [pf, cash, trades, racePositions] = await Promise.all([
     fetchPortfolio(address),
     // Cash: USDC in the dollar edition (the chain's coin otherwise).
     Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
-  ]);
-  const [racePositions, extPositions, perp] = await Promise.all([
     fetchRacePositions(address).catch(() => [] as RacePosition[]),
-    fetchExtHoldings(address).catch(() => [] as ExtHolding[]),
-    PERPS_TRADING ? fetchPerpAccount(address).catch(() => null) : Promise.resolve(null),
   ]);
-  const futures = perp && (perp.accountValue > 0.005 || perp.positions.length) ? { valueUsd: perp.accountValue, available: perp.withdrawable, positions: perp.positions } : null;
+  const build = (extPositions: ExtHolding[], futures: Portfolio["futures"]) => buildPortfolio(pf, cash, trades, racePositions, extPositions, futures);
+  if (!extrasDone && onPartial) onPartial(build(prev?.extPositions ?? [], prev?.futures ?? null));
+  const [extPositions, perp] = await extras;
+  const futures = perp && (perp.accountValue > 0.005 || perp.positions.length) ? { valueUsd: perp.accountValue, available: perp.withdrawable, positions: perp.positions } : perp === null ? (prev?.futures ?? null) : null;
+  return build(extPositions, futures);
+}
+
+function buildPortfolio(
+  pf: Awaited<ReturnType<typeof fetchPortfolio>>,
+  cash: { chain: NeuronChain; wei: bigint }[],
+  trades: Awaited<ReturnType<typeof fetchTrades>>,
+  racePositions: RacePosition[],
+  extPositions: ExtHolding[],
+  futures: Portfolio["futures"]
+): Portfolio {
   const prices = pf.prices ?? {};
   const ethUsd = prices.ETH ?? null;
   const px = (c: NeuronChain) => (c.priceSymbol === "USD" ? 1 : prices[c.priceSymbol] ?? 0);

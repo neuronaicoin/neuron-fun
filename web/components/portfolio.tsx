@@ -38,11 +38,25 @@ import type { ExtHolding } from "@/lib/extheld";
 /** Logged-in header control: total balance, and the cash left to spend under it. Opens the portfolio. */
 const NO_PENDING: Pending[] = [];
 
+/** The last balance shown on this device for `address` (so a reload starts from it, not from a blank). */
+function lastBalance(address: string | null): { total: string; cash: string } | null {
+  if (!address || typeof localStorage === "undefined") return null;
+  try {
+    const v = JSON.parse(localStorage.getItem("sasa-balance") ?? "null") as { address?: string; total?: string; cash?: string } | null;
+    return v && v.address === address.toLowerCase() && v.total && v.cash ? { total: v.total, cash: v.cash } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function BalancePill() {
   const { portfolio } = useMoney();
-  const total = portfolio ? money(portfolio.totalUsd) : null;
-  const cash = portfolio ? money(portfolio.cashUsd) : null;
-  const { address, embedded } = useWallet();
+  const { address: signedIn, hintAddress, embedded } = useWallet();
+  const address = signedIn ?? hintAddress;
+  const [last, setLast] = useState<{ total: string; cash: string } | null>(null);
+  useEffect(() => setLast(lastBalance(address)), [address]);
+  const total = portfolio ? money(portfolio.totalUsd) : (last?.total ?? null);
+  const cash = portfolio ? money(portfolio.cashUsd) : (last?.cash ?? null);
   // dollars on their way back to Base from a sale on another chain (sasa accounts)
   const pending = useSyncExternalStore(onPending, pendingList, () => NO_PENDING);
   const coming = embedded ? returningUsd(pending) : 0;
@@ -51,11 +65,11 @@ export function BalancePill() {
   }, [embedded, pending.length]);
   // The forum pages are plain HTML: leave them the last known balance to show.
   useEffect(() => {
-    if (!address || !total || !cash) return;
+    if (!signedIn || !portfolio || !total || !cash) return;
     try {
-      localStorage.setItem("sasa-balance", JSON.stringify({ address: address.toLowerCase(), total, cash, at: Date.now() }));
+      localStorage.setItem("sasa-balance", JSON.stringify({ address: signedIn.toLowerCase(), total, cash, at: Date.now() }));
     } catch {}
-  }, [address, total, cash]);
+  }, [signedIn, portfolio, total, cash]);
   return (
     <div className="h-12 flex items-center gap-1 pl-1 pr-1 rounded-xl shrink-0">
       <button
@@ -106,9 +120,11 @@ export function BalancePill() {
 
 /** Keeps the money store in step with the wallet and shows whichever money sheet is open. */
 export function MoneyHost() {
-  const { address } = useWallet();
+  const { address, hintAddress } = useWallet();
   const { sheet } = useMoney();
-  useEffect(() => setMoneyAddress(address ?? null), [address]);
+  // the balance starts loading for the person signed in last time while their login comes back
+  const who = address ?? hintAddress;
+  useEffect(() => setMoneyAddress(who ?? null), [who]);
   // ?money=deposit (or withdraw / portfolio) opens that sheet, e.g. from the forum header.
   useEffect(() => {
     if (!address) return;

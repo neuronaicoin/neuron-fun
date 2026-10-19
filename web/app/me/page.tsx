@@ -29,7 +29,9 @@ import { displayName, fetchProfile, type Profile } from "@/lib/social";
 type Data = Awaited<ReturnType<typeof fetchPortfolio>>;
 
 export default function MePage() {
-  const { address } = useWallet();
+  const { address: signedIn, hintAddress, restoring } = useWallet();
+  // while the login of last time comes back, the page shows (and loads) that person's view
+  const address = signedIn ?? hintAddress;
   const { portfolio: p } = useMoney();
   const [data, setData] = useState<Data | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -63,6 +65,7 @@ export default function MePage() {
     [data]
   );
 
+  if (!address && restoring) return <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10"><Skeleton className="h-24" /></div>;
   if (!address) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">

@@ -1,4 +1,4 @@
-import { createPublicClient, fallback, http, type Address, type Chain, type Hex, type PublicClient } from "viem";
+import { createPublicClient, encodeFunctionData, fallback, http, maxUint256, parseAbi, type Address, type Chain, type Hex, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { getQuote, NATIVE, type Quote } from "./relay";
 import { raceChain, raceClient, raceErc20Abi, type RaceChain } from "./race";
@@ -169,7 +169,28 @@ export async function crossExtSell(o: { s: ExtSenders; home: RaceChain; there: X
     throw new Error(`You have ${have} ${sym} on ${there.short}; this sale needs about ${(Number(need) / 1e18).toPrecision(2)} ${sym} for the network fee. Any buy there from sasa brings a little.`);
   }
   o.onStep?.("Getting the price…");
-  const q = await quoteCrossSell({ user: s.user, home, there, token: o.token, amount: o.amount });
-  const tx = await s.sendThere(there.chain, quoteCallsOn(q, there.chainId), o.onStep);
+  let q = await quoteCrossSell({ user: s.user, home, there, token: o.token, amount: o.amount });
+  let calls = quoteCallsOn(q, there.chainId);
+  // The quote's approval and its sale are two transactions there. Sent back to back, the sale is
+  // checked against a node that may not see the approval yet (it then "reverts"), and on a slow
+  // chain the price can be stale by the time the approval lands. So: approve once (for good, no
+  // approval on later sales), wait until the chain shows it, then a fresh price and the sale alone.
+  const approve = calls.find((c) => c.data.toLowerCase().startsWith(APPROVE) && c.to.toLowerCase() === o.token.toLowerCase());
+  if (approve) {
+    const spender = `0x${approve.data.slice(34, 74)}` as Address;
+    const allowed = () => client.readContract({ address: o.token, abi: allowanceAbi, functionName: "allowance", args: [s.user, spender] }).catch(() => 0n) as Promise<bigint>;
+    if ((await allowed()) < o.amount) {
+      o.onStep?.(`Approving ${there.short} (one time)…`);
+      await s.sendThere(there.chain, [{ to: o.token, data: encodeFunctionData({ abi: allowanceAbi, functionName: "approve", args: [spender, maxUint256] }) }], o.onStep);
+      for (let i = 0; i < 30 && (await allowed()) < o.amount; i++) await new Promise((r) => setTimeout(r, 1_000));
+    }
+    o.onStep?.("Getting the price…");
+    q = await quoteCrossSell({ user: s.user, home, there, token: o.token, amount: o.amount });
+    calls = quoteCallsOn(q, there.chainId).filter((c) => !(c.data.toLowerCase().startsWith(APPROVE) && c.to.toLowerCase() === o.token.toLowerCase()));
+  }
+  const tx = await s.sendThere(there.chain, calls, o.onStep);
   return { tx, quote: q };
 }
+
+const APPROVE = "0x095ea7b3";
+const allowanceAbi = parseAbi(["function allowance(address owner, address spender) view returns (uint256)", "function approve(address spender, uint256 amount) returns (bool)"]);

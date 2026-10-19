@@ -133,7 +133,35 @@ type WalletState = {
   sendOwnGas: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
   /** Email users only: the embedded wallet as a signer (EIP-712 signatures, no popup). */
   embeddedSigner: LocalAccount | null;
+  /**
+   * True for the first moments after a page load while the login of someone who was signed in
+   * last time is coming back (the login code loads, a wallet answers). Pages show that person's
+   * view (and `hintAddress`) instead of a "Log in" screen that would flash and jump.
+   */
+  restoring: boolean;
+  /** The address signed in last time on this device (only while `restoring`). */
+  hintAddress: Address | null;
 };
+
+/** Who was signed in last time on this device, so a reload doesn't flash a logged-out page. */
+const HINT_KEY = "sasa.session";
+type Hint = { address: Address; kind: "email" | "wallet" };
+function readHint(): Hint | null {
+  try {
+    const h = JSON.parse(localStorage.getItem(HINT_KEY) ?? "null") as Hint | null;
+    return h && /^0x[0-9a-fA-F]{40}$/.test(h.address) && (h.kind === "email" || h.kind === "wallet") ? h : null;
+  } catch {
+    return null;
+  }
+}
+function writeHint(h: Hint | null) {
+  try {
+    if (h) localStorage.setItem(HINT_KEY, JSON.stringify(h));
+    else localStorage.removeItem(HINT_KEY);
+  } catch {}
+}
+/** At most this long a page waits for the login to come back before showing "Log in". */
+const RESTORE_MS = 8_000;
 
 const WalletContext = createContext<WalletState | null>(null);
 
@@ -177,6 +205,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [loginRequests, setLoginRequests] = useState(0);
   const smartClients = useRef(new Map<string, unknown>());
 
+  // Who was signed in last time (read after mount: the page itself is built without it)
+  const [hint, setHint] = useState<Hint | null>(null);
+  const [hintChecked, setHintChecked] = useState(false);
+  const [restoreTimedOut, setRestoreTimedOut] = useState(false);
+  useEffect(() => {
+    const h = readHint();
+    setHint(h);
+    setHintChecked(true);
+    // an email account comes back through the login code: load it now, not when idle
+    if (h?.kind === "email") setLoadPrivy(true);
+    const t = setTimeout(() => setRestoreTimedOut(true), RESTORE_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   // Load the login code once the page is idle, so returning users stay signed in.
   useEffect(() => {
     const start = () => setLoadPrivy(true);
@@ -190,6 +232,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [chainId, setChainId] = useState<number | null>(null);
   const [connecting, setConnecting] = useState(false);
   const triedRestore = useRef(false);
+  const [walletRestoreDone, setWalletRestoreDone] = useState(false);
 
   // Discover wallets: EIP-6963 announcements, plus window.ethereum as a fallback.
   useEffect(() => {
@@ -254,7 +297,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       saved = localStorage.getItem(SAVED_KEY);
     } catch {}
-    if (!saved) return;
+    if (!saved) return setWalletRestoreDone(true);
     if (saved === WALLETCONNECT_ID) {
       triedRestore.current = true;
       walletConnect()
@@ -266,12 +309,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setAddress(getAddress(accounts[0]));
           setChainId(Number((await p.request({ method: "eth_chainId" })) as string));
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setWalletRestoreDone(true));
       return;
     }
     if (wallets.length === 0) return;
     const w = wallets.find((x) => x.id === saved);
-    if (!w?.provider) return;
+    if (!w?.provider) return setWalletRestoreDone(true);
     triedRestore.current = true;
     const provider = w.provider;
     (async () => {
@@ -281,7 +325,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setActive({ option: w, provider });
         setAddress(getAddress(accounts[0]));
         setChainId(Number((await provider.request({ method: "eth_chainId" })) as string));
-      } catch {}
+      } catch {
+      } finally {
+        setWalletRestoreDone(true);
+      }
     })();
   }, [wallets]);
 
@@ -453,7 +500,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       let last: Hex = "0x";
       for (let i = 0; i < calls.length; i++) {
         onStep?.(calls.length > 1 ? `Step ${i + 1} of ${calls.length}…` : "Sending…");
-        last = await within(privy.sendTransaction(chain.id, calls[i]), SERVICE_MS);
+        // Ethereum: a tip that gets it into the next blocks (a default one can sit for minutes)
+        const fees =
+          chain.id === 1
+            ? await pub
+                .estimateFeesPerGas()
+                .then((f) => {
+                  const tip = f.maxPriorityFeePerGas * 2n > 1_000_000_000n ? f.maxPriorityFeePerGas * 2n : 1_000_000_000n;
+                  return { maxPriorityFeePerGas: tip, maxFeePerGas: f.maxFeePerGas + tip };
+                })
+                .catch(() => ({}))
+            : {};
+        last = await within(privy.sendTransaction(chain.id, { ...calls[i], ...fees }), SERVICE_MS);
         onStep?.(`Waiting for ${chain.name}…`);
         let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
         for (let attempt = 0; attempt < 3 && !r; attempt++) {
@@ -475,12 +533,35 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnectAll = useCallback(() => {
+    writeHint(null);
+    setHint(null);
     if (active) disconnect();
     else if (privy?.authenticated) privy.logout().catch(() => {});
   }, [active, disconnect, privy]);
 
+  // remember who is signed in; once a restore is over without them, forget
+  const signedIn = address ?? embeddedAddress;
+  const privySettled = !!privy?.ready && (!privy.authenticated || !!privy.address);
+  const restoreOver = restoreTimedOut || (hint?.kind === "email" ? privySettled : walletRestoreDone && (!loadPrivy || privySettled));
+  // until this device's hint is read (the first moment after load) nobody is "logged out" yet
+  const restoring = !signedIn && (!hintChecked || (!!hint && !restoreOver));
+  useEffect(() => {
+    if (signedIn) {
+      const h: Hint = { address: signedIn, kind: active ? "wallet" : "email" };
+      if (h.address !== hint?.address || h.kind !== hint?.kind) {
+        writeHint(h);
+        setHint(h);
+      }
+    } else if (hint && restoreOver) {
+      writeHint(null);
+      setHint(null);
+    }
+  }, [signedIn, active, hint, restoreOver]);
+
   const value = useMemo(
     () => ({
+      restoring,
+      hintAddress: restoring ? (hint?.address ?? null) : null,
       address: address ?? embeddedAddress,
       walletName: active?.option.name ?? (embedded ? "sasa account" : null),
       chainId,
@@ -498,7 +579,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       sendOwnGas,
       embeddedSigner: embedded ? (privy?.signer ?? null) : null,
     }),
-    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage, sendOwnGas]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage, sendOwnGas, restoring, hint]
   );
 
   return (

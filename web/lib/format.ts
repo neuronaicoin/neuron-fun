@@ -89,7 +89,29 @@ export function friendlyError(e: unknown): string {
   if (/LaunchesClosed/i.test(raw)) return "New launches are paused for a moment. Please try again shortly.";
   if (/NoRoute/i.test(raw)) return "This chain can't link to the others right now. Launch on one chain, or try again later.";
   if (/BadChains/i.test(raw)) return "That chain combination isn't available. Pick the chains again.";
+  // a plain revert reason arriving as raw hex (Error(string)): read it, never show the hex
+  const said = revertText(raw);
+  if (/allowance/i.test(said)) return "The approval didn't reach the network yet. Please try again in a few seconds.";
+  if (/slippage|too little|insufficient output|min.*out|price/i.test(said)) return "The price moved while it was sending. Please try again.";
+  if (/reverted|0x08c379a0/i.test(raw))
+    return "That didn't go through: the price moved or the network was slow. Nothing changed hands; please try again.";
   return msg.split("\n")[0].slice(0, 180);
+}
+
+/** The text inside a raw Error(string) revert (0x08c379a0…), or "". */
+function revertText(raw: string): string {
+  const m = /0x08c379a0([0-9a-fA-F]{128,})/.exec(raw);
+  if (!m) return "";
+  try {
+    const hex = m[1];
+    const len = parseInt(hex.slice(64, 128), 16);
+    const body = hex.slice(128, 128 + len * 2);
+    let out = "";
+    for (let i = 0; i < body.length; i += 2) out += String.fromCharCode(parseInt(body.slice(i, i + 2), 16));
+    return out;
+  } catch {
+    return "";
+  }
 }
 
 /**

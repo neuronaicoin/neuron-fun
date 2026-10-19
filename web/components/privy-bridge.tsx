@@ -34,7 +34,7 @@ export type PrivyState = {
    * Sends one plain transaction from the embedded wallet on `chainId`, gas paid by the user in
    * that chain's own coin (race chains other than Base: the gas comes from their top-up).
    */
-  sendTransaction: ((chainId: number, tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint; gas?: bigint }) => Promise<`0x${string}`>) | null;
+  sendTransaction: ((chainId: number, tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint; gas?: bigint; maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint }) => Promise<`0x${string}`>) | null;
   login: () => void;
   logout: () => Promise<void>;
 };
@@ -146,6 +146,7 @@ function Reporter({ onState, loginRequests }: { onState: (s: PrivyState) => void
                         value: hex(tx.value ?? 0n),
                         chainId: hex(BigInt(chainId)),
                         ...(tx.gas ? { gas: hex(tx.gas) } : {}),
+                        ...(tx.maxFeePerGas && tx.maxPriorityFeePerGas ? { maxFeePerGas: hex(tx.maxFeePerGas), maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas) } : {}),
                       },
                     ],
                   })) as `0x${string}`;

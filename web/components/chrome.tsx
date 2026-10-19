@@ -47,7 +47,7 @@ export function PauseBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, wallets, connecting, connect, loginWithEmail } = useWallet();
+  const { address, restoring, wallets, connecting, connect, loginWithEmail } = useWallet();
   const [sheet, setSheet] = useState<"none" | "pick">("none");
   const [error, setError] = useState("");
   const base =
@@ -70,7 +70,9 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
   }
 
   // Logged in: the balance (opens the portfolio, with address and log out) and ＋ Deposit.
-  if (address) return <BalancePill />;
+  // the login of last time is coming back: its balance, never a "Log in" that flashes and jumps
+  if (address || (restoring && !full)) return <BalancePill />;
+  if (restoring) return <div className={base + "bg-night shimmer"} aria-hidden="true" />;
   return (
     <>
       <button
