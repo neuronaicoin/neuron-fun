@@ -245,6 +245,9 @@ const sig = (x) => (Number.isFinite(x) && x > 0 ? x.toPrecision(15) : "0");
 // ------------------------------------------------------------------ one batch of blocks
 
 const MODES = ["combined", "split", "single"];
+// Most addresses (or pool ids) one log query may name. publicnode refuses more than 10 ("A maximum
+// of 10 addresses is allowed"), which stopped Base once it had more than ten coins.
+const ADDR_CHUNK = Math.max(1, Number(process.env.RACE_ADDR_CHUNK || 10));
 
 async function readGroups(c, groups, from, to) {
   const out = [];
@@ -252,7 +255,7 @@ async function readGroups(c, groups, from, to) {
   if (c.logMode === "combined") {
     const addrs = groups.flatMap((x) => x.address);
     const events = [...new Map(groups.flatMap((x) => x.events).map((e) => [e.name + e.inputs.length, e])).values()];
-    for (let i = 0; i < addrs.length; i += 200) out.push(...(await q(addrs.slice(i, i + 200), events)));
+    for (let i = 0; i < addrs.length; i += ADDR_CHUNK) out.push(...(await q(addrs.slice(i, i + ADDR_CHUNK), events)));
   } else if (c.logMode === "split") {
     for (const gr of groups) out.push(...(await q(gr.address, gr.events)));
   } else {
@@ -289,7 +292,7 @@ export async function raceRange(pool, c, byEid, from, to) {
     { address: [c.builder], events: builderEvts[c.kind] },
     { address: [c.router], events: routerEvts },
   ];
-  for (let i = 0; i < knownTokens.length; i += 200) groups.push({ address: knownTokens.slice(i, i + 200), events: [transferEvt] });
+  for (let i = 0; i < knownTokens.length; i += ADDR_CHUNK) groups.push({ address: knownTokens.slice(i, i + ADDR_CHUNK), events: [transferEvt] });
   const decoded = await readGroups(c, groups, from, to);
   const at = (a, name) => (l) => lc(l.address) === lc(a) && (Array.isArray(name) ? name.includes(l.eventName) : l.eventName === name);
 
@@ -317,8 +320,8 @@ export async function raceRange(pool, c, byEid, from, to) {
   const poolIds = [...new Set([...before.rows.filter((r) => r.pool_id).map((r) => r.pool_id), ...launchInfo.map((x) => x.poolId)])];
   const swapLogs = [];
   const evt = c.kind === "pcs" ? swapEvt.pcs : swapEvt.v4;
-  for (let i = 0; i < poolIds.length; i += 50)
-    swapLogs.push(...(await pub.getLogs({ address: c.poolManager, event: evt, args: { id: poolIds.slice(i, i + 50) }, fromBlock: from, toBlock: to })));
+  for (let i = 0; i < poolIds.length; i += ADDR_CHUNK)
+    swapLogs.push(...(await pub.getLogs({ address: c.poolManager, event: evt, args: { id: poolIds.slice(i, i + ADDR_CHUNK) }, fromBlock: from, toBlock: to })));
   swapLogs.sort((x, y) => (x.blockNumber === y.blockNumber ? x.logIndex - y.logIndex : x.blockNumber < y.blockNumber ? -1 : 1));
 
   // block times (launch, verdict, won/lost, swaps) and who sent swaps that didn't come through our router
