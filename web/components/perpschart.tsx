@@ -375,9 +375,9 @@ export function ProChart({
           },
         },
         crosshair: { mode: 0 },
-        handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
-        // a flick keeps the chart gliding a little, like on fomo
-        kineticScroll: { touch: true, mouse: false },
+        // touch is handled by useTouchChart (slide, flick, pinch, stretch the prices); the mouse by the chart
+        handleScroll: { vertTouchDrag: false, horzTouchDrag: false, mouseWheel: true, pressedMouseMove: true },
+        kineticScroll: { touch: false, mouse: false },
         handleScale: { mouseWheel: true, pinch: false, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
         localization: {
           timeFormatter: (t: Time) =>
@@ -396,7 +396,7 @@ export function ProChart({
       chart.subscribeCrosshairMove((p: MouseEventParams<Time>) => {
         if (!alive) return;
         // a finger sliding along the chart feels each candle it passes (phones)
-        if (touching.current && p.time !== undefined && p.time !== tickAt.current) {
+        if (touching.current && box.current?.dataset.scrub && p.time !== undefined && p.time !== tickAt.current) {
           tickAt.current = p.time;
           haptic("soft");
         }
@@ -620,7 +620,8 @@ export function ProChart({
     }
   }, [linesKey, ready]);
 
-  usePinchZoom(box, chartRef);
+  const barCount = useCallback(() => rowsRef.current.length, []);
+  useTouchChart(box, chartRef, barCount);
 
   useEffect(() => {
     const el = box.current;
@@ -979,63 +980,218 @@ function IndRow({ ind, onPatch, onRemove }: { ind: Indicator; onPatch: (p: Parti
  * Two fingers: spreading them apart zooms in, pinching zooms out; sideways spread works on
  * time, up-and-down spread on prices (like the mouse wheel and dragging the axes).
  */
-export function usePinchZoom(box: RefObject<HTMLDivElement | null>, chartRef: RefObject<IChartApi | null>) {
+/**
+ * Touch on a phone, like fomo / Robinhood:
+ *   one finger, sideways      the chart slides (and keeps gliding a little after a flick)
+ *   one finger, held still    the price under the finger shows (the chart's own crosshair)
+ *   one finger on the prices  up / down stretches or squeezes the price scale
+ *   two fingers               spread / pinch zooms around the fingers, sliding them moves the chart
+ *   up / down on the chart    scrolls the page as usual
+ * The chart never runs off into empty space: at most a few empty candles past either end.
+ */
+export function useTouchChart(box: RefObject<HTMLDivElement | null>, chartRef: RefObject<IChartApi | null>, bars: () => number) {
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    // Two fingers: spreading them zooms in around the point between them, sliding them moves the
-    // chart; the price scale keeps fitting what is shown (like fomo / Robinhood).
-    let start: { gap: number; mid: number; from: number; to: number; anchor: number; perPx: number } | null = null;
-    let frame = 0;
+    type Mode = "wait" | "pan" | "price" | "scrub" | "page" | "pinch";
+    let mode: Mode | null = null;
+    let x0 = 0;
+    let y0 = 0;
+    let lastX = 0;
+    let range0: { from: number; to: number } | null = null;
+    let price0: { from: number; to: number } | null = null;
+    let hold: ReturnType<typeof setTimeout> | null = null;
+    let glide = 0;
+    let raf = 0;
     let want: { from: number; to: number } | null = null;
-    const gap = (t: TouchList) => Math.max(24, Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY));
-    const midX = (t: TouchList) => (t[0].clientX + t[1].clientX) / 2 - el.getBoundingClientRect().left;
-    const apply = () => {
-      frame = 0;
+    const moves: { t: number; x: number }[] = [];
+    let pinch: { gap: number; anchor: number } | null = null;
+
+    const plotWidth = (c: IChartApi) => Math.max(1, c.timeScale().width());
+    const clamp = (from: number, to: number) => {
+      const n = Math.max(1, bars());
+      let span = Math.min(Math.max(8, to - from), Math.max(30, n + 12));
+      const lo = -6;
+      const hi = n + 6;
+      let f = from;
+      if (f + span > hi) f = hi - span;
+      if (f < lo) f = lo;
+      span = Math.min(span, hi - f);
+      return { from: f, to: f + span };
+    };
+    const flush = () => {
+      raf = 0;
       const c = chartRef.current;
       if (!c || !want) return;
       c.timeScale().setVisibleLogicalRange(want);
+      // sliding or zooming is not reading prices: no crosshair under the finger
+      try {
+        c.clearCrosshairPosition();
+      } catch {}
     };
+    const setRange = (from: number, to: number) => {
+      want = clamp(from, to);
+      if (!raf) raf = requestAnimationFrame(flush);
+    };
+    const stopGlide = () => {
+      if (glide) cancelAnimationFrame(glide);
+      glide = 0;
+    };
+    const onPriceAxis = (c: IChartApi, clientX: number) => {
+      const r = el.getBoundingClientRect();
+      let w = 56;
+      try {
+        w = c.priceScale("right").width() || w;
+      } catch {}
+      return clientX > r.right - w - 4;
+    };
+    const midX = (t: TouchList) => (t[0].clientX + t[1].clientX) / 2 - el.getBoundingClientRect().left;
+    const gap = (t: TouchList) => Math.max(24, Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY));
+
     const onStart = (e: TouchEvent) => {
       const c = chartRef.current;
-      if (!c || e.touches.length !== 2) return;
+      if (!c) return;
+      stopGlide();
+      if (hold) clearTimeout(hold);
       const ts = c.timeScale();
       const r = ts.getVisibleLogicalRange();
       if (!r) return;
-      const mid = midX(e.touches);
-      const width = Math.max(1, ts.width());
-      const perPx = (r.to - r.from) / width;
-      start = { gap: gap(e.touches), mid, from: r.from, to: r.to, anchor: r.from + mid * perPx, perPx };
-      // the price scale follows what is on screen
-      try {
-        c.priceScale("right").setAutoScale(true);
-      } catch {}
+      if (e.touches.length === 2) {
+        mode = "pinch";
+        const perPx = (r.to - r.from) / plotWidth(c);
+        pinch = { gap: gap(e.touches), anchor: r.from + midX(e.touches) * perPx };
+        range0 = { from: r.from, to: r.to };
+        try {
+          c.priceScale("right").setAutoScale(true);
+        } catch {}
+        return;
+      }
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      x0 = lastX = t.clientX;
+      y0 = t.clientY;
+      range0 = { from: r.from, to: r.to };
+      moves.length = 0;
+      moves.push({ t: performance.now(), x: t.clientX });
+      if (onPriceAxis(c, t.clientX)) {
+        mode = "price";
+        const p = c.priceScale("right").getVisibleRange();
+        price0 = p ? { from: p.from, to: p.to } : null;
+        return;
+      }
+      mode = "wait";
+      // held still for a moment: the finger reads prices instead of moving the chart
+      hold = setTimeout(() => {
+        if (mode === "wait") {
+          mode = "scrub";
+          el.dataset.scrub = "1";
+        }
+      }, 260);
     };
+
     const onMove = (e: TouchEvent) => {
       const c = chartRef.current;
-      if (!c || !start || e.touches.length !== 2) return;
-      e.preventDefault(); // the page itself must not zoom or scroll
-      const k = Math.min(12, Math.max(1 / 12, start.gap / gap(e.touches)));
-      const span = Math.min(3000, Math.max(8, (start.to - start.from) * k));
-      const perPx = span / Math.max(1, c.timeScale().width());
-      // the candle that was under the fingers stays under them (and follows them when they slide)
-      const from = start.anchor - midX(e.touches) * perPx;
-      want = { from, to: from + span };
-      if (!frame) frame = requestAnimationFrame(apply);
+      if (!c || !mode) return;
+      if (mode === "pinch") {
+        if (e.touches.length !== 2 || !pinch || !range0) return;
+        e.preventDefault();
+        const k = Math.min(12, Math.max(1 / 12, pinch.gap / gap(e.touches)));
+        const span = (range0.to - range0.from) * k;
+        const perPx = span / plotWidth(c);
+        const from = pinch.anchor - midX(e.touches) * perPx;
+        setRange(from, from + span);
+        return;
+      }
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - x0;
+      const dy = t.clientY - y0;
+      if (mode === "price") {
+        e.preventDefault();
+        if (!price0) return;
+        // down = squeeze the prices together (see more), up = stretch them (see detail)
+        const k = Math.min(20, Math.max(0.05, Math.exp(dy / 160)));
+        const mid = (price0.from + price0.to) / 2;
+        const half = ((price0.to - price0.from) / 2) * k;
+        const ps = c.priceScale("right");
+        ps.setAutoScale(false);
+        ps.setVisibleRange({ from: mid - half, to: mid + half });
+        return;
+      }
+      if (mode === "wait") {
+        if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+        if (hold) clearTimeout(hold);
+        mode = Math.abs(dx) > Math.abs(dy) ? "pan" : "page";
+      }
+      if (mode === "pan" && range0) {
+        if (e.cancelable) e.preventDefault();
+        const perPx = (range0.to - range0.from) / plotWidth(c);
+        setRange(range0.from - dx * perPx, range0.to - dx * perPx);
+        lastX = t.clientX;
+        const now = performance.now();
+        moves.push({ t: now, x: t.clientX });
+        while (moves.length > 2 && now - moves[0].t > 90) moves.shift();
+      }
     };
+
     const onEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) start = null;
+      if (hold) clearTimeout(hold);
+      const c = chartRef.current;
+      if (mode === "pinch" && e.touches.length === 1) {
+        // one finger left after a pinch: carry on sliding with it
+        const r = c?.timeScale().getVisibleLogicalRange();
+        const t = e.touches[0];
+        if (r && t) {
+          mode = "pan";
+          range0 = { from: r.from, to: r.to };
+          x0 = lastX = t.clientX;
+          y0 = t.clientY;
+          moves.length = 0;
+        }
+        return;
+      }
+      if (e.touches.length) return;
+      delete el.dataset.scrub;
+      if (mode === "pan" && c && moves.length >= 2) {
+        // a flick: keep gliding and slow down
+        const a = moves[0];
+        const b = moves[moves.length - 1];
+        let v = (b.x - a.x) / Math.max(16, b.t - a.t); // px per ms
+        if (Math.abs(v) > 0.25) {
+          let prev = performance.now();
+          const step = () => {
+            const cc = chartRef.current;
+            const r = cc?.timeScale().getVisibleLogicalRange();
+            if (!cc || !r) return;
+            const now = performance.now();
+            const dt = now - prev;
+            prev = now;
+            const perPx = (r.to - r.from) / plotWidth(cc);
+            const next = clamp(r.from - v * dt * perPx, r.to - v * dt * perPx);
+            cc.timeScale().setVisibleLogicalRange(next);
+            v *= Math.pow(0.94, dt / 16);
+            if (Math.abs(v) > 0.02 && Math.abs(next.from - r.from) > 1e-3) glide = requestAnimationFrame(step);
+            else glide = 0;
+          };
+          glide = requestAnimationFrame(step);
+        }
+      }
+      mode = null;
+      pinch = null;
     };
+
     el.addEventListener("touchstart", onStart, { passive: true });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
     el.addEventListener("touchcancel", onEnd);
     return () => {
-      if (frame) cancelAnimationFrame(frame);
+      stopGlide();
+      if (raf) cancelAnimationFrame(raf);
+      if (hold) clearTimeout(hold);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
     };
-  }, [box, chartRef]);
+  }, [box, chartRef, bars]);
 }
