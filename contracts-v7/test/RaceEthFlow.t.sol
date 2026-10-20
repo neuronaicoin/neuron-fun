@@ -137,6 +137,11 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
     MockLzEndpoint epA;
     OmniHub hubA;
     RaceBuilderEth eb;
+
+    /// @dev How many extra (arrival) positions the coin's pool got: the builder's `_extraPositions` (slot 6).
+    function _extraCount(address c) internal view returns (uint256) {
+        return uint256(vm.load(address(eb), keccak256(abi.encode(c, uint256(6)))));
+    }
     RaceFactory facA;
     ConsolidatorV6 consA;
     MockBridgeDec brA;
@@ -384,9 +389,9 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Won));
         assertEq(uint8(_stateB(coinB)), uint8(RaceBuilder.State.Lost));
         assertGt(consB.pendingPool(_coinId()), 0);
-        uint256 extra0 = eb.extraPositionCount(coin);
+        uint256 extra0 = _extraCount(coin);
         consB.forward(_coinId());
-        assertEq(eb.extraPositionCount(coin), extra0 + 1, "ETH pool got deeper");
+        assertEq(_extraCount(coin), extra0 + 1, "ETH pool got deeper");
         assertEq(eb.pendingDollars(coin), 0);
         assertEq(usdcA.balanceOf(address(eb)), 0, "all arriving USDC became ETH");
         assertGt(_buyEth(coin, bob, 0.01 ether), 0);
@@ -410,7 +415,7 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         int256 p0 = _tickPriceA(coin);
         consB.forward(_coinId());
         assertGt(_tickPriceA(coin), p0, "the merge buy lifted the price");
-        assertEq(eb.extraPositionCount(coin), 1);
+        assertEq(_extraCount(coin), 1);
         assertLe(IERC20(coin).totalSupply(), supply0, "nothing minted");
         assertEq(usdcA.balanceOf(address(eb)), 0, "all arriving USDC used");
         assertGt(_buyEth(coin, bob, 0.01 ether), 0);
@@ -427,7 +432,8 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         int256 p0 = _tickPriceA(coin);
         consB.forward(_coinId());
         assertEq(_tickPriceA(coin), p0, "no merge buy on a pumped coin");
-        assertEq(eb.extraPositionCount(coin), 1, "the money still lands in the pool");
+        assertEq(_extraCount(coin), 0, "no position on a pumped coin");
+        assertGt(eb.buybackFunds(coin), 0, "the money funds buybacks instead");
     }
 
     /// USDC chain wins: the ETH pool is emptied once, its ETH swapped to USDC at a fair price.
@@ -491,9 +497,10 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Won));
         uint256 b0 = bob.balance;
         _buyEth(coin, bob, 6 ether);
-        uint256 extra0 = eb.extraPositionCount(coin);
+        uint256 extra0 = _extraCount(coin);
         consB.forward(_coinId());
-        assertEq(eb.extraPositionCount(coin), extra0 + 1, "the money was placed");
+        assertEq(_extraCount(coin), extra0, "pumped: nothing placed in the pool");
+        assertGt(eb.buybackFunds(coin), 0, "the money funds buybacks instead");
         PoolKey memory k = eb.poolKeyFor(coin);
         vm.startPrank(bob);
         IERC20(coin).approve(address(desk), type(uint256).max);
@@ -521,13 +528,13 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         uint256 ethGot = _ethDear();
         consB.forward(_coinId());
         assertGt(eb.pendingDollars(coin), 0, "USDC waits instead of a bad swap");
-        assertEq(eb.extraPositionCount(coin), 0);
+        assertEq(_extraCount(coin), 0);
         // the market comes back; anyone completes the arrival
         vm.prank(bob);
         desk.swap{value: ethGot}(dollarKey, true, ethGot);
         eb.convertPending(coin);
         assertEq(eb.pendingDollars(coin), 0);
-        assertEq(eb.extraPositionCount(coin), 1);
+        assertEq(_extraCount(coin), 1);
     }
 
     /// A losing hand-over at an unfair ETH price waits (the verdict still goes through);

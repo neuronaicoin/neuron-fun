@@ -571,7 +571,8 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         int256 p0 = _tickPriceA(coin);
         consB.forward(_coinId());
         assertEq(_tickPriceA(coin), p0, "no merge buy on a pumped coin");
-        assertEq(pb.extraPositions(coin).length, 1, "the money still lands in the pool");
+        assertEq(pb.extraPositions(coin).length, 0, "no position on a pumped coin");
+        assertGt(pb.buybackFunds(coin), 0, "the money funds buybacks instead");
     }
 
     /// USDC chain wins: the BNB pool is emptied once, its BNB swapped to USDC at a fair price.
@@ -717,7 +718,8 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         uint256 b0 = bob.balance;
         _buyBnb(coin, bob, 20 ether);
         consB.forward(_coinId());
-        assertGt(pb.extraPositions(coin).length, 0, "the money was placed");
+        assertEq(pb.extraPositions(coin).length, 0, "pumped: nothing placed in the pool");
+        assertGt(pb.buybackFunds(coin), 0, "the money funds buybacks instead");
         PcsKey memory k = pb.poolKeyFor(coin);
         vm.startPrank(bob);
         IERC20(coin).approve(address(desk), type(uint256).max);

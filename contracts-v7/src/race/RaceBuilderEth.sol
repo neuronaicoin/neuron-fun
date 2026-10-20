@@ -27,6 +27,7 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 import {PositionInfo, PositionInfoLibrary} from "@uniswap/v4-periphery/src/libraries/PositionInfoLibrary.sol";
 
 import {RaceLaunchHook} from "./RaceLaunchHook.sol";
+import {RaceMergerEth} from "./RaceMergerEth.sol";
 
 interface IRaceHubKeeperEth {
     function keeper() external view returns (address);
@@ -120,8 +121,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         BuyWithUsdc, // USDC -> ETH (dollar pool) -> coin (coin pool)
         BuyWithEth, // ETH -> coin (coin pool)
         EthToUsdc, // dollar pool
-        UsdcToEth, // dollar pool
-        BuyWithEthCapped // ETH -> coin (coin pool), stopping at a price limit (`minMid` = the limit's tick)
+        UsdcToEth // dollar pool
     }
 
     IPoolManager public immutable poolManager;
@@ -140,6 +140,8 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     uint24 internal immutable dollarFee;
     int24 internal immutable dollarSpacing;
     address private immutable _deployer;
+    /// @notice v8: does the merge (see `_merge`); created here, only this builder may use it.
+    RaceMergerEth public immutable merger;
 
     address public factory;
     address public consolidator;
@@ -166,7 +168,6 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     event HandedOver(address indexed coin, uint256 ethIn, uint256 usdcOut, uint256 gradFee);
     event Deepened(address indexed coin, uint256 indexed positionId, uint256 ethIn);
     /// @notice v8: part of the money that arrived from the losing chains bought coins in the pool.
-    event MergeBuy(address indexed coin, uint256 ethSpent, uint256 coinsBought);
     event ArrivalPending(address indexed coin, uint256 usdcAmount);
     event FeesCollected(address indexed coin, uint256 ethFees, uint256 coinFees);
     event BuybackFunded(address indexed coin, uint256 amount);
@@ -228,6 +229,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         dollarFee = dollarKey.fee;
         dollarSpacing = dollarKey.tickSpacing;
         _deployer = msg.sender;
+        merger = new RaceMergerEth(poolManager_, positionManager_, permit2_);
         hook = new RaceLaunchHook{salt: hookSalt}(address(poolManager_), address(this));
         if (uint160(address(hook)) & Hooks.ALL_HOOK_MASK != (Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG)) {
             revert BadHookAddress(address(hook));
@@ -236,7 +238,7 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
 
     /// @dev ETH only comes in from Uniswap (swaps, removed liquidity, fees).
     receive() external payable {
-        if (msg.sender != address(poolManager) && msg.sender != address(positionManager)) revert NotOurSwap();
+        if (msg.sender != address(poolManager) && msg.sender != address(positionManager) && msg.sender != address(merger)) revert NotOurSwap();
     }
 
     function bind(address factory_, address consolidator_, address bridge_) external {
@@ -268,12 +270,6 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         Race storage r = races[coin];
         if (r.state == State.Racing || r.state == State.Won) return (r.positionId, r.creator);
         return (0, r.creator);
-    }
-
-    /// @notice How many dollars-only positions the coin's pool got (each one: a Deepened event
-    /// with its position id; the builder owns them in the PositionManager). Kept small for size.
-    function extraPositionCount(address coin) external view returns (uint256) {
-        return _extraPositions[coin].length;
     }
 
     /// @notice ETH and coins in the coin's launch position right now (fees excluded).
@@ -548,18 +544,13 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         dollarsReserved -= amount;
         uint256 minEth = (_usdcToEth(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 eth = _swap(Op.UsdcToEth, coin, amount, minEth, address(this));
-        if (toBuyback || !(_merge(coin, eth) || _deepen(coin, eth))) {
+        if (toBuyback || !_merge(coin, eth)) {
             buybackFunds[coin] += eth;
             ethReserved += eth;
             emit BuybackFunded(coin, eth);
         }
     }
 
-    /// @notice v8: how far the coin may have risen since the race ended before arriving money
-    /// stops buying it (20%), and how far the merge buy itself may push the price (2x the
-    /// race-end price). Ticks: 1 tick = 0.01%.
-    int24 public constant MERGE_MAX_RISE_TICKS = 1823; // ~ +20%
-    int24 public constant MERGE_CAP_TICKS = 6932; // ~ x2
 
     /**
      * @notice v8 merge: the money from the losing chains shows up on the winning chain's
@@ -567,79 +558,28 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
      * green candle), then the coins bought and the other half are added together as one
      * full-range position at the new price (the pool's liquidity grows where every screener
      * counts it). Nothing is minted; leftovers: ETH funds buybacks, coins are burned.
-     * Returns false (the old buy-wall placement is used instead) when the coin's price is
-     * already more than 20% above where the race ended, so nobody can pump it just before
-     * the money lands and sell into the merge buy.
+     * Done by `merger` (RaceMergerEth, kept apart for the contract size limit); the position
+     * is this builder's. Returns false (the money funds buybacks instead) when the coin's
+     * price is already more than 20% above where the race ended, so nobody can pump it just
+     * before the money lands and sell into the merge buy.
      */
     function _merge(address coin, uint256 amount) internal returns (bool) {
-        if (amount < 2) return false;
-        PoolKey memory key = poolKeyFor(coin);
-        (, int24 tick,,) = poolManager.getSlot0(key.toId());
         RaceEnd storage e = raceEnd[coin];
-        if (!e.recorded) return false;
-        // ETH = currency0: the coin gets dearer as the tick FALLS
-        if (tick < e.tick - MERGE_MAX_RISE_TICKS) return false;
-        int24 capTick = e.tick - MERGE_CAP_TICKS;
-        if (capTick < TickMath.MIN_TICK + 1) capTick = TickMath.MIN_TICK + 1;
-
-        uint256 half = amount / 2;
-        uint256 ethBefore = address(this).balance;
-        uint256 coinBefore = IERC20(coin).balanceOf(address(this));
-        _swap(Op.BuyWithEthCapped, coin, half, uint256(int256(capTick) + int256(uint256(uint24(type(int24).max)))), address(this));
-        uint256 spent = ethBefore - address(this).balance;
-        uint256 coins = IERC20(coin).balanceOf(address(this)) - coinBefore;
-        emit MergeBuy(coin, spent, coins);
-
-        uint256 ethLeft = amount - spent;
-        (uint160 sqrtP,,,) = poolManager.getSlot0(key.toId());
-        int24 lower = TickMath.minUsableTick(TICK_SPACING);
-        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
-        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtP, TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), ethLeft, coins
-        );
-        uint256 coinsUsed;
-        uint256 ethUsed;
-        if (liquidity > 0) {
-            uint256 eb = address(this).balance;
-            uint256 cb = IERC20(coin).balanceOf(address(this));
-            uint256 positionId = _newPosition(key, lower, upper, liquidity, ethLeft, coins, coin, coins, ethLeft);
-            ethUsed = eb - address(this).balance;
-            coinsUsed = cb - IERC20(coin).balanceOf(address(this));
+        if (amount < 2 || !e.recorded) return false;
+        uint256 before = address(this).balance - amount;
+        // the merger refuses (reverts) when the coin is already 20%+ above its race-end price
+        (bool ok, bytes memory ret) = address(merger).call{value: amount}(abi.encodeCall(RaceMergerEth.merge, (poolKeyFor(coin), e.tick)));
+        if (!ok) return false;
+        uint256 positionId = abi.decode(ret, (uint256));
+        uint256 back = address(this).balance - before;
+        if (positionId != 0) {
             _extraPositions[coin].push(positionId);
-            emit Deepened(coin, positionId, spent + ethUsed);
+            emit Deepened(coin, positionId, amount - back);
         }
-        if (ethLeft > ethUsed) {
-            buybackFunds[coin] += ethLeft - ethUsed;
-            ethReserved += ethLeft - ethUsed;
-            emit BuybackFunded(coin, ethLeft - ethUsed);
+        if (back > 0) {
+            buybackFunds[coin] += back; // the ETH the position didn't take funds buybacks
+            ethReserved += back;
         }
-        if (coins > coinsUsed) IRaceCoinEth(coin).burn(coins - coinsUsed);
-        return true;
-    }
-
-    function _deepen(address coin, uint256 amount) internal returns (bool) {
-        PoolKey memory key = poolKeyFor(coin);
-        (, int24 tick,,) = poolManager.getSlot0(key.toId());
-        // ETH is currency0: a range entirely above the current tick holds only currency0
-        // never placed above the coin's price when the race ended (the coin's price falls as the
-        // tick rises): pushing the price up just before the money arrives then gains nothing
-        RaceEnd storage e = raceEnd[coin];
-        if (e.recorded && e.tick > tick) tick = e.tick;
-        int24 lower = _tickFloor(tick) + TICK_SPACING;
-        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
-        if (lower >= upper) return false;
-        uint128 liquidity =
-            LiquidityAmounts.getLiquidityForAmount0(TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), amount);
-        if (liquidity == 0) return false;
-        uint256 before = address(this).balance;
-        uint256 positionId = _newPosition(key, lower, upper, liquidity, amount, 0, address(0), 0, amount);
-        uint256 used = before - address(this).balance;
-        _extraPositions[coin].push(positionId);
-        if (amount > used) {
-            buybackFunds[coin] += amount - used;
-            ethReserved += amount - used;
-        }
-        emit Deepened(coin, positionId, used);
         return true;
     }
 
@@ -742,10 +682,6 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         } else if (op == Op.BuyWithEth) {
             out = _exactIn(poolKeyFor(coin), true, amountIn);
             _settleAll(Currency.wrap(coin), to);
-        } else if (op == Op.BuyWithEthCapped) {
-            int24 limitTick = int24(int256(minMid) - int256(uint256(uint24(type(int24).max))));
-            out = _exactInLimit(poolKeyFor(coin), true, amountIn, TickMath.getSqrtPriceAtTick(limitTick));
-            _settleAll(Currency.wrap(coin), to);
         } else if (op == Op.EthToUsdc) {
             out = _exactIn(dk, true, amountIn); // ETH -> USDC
             if (out < minMid) revert Slippage(out, minMid);
@@ -756,12 +692,6 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
             _settleAll(Currency.wrap(address(0)), to);
         }
         return abi.encode(out);
-    }
-
-    function _exactInLimit(PoolKey memory key, bool zeroForOne, uint256 amountIn, uint160 limit) private returns (uint256 out) {
-        BalanceDelta d = poolManager.swap(key, SwapParams({zeroForOne: zeroForOne, amountSpecified: -int256(amountIn), sqrtPriceLimitX96: limit}), bytes(""));
-        int128 o = zeroForOne ? d.amount1() : d.amount0();
-        out = o > 0 ? uint256(uint128(o)) : 0;
     }
 
     function _exactIn(PoolKey memory key, bool zeroForOne, uint256 amountIn) private returns (uint256 out) {

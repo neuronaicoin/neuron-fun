@@ -532,7 +532,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         dollarsReserved -= amount;
         uint256 minBnb = (usdcToBnb(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 bnb = _usdcToBnb(amount, minBnb);
-        if (toBuyback || !(_merge(coin, bnb) || _deepen(coin, bnb))) {
+        if (toBuyback || !_merge(coin, bnb)) {
             buybackFunds[coin] += bnb;
             bnbReserved += bnb;
             emit BuybackFunded(coin, bnb);
@@ -549,7 +549,7 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
      * its pool (price up, a green candle), then the coins bought and the other half go in as
      * one full-range position at the new price, where every screener counts liquidity.
      * Nothing minted; leftover BNB funds buybacks, leftover coins are burned. Returns false
-     * (the buy-wall placement is used instead) if the coin is already >20% above its
+     * (the money funds buybacks instead) if the coin is already >20% above its
      * race-end price, so nobody can pump it just before the money lands.
      */
     function _merge(address coin, uint256 amount) internal returns (bool) {
@@ -601,32 +601,6 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         return true;
     }
 
-    function _deepen(address coin, uint256 amount) internal returns (bool) {
-        Range[] storage extra = _extra[coin];
-        if (extra.length >= MAX_EXTRA_POSITIONS) return false;
-        (, int24 tick,,) = poolManager.getSlot0(poolIdFor(coin));
-        // BNB is currency0: a range entirely above the current tick holds only currency0
-        // never placed above the coin's price when the race ended (the coin's price falls as the
-        // tick rises): pushing the price up just before the money arrives then gains nothing
-        RaceEnd storage e = raceEnd[coin];
-        if (e.recorded && e.tick > tick) tick = e.tick;
-        int24 lower = _tickFloor(tick) + TICK_SPACING;
-        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
-        if (lower >= upper) return false;
-        uint128 liquidity = _liquidityForAmount0(TickMath.getSqrtRatioAtTick(lower), TickMath.getSqrtRatioAtTick(upper), amount);
-        if (liquidity == 0) return false;
-        uint256 index = extra.length;
-        extra.push(Range(lower, upper));
-        uint256 before = address(this).balance;
-        _lock(abi.encode(Act.Mint, coin, abi.encode(lower, upper, liquidity, bytes32(index + 1))));
-        uint256 used = before - address(this).balance;
-        if (amount > used) {
-            buybackFunds[coin] += amount - used;
-            bnbReserved += amount - used;
-        }
-        emit Deepened(coin, index, used);
-        return true;
-    }
 
     // ------------------------------------------------------------------ fees (anyone) and buybacks (keeper)
 

@@ -433,7 +433,7 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
         if (r.state == State.None || r.state == State.Lost) revert NotOpen();
         if (amount == 0) revert NothingToDo();
         if (usdc.balanceOf(address(this)) < dollarsReserved + amount) revert NotDelivered();
-        if (toBuyback || !(_tryMerge(coin, amount) || _deepen(coin, amount))) {
+        if (toBuyback || !_tryMerge(coin, amount)) {
             buybackFunds[coin] += amount;
             dollarsReserved += amount;
             emit BuybackFunded(coin, amount);
@@ -446,7 +446,7 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
     int24 public constant MERGE_CAP_TICKS = 6932; // ~ x2
 
     /// @dev The merge runs as an external self-call: if anything in it fails, it rolls back
-    /// alone and the old buy-wall placement is used, so a delivery from the bridge never fails.
+    /// alone and the money funds buybacks instead, so a delivery from the bridge never fails.
     function _tryMerge(address coin, uint256 amount) internal returns (bool) {
         try this.mergeArrived(coin, amount) returns (bool ok) {
             return ok;
@@ -459,8 +459,8 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
      * @notice v8 merge: half of the arriving dollars buy the coin in its pool (price up, a
      * green candle), then the coins bought and the other half go in as one full-range
      * position at the new price, where every screener counts liquidity. Nothing minted;
-     * leftover dollars fund buybacks, leftover coins are burned. Returns false (the buy-wall
-     * placement is used instead) if the coin is already >20% above its race-end price.
+     * leftover dollars fund buybacks, leftover coins are burned. Returns false (the money
+     * funds buybacks instead) if the coin is already >20% above its race-end price.
      * @dev Only via `_tryMerge`.
      */
     function mergeArrived(address coin, uint256 amount) external returns (bool) {
@@ -518,46 +518,6 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
         return true;
     }
 
-    function _deepen(address coin, uint256 amount) internal returns (bool) {
-        PoolKey memory key = poolKeyFor(coin);
-        (, int24 tick,,) = poolManager.getSlot0(key.toId());
-        bool u0 = usdcIsCurrency0(coin);
-        // never placed above the coin's price when the race ended: pushing the price up just
-        // before the money arrives then gains nothing (the dollars wait lower down)
-        RaceEnd storage e = raceEnd[coin];
-        if (e.recorded) {
-            if (!u0 && e.tick < tick) tick = e.tick; // coin = currency0: its price rises with the tick
-            if (u0 && e.tick > tick) tick = e.tick; // coin = currency1: its price falls as the tick rises
-        }
-        int24 lower;
-        int24 upper;
-        uint128 liquidity;
-        if (!u0) {
-            // dollars are currency1: a range entirely at or below the current tick holds only currency1
-            upper = _tickFloor(tick);
-            lower = TickMath.minUsableTick(TICK_SPACING);
-            if (upper <= lower) return false;
-            liquidity = LiquidityAmounts.getLiquidityForAmount1(TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), amount);
-        } else {
-            // dollars are currency0: a range entirely above the current tick holds only currency0
-            lower = _tickFloor(tick) + TICK_SPACING;
-            upper = TickMath.maxUsableTick(TICK_SPACING);
-            if (lower >= upper) return false;
-            liquidity = LiquidityAmounts.getLiquidityForAmount0(TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), amount);
-        }
-        if (liquidity == 0) return false;
-        uint256 before = usdc.balanceOf(address(this));
-        uint256 positionId = _newPosition(key, lower, upper, liquidity, u0 ? amount : 0, u0 ? 0 : amount, address(usdc), amount);
-        uint256 used = before - usdc.balanceOf(address(this));
-        _extraPositions[coin].push(positionId);
-        if (amount > used) {
-            // rounding dust: funds buybacks
-            buybackFunds[coin] += amount - used;
-            dollarsReserved += amount - used;
-        }
-        emit Deepened(coin, positionId, used);
-        return true;
-    }
 
     // ------------------------------------------------------------------ fees (anyone) and buybacks (keeper)
 

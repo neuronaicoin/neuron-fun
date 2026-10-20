@@ -1024,7 +1024,7 @@ abstract contract RaceFlow is Test, DeployPermit2 {
     }
 
     /// v8: a coin pushed more than 20% above its race-end price doesn't get the merge buy (the
-    /// dollars go below the price as before), so pumping it before the money lands pays nothing.
+    /// dollars fund buybacks instead), so pumping it before the money lands pays nothing.
     function _flow_mergeSkipsPumpedCoin() internal {
         (address ca,) = _launch(a, _eids2(), 5 * D, 0);
         (address cb,) = _launch(b, _eids2(), 5 * D, 0);
@@ -1036,8 +1036,8 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         int256 p0 = _coinPrice(a, ca);
         b.cons.forward(_coinId());
         assertEq(_coinPrice(a, ca), p0, "no merge buy on a pumped coin");
-        uint256[] memory extra = a.builder.extraPositions(ca);
-        assertEq(extra.length, 1, "the money still lands in the pool");
+        assertEq(a.builder.extraPositions(ca).length, 0, "no position on a pumped coin");
+        assertGt(a.builder.buybackFunds(ca), 0, "the money funds buybacks instead");
     }
 
     function _posId(Net memory c, address coin) internal view returns (uint256 id) {
