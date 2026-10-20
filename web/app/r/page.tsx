@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
+import { HoldersPnl } from "@/components/holderspnl";
 import { RaceTradeBox } from "@/components/racetrade";
 import { CreatorKit, RaceShareButton } from "@/components/raceshare";
 import { CoinLinksRow } from "@/components/coinlinks";
@@ -237,9 +238,22 @@ function RacePage() {
           // sits on the phone menu when it shows (it publishes its height), else on the screen's edge
           style={{ bottom: "var(--money-bar-bottom, env(safe-area-inset-bottom, 0px))" }}
         >
-          <a href="#trade" className="flex items-center justify-center h-12 max-w-lg mx-auto rounded-full bg-up text-white font-bold text-[1rem]">
-            Trade {coin.symbol}
-          </a>
+          <div className="flex gap-2 max-w-lg mx-auto">
+            {(["buy", "sell"] as const).map((side) => (
+              <a
+                key={side}
+                href="#trade"
+                data-haptic-strong
+                onClick={() => window.dispatchEvent(new CustomEvent("sasa-trade-side", { detail: side }))}
+                className={
+                  "flex items-center justify-center h-12 rounded-2xl font-bold text-[1rem] " +
+                  (side === "buy" ? "flex-1 bg-up text-white" : "w-[34%] border-2 border-line text-ink bg-paper")
+                }
+              >
+                {side === "buy" ? `Buy ${coin.symbol}` : "Sell"}
+              </a>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -326,7 +340,7 @@ function LaneRow({ lane, max, coin, phase, now }: { lane: RaceLane; max: number;
 }
 
 function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }) {
-  const [tab, setTab] = useState<"trades" | "holders">("trades");
+  const [tab, setTab] = useState<"pnl" | "trades" | "holders">("pnl");
   const [trades, setTrades] = useState<RaceTrade[] | null>(null);
   const [holders, setHolders] = useState<RaceHolder[] | null>(null);
   const holderLane = coin.winner ? coin.lanes.find((l) => l.chain.chainId === coin.winner!.chainId) : lane;
@@ -362,7 +376,7 @@ function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, holderChainId, coin.coin]);
 
-  const tabBtn = (k: "trades" | "holders", label: string) => (
+  const tabBtn = (k: "pnl" | "trades" | "holders", label: string) => (
     <button
       type="button"
       onClick={() => setTab(k)}
@@ -376,10 +390,13 @@ function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }
   return (
     <section className="min-w-0">
       <div className="flex gap-5 border-b border-line">
+        {tabBtn("pnl", "Holders")}
         {tabBtn("trades", "Trades")}
-        {tabBtn("holders", holderLane ? `Holders on ${holderLane.chain.short}` : "Holders")}
+        {tabBtn("holders", "Top wallets")}
       </div>
-      {tab === "trades" ? (
+      {tab === "pnl" ? (
+        <HoldersPnl coin={coin} />
+      ) : tab === "trades" ? (
         trades === null ? (
           <Skeleton className="h-40 mt-3" />
         ) : trades.length === 0 ? (

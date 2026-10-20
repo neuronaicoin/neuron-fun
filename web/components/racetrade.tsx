@@ -48,6 +48,15 @@ function fmtAmount(n: number, max = 2) {
 export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; lanes: RaceLane[]; lane: RaceLane; onLane: (chainId: number) => void }) {
   const w = useWallet();
   const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
+  // the phone's Buy / Sell bar picks the side
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d === "buy" || d === "sell") setSide(d);
+    };
+    window.addEventListener("sasa-trade-side", on);
+    return () => window.removeEventListener("sasa-trade-side", on);
+  }, []);
   const sides = (autoAnywhere() ? ["buy", "sell", "auto"] : ["buy", "sell"]) as ("buy" | "sell" | "auto")[];
   const [amount, setAmount] = useState("10");
   const [busy, setBusy] = useState(false);
