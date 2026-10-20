@@ -1,0 +1,222 @@
+name: deploy-race-mainnet-v8
+
+# sasa v8 race stack on mainnet (Base, BNB Chain, Robinhood Chain, Arc), next to v7.
+# v8 = v7 + the merge: money from the losing chains buys the coin on the winner (price up)
+# and lands as full-range liquidity (counted by DexScreener / GMGN). v7 coins keep their
+# own contracts; new launches use these. Addresses go to deployments/race-mainnet-v8/.
+#
+#
+#   mode = rehearsal  (start here; no keys, nothing is sent, free)
+#          Makes copies of the four real chains in memory and runs the whole mainnet deploy
+#          on them with the real settings: deploy on each chain, wire the chains together
+#          (BNB Chain <-> Robinhood Chain money goes through Base), then launches a coin on all
+#          four and checks it lands at the same address and pays the race fee, then buys and
+#          sells on BNB Chain and Robinhood Chain with dollars from Base (RaceCross).
+#   mode = deploy     on one chain (network), then on the other three
+#   mode = wire       on each chain, after all four are deployed
+#   deploy and wire only send when "broadcast" is ticked; unticked they are a free dry run.
+#
+# Settings (same as the rehearsal): launch market cap $3,000; smallest first buy $1 a chain;
+# race fee $0.50 a chain (paid by the creator, to the treasury); treasury
+# 0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F; Base decides the races; LayerZero Labs DVN.
+#
+# deploy / wire need: secret MAINNET_DEPLOYER_KEY (ETH on Base and Robinhood Chain, BNB on
+# BNB Chain, USDC on Arc for gas), secret MAINNET_RACE_FACTORY_V8_KEY (a NEW wallet, never used
+# on any chain, with a little gas on all four), variable RACE_KEEPER_ADDRESS (the race keeper's
+# wallet). Addresses are saved in contracts-v7/deployments/race-mainnet-v8/.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "rehearsal (free, start here), deploy or wire"
+        type: choice
+        options:
+          - rehearsal
+          - deploy
+          - wire
+      network:
+        description: "Chain (deploy / wire only)"
+        type: choice
+        options:
+          - base
+          - bsc
+          - robinhood
+          - arc
+      broadcast:
+        description: "deploy / wire: actually send transactions (unticked = free dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-race-mainnet-v8
+  cancel-in-progress: false
+
+jobs:
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: contracts-v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # pinned: the exact compiler build is needed to verify the contracts later
+          version: v1.3.5
+
+      - name: Get libraries
+        run: |
+          mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
+          cd lib/v4-periphery
+          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
+          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
+          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
+          cd ../../../..
+          cp -r ../contracts/lib/layerzero lib/layerzero
+          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
+          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
+
+      - name: LayerZero addresses of the four chains
+        run: |
+          set -euo pipefail
+          curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lz.json
+          for id in 8453 56 4663 5042; do
+            E=$(jq -c --argjson id "$id" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|test("testnet|sepolia")|not))][0].value' /tmp/lz.json)
+            if [ "$E" = "null" ] || [ -z "$E" ]; then echo "LayerZero has no mainnet entry for chain $id"; exit 1; fi
+            V2=$(echo "$E" | jq -c '[.deployments[] | select(.version == 2)][0]')
+            EID=$(echo "$V2" | jq -r '.eid')
+            EP=$(echo "$V2" | jq -r '.endpointV2.address')
+            SEND=$(echo "$V2" | jq -r '.sendUln302.address')
+            RECV=$(echo "$V2" | jq -r '.receiveUln302.address')
+            EXEC=$(echo "$V2" | jq -r '.executor.address')
+            DVNS=$(echo "$E" | jq -r '[.dvns | to_entries[] | select(.value.id == "layerzero-labs" and (.value.deprecated|not) and (.value.lzReadCompatible|not)) | .key][0] // ""')
+            for v in EID EP SEND RECV EXEC DVNS; do
+              eval "val=\$$v"; if [ -z "$val" ] || [ "$val" = "null" ]; then echo "chain $id: missing $v"; exit 1; fi
+            done
+            echo "chain $id: eid $EID endpoint $EP send $SEND receive $RECV executor $EXEC dvn $DVNS"
+            {
+              echo "LZ_${id}_EID=$EID"; echo "LZ_${id}_ENDPOINT=$EP"; echo "LZ_${id}_SEND=$SEND"
+              echo "LZ_${id}_RECV=$RECV"; echo "LZ_${id}_EXEC=$EXEC"; echo "LZ_${id}_DVNS=$DVNS"
+            } >> "$GITHUB_ENV"
+          done
+          echo "CONFIRMATIONS=15" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: forge build
+
+      - name: Rehearsal (copies of the real chains, nothing is sent)
+        if: inputs.mode == 'rehearsal'
+        run: |
+          set -o pipefail
+          # public nodes sometimes drop a request: one retry of the whole rehearsal
+          for try in 1 2; do
+            if REHEARSE=true forge test --match-contract RehearseMainnetTest --threads 1 -vv 2>&1 | tee /tmp/rehearsal.log; then ok=1; break; fi
+            ok=0; echo "Rehearsal attempt $try failed"; sleep 20
+          done
+          {
+            echo "## Mainnet rehearsal"
+            if [ "$ok" = 1 ]; then echo "**OK.** Deployed and wired on all four chains, the coin launched (details below)."; else echo "**FAILED.** See the log below."; fi
+            echo '```'
+            grep -E "== deploy|== wire|launched on chain|cross trade|Cross trades|REHEARSAL OK|two-step route|linked to eid|bridge locked|can't|feed price|dollar pool liquidity|Error|FAIL|revert" /tmp/rehearsal.log | head -120
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$ok" = 1 ]
+
+      - name: Chain settings
+        if: inputs.mode != 'rehearsal'
+        env:
+          NETWORK: ${{ inputs.network }}
+        run: |
+          set -euo pipefail
+          case "$NETWORK" in
+            base) CHAIN_ID=8453; RPC="https://mainnet.base.org"; KIND=eth; DEC=6
+              USD=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; FEED=0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70; AGE=7200
+              ACROSS=0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
+              PM=0x498581fF718922c3f8e6A244956aF099B2652b2b; POSM=0x7C5f5A4bBd8fD63184577525326123B519429bDc; DFEE=3000; DSPACE=60; HOP_FOR=""; GAS_FLOOR=0 ;;
+            robinhood) CHAIN_ID=4663; RPC="https://rpc.mainnet.chain.robinhood.com"; KIND=eth; DEC=6
+              USD=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168; FEED=0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9; AGE=93600
+              ACROSS=0xD29C85F15DF544bA632C9E25829fd29d767d7978
+              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x58daec3116aae6D93017bAAea7749052E8a04fA7; DFEE=500; DSPACE=10; HOP_FOR=56; GAS_FLOOR=50000000000000 ;;
+            arc) CHAIN_ID=5042; RPC="https://rpc.mainnet.arc.io"; KIND=usdc; DEC=6
+              USD=0x3600000000000000000000000000000000000000; FEED=""; AGE=7200
+              ACROSS=0x9b4A302A548c7e313c2b74C461db7b84d3074A84
+              PM=0x8366a39CC670B4001A1121B8F6A443A643e40951; POSM=0x6049c9a0e26405C0985f9E3685C87d0aE917f82B; DFEE=0; DSPACE=0; HOP_FOR=""; GAS_FLOOR=100000 ;;
+            bsc) CHAIN_ID=56; RPC="https://bsc-dataseed.bnbchain.org"; KIND=pcs; DEC=18
+              USD=0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d; FEED=0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE; AGE=7200
+              ACROSS=0x4e8E101924eDE233C13e2D8622DC8aED2872d505
+              VAULT=0x238a358808379702088667322f80aC48bAd5e6c4; CLPM=0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b
+              WNATIVE=0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; DPOOL=0xf2688Fb5B81049DFB7703aDa5e770543770612C4; HOP_FOR=4663; GAS_FLOOR=200000000000000 ;;
+          esac
+          GOT_ID=$(cast chain-id --rpc-url "$RPC")
+          if [ "$GOT_ID" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT_ID, expected $CHAIN_ID"; exit 1; fi
+          # dollar amounts in this chain's units (BNB Chain's USDC has 18 decimals: too big for shell maths)
+          # the launch market cap is always in 6-decimal dollars (the builders' unit), on every chain
+          START_MC=3000000000; MIN_BUY=$(python3 -c "print(10**$DEC)"); RACE_FEE=$(python3 -c "print(10**$DEC // 2)")
+          eval "EID=\$LZ_${CHAIN_ID}_EID; EP=\$LZ_${CHAIN_ID}_ENDPOINT; SEND=\$LZ_${CHAIN_ID}_SEND; RECV=\$LZ_${CHAIN_ID}_RECV; EXEC=\$LZ_${CHAIN_ID}_EXEC; DVNS=\$LZ_${CHAIN_ID}_DVNS"
+          {
+            echo "CHAIN_ID=$CHAIN_ID"; echo "RPC=$RPC"; echo "BUILDER_KIND=$KIND"; echo "TESTNET=false"
+            echo "USD_TOKEN=$USD"; echo "PRICE_FEED=$FEED"; echo "MAX_FEED_AGE=$AGE"; echo "ACROSS_SPOKE=$ACROSS"
+            echo "POOL_MANAGER=${PM:-}"; echo "POSITION_MANAGER=${POSM:-}"; echo "DOLLAR_FEE=${DFEE:-0}"; echo "DOLLAR_SPACING=${DSPACE:-0}"
+            echo "VAULT=${VAULT:-}"; echo "CL_POOL_MANAGER=${CLPM:-}"; echo "WNATIVE=${WNATIVE:-}"; echo "DOLLAR_POOL=${DPOOL:-}"
+            echo "START_MC=$START_MC"; echo "MIN_FIRST_BUY=$MIN_BUY"; echo "RACE_FEE=$RACE_FEE"
+            echo "TREASURY=0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F"; echo "MIN_DVNS=1"; echo "COORD_EID=$LZ_8453_EID"
+            echo "LOCAL_EID=$EID"; echo "LZ_ENDPOINT=$EP"; echo "SEND_LIB=$SEND"; echo "RECEIVE_LIB=$RECV"; echo "EXECUTOR=$EXEC"; echo "DVNS=$DVNS"
+            echo "ACROSS_HOP_FOR=$HOP_FOR"; echo "ACROSS_HOP_CHAIN_ID=$([ -n "$HOP_FOR" ] && echo 8453 || true)"
+            echo "DEPLOY_DIR=./deployments/race-mainnet-v8/"
+            # trading from Base dollars (RaceCross, not on Base itself); gas top-up below ~12 cents
+            echo "CROSS_HOME_CHAIN_ID=8453"; echo "CROSS_HOME_USDC=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; echo "CROSS_GAS_FLOOR=$GAS_FLOOR"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy or wire
+        if: inputs.mode != 'rehearsal'
+        env:
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+          RAW_FKEY: ${{ secrets.MAINNET_RACE_FACTORY_V8_KEY }}
+          KEEPER: ${{ vars.RACE_KEEPER_ADDRESS }}
+          MODE: ${{ inputs.mode }}
+          BROADCAST: ${{ inputs.broadcast }}
+        run: |
+          set -euo pipefail
+          norm() { k="$(printf '%s' "$1" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac; echo "$k"; }
+          KEY=$(norm "${RAW_KEY:-}"); echo "::add-mask::$KEY"
+          if [ "$KEY" = "0x" ]; then echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; fi
+          export PRIVATE_KEY="$KEY"
+          if [ -z "${KEEPER:-}" ]; then echo "Variable RACE_KEEPER_ADDRESS is missing (the race keeper wallet)"; exit 1; fi
+          mkdir -p deployments/race-mainnet-v8
+          FLAGS="--rpc-url $RPC -vv"
+          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          if [ "$MODE" = "deploy" ]; then
+            FKEY=$(norm "${RAW_FKEY:-}"); echo "::add-mask::$FKEY"
+            if [ "$FKEY" = "0x" ]; then echo "Secret MAINNET_RACE_FACTORY_V8_KEY is missing (a new, never-used wallet)"; exit 1; fi
+            export RACE_FACTORY_KEY="$FKEY"
+            forge script script/race/DeployRace.s.sol $FLAGS
+          else
+            OTHERS=""
+            for id in 8453 56 4663 5042; do
+              [ "$id" = "$CHAIN_ID" ] && continue
+              [ -f "deployments/race-mainnet-v8/$id.json" ] || { echo "Deploy on chain $id first"; exit 1; }
+              OTHERS="${OTHERS:+$OTHERS,}$id"
+            done
+            [ -f "deployments/race-mainnet-v8/$CHAIN_ID.json" ] || { echo "Deploy on this chain first"; exit 1; }
+            export REMOTE_CHAIN_IDS="$OTHERS" LOCK_BRIDGE=true OPEN_LAUNCHES=true ALLOW_MISSING_ROUTES=false
+            forge script script/race/WireRace.s.sol $FLAGS
+          fi
+
+      - name: Save addresses to the repo
+        if: inputs.mode == 'deploy' && inputs.broadcast
+        run: |
+          git config user.name "sasa-deploy"
+          git config user.email "deploy@sasapad.fun"
+          git add -A deployments/race-mainnet-v8
+          git commit -m "v8 race deployed on mainnet ${{ inputs.network }}" || echo "nothing to commit"
+          git pull --rebase
+          git push
