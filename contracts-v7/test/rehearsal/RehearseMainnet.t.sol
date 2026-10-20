@@ -97,8 +97,10 @@ contract RehearseMainnetTest is Test {
         vm.setEnv("TREASURY", vm.toString(TREASURY));
         vm.setEnv("KEEPER", vm.toString(vm.addr(DEPLOYER_KEY)));
         vm.setEnv("MIN_DVNS", "1");
-        // $3,000 launch market cap, $1 smallest first buy, $0.50 race fee: in this chain's dollar units
-        vm.setEnv("START_MC", vm.toString(3_000 * _unit(c)));
+        // $3,000 launch market cap, always in 6-decimal dollars (the builders' unit, on every chain:
+        // BNB Chain's 18-decimal USDC here once made its races undecidable); $1 smallest first buy
+        // and $0.50 race fee in this chain's dollar units
+        vm.setEnv("START_MC", vm.toString(uint256(3_000e6)));
         vm.setEnv("MIN_FIRST_BUY", vm.toString(_unit(c)));
         vm.setEnv("RACE_FEE", vm.toString(_unit(c) / 2));
         vm.setEnv("POOL_MANAGER", c.pm == address(0) ? "" : vm.toString(c.pm));
