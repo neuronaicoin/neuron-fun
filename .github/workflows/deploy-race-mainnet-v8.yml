@@ -22,7 +22,7 @@ name: deploy-race-mainnet-v8
 #
 # deploy / wire need: secret MAINNET_DEPLOYER_KEY (ETH on Base and Robinhood Chain, BNB on
 # BNB Chain, USDC on Arc for gas), secret MAINNET_RACE_FACTORY_V8_KEY (a NEW wallet, never used
-# on any chain, with a little gas on all four), variable RACE_KEEPER_ADDRESS (the race keeper's
+# on any chain, with a little gas on all four), variable RACE_KEEPER_V8_ADDRESS (the race keeper's
 # wallet). Addresses are saved in contracts-v7/deployments/race-mainnet-v8/.
 
 on:
@@ -181,7 +181,7 @@ jobs:
         env:
           RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
           RAW_FKEY: ${{ secrets.MAINNET_RACE_FACTORY_V8_KEY }}
-          KEEPER: ${{ vars.RACE_KEEPER_ADDRESS }}
+          KEEPER: ${{ vars.RACE_KEEPER_V8_ADDRESS }}
           MODE: ${{ inputs.mode }}
           BROADCAST: ${{ inputs.broadcast }}
         run: |
@@ -190,7 +190,7 @@ jobs:
           KEY=$(norm "${RAW_KEY:-}"); echo "::add-mask::$KEY"
           if [ "$KEY" = "0x" ]; then echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; fi
           export PRIVATE_KEY="$KEY"
-          if [ -z "${KEEPER:-}" ]; then echo "Variable RACE_KEEPER_ADDRESS is missing (the race keeper wallet)"; exit 1; fi
+          if [ -z "${KEEPER:-}" ]; then echo "Variable RACE_KEEPER_V8_ADDRESS is missing (the race keeper wallet)"; exit 1; fi
           mkdir -p deployments/race-mainnet-v8
           FLAGS="--rpc-url $RPC -vv"
           if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
