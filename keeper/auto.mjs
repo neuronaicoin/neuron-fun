@@ -85,29 +85,48 @@ const TOO_SMALL_HOURS = 24;
 
 // ------------------------------------------------------------------ setup
 
+/**
+ * Every AutoOrders contract this keeper runs, by chain: `dir` may list several deployment
+ * folders separated by commas (v7, v8…), each with its own AutoOrders. Map chainId → list.
+ */
 export function loadChains(dir, account) {
   const out = new Map();
-  if (!existsSync(dir)) return out;
-  for (const f of readdirSync(dir).filter((x) => /^\d+\.json$/.test(x))) {
-    const d = JSON.parse(readFileSync(join(dir, f), "utf8"));
-    if (!d.autoOrders || d.autoOrders === zeroAddress) continue;
-    const rpcs = (process.env[`RPC_${d.chainId}`] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (!rpcs.length) {
-      log(`skip chain ${d.chainId}: no RPC_${d.chainId}`);
-      continue;
+  dir.split(",").map((s) => s.trim()).filter(Boolean).forEach((one, set) => {
+    if (!existsSync(one)) return;
+    for (const f of readdirSync(one).filter((x) => /^\d+\.json$/.test(x))) {
+      const d = JSON.parse(readFileSync(join(one, f), "utf8"));
+      if (!d.autoOrders || d.autoOrders === zeroAddress) continue;
+      const rpcs = (process.env[`RPC_${d.chainId}`] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!rpcs.length) {
+        log(`skip chain ${d.chainId}: no RPC_${d.chainId}`);
+        continue;
+      }
+      const chain = defineChain({ id: Number(d.chainId), name: `c${d.chainId}`, nativeCurrency: { name: "N", symbol: "N", decimals: 18 }, rpcUrls: { default: { http: rpcs } } });
+      const transport = fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 20_000 })));
+      const id = Number(d.chainId);
+      if (!out.has(id)) out.set(id, []);
+      out.get(id).push({
+        ...d,
+        set,
+        chainId: id,
+        usdDecimals: Number(d.usdDecimals ?? 6),
+        pub: createPublicClient({ chain, transport }),
+        wallet: createWalletClient({ chain, account, transport }),
+      });
     }
-    const chain = defineChain({ id: Number(d.chainId), name: `c${d.chainId}`, nativeCurrency: { name: "N", symbol: "N", decimals: 18 }, rpcUrls: { default: { http: rpcs } } });
-    const transport = fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 20_000 })));
-    out.set(Number(d.chainId), {
-      ...d,
-      chainId: Number(d.chainId),
-      usdDecimals: Number(d.usdDecimals ?? 6),
-      pub: createPublicClient({ chain, transport }),
-      wallet: createWalletClient({ chain, account, transport }),
-    });
-  }
+  });
   return out;
 }
+
+/** The chain entry whose AutoOrders is `contract` (any set when no contract is given). */
+export function chainFor(chains, chainId, contract) {
+  const list = chains.get(Number(chainId)) ?? [];
+  if (!contract) return list[0];
+  return list.find((c) => String(c.autoOrders).toLowerCase() === String(contract).toLowerCase());
+}
+
+/** The entry on `chainId` from the same contract set as `c` (so dips reach that set's RaceCross). */
+export const sameSet = (chains, c, chainId) => (chains.get(Number(chainId)) ?? []).find((x) => x.set === c.set) ?? (chains.get(Number(chainId)) ?? [])[0];
 
 export function db(url, key) {
   const headers = { apikey: key, "content-type": "application/json" };
@@ -288,9 +307,11 @@ const errName = (e) => {
  */
 export async function runOrder(o, ctx) {
   const { chains, account, prices, relayApi, acrossApi, treasury } = ctx;
-  const c = chains.get(o.chain_id);
+  // each contract set's orders run against that set's AutoOrders; one this keeper doesn't run
+  // (another set's keeper does) is left alone
+  if (!chains.has(Number(o.chain_id))) return { status: "skip" };
+  const c = chainFor(chains, o.chain_id, o.contract);
   if (!c) return { status: "skip" };
-  if (String(c.autoOrders).toLowerCase() !== o.contract) return { status: "failed", note: "Not sasa's auto-order contract on this chain." };
   const order = toOrder(o.order_json);
   if (BigInt(Math.floor(Date.now() / 1000)) > order.deadline) return { status: "expired", note: "Expired before the price was reached." };
   // sent before but not saved as done (the keeper stopped while waiting): its receipt says
@@ -317,7 +338,7 @@ export async function runOrder(o, ctx) {
   let route;
   try {
     if (order.mode === MODE_BUY_CROSS) {
-      const dest = chains.get(Number(order.destChainId));
+      const dest = sameSet(chains, c, order.destChainId);
       if (!dest) return { status: "skip" };
       const routeFee = await acrossFee({ acrossApi, from: c, to: dest, amount: swapIn, recipient: dest.cross });
       route = { approveTo: zeroAddress, target: zeroAddress, data: "0x", routeFee };
@@ -332,7 +353,7 @@ export async function runOrder(o, ctx) {
       route = await relayRoute({ relayApi, treasury, chainId: c.chainId, contract: c.autoOrders, tokenIn: order.tokenIn, tokenOut: order.tokenOut, amount: swapIn });
     }
     if (order.mode === MODE_SELL_HOME) {
-      const home = chains.get(ctx.homeChainId);
+      const home = sameSet(chains, c, ctx.homeChainId);
       if (!home || home.chainId === c.chainId) return { status: "failed", note: "This order sends money home, but this chain is home." };
       // the fee for about what the sale brings: the stored price is enough to size it
       const guess = stored ? BigInt(Math.floor(((Number(take) / 10 ** coinDec) * stored) * 10 ** c.usdDecimals)) : order.minOut;
@@ -507,7 +528,7 @@ async function main() {
     // it up from its USDC when both use the same wallet; otherwise a human does)
     if (Date.now() - gasLook > 10 * 60_000) {
       gasLook = Date.now();
-      for (const c of ctx.chains.values()) {
+      for (const c of new Map([...ctx.chains.values()].flat().map((x) => [x.chainId, x])).values()) {
         const bal = await c.pub.getBalance({ address: account.address }).catch(() => null);
         if (bal !== null && bal < gasFloor(c)) {
           await alert("auto orders", `gas-${c.chainId}`, `auto-order wallet ${account.address} is low on gas on chain ${c.chainId} (${Number(bal) / 1e18}); orders there can't run. Top it up.`);

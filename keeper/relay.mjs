@@ -110,8 +110,19 @@ export function relayDataOf(log, originChainId) {
  * no bigger than `maxUsd`, still in time, open to us, and never paying out more than comes in.
  * Returns null (go) or the reason not to.
  */
+/** Whether `addr` (32-byte or 20-byte) is one of the chain's RaceCross contracts (v7, v8…). */
+export function isCross(c, addr) {
+  if (!addr) return false;
+  const tail = String(addr).toLowerCase().slice(-40);
+  return crossesOf(c).some((x) => String(x).toLowerCase().slice(-40) === tail && /^0x0*$/.test(String(addr).toLowerCase().slice(0, -40) || "0x"));
+}
+
+function crossesOf(c) {
+  return (c.crosses ?? [c.cross]).filter((x) => x && x !== zeroAddress);
+}
+
 export function whyNot(rd, { origin, dest, me, nowS, maxUsd }) {
-  if (!dest.cross || !same32(rd.recipient, dest.cross)) return "not to RaceCross";
+  if (!isCross(dest, rd.recipient)) return "not to RaceCross";
   if (!same32(rd.inputToken, origin.usd) || !same32(rd.outputToken, dest.usd)) return "not dollars to dollars";
   const kind = messageKind(rd.message);
   if (kind !== KIND_LAUNCH && kind !== KIND_BUY) return "not a launch or a buy";
@@ -144,8 +155,20 @@ export function whyNotHome(rd, { from, home, me, nowS, maxUsd, viaCross }) {
 /** The chains (deployment files + RPCs), each with a public client and the relayer's wallet. */
 export function loadChains({ deployments, account, env = process.env }) {
   const out = [];
-  for (const f of readdirSync(deployments).filter((x) => /^\d+\.json$/.test(x))) {
-    const d = JSON.parse(readFileSync(join(deployments, f), "utf8"));
+  // several contract sets (v7, v8…): comma-separated folders, one entry per chain with every
+  // set's RaceCross in `crosses` (the first folder gives the chain's other settings)
+  const files = new Map();
+  for (const dir of String(deployments).split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir).filter((x) => /^\d+\.json$/.test(x))) {
+      const d = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      const id = Number(d.chainId);
+      const prev = files.get(id);
+      if (prev) prev.crosses.push(d.cross);
+      else files.set(id, { ...d, crosses: [d.cross] });
+    }
+  }
+  for (const d of files.values()) {
     const id = Number(d.chainId);
     const rpcs = (env[`RELAY_RPC_${id}`] || env[`RPC_${id}`] || "").split(",").map((s) => s.trim()).filter(Boolean);
     const spoke = env[`SPOKE_${id}`] || SPOKES[id];
@@ -172,7 +195,7 @@ export function loadChains({ deployments, account, env = process.env }) {
 export function createRelayer({ chains, originId = 8453, account, env = process.env, log = () => {}, alert = async () => {}, nowS = () => Math.floor(Date.now() / 1000), fetchFn = fetch }) {
   const origin = chains.find((c) => c.chainId === originId);
   if (!origin) throw new Error(`relayer: no RPC for the origin chain ${originId}`);
-  const dests = chains.filter((c) => c.chainId !== originId && c.cross && c.cross !== zeroAddress);
+  const dests = chains.filter((c) => c.chainId !== originId && crossesOf(c).length > 0);
   const DRY = env.RELAY_DRY_RUN === "true";
   const maxUsd = Number(env.RELAY_MAX_USD || "100");
   const repayDest = (env.RELAY_REPAY || "dest") !== "origin";
@@ -270,7 +293,7 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
     const jobs = [];
     for (const l of logs) {
       const dest = dests.find((d) => BigInt(d.chainId) === l.args.destinationChainId);
-      if (!dest || !l.args.recipient || !same32(l.args.recipient, dest.cross)) continue;
+      if (!dest || !isCross(dest, l.args.recipient)) continue;
       const key = `${dest.chainId}-${l.args.depositId}`;
       if (seen.has(key)) continue;
       seen.set(key, "queued");
@@ -291,7 +314,7 @@ export function createRelayer({ chains, originId = 8453, account, env = process.
   async function viaCrossOf(c, hash) {
     if (crossTx.has(hash)) return crossTx.get(hash);
     const r = await c.pub.getTransactionReceipt({ hash });
-    const v = r.logs.some((l) => String(l.address).toLowerCase() === String(c.cross).toLowerCase());
+    const v = r.logs.some((l) => isCross(c, l.address));
     crossTx.set(hash, v);
     if (crossTx.size > 2_000) for (const k of [...crossTx.keys()].slice(0, 500)) crossTx.delete(k);
     return v;
@@ -476,8 +499,9 @@ export function startRelayer({ env = process.env, log = (...a) => console.log(ne
   }
   if (!key.startsWith("0x")) key = `0x${key}`;
   const account = privateKeyToAccount(key);
-  const deployments = env.DEPLOYMENTS || "../contracts-v7/deployments/race";
-  if (!existsSync(deployments)) throw new Error(`relayer: no ${deployments}`);
+  // RELAY_DEPLOYMENTS: every contract set's folder, comma-separated (default: the keeper's)
+  const deployments = env.RELAY_DEPLOYMENTS || env.DEPLOYMENTS || "../contracts-v7/deployments/race";
+  if (!String(deployments).split(",").some((d) => existsSync(d.trim()))) throw new Error(`relayer: no ${deployments}`);
   const chains = loadChains({ deployments, account, env });
   const r = createRelayer({ chains, account, env, log, alert: sendAlert });
   const poll = Number(env.RELAY_POLL_MS || "1000");

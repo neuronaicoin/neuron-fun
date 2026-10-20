@@ -1,6 +1,7 @@
 import { createPublicClient, defineChain, fallback, http, parseAbi, type Address, type Chain, type PublicClient } from "viem";
 import { IS_TESTNET } from "./config";
 import { db } from "./data";
+import V8 from "./race-v8.json";
 
 /**
  * sasa v7: the five-minute race. A coin starts on every chain at once; after five minutes the
@@ -35,6 +36,29 @@ export type RaceChain = {
   cross?: Address;
   /** AutoOrders here (mainnet): take profit, stop loss and buy the dip, run by sasa's keeper. */
   auto?: Address;
+  /**
+   * The contract set the coin belongs to: 7 (the first mainnet contracts) or 8 (v8: the money
+   * from the losing chains buys the coin on the winner and lands as full-range liquidity).
+   * Every coin keeps trading through its own set; new launches use the newest.
+   */
+  stack: number;
+  /** sasa's RaceBuilder and fee vault here (mainnet; the admin panel collects fees with them). */
+  builder?: Address;
+  feeVault?: Address;
+};
+
+/** One chain's v8 contracts (from contracts-v7/deployments/race-mainnet-v8/<chainId>.json). */
+type V8Entry = {
+  chainId: number;
+  factory: string;
+  router: string;
+  builder: string;
+  hook: string;
+  consolidator: string;
+  bridge: string;
+  feeVault: string;
+  cross?: string;
+  autoOrders?: string;
 };
 
 const robinhoodTestnet = defineChain({
@@ -92,6 +116,7 @@ const TESTNET: RaceChain[] = [
       "0x2F461B25c64077d9B355d2A738008B6cAEd04535", // bridge
     ],
     faucet: true,
+    stack: 7,
   },
   {
     chainId: 97,
@@ -114,6 +139,7 @@ const TESTNET: RaceChain[] = [
       "0x44dd76F2eAfd6708c63DB93c03804F4f15017dFd", // bridge
     ],
     faucet: true,
+    stack: 7,
   },
   {
     chainId: 46630,
@@ -135,6 +161,7 @@ const TESTNET: RaceChain[] = [
       "0xeeB5d34936FD2FDd617D87b9Ddd50C93e0BAAa37", // bridge
     ],
     faucet: true,
+    stack: 7,
   },
   {
     chainId: 5042002,
@@ -156,6 +183,7 @@ const TESTNET: RaceChain[] = [
       "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789", // bridge
     ],
     faucet: true,
+    stack: 7,
   },
 ];
 
@@ -210,6 +238,9 @@ const MAINNET: RaceChain[] = [
       "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
     ],
     faucet: false,
+    stack: 7,
+    builder: "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4",
+    feeVault: "0x230f730aa453397530833d8101aD6f7a07e0950a",
     spoke: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
     auto: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
   },
@@ -234,6 +265,9 @@ const MAINNET: RaceChain[] = [
       "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
     ],
     faucet: false,
+    stack: 7,
+    builder: "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4",
+    feeVault: "0x230f730aa453397530833d8101aD6f7a07e0950a",
     spoke: "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
     cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
     auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
@@ -258,6 +292,9 @@ const MAINNET: RaceChain[] = [
       "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
     ],
     faucet: false,
+    stack: 7,
+    builder: "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4",
+    feeVault: "0x230f730aa453397530833d8101aD6f7a07e0950a",
     spoke: "0xD29C85F15DF544bA632C9E25829fd29d767d7978",
     cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
     auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
@@ -282,15 +319,62 @@ const MAINNET: RaceChain[] = [
       "0x230f730aa453397530833d8101aD6f7a07e0950a", // fee vault
     ],
     faucet: false,
+    stack: 7,
+    builder: "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4",
+    feeVault: "0x230f730aa453397530833d8101aD6f7a07e0950a",
     spoke: "0x9b4A302A548c7e313c2b74C461db7b84d3074A84",
     cross: "0x3126001B205427D9C0AF14086f8Ed8295f25f1fA",
     auto: "0x3a4e70eAD25135a439cbefF3972AbEC9EA1Df1C6",
   },
 ];
 
-export const RACE_CHAINS: RaceChain[] = IS_TESTNET ? TESTNET : MAINNET;
-export const raceChain = (chainId: number) => RACE_CHAINS.find((c) => c.chainId === chainId);
+const ZERO = "0x0000000000000000000000000000000000000000";
+const addr = (v?: string) => (v && v !== ZERO ? (v as Address) : undefined);
+
+/** v8 on mainnet once it is deployed on all four chains (race-v8.json filled), else nothing. */
+function v8Chains(): RaceChain[] {
+  const rows = V8 as V8Entry[];
+  if (IS_TESTNET || rows.length < MAINNET.length) return [];
+  return MAINNET.map((c) => {
+    const d = rows.find((x) => Number(x.chainId) === c.chainId);
+    if (!d) throw new Error(`race-v8.json: no chain ${c.chainId}`);
+    const old = new Set([...MAINNET_SYSTEM_OLD].map((a) => a.toLowerCase()));
+    return {
+      ...c,
+      stack: 8,
+      factory: d.factory as Address,
+      router: d.router as Address,
+      // the chain's own pool contracts stay; sasa's v7 contracts are swapped for v8's
+      system: [...c.system.filter((a) => !old.has(a.toLowerCase())), d.builder, d.hook, d.consolidator, d.bridge, d.feeVault].map((a) => a as Address),
+      cross: c.cross ? addr(d.cross) : undefined,
+      auto: c.auto ? addr(d.autoOrders) : undefined,
+      builder: d.builder as Address,
+      feeVault: d.feeVault as Address,
+    };
+  });
+}
+/** sasa's own v7 contracts in MAINNET's `system` lists (builder, hooks, consolidator, bridge, fee vault). */
+const MAINNET_SYSTEM_OLD = [
+  "0x05aFA6adFcd1c40CF82174025ecBC2E1ED603Ca4",
+  "0xFD619EeF0dB5E653c2a43C236032895633E4A080",
+  "0x6e4Dd763fa80469a69CAd1D8427Dea958FF7b30A",
+  "0x3B0A89f5d19189077a24320a3939bf3308bAE080",
+  "0xd4D6F84658C98F6BAd57f9E46B3FB69717675FBA",
+  "0xf11CB4abe59DFEDF361D4a9927711718dd8DaaB1",
+  "0x230f730aa453397530833d8101aD6f7a07e0950a",
+];
+
+const MAINNET_V8 = v8Chains();
+/** Every contract set this site knows, newest first. */
+export const RACE_SETS: RaceChain[][] = IS_TESTNET ? [TESTNET] : MAINNET_V8.length ? [MAINNET_V8, MAINNET] : [MAINNET];
+/** The newest set: new launches, and everything that isn't about one coin (chains, gas, balances). */
+export const RACE_CHAINS: RaceChain[] = RACE_SETS[0];
+/** A chain in a coin's own contract set (`stack`); the newest set when none is given. */
+export const raceChain = (chainId: number, stack?: number) =>
+  (stack === undefined ? RACE_CHAINS : (RACE_SETS.find((s) => s[0]?.stack === stack) ?? RACE_CHAINS)).find((c) => c.chainId === chainId);
 export const raceChainByEid = (eid: number) => RACE_CHAINS.find((c) => c.eid === eid);
+/** The chains of a coin's contract set. */
+export const raceChainsOf = (stack: number) => RACE_SETS.find((s) => s[0]?.stack === stack) ?? RACE_CHAINS;
 export const raceExplorerTx = (c: RaceChain, h: string) => `${c.chain.blockExplorers!.default.url}/tx/${h}`;
 export const raceExplorerAddress = (c: RaceChain, a: string) => `${c.chain.blockExplorers!.default.url}/address/${a}`;
 
@@ -441,6 +525,8 @@ export type RaceLane = {
 
 export type RaceCoin = {
   id: string;
+  /** The coin's contract set (7 or 8): its trades go through that set's routers. */
+  stack: number;
   coin: Address;
   creator: Address;
   name: string;
@@ -483,9 +569,11 @@ export function reportedWinner(lanes: RaceLane[]): RaceChain | null {
 }
 
 function toCoin(r: Record<string, unknown>): RaceCoin {
+  const stack = Number(r.stack ?? 7);
+  const set = raceChainsOf(stack);
   const lanes = ((r.race_chains as Record<string, unknown>[]) ?? [])
     .map((l): RaceLane | null => {
-      const chain = raceChain(Number(l.chain_id));
+      const chain = raceChain(Number(l.chain_id), stack);
       if (!chain) return null;
       return {
         chain,
@@ -503,9 +591,10 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
       };
     })
     .filter((l): l is RaceLane => l !== null)
-    .sort((a, b) => RACE_CHAINS.indexOf(a.chain) - RACE_CHAINS.indexOf(b.chain));
+    .sort((a, b) => set.indexOf(a.chain) - set.indexOf(b.chain));
   return {
     id: r.id as string,
+    stack,
     coin: r.coin as Address,
     creator: r.creator as Address,
     name: (r.name as string) ?? "",
@@ -515,8 +604,8 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
     feeMode: Number(r.fee_mode ?? 0),
     launchedAt: ms(r.launched_at) ?? 0,
     endsAt: ms(r.ends_at) ?? 0,
-    winner: (r.winner_chain ? raceChain(Number(r.winner_chain)) : null) ?? reportedWinner(lanes),
-    confirmed: !!r.winner_chain && !!raceChain(Number(r.winner_chain)),
+    winner: (r.winner_chain ? raceChain(Number(r.winner_chain), stack) : null) ?? reportedWinner(lanes),
+    confirmed: !!r.winner_chain && !!raceChain(Number(r.winner_chain), stack),
     totalUsd: num(r.total_usd),
     decidedAt: ms(r.decided_at),
     lanes,
@@ -524,7 +613,7 @@ function toCoin(r: Record<string, unknown>): RaceCoin {
 }
 
 const COIN_COLS =
-  "id,coin,creator,name,symbol,logo,description,fee_mode,launched_at,ends_at,winner_chain,total_usd,decided_at," +
+  "id,coin,creator,name,symbol,logo,description,fee_mode,launched_at,ends_at,winner_chain,total_usd,decided_at,stack," +
   "race_chains(chain_id,state,launched_at,ends_at,pool_usd,reported_usd,price_usd,buys,sells,volume_usd,handed_over,merged_usd)";
 
 export async function fetchRaceCoin(id: string): Promise<RaceCoin | null> {
@@ -572,7 +661,7 @@ export async function fetchRacePositions(address: string): Promise<RacePosition[
     .map((coin): RacePosition => {
       const chains = rows
         .filter((r) => r.token.toLowerCase() === coin.coin.toLowerCase())
-        .map((r) => ({ chain: raceChain(Number(r.chain_id)), tokens: Number(r.amount) / 1e18 }))
+        .map((r) => ({ chain: raceChain(Number(r.chain_id), coin.stack), tokens: Number(r.amount) / 1e18 }))
         .filter((x): x is { chain: RaceChain; tokens: number } => !!x.chain && x.tokens > 0);
       const valueUsd = chains.reduce((sum, x) => {
         const lane = coin.lanes.find((l) => l.chain.chainId === x.chain.chainId);

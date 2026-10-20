@@ -10,7 +10,6 @@ import { useChainSupply } from "@/lib/usesupply";
 import { RaceTradeBox } from "@/components/racetrade";
 import { CreatorKit, RaceShareButton } from "@/components/raceshare";
 import { CoinLinksRow } from "@/components/coinlinks";
-import { RacePick } from "@/components/racepick";
 import { RaceChat } from "@/components/racechat";
 import { RaceReplay } from "@/components/racereplay";
 import { compactUsd, shortAddr } from "@/lib/format";
@@ -182,16 +181,6 @@ function RacePage() {
           </div>
 
           <RaceLanes coin={coin} phase={phase} now={now} />
-
-          <RacePick
-            coin={coin}
-            now={now}
-            onBack={(chainId) => {
-              setPick(chainId);
-              // phones: the trade box is lower on the page; desktop: it's already in view
-              document.getElementById("trade")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
 
           {phase === "decided" && coin.winner && <RaceReplay coin={coin} />}
 

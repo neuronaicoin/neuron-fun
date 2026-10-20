@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, maxUint256, parseAbi, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet";
-import { RACE_CHAINS, fetchRaceCoins, raceClient, raceErc20Abi, raceExplorerAddress, raceRouterAbi, type RaceChain, type RaceCoin } from "@/lib/race";
+import { RACE_CHAINS, RACE_SETS, fetchRaceCoins, raceClient, raceErc20Abi, raceExplorerAddress, raceRouterAbi, type RaceChain, type RaceCoin } from "@/lib/race";
 import { HL_BUILDER } from "@/lib/config";
 import { call, type Call } from "@/lib/tx";
 import { friendlyError } from "@/lib/format";
@@ -132,6 +132,21 @@ export function MoneyPanel() {
         })
       )
     );
+    // each contract set's fee vault (v7, v8…), chain by chain
+    await Promise.all(
+      RACE_SETS.flat().map(async (c) => {
+        if (!c.feeVault) return;
+        try {
+          const pub = raceClient(c);
+          const [native, usd, dec] = await Promise.all([
+            pub.getBalance({ address: c.feeVault }),
+            pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "balanceOf", args: [c.feeVault] }) as Promise<bigint>,
+            pub.readContract({ address: c.usd, abi: raceErc20Abi, functionName: "decimals" }) as Promise<number>,
+          ]);
+          out[`fv${c.stack}-${c.chainId}`] = { native, usd, usdDec: Number(dec) };
+        } catch {}
+      })
+    );
     setBals(out);
     // fees waiting in each coin's pool, chain by chain (a dry run of collectFees: it says how much)
     const coins = await fetchRaceCoins(COINS_LOOKED_AT).catch(() => [] as RaceCoin[]);
@@ -155,7 +170,7 @@ export function MoneyPanel() {
           try {
             const pub = raceClient(c);
             const [v, t] = await Promise.all(
-              [VAULT, TREASURY].map((a) => pub.readContract({ address: coin.coin, abi: raceErc20Abi, functionName: "balanceOf", args: [a] }) as Promise<bigint>)
+              [c.feeVault ?? VAULT, TREASURY].map((a) => pub.readContract({ address: coin.coin, abi: raceErc20Abi, functionName: "balanceOf", args: [a] }) as Promise<bigint>)
             );
             if (v + t === 0n) return;
             hrows.push({ coin, chain: c, inVault: v, inTreasury: t, usdValue: Number(formatUnits(v + t, 18)) * (lane.priceUsd ?? 0) });
@@ -175,8 +190,8 @@ export function MoneyPanel() {
           try {
             const pub = raceClient(c);
             const [sim, over] = await Promise.all([
-              pub.simulateContract({ address: BUILDER, abi: builderAbi, functionName: "collectFees", args: [coin.coin], account: VAULT }),
-              pub.readContract({ address: BUILDER, abi: builderAbi, functionName: "raceOver", args: [coin.coin] }) as Promise<boolean>,
+              pub.simulateContract({ address: c.builder ?? BUILDER, abi: builderAbi, functionName: "collectFees", args: [coin.coin], account: c.feeVault ?? VAULT }),
+              pub.readContract({ address: c.builder ?? BUILDER, abi: builderAbi, functionName: "raceOver", args: [coin.coin] }) as Promise<boolean>,
             ]);
             const [nat, cn] = sim.result as readonly [bigint, bigint];
             if (nat === 0n && cn === 0n) return;
@@ -217,7 +232,7 @@ export function MoneyPanel() {
   const isTreasury = same(w.address, TREASURY);
 
   const sellCalls = (c: RaceChain, rows: Held[]) =>
-    sellBatch({ pub: raceClient(c), router: c.router, vault: VAULT, treasury: TREASURY, rows: rows.map((r) => ({ coin: r.coin.coin, inVault: r.inVault, inTreasury: r.inTreasury })) });
+    sellBatch({ pub: raceClient(c), router: c.router, vault: c.feeVault ?? VAULT, treasury: TREASURY, rows: rows.map((r) => ({ coin: r.coin.coin, inVault: r.inVault, inTreasury: r.inTreasury })) });
 
   /** Without a batch dry run: the sweeps and approvals first, then each sale priced on its own. */
   const sellStepByStep = async (c: RaceChain, prep: Call[], rows: Held[]) => {
@@ -260,9 +275,10 @@ export function MoneyPanel() {
   };
 
   const sellChain = async (c: RaceChain) => {
-    const rows = (held ?? []).filter((r) => r.chain.chainId === c.chainId && r.usdValue >= SELL_MIN_USD);
+    // one contract set at a time: each coin sells through its own set's router
+    const rows = (held ?? []).filter((r) => r.chain === c && r.usdValue >= SELL_MIN_USD);
     if (!rows.length) return;
-    const key = `sellall-${c.chainId}`;
+    const key = `sellall-${c.chainId}-${c.stack}`;
     setBusy(key);
     setMsg(null);
     try {
@@ -360,7 +376,7 @@ export function MoneyPanel() {
               <button
                 type="button"
                 disabled={!!busy || !r.over}
-                onClick={() => void run(key, r.chain, BUILDER, builderAbi, "collectFees", [r.coin.coin], `Collected. sasa's share is in the fee vault on ${r.chain.short}.`)}
+                onClick={() => void run(key, r.chain, r.chain.builder ?? BUILDER, builderAbi, "collectFees", [r.coin.coin], `Collected. sasa's share is in the fee vault on ${r.chain.short}.`)}
                 className="h-10 px-5 rounded-full bg-ink text-paper font-semibold text-[0.875rem] disabled:opacity-40"
                 title={r.over ? "" : "Can be collected once this chain's 5 minutes are over"}
               >
@@ -374,19 +390,19 @@ export function MoneyPanel() {
       <div className="flex flex-col gap-2">
         <h3 className="font-semibold">Fee vault → treasury</h3>
         <div className="grid sm:grid-cols-2 gap-2">
-          {RACE_CHAINS.map((c) => {
-            const v = balUsd(c, bals[`vault-${c.chainId}`], p);
-            const key = `split-${c.chainId}`;
+          {RACE_SETS.flat().map((c) => {
+            const v = balUsd(c, bals[`fv${c.stack}-${c.chainId}`] ?? bals[`vault-${c.chainId}`], p);
+            const key = `split-${c.chainId}-${c.stack}`;
             return (
               <div key={key} className="flex items-center gap-3 rounded-2xl border border-line p-3">
                 <div className="flex-1">
-                  <div className="font-semibold">{c.short}</div>
+                  <div className="font-semibold">{c.short}{RACE_SETS.length > 1 ? ` · v${c.stack}` : ""}</div>
                   <div className="text-[0.8125rem] text-ink-3">{money(v)} in the vault</div>
                 </div>
                 <button
                   type="button"
                   disabled={!!busy || v < 0.01}
-                  onClick={() => void run(key, c, VAULT, vaultAbi, "distribute", [], `Split on ${c.short}: 80% is in the treasury.`)}
+                  onClick={() => void run(key, c, c.feeVault ?? VAULT, vaultAbi, "distribute", [], `Split on ${c.short}: 80% is in the treasury.`)}
                   className="h-10 px-5 rounded-full bg-ink text-paper font-semibold text-[0.875rem] disabled:opacity-40"
                 >
                   {busy === key ? "Splitting…" : "Split"}
@@ -431,15 +447,15 @@ export function MoneyPanel() {
         })}
         {sellable.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {RACE_CHAINS.filter((c) => sellable.some((r) => r.chain.chainId === c.chainId)).map((c) => (
+            {[...new Set(sellable.map((r) => r.chain))].map((c) => (
               <button
-                key={c.chainId}
+                key={`${c.chainId}-${c.stack}`}
                 type="button"
                 disabled={!!busy || !isTreasury}
                 onClick={() => void sellChain(c)}
                 className="h-11 px-5 rounded-full bg-ink text-paper font-semibold text-[0.875rem] disabled:opacity-40"
               >
-                {busy === `sellall-${c.chainId}` ? "Selling…" : `Sell all on ${c.short} for USDC`}
+                {busy === `sellall-${c.chainId}-${c.stack}` ? "Selling…" : `Sell all on ${c.short}${RACE_SETS.length > 1 ? ` (v${c.stack})` : ""} for USDC`}
               </button>
             ))}
           </div>

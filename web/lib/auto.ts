@@ -1,5 +1,5 @@
 import { maxUint256, parseAbi, type Address, type Chain, type Hex } from "viem";
-import { RACE_CHAINS, raceChain, raceClient, raceErc20Abi, type RaceChain } from "./race";
+import { RACE_SETS, raceChain, raceClient, raceErc20Abi, type RaceChain } from "./race";
 import { homeChain } from "./racecross";
 import { authedDelete, authedGet, authedPost, type SignFn } from "./alerts";
 import { call, type Call } from "./tx";
@@ -77,7 +77,9 @@ export type AutoPlan = {
  * goes through Across to that chain's RaceCross (race coins only); wallets buy where they are.
  */
 export function planAuto(kind: AutoKind, coin: AutoCoin, coinChain: RaceChain, emailAccount: boolean): AutoPlan | { error: string } {
-  const home = homeChain();
+  // the home chain of the coin's own contract set (its AutoOrders routes dips to that set's RaceCross)
+  const base = homeChain();
+  const home = base ? (raceChain(base.chainId, coinChain.stack) ?? base) : null;
   const onHome = !!home && home.chainId === coinChain.chainId;
   if (kind !== "dip") {
     if (!autoReady(coinChain)) return { error: `Auto orders aren't open on ${coinChain.short} yet.` };
@@ -125,6 +127,8 @@ export function minOutFor(o: { kind: AutoKind; coin: AutoCoin; amountIn: bigint;
 export type StoredOrder = {
   id: number;
   chainId: number;
+  /** The AutoOrders contract it was signed for (v7 and v8 each have their own). */
+  contract?: string;
   kind: AutoKind;
   coin: string;
   coinChain: number;
@@ -233,7 +237,8 @@ export async function cancelAuto(sign: SignFn, id: number, sendOn?: PlaceDeps["s
   await authedDelete(sign, `auto/${id}`);
   ordersChangedAuto();
   const o = mine.find((x) => x.id === id);
-  const c = o ? RACE_CHAINS.find((x) => x.chainId === o.chainId && x.auto) : undefined;
+  const sets = RACE_SETS.flat().filter((x) => x.chainId === o?.chainId && x.auto);
+  const c = o ? (sets.find((x) => x.auto!.toLowerCase() === (o.contract ?? "").toLowerCase()) ?? (o.contract ? undefined : sets[0])) : undefined;
   if (!sendOn || !o?.nonce || !c) return false;
   try {
     await sendOn(c, [call(c.auto!, autoAbi, "cancel", [BigInt(o.nonce)])]);
@@ -249,4 +254,4 @@ export function ordersChangedAuto() {
 }
 
 /** Any chain with auto orders on this site (the Auto tab shows only then). */
-export const autoAnywhere = () => RACE_CHAINS.some((c) => !!c.auto);
+export const autoAnywhere = () => RACE_SETS.flat().some((c) => !!c.auto);

@@ -146,14 +146,19 @@ function throttled(pub, gapMs) {
 export function loadRaceChains(log = console.log) {
   // RACE_CHAINS_FILE: race-chains.json (testnet) or race-chains-mainnet.json; a bare name is
   // looked up next to this file
-  const name = env("RACE_CHAINS_FILE", "race-chains.json");
-  const file = name.startsWith("/") ? name : join(HERE, name);
-  let all;
-  try {
-    all = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    return { chains: [], byEid: new Map() };
+  // Several files, comma-separated, one per contract set ("stack"): v7 coins keep their own
+  // contracts while new launches use v8's (race-chains-mainnet.json,race-chains-mainnet-v8.json).
+  // Each entry says its stack ("stack": 8); entries without one are v7.
+  let all = [];
+  for (const name of env("RACE_CHAINS_FILE", "race-chains.json").split(",").map((s) => s.trim()).filter(Boolean)) {
+    const file = name.startsWith("/") ? name : join(HERE, name);
+    try {
+      all.push(...JSON.parse(readFileSync(file, "utf8")));
+    } catch {
+      log(`race indexer: can't read ${name}`);
+    }
   }
+  if (!all.length) return { chains: [], byEid: new Map() };
   const byEid = new Map(all.map((d) => [Number(d.eid), Number(d.chainId)]));
   const chains = [];
   for (const d of all) {
@@ -165,8 +170,12 @@ export function loadRaceChains(log = console.log) {
       nativeCurrency: { name: "native", symbol: "N", decimals: 18 },
       rpcUrls: { default: { http: rpcs } },
     });
+    const stack = Number(d.stack ?? 7);
     chains.push({
       ...d,
+      stack,
+      // each stack keeps its own place in the chain (race_state), v7 under the chain id itself
+      stateKey: stack === 7 ? Number(d.chainId) : stack * 100_000_000 + Number(d.chainId),
       chainId: Number(d.chainId),
       eid: Number(d.eid),
       kind: d.builderKind, // eth | pcs | usdc
@@ -192,7 +201,7 @@ export function loadRaceChains(log = console.log) {
       priceCache: { at: 0, usd: 0 },
     });
   }
-  if (chains.length) log(`race indexer: ${chains.map((c) => c.chainId).join(", ")}`);
+  if (chains.length) log(`race indexer: ${chains.map((c) => (c.stack === 7 ? c.chainId : `${c.chainId} (v${c.stack})`)).join(", ")}`);
   return { chains, byEid };
 }
 
@@ -280,8 +289,8 @@ export async function raceRange(pool, c, byEid, from, to) {
 
   // ---- RPC phase (no database transaction open while waiting on the chain)
   const before = await pool.query(
-    `select r.coin_id, r.pool_id, k.coin, k.creator from race_chains r join race_coins k on k.id = r.coin_id where r.chain_id = $1`,
-    [c.chainId]
+    `select r.coin_id, r.pool_id, k.coin, k.creator from race_chains r join race_coins k on k.id = r.coin_id where r.chain_id = $1 and k.stack = $2`,
+    [c.chainId, c.stack]
   );
   const knownTokens = before.rows.map((r) => getAddress(r.coin));
   // What to read: each of sasa's contracts with its own events, and the coins' transfers.
@@ -355,12 +364,12 @@ export async function raceRange(pool, c, byEid, from, to) {
       const id = lc(a.coinId);
       const start = new Date(launchedAt * 1000);
       await db.query(
-        `insert into race_coins (id, coin, creator, name, symbol, logo, description, fee_mode, eids, launched_at, ends_at, created_block)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        `insert into race_coins (id, coin, creator, name, symbol, logo, description, fee_mode, eids, launched_at, ends_at, created_block, stack)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          on conflict (id) do update set launched_at = least(race_coins.launched_at, excluded.launched_at),
                                         ends_at = greatest(race_coins.ends_at, excluded.ends_at)`,
         [id, lc(coin), lc(a.creator), a.name, a.symbol, a.logo, a.description, Number(a.feeMode), a.eids.map(Number), start,
-         new Date((launchedAt + RACE_SECONDS) * 1000), l.blockNumber.toString()]
+         new Date((launchedAt + RACE_SECONDS) * 1000), l.blockNumber.toString(), c.stack]
       );
       await db.query(
         `insert into race_chains (coin_id, chain_id, eid, seat, pool_id, native, launched_at, ends_at) values ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -372,8 +381,8 @@ export async function raceRange(pool, c, byEid, from, to) {
 
     // Everything this chain knows about (including the launches just written).
     const known = await db.query(
-      `select r.coin_id, r.pool_id, k.coin, k.creator from race_chains r join race_coins k on k.id = r.coin_id where r.chain_id = $1`,
-      [c.chainId]
+      `select r.coin_id, r.pool_id, k.coin, k.creator from race_chains r join race_coins k on k.id = r.coin_id where r.chain_id = $1 and k.stack = $2`,
+      [c.chainId, c.stack]
     );
     const byCoin = new Map(known.rows.map((r) => [r.coin, r]));
     const byPool = new Map(known.rows.filter((r) => r.pool_id).map((r) => [r.pool_id, r]));
@@ -510,7 +519,7 @@ export async function raceRange(pool, c, byEid, from, to) {
 
     await db.query(
       `insert into race_state (chain_id, last_block) values ($1,$2) on conflict (chain_id) do update set last_block = excluded.last_block`,
-      [c.chainId, to.toString()]
+      [c.stateKey, to.toString()]
     );
     await db.query("commit");
     return { launches: launches.length, swaps, transfers: transferLogs.length };
@@ -535,7 +544,7 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
   let target = null;
   for (;;) {
     try {
-      const st = await pool.query("select last_block from race_state where chain_id = $1", [c.chainId]);
+      const st = await pool.query("select last_block from race_state where chain_id = $1", [c.stateKey]);
       const from = st.rowCount ? BigInt(st.rows[0].last_block) + 1n : c.startBlock;
       let tip = (await c.pub.getBlockNumber()) - CONFIRMATIONS;
       if (once) {
@@ -608,15 +617,15 @@ export function classifyRpcError(e) {
 
 /** During a race: each chain's pool money, read straight from the builder every few seconds. */
 async function liveRaceMoney(pool, chains, log) {
-  const byChain = new Map(chains.map((c) => [c.chainId, c]));
+  const byChain = new Map(chains.map((c) => [`${c.chainId}:${c.stack}`, c]));
   for (;;) {
     try {
       const r = await pool.query(
-        `select r.coin_id, r.chain_id, k.coin from race_chains r join race_coins k on k.id = r.coin_id
+        `select r.coin_id, r.chain_id, k.coin, k.stack from race_chains r join race_coins k on k.id = r.coin_id
          where r.state = 1 and r.reported_usd is null and k.launched_at > now() - interval '20 minutes'`
       );
       for (const row of r.rows) {
-        const c = byChain.get(row.chain_id);
+        const c = byChain.get(`${row.chain_id}:${row.stack ?? 7}`);
         if (!c) continue;
         try {
           await prepare(c);

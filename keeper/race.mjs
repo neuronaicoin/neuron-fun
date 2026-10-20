@@ -66,6 +66,8 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 const DRY = env("DRY_RUN", "false") === "true";
 const DEPLOYMENTS = env("DEPLOYMENTS", "../contracts-v7/deployments/race");
 const STATE_FILE = env("STATE_FILE", "./race-state.json");
+// a second keeper for another contract set (v8) runs under its own name (alerts, heartbeat)
+const KEEPER_NAME = env("KEEPER_NAME", "race-keeper");
 const LZ_FEE_DEFAULT = BigInt(env("LZ_FEE_WEI", "300000000000000"));
 // per chain: LZ_FEE_WEI_<chainId> (Arc pays gas in USDC, 18 decimals natively: its fee differs)
 const lzFee = (c) => BigInt(process.env[`LZ_FEE_WEI_${c.chainId}`] || LZ_FEE_DEFAULT);
@@ -457,7 +459,7 @@ export async function main(mode = "full") {
   const fast = mode === "fast";
   const chains = (CHAINS ??= loadChains());
   if (chains.length === 0) throw new Error("no chains configured");
-  if (!fast) await heartbeat("race-keeper", "pass started");
+  if (!fast) await heartbeat(KEEPER_NAME, "pass started");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
   // gas: the race fees arrive here as USDC; when ETH / BNB runs low a few are swapped into it
   for (const c of fast ? [] : chains) {
@@ -548,7 +550,7 @@ export async function main(mode = "full") {
     }
   }
   if (!DRY) writeState(STATE_FILE, state);
-  await heartbeat("race-keeper", `${Object.keys(state.coins).length} coins`);
+  await heartbeat(KEEPER_NAME, `${Object.keys(state.coins).length} coins`);
   // the indexer feeds the site: tell the admin if it went quiet
   const quiet = await staleServices(["indexer"], 15).catch(() => []);
   if (quiet.length) await alert("race keeper", "indexer-quiet", `the indexer hasn't reported for 15+ minutes; check it on Railway.`);
