@@ -122,7 +122,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 load={(frame) => fetchExtCandles(coin.network, coin.pool!, coin.address, frame)}
                 refreshMs={30_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
-                emptyText="No trades in this period yet."
+                emptyText="No chart data for this coin yet."
               />
             </section>
           )}
