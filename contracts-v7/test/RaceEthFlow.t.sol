@@ -14,6 +14,8 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {IPositionDescriptor} from "@uniswap/v4-periphery/src/interfaces/IPositionDescriptor.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
@@ -388,6 +390,44 @@ abstract contract EthRaceBase is Test, DeployPermit2 {
         assertEq(eb.pendingDollars(coin), 0);
         assertEq(usdcA.balanceOf(address(eb)), 0, "all arriving USDC became ETH");
         assertGt(_buyEth(coin, bob, 0.01 ether), 0);
+    }
+
+    /// The coin's price on the ETH chain, growing when the coin gets dearer (ETH = currency0).
+    function _tickPriceA(address coin) internal view returns (int256) {
+        (, int24 tick,,) = StateLibrary.getSlot0(pmA, PoolIdLibrary.toId(eb.poolKeyFor(coin)));
+        return -int256(tick);
+    }
+
+    /// v8: the money from the losing chain lifts the ETH chain's price and lands as liquidity.
+    function test_mergeRaisesPriceEth() public {
+        address coin = _launchBoth(5 * D, 5 * D, 0);
+        _buyEth(coin, alice, 0.2 ether);
+        _buyUsd(coin, bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderEth.State.Won));
+        uint256 supply0 = IERC20(coin).totalSupply();
+        int256 p0 = _tickPriceA(coin);
+        consB.forward(_coinId());
+        assertGt(_tickPriceA(coin), p0, "the merge buy lifted the price");
+        assertEq(eb.extraPositionCount(coin), 1);
+        assertLe(IERC20(coin).totalSupply(), supply0, "nothing minted");
+        assertEq(usdcA.balanceOf(address(eb)), 0, "all arriving USDC used");
+        assertGt(_buyEth(coin, bob, 0.01 ether), 0);
+    }
+
+    /// v8: a pumped coin (>20% above its race-end price) gets no merge buy.
+    function test_mergeSkipsPumpedCoinEth() public {
+        address coin = _launchBoth(5 * D, 5 * D, 0);
+        _buyEth(coin, alice, 0.2 ether);
+        _buyUsd(coin, bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        _buyEth(coin, bob, 1 ether);
+        int256 p0 = _tickPriceA(coin);
+        consB.forward(_coinId());
+        assertEq(_tickPriceA(coin), p0, "no merge buy on a pumped coin");
+        assertEq(eb.extraPositionCount(coin), 1, "the money still lands in the pool");
     }
 
     /// USDC chain wins: the ETH pool is emptied once, its ETH swapped to USDC at a fair price.

@@ -123,6 +123,7 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
     mapping(address who => uint256) public heldFor;
     uint256 public dollarsReserved; // dollars kept here for buybacks and failed payouts
     bool private _ownSwap;
+    uint160 private _swapLimit; // v8 merge buy: the price the swap stops at (0 = no limit)
 
     event Bound(address factory, address consolidator, address bridge);
     event PoolOpened(address indexed coin, uint256 indexed positionId, uint256 coinsIn, uint160 sqrtPriceX96);
@@ -130,6 +131,8 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
     event RaceWon(address indexed coin, uint32 winnerEid);
     event RaceLost(address indexed coin, uint32 winnerEid, uint256 usdcOut, uint256 coinsBurned, uint256 gradFee);
     event Deepened(address indexed coin, uint256 indexed positionId, uint256 usdcIn);
+    /// @notice v8: part of the money that arrived from the losing chains bought coins in the pool.
+    event MergeBuy(address indexed coin, uint256 usdcSpent, uint256 coinsBought);
     event FeesCollected(address indexed coin, uint256 usdcFees, uint256 coinFees);
     event BuybackFunded(address indexed coin, uint256 amount);
     event BuybackDone(address indexed coin, uint256 usdcSpent, uint256 coinsBurned);
@@ -152,6 +155,7 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
     error NotOurSwap();
     error Slippage(uint256 got, uint256 minimum);
     error NotKeeper();
+    error NotSelf();
 
     constructor(
         IPoolManager poolManager_,
@@ -429,11 +433,89 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
         if (r.state == State.None || r.state == State.Lost) revert NotOpen();
         if (amount == 0) revert NothingToDo();
         if (usdc.balanceOf(address(this)) < dollarsReserved + amount) revert NotDelivered();
-        if (toBuyback || !_deepen(coin, amount)) {
+        if (toBuyback || !(_tryMerge(coin, amount) || _deepen(coin, amount))) {
             buybackFunds[coin] += amount;
             dollarsReserved += amount;
             emit BuybackFunded(coin, amount);
         }
+    }
+
+    /// @notice v8: how far the coin may have risen since the race ended before arriving money
+    /// stops buying it (20%), and how far the merge buy itself may push the price (2x).
+    int24 public constant MERGE_MAX_RISE_TICKS = 1823; // ~ +20%
+    int24 public constant MERGE_CAP_TICKS = 6932; // ~ x2
+
+    /// @dev The merge runs as an external self-call: if anything in it fails, it rolls back
+    /// alone and the old buy-wall placement is used, so a delivery from the bridge never fails.
+    function _tryMerge(address coin, uint256 amount) internal returns (bool) {
+        try this.mergeArrived(coin, amount) returns (bool ok) {
+            return ok;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * @notice v8 merge: half of the arriving dollars buy the coin in its pool (price up, a
+     * green candle), then the coins bought and the other half go in as one full-range
+     * position at the new price, where every screener counts liquidity. Nothing minted;
+     * leftover dollars fund buybacks, leftover coins are burned. Returns false (the buy-wall
+     * placement is used instead) if the coin is already >20% above its race-end price.
+     * @dev Only via `_tryMerge`.
+     */
+    function mergeArrived(address coin, uint256 amount) external returns (bool) {
+        if (msg.sender != address(this)) revert NotSelf();
+        if (amount < 2) return false;
+        RaceEnd storage e = raceEnd[coin];
+        if (!e.recorded) return false;
+        PoolKey memory key = poolKeyFor(coin);
+        (, int24 tick,,) = poolManager.getSlot0(key.toId());
+        bool u0 = usdcIsCurrency0(coin);
+        int24 capTick;
+        if (!u0) {
+            // coin = currency0: the coin gets dearer as the tick RISES
+            if (tick > e.tick + MERGE_MAX_RISE_TICKS) return false;
+            capTick = e.tick + MERGE_CAP_TICKS;
+            if (capTick > TickMath.MAX_TICK - 1) capTick = TickMath.MAX_TICK - 1;
+        } else {
+            // coin = currency1: the coin gets dearer as the tick FALLS
+            if (tick < e.tick - MERGE_MAX_RISE_TICKS) return false;
+            capTick = e.tick - MERGE_CAP_TICKS;
+            if (capTick < TickMath.MIN_TICK + 1) capTick = TickMath.MIN_TICK + 1;
+        }
+        _swapLimit = TickMath.getSqrtPriceAtTick(capTick);
+        (uint256 coins, uint256 spent) = _builderSwap(coin, amount / 2, address(this));
+        _swapLimit = 0;
+        emit MergeBuy(coin, spent, coins);
+
+        uint256 left = amount - spent;
+        (uint160 sqrtP,,,) = poolManager.getSlot0(key.toId());
+        int24 lower = TickMath.minUsableTick(TICK_SPACING);
+        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
+        uint256 a0 = u0 ? left : coins;
+        uint256 a1 = u0 ? coins : left;
+        uint128 liquidity =
+            LiquidityAmounts.getLiquidityForAmounts(sqrtP, TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), a0, a1);
+        uint256 usdcUsed;
+        uint256 coinsUsed;
+        if (liquidity > 0) {
+            uint256 ub = usdc.balanceOf(address(this));
+            uint256 cb = IERC20(coin).balanceOf(address(this));
+            _letPositionManagerPull(coin, coins);
+            uint256 positionId = _newPosition(key, lower, upper, liquidity, a0, a1, address(usdc), left);
+            _letPositionManagerPull(coin, 0);
+            usdcUsed = ub - usdc.balanceOf(address(this));
+            coinsUsed = cb - IERC20(coin).balanceOf(address(this));
+            _extraPositions[coin].push(positionId);
+            emit Deepened(coin, positionId, spent + usdcUsed);
+        }
+        if (left > usdcUsed) {
+            buybackFunds[coin] += left - usdcUsed;
+            dollarsReserved += left - usdcUsed;
+            emit BuybackFunded(coin, left - usdcUsed);
+        }
+        if (coins > coinsUsed) IRaceCoin(coin).burn(coins - coinsUsed);
+        return true;
     }
 
     function _deepen(address coin, uint256 amount) internal returns (bool) {
@@ -578,7 +660,7 @@ contract RaceBuilder is IUnlockCallback, ReentrancyGuard {
             SwapParams({
                 zeroForOne: zeroForOne,
                 amountSpecified: -int256(amountIn),
-                sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                sqrtPriceLimitX96: _swapLimit != 0 ? _swapLimit : (zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1)
             }),
             bytes("")
         );

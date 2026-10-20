@@ -534,6 +534,46 @@ abstract contract PcsRaceBase is Test, DeployPermit2 {
         assertGt(_buyBnb(coin, bob, 0.01 ether), 0, "trading goes on");
     }
 
+    /// The coin's price on the BNB chain, growing when the coin gets dearer (BNB = currency0).
+    function _tickPriceA(address coin) internal view returns (int256) {
+        (, int24 tick,,) = clpm.getSlot0(pb.poolIdFor(coin));
+        return -int256(tick);
+    }
+
+    /// v8: the money from the losing chain lifts the BNB chain's price and lands as liquidity.
+    function test_mergeRaisesPriceBnb() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        _buyBnb(coin, alice, 1 ether);
+        _buyUsd(bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_stateA(coin)), uint8(RaceBuilderPcs.State.Won));
+        uint256 supply0 = IERC20(coin).totalSupply();
+        int256 p0 = _tickPriceA(coin);
+        consB.forward(_coinId());
+        assertGt(_tickPriceA(coin), p0, "the merge buy lifted the price");
+        RaceBuilderPcs.Range[] memory ex = pb.extraPositions(coin);
+        assertEq(ex.length, 1);
+        assertEq(ex[0].lower, PcsTickMath.minUsableTick(200), "full range");
+        assertLe(IERC20(coin).totalSupply(), supply0, "nothing minted");
+        assertEq(usdcA.balanceOf(address(pb)), 0, "all arriving USDC used");
+        assertGt(_buyBnb(coin, bob, 0.01 ether), 0);
+    }
+
+    /// v8: a pumped coin (>20% above its race-end price) gets no merge buy.
+    function test_mergeSkipsPumpedCoinBnb() public {
+        address coin = _launchBoth(5 * U, 5 * D, 0);
+        _buyBnb(coin, alice, 1 ether);
+        _buyUsd(bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        _buyBnb(coin, bob, 5 ether);
+        int256 p0 = _tickPriceA(coin);
+        consB.forward(_coinId());
+        assertEq(_tickPriceA(coin), p0, "no merge buy on a pumped coin");
+        assertEq(pb.extraPositions(coin).length, 1, "the money still lands in the pool");
+    }
+
     /// USDC chain wins: the BNB pool is emptied once, its BNB swapped to USDC at a fair price.
     /// Once the race is over, a big BNB buy on the losing BNB chain can't make it win: the BNB
     /// in the pool when the five minutes ended is what counts (written down before that buy).

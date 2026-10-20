@@ -45,6 +45,8 @@ contract RaceForkLowTest is RaceForkBase {
     function test_fork_router() public { _flow_router(); }
     function test_fork_lostIsFinal() public { _flow_lostIsFinal(); }
     function test_fork_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
+    function test_fork_mergeRaisesPrice() public { _flow_mergeRaisesPrice(); }
+    function test_fork_mergeSkipsPumpedCoin() public { _flow_mergeSkipsPumpedCoin(); }
     function test_fork_singleChain() public { _flow_singleChain(); }
     function test_fork_buybackMode() public { _flow_buybackMode(); }
     function testFuzz_fork_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }
@@ -59,6 +61,8 @@ contract RaceForkHighTest is RaceForkBase {
     function test_fork_router() public { _flow_router(); }
     function test_fork_lostIsFinal() public { _flow_lostIsFinal(); }
     function test_fork_deepenAfterDrop() public { _flow_deepenAfterDrop(); }
+    function test_fork_mergeRaisesPrice() public { _flow_mergeRaisesPrice(); }
+    function test_fork_mergeSkipsPumpedCoin() public { _flow_mergeSkipsPumpedCoin(); }
     function test_fork_singleChain() public { _flow_singleChain(); }
     function test_fork_buybackMode() public { _flow_buybackMode(); }
     function testFuzz_fork_conservation(uint256 seed) public { _flow_fuzzConservation(seed); }

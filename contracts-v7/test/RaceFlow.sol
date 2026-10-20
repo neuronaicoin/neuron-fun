@@ -14,6 +14,8 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {PositionInfo, PositionInfoLibrary} from "@uniswap/v4-periphery/src/libraries/PositionInfoLibrary.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {IPositionDescriptor} from "@uniswap/v4-periphery/src/interfaces/IPositionDescriptor.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
@@ -988,6 +990,56 @@ abstract contract RaceFlow is Test, DeployPermit2 {
         assertGt(_sell(a, ca, bob, IERC20(ca).balanceOf(bob)), 0);
     }
 
+    /// The coin's price in dollars, as a number that grows when the coin gets dearer.
+    function _coinPrice(Net memory c, address coin) internal view returns (int256) {
+        (, int24 tick,,) = StateLibrary.getSlot0(c.pm, PoolIdLibrary.toId(c.builder.poolKeyFor(coin)));
+        return c.builder.usdcIsCurrency0(coin) ? -int256(tick) : int256(tick);
+    }
+
+    /// v8: the money from the losing chain lifts the winner's price and lands as full-range
+    /// liquidity (counted by every screener); nothing is minted.
+    function _flow_mergeRaisesPrice() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 300 * D);
+        _buy(b, cb, bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        assertEq(uint8(_state(a, ca)), uint8(RaceBuilder.State.Won));
+        uint256 supply0 = IERC20(ca).totalSupply();
+        int256 p0 = _coinPrice(a, ca);
+        b.cons.forward(_coinId());
+        assertGt(_coinPrice(a, ca), p0, "the merge buy lifted the price");
+        uint256[] memory extra = a.builder.extraPositions(ca);
+        assertEq(extra.length, 1);
+        (, PositionInfo info) = a.posm.getPoolAndPositionInfo(extra[0]);
+        assertEq(PositionInfoLibrary.tickLower(info), TickMath.minUsableTick(200), "full range");
+        assertEq(PositionInfoLibrary.tickUpper(info), TickMath.maxUsableTick(200), "full range");
+        assertGt(a.posm.getPositionLiquidity(extra[0]), 0);
+        assertLe(IERC20(ca).totalSupply(), supply0, "nothing minted");
+        // trading goes on both ways
+        uint256 got = _buy(a, ca, bob, 20 * D);
+        assertGt(_sell(a, ca, bob, got), 0);
+        assertGt(_sell(a, ca, alice, IERC20(ca).balanceOf(alice)), 0);
+    }
+
+    /// v8: a coin pushed more than 20% above its race-end price doesn't get the merge buy (the
+    /// dollars go below the price as before), so pumping it before the money lands pays nothing.
+    function _flow_mergeSkipsPumpedCoin() internal {
+        (address ca,) = _launch(a, _eids2(), 5 * D, 0);
+        (address cb,) = _launch(b, _eids2(), 5 * D, 0);
+        _buy(a, ca, alice, 300 * D);
+        _buy(b, cb, bob, 200 * D);
+        vm.warp(block.timestamp + 301);
+        _endRace();
+        _buy(a, ca, bob, 600 * D); // pushes the price far above the race end
+        int256 p0 = _coinPrice(a, ca);
+        b.cons.forward(_coinId());
+        assertEq(_coinPrice(a, ca), p0, "no merge buy on a pumped coin");
+        uint256[] memory extra = a.builder.extraPositions(ca);
+        assertEq(extra.length, 1, "the money still lands in the pool");
+    }
+
     function _posId(Net memory c, address coin) internal view returns (uint256 id) {
         (id,,,,,,) = c.builder.races(coin);
     }
@@ -1026,6 +1078,8 @@ contract RaceLowTest is RaceFlow {
     function test_winnerTradesAfterRecord() public { _flow_winnerTradesAfterRecord(); }
     function test_pumpBeforeArrivalGainsNothing() public { _flow_pumpBeforeArrivalGainsNothing(); }
     function test_anyoneRecordsAtTheEnd() public { _flow_anyoneRecordsAtTheEnd(); }
+    function test_mergeRaisesPrice() public { _flow_mergeRaisesPrice(); }
+    function test_mergeSkipsPumpedCoin() public { _flow_mergeSkipsPumpedCoin(); }
 }
 
 /// dollars sort after the coins (USDC is currency1)
@@ -1057,6 +1111,8 @@ contract RaceHighTest is RaceFlow {
     function test_winnerTradesAfterRecord() public { _flow_winnerTradesAfterRecord(); }
     function test_pumpBeforeArrivalGainsNothing() public { _flow_pumpBeforeArrivalGainsNothing(); }
     function test_anyoneRecordsAtTheEnd() public { _flow_anyoneRecordsAtTheEnd(); }
+    function test_mergeRaisesPrice() public { _flow_mergeRaisesPrice(); }
+    function test_mergeSkipsPumpedCoin() public { _flow_mergeSkipsPumpedCoin(); }
 }
 
 /// A smart wallet that accepts no signature (ERC-1271 always says no).

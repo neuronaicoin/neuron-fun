@@ -120,7 +120,8 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         BuyWithUsdc, // USDC -> ETH (dollar pool) -> coin (coin pool)
         BuyWithEth, // ETH -> coin (coin pool)
         EthToUsdc, // dollar pool
-        UsdcToEth // dollar pool
+        UsdcToEth, // dollar pool
+        BuyWithEthCapped // ETH -> coin (coin pool), stopping at a price limit (`minMid` = the limit's tick)
     }
 
     IPoolManager public immutable poolManager;
@@ -164,6 +165,8 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
     event HandOverPending(address indexed coin, uint256 ethAmount);
     event HandedOver(address indexed coin, uint256 ethIn, uint256 usdcOut, uint256 gradFee);
     event Deepened(address indexed coin, uint256 indexed positionId, uint256 ethIn);
+    /// @notice v8: part of the money that arrived from the losing chains bought coins in the pool.
+    event MergeBuy(address indexed coin, uint256 ethSpent, uint256 coinsBought);
     event ArrivalPending(address indexed coin, uint256 usdcAmount);
     event FeesCollected(address indexed coin, uint256 ethFees, uint256 coinFees);
     event BuybackFunded(address indexed coin, uint256 amount);
@@ -545,11 +548,73 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         dollarsReserved -= amount;
         uint256 minEth = (_usdcToEth(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 eth = _swap(Op.UsdcToEth, coin, amount, minEth, address(this));
-        if (toBuyback || !_deepen(coin, eth)) {
+        if (toBuyback || !(_merge(coin, eth) || _deepen(coin, eth))) {
             buybackFunds[coin] += eth;
             ethReserved += eth;
             emit BuybackFunded(coin, eth);
         }
+    }
+
+    /// @notice v8: how far the coin may have risen since the race ended before arriving money
+    /// stops buying it (20%), and how far the merge buy itself may push the price (2x the
+    /// race-end price). Ticks: 1 tick = 0.01%.
+    int24 public constant MERGE_MAX_RISE_TICKS = 1823; // ~ +20%
+    int24 public constant MERGE_CAP_TICKS = 6932; // ~ x2
+
+    /**
+     * @notice v8 merge: the money from the losing chains shows up on the winning chain's
+     * chart and liquidity. Half of it buys the coin in its own pool (the price rises, a
+     * green candle), then the coins bought and the other half are added together as one
+     * full-range position at the new price (the pool's liquidity grows where every screener
+     * counts it). Nothing is minted; leftovers: ETH funds buybacks, coins are burned.
+     * Returns false (the old buy-wall placement is used instead) when the coin's price is
+     * already more than 20% above where the race ended, so nobody can pump it just before
+     * the money lands and sell into the merge buy.
+     */
+    function _merge(address coin, uint256 amount) internal returns (bool) {
+        if (amount < 2) return false;
+        PoolKey memory key = poolKeyFor(coin);
+        (, int24 tick,,) = poolManager.getSlot0(key.toId());
+        RaceEnd storage e = raceEnd[coin];
+        if (!e.recorded) return false;
+        // ETH = currency0: the coin gets dearer as the tick FALLS
+        if (tick < e.tick - MERGE_MAX_RISE_TICKS) return false;
+        int24 capTick = e.tick - MERGE_CAP_TICKS;
+        if (capTick < TickMath.MIN_TICK + 1) capTick = TickMath.MIN_TICK + 1;
+
+        uint256 half = amount / 2;
+        uint256 ethBefore = address(this).balance;
+        uint256 coinBefore = IERC20(coin).balanceOf(address(this));
+        _swap(Op.BuyWithEthCapped, coin, half, uint256(int256(capTick) + int256(uint256(uint24(type(int24).max)))), address(this));
+        uint256 spent = ethBefore - address(this).balance;
+        uint256 coins = IERC20(coin).balanceOf(address(this)) - coinBefore;
+        emit MergeBuy(coin, spent, coins);
+
+        uint256 ethLeft = amount - spent;
+        (uint160 sqrtP,,,) = poolManager.getSlot0(key.toId());
+        int24 lower = TickMath.minUsableTick(TICK_SPACING);
+        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtP, TickMath.getSqrtPriceAtTick(lower), TickMath.getSqrtPriceAtTick(upper), ethLeft, coins
+        );
+        uint256 coinsUsed;
+        uint256 ethUsed;
+        if (liquidity > 0) {
+            uint256 eb = address(this).balance;
+            uint256 cb = IERC20(coin).balanceOf(address(this));
+            uint256 positionId = _newPosition(key, lower, upper, liquidity, ethLeft, coins, coin, coins, ethLeft);
+            ethUsed = eb - address(this).balance;
+            coinsUsed = cb - IERC20(coin).balanceOf(address(this));
+            _extraPositions[coin].push(positionId);
+            emit Deepened(coin, positionId, spent + ethUsed);
+        }
+        if (ethLeft > ethUsed) {
+            buybackFunds[coin] += ethLeft - ethUsed;
+            ethReserved += ethLeft - ethUsed;
+            emit BuybackFunded(coin, ethLeft - ethUsed);
+        }
+        if (coins > coinsUsed) IRaceCoinEth(coin).burn(coins - coinsUsed);
+        return true;
     }
 
     function _deepen(address coin, uint256 amount) internal returns (bool) {
@@ -677,6 +742,10 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
         } else if (op == Op.BuyWithEth) {
             out = _exactIn(poolKeyFor(coin), true, amountIn);
             _settleAll(Currency.wrap(coin), to);
+        } else if (op == Op.BuyWithEthCapped) {
+            int24 limitTick = int24(int256(minMid) - int256(uint256(uint24(type(int24).max))));
+            out = _exactInLimit(poolKeyFor(coin), true, amountIn, TickMath.getSqrtPriceAtTick(limitTick));
+            _settleAll(Currency.wrap(coin), to);
         } else if (op == Op.EthToUsdc) {
             out = _exactIn(dk, true, amountIn); // ETH -> USDC
             if (out < minMid) revert Slippage(out, minMid);
@@ -687,6 +756,12 @@ contract RaceBuilderEth is IUnlockCallback, ReentrancyGuard {
             _settleAll(Currency.wrap(address(0)), to);
         }
         return abi.encode(out);
+    }
+
+    function _exactInLimit(PoolKey memory key, bool zeroForOne, uint256 amountIn, uint160 limit) private returns (uint256 out) {
+        BalanceDelta d = poolManager.swap(key, SwapParams({zeroForOne: zeroForOne, amountSpecified: -int256(amountIn), sqrtPriceLimitX96: limit}), bytes(""));
+        int128 o = zeroForOne ? d.amount1() : d.amount0();
+        out = o > 0 ? uint256(uint128(o)) : 0;
     }
 
     function _exactIn(PoolKey memory key, bool zeroForOne, uint256 amountIn) private returns (uint256 out) {

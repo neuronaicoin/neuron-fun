@@ -134,7 +134,8 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         Mint, // add a position (pays BNB or coins)
         Collect, // all positions: fees out
         Unwind, // all positions: all liquidity out (losing chain, once)
-        Buy // BNB -> coin
+        Buy, // BNB -> coin
+        BuyCapped // BNB -> coin, stopping at a price limit (v8 merge)
     }
 
     IVault public immutable vault;
@@ -176,6 +177,8 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
     event HandOverPending(address indexed coin, uint256 bnbAmount);
     event HandedOver(address indexed coin, uint256 bnbIn, uint256 usdcOut, uint256 gradFee);
     event Deepened(address indexed coin, uint256 indexed index, uint256 bnbIn);
+    /// @notice v8: part of the money that arrived from the losing chains bought coins in the pool.
+    event MergeBuy(address indexed coin, uint256 bnbSpent, uint256 coinsBought);
     event ArrivalPending(address indexed coin, uint256 usdcAmount);
     event FeesCollected(address indexed coin, uint256 bnbFees, uint256 coinFees);
     event BuybackFunded(address indexed coin, uint256 amount);
@@ -529,11 +532,73 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
         dollarsReserved -= amount;
         uint256 minBnb = (usdcToBnb(amount) * (BPS - MAX_SLIP_BPS)) / BPS;
         uint256 bnb = _usdcToBnb(amount, minBnb);
-        if (toBuyback || !_deepen(coin, bnb)) {
+        if (toBuyback || !(_merge(coin, bnb) || _deepen(coin, bnb))) {
             buybackFunds[coin] += bnb;
             bnbReserved += bnb;
             emit BuybackFunded(coin, bnb);
         }
+    }
+
+    /// @notice v8: how far the coin may have risen since the race ended before arriving money
+    /// stops buying it (20%), and how far the merge buy itself may push the price (2x).
+    int24 public constant MERGE_MAX_RISE_TICKS = 1823; // ~ +20%
+    int24 public constant MERGE_CAP_TICKS = 6932; // ~ x2
+
+    /**
+     * @notice v8 merge (same as the ETH builder): half of the arriving BNB buys the coin in
+     * its pool (price up, a green candle), then the coins bought and the other half go in as
+     * one full-range position at the new price, where every screener counts liquidity.
+     * Nothing minted; leftover BNB funds buybacks, leftover coins are burned. Returns false
+     * (the buy-wall placement is used instead) if the coin is already >20% above its
+     * race-end price, so nobody can pump it just before the money lands.
+     */
+    function _merge(address coin, uint256 amount) internal returns (bool) {
+        Range[] storage extra = _extra[coin];
+        if (amount < 2 || extra.length >= MAX_EXTRA_POSITIONS) return false;
+        RaceEnd storage e = raceEnd[coin];
+        if (!e.recorded) return false;
+        (, int24 tick,,) = poolManager.getSlot0(poolIdFor(coin));
+        // BNB = currency0: the coin gets dearer as the tick FALLS
+        if (tick < e.tick - MERGE_MAX_RISE_TICKS) return false;
+        int24 capTick = e.tick - MERGE_CAP_TICKS;
+        if (capTick < TickMath.MIN_TICK + 1) capTick = TickMath.MIN_TICK + 1;
+
+        uint256 half = amount / 2;
+        uint256 bnbBefore = address(this).balance;
+        uint256 coinBefore = IERC20(coin).balanceOf(address(this));
+        _lock(abi.encode(Act.BuyCapped, coin, abi.encode(half, address(this), TickMath.getSqrtRatioAtTick(capTick))));
+        uint256 spent = bnbBefore - address(this).balance;
+        uint256 coins = IERC20(coin).balanceOf(address(this)) - coinBefore;
+        emit MergeBuy(coin, spent, coins);
+
+        uint256 bnbLeft = amount - spent;
+        (uint160 sqrtP,,,) = poolManager.getSlot0(poolIdFor(coin));
+        int24 lower = TickMath.minUsableTick(TICK_SPACING);
+        int24 upper = TickMath.maxUsableTick(TICK_SPACING);
+        uint160 sa = TickMath.getSqrtRatioAtTick(lower);
+        uint160 sb = TickMath.getSqrtRatioAtTick(upper);
+        uint128 l0 = _liquidityForAmount0(sqrtP, sb, bnbLeft);
+        uint128 l1 = _liquidityForAmount1(sa, sqrtP, coins);
+        uint128 liquidity = l0 < l1 ? l0 : l1;
+        uint256 bnbUsed;
+        uint256 coinsUsed;
+        if (liquidity > 0) {
+            uint256 index = extra.length;
+            extra.push(Range(lower, upper));
+            uint256 bb = address(this).balance;
+            uint256 cb = IERC20(coin).balanceOf(address(this));
+            _lock(abi.encode(Act.Mint, coin, abi.encode(lower, upper, liquidity, bytes32(index + 1))));
+            bnbUsed = bb - address(this).balance;
+            coinsUsed = cb - IERC20(coin).balanceOf(address(this));
+            emit Deepened(coin, index, spent + bnbUsed);
+        }
+        if (bnbLeft > bnbUsed) {
+            buybackFunds[coin] += bnbLeft - bnbUsed;
+            bnbReserved += bnbLeft - bnbUsed;
+            emit BuybackFunded(coin, bnbLeft - bnbUsed);
+        }
+        if (coins > coinsUsed) IRaceCoinPcs(coin).burn(coins - coinsUsed);
+        return true;
     }
 
     function _deepen(address coin, uint256 amount) internal returns (bool) {
@@ -657,11 +722,11 @@ contract RaceBuilderPcs is ILockCallback, ReentrancyGuard {
             }
         } else {
             uint256 bnbIn;
-            (bnbIn, to) = abi.decode(p, (uint256, address));
+            uint160 limit = TickMath.MIN_SQRT_RATIO + 1;
+            if (act == Act.BuyCapped) (bnbIn, to, limit) = abi.decode(p, (uint256, address, uint160));
+            else (bnbIn, to) = abi.decode(p, (uint256, address));
             BalanceDelta d = poolManager.swap(
-                key,
-                ICLPoolManager.SwapParams({zeroForOne: true, amountSpecified: -int256(bnbIn), sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1}),
-                bytes("")
+                key, ICLPoolManager.SwapParams({zeroForOne: true, amountSpecified: -int256(bnbIn), sqrtPriceLimitX96: limit}), bytes("")
             );
             int128 o = d.amount1();
             out = o > 0 ? uint256(uint128(o)) : 0;
