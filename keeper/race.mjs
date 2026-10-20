@@ -674,7 +674,10 @@ export async function main(mode = "full") {
     // A race takes five minutes; frozen (reported, no verdict) for more than 30 minutes means trouble.
     if (!anySettled && reads.some((r) => r.reported)) {
       coin.frozenSince ??= Date.now();
-      if (Date.now() - coin.frozenSince > STUCK_MS) {
+      // BNB Chain races launched before its start-price fix (Oct 19, 2026 14:27 UTC) can never be
+      // decided (their BNB report doesn't match): they just keep trading, no alert for them
+      const legacyBnb = startedAt > 0 && startedAt < 1792420020 && coin.eids.includes(30102);
+      if (!legacyBnb && Date.now() - coin.frozenSince > STUCK_MS) {
         const missing = reads.filter((r) => !r.reported).map((r) => r.e);
         await alert("race keeper", `stuck-${id}`, `${coin.name}'s race reports haven't all reached Base after ${Math.round(STUCK_MS / 60_000)} minutes${missing.length ? ` (not reported yet: ${missing.join(", ")})` : " (LayerZero delivering slowly or stuck: check layerzeroscan for the hub)"}.`);
       }
