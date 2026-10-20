@@ -803,6 +803,12 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
         .then((m) => m.startRelayer())
         .catch((e) => log(`relayer failed to start: ${e?.message ?? e}`));
     }
+    // new races and results to the Telegram channel (only with TG_POST_TOKEN set)
+    if (process.env.TG_POST_TOKEN) {
+      import("./tgposts.mjs")
+        .then((m) => m.startTgPosts())
+        .catch((e) => log(`telegram posts failed to start: ${e?.message ?? e}`));
+    }
     (async () => {
       log(`race keeper: full pass every ${LOOP_SECONDS}s, quick passes every ${FAST_MS / 1000}s while a race ends`);
       let failures = 0;
