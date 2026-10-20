@@ -116,8 +116,9 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           </section>
 
           {coin.pool && (
-            <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5 min-w-0">
+            <section className="sm:rounded-3xl sm:border sm:border-line sm:bg-surface sm:p-5 min-w-0">
               <PriceChart
+                bleed
                 cacheKey={`ext:${coin.network}:${coin.pool}`}
                 load={(frame) => fetchExtCandles(coin.network, coin.pool!, coin.address, frame)}
                 refreshMs={30_000}

@@ -36,6 +36,7 @@ export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; c
       mcFactor={RACE_SUPPLY}
       height={height}
       seconds
+      bleed
     />
   );
 }
@@ -56,6 +57,7 @@ export function PriceChart({
   onFail,
   mcFactor,
   seconds = false,
+  bleed = false,
 }: {
   cacheKey: string;
   load: (frameSec: number) => Promise<Candle[]>;
@@ -68,6 +70,8 @@ export function PriceChart({
   mcFactor?: number;
   /** offer 1s and 15s candles too (sasa's own coins: every trade is indexed) */
   seconds?: boolean;
+  /** phones: edge to edge */
+  bleed?: boolean;
 }) {
   const [value, setValue] = useState<Value>("mc");
   const k = mcFactor && mcFactor > 0 && value === "mc" ? mcFactor : 1;
@@ -95,6 +99,7 @@ export function PriceChart({
       height={height}
       emptyText={() => emptyText}
       onFail={onFail}
+      bleed={bleed}
       toolbarStart={
         mcFactor && mcFactor > 0 ? (
           <div className="flex bg-night rounded-full p-1" role="group" aria-label="Show">

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from "lightweight-charts";
 import { Sheet } from "./chrome";
+import { haptic } from "@/lib/haptics";
 import { fetchPerpCandles, hlInterval, type PerpCandle } from "@/lib/perps";
 import { hlOnStatus, hlSubscribe, type HlWsCandle } from "@/lib/hlws";
 import {
@@ -172,6 +173,7 @@ export function ProChart({
   emptyText = () => "No price data yet.",
   onFail,
   toolbarStart,
+  bleed = false,
 }: {
   /** what is charted (with the time frame, the cache key) */
   cacheKey: string;
@@ -195,6 +197,8 @@ export function ProChart({
   /** the first load failed and nothing was cached */
   onFail?: () => void;
   toolbarStart?: ReactNode;
+  /** phones: the chart runs from screen edge to screen edge (the page has 1rem side padding) */
+  bleed?: boolean;
 }) {
   const loadRef = useRef(loadCandles);
   loadRef.current = loadCandles;
@@ -228,6 +232,12 @@ export function ProChart({
   const [legend, setLegend] = useState<Legend | null>(null);
   const [ready, setReady] = useState(0);
   const hovering = useRef(false);
+  const touching = useRef(false);
+  /** phones: the chart tools (type, indicators, zoom) open from the "Pro" button */
+  const [tools, setTools] = useState(false);
+  /** a finger or the mouse is on a candle: the price details show (phones hide them otherwise) */
+  const [scrub, setScrub] = useState(false);
+  const tickAt = useRef<Time | undefined>(undefined);
   const indsRef = useRef(inds);
   indsRef.current = inds;
   const hasRsi = inds.some((i) => i.kind === "rsi");
@@ -366,6 +376,8 @@ export function ProChart({
         },
         crosshair: { mode: 0 },
         handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
+        // a flick keeps the chart gliding a little, like on fomo
+        kineticScroll: { touch: true, mouse: false },
         handleScale: { mouseWheel: true, pinch: false, axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true } },
         localization: {
           timeFormatter: (t: Time) =>
@@ -383,11 +395,18 @@ export function ProChart({
 
       chart.subscribeCrosshairMove((p: MouseEventParams<Time>) => {
         if (!alive) return;
+        // a finger sliding along the chart feels each candle it passes (phones)
+        if (touching.current && p.time !== undefined && p.time !== tickAt.current) {
+          tickAt.current = p.time;
+          haptic("soft");
+        }
         if (p.time === undefined || p.logical === undefined) {
+          if (hovering.current) setScrub(false);
           hovering.current = false;
           setLegend(legendAt(rowsRef.current.length - 1));
           return;
         }
+        if (!hovering.current) setScrub(true);
         hovering.current = true;
         const idx = rowsRef.current.findIndex((r) => r.t === Number(p.time));
         setLegend(legendAt(idx >= 0 ? idx : rowsRef.current.length - 1));
@@ -603,6 +622,26 @@ export function ProChart({
 
   usePinchZoom(box, chartRef);
 
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const down = (e: PointerEvent) => {
+      touching.current = e.pointerType === "touch";
+      tickAt.current = undefined;
+    };
+    const up = () => {
+      touching.current = false;
+    };
+    el.addEventListener("pointerdown", down);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      el.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, []);
+
   // Dragging the chart up or down (or the price axis, or a pinch) turns the price autoscale off;
   // an "Auto" button then brings it back, like on TradingView.
   const [manualScale, setManualScale] = useState(false);
@@ -657,10 +696,7 @@ export function ProChart({
   const tone = chg === null ? "" : chg >= 0 ? "text-up" : "text-danger";
   const shownInds = useMemo(() => inds.filter((i) => i.kind !== "vol").length, [inds]);
 
-  return (
-    <div className="flex flex-col gap-2.5 min-w-0">
-      <div className="flex items-center gap-2 flex-wrap">
-        {toolbarStart}
+  const frameButtons = (
         <div className="flex bg-night rounded-full p-1 overflow-x-auto max-w-full no-scrollbar" role="group" aria-label="Time frame">
           {frames.map((f) => (
             <button
@@ -677,6 +713,13 @@ export function ProChart({
             </button>
           ))}
         </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2.5 min-w-0">
+      <div className={"items-center gap-2 flex-wrap " + (tools ? "flex" : "hidden sm:flex")}>
+        {toolbarStart}
+        <div className="hidden sm:contents">{frameButtons}</div>
         <div className="flex bg-night rounded-full p-1" role="group" aria-label="Chart type">
           {(["candles", "line"] as Mode[]).map((m) => (
             <button
@@ -731,10 +774,10 @@ export function ProChart({
         )}
       </div>
 
-      <div className="relative w-full" style={{ height: height + (hasRsi ? RSI_PANE_PX : 0) }}>
+      <div className={"relative " + (bleed ? "-mx-4 sm:mx-0 w-[calc(100%+2rem)] sm:w-full" : "w-full")} style={{ height: height + (hasRsi ? RSI_PANE_PX : 0) }}>
         <div ref={box} className="absolute inset-0" />
         {legend && (
-          <div className="absolute left-1 top-0 z-[2] pointer-events-none text-[0.6875rem] sm:text-[0.75rem] font-mono tabular-nums leading-5 bg-surface/70 rounded-md px-1 max-w-[calc(100%-5rem)]">
+          <div className={(scrub ? "" : "hidden sm:block ") + "absolute left-1 top-0 z-[2] pointer-events-none text-[0.6875rem] sm:text-[0.75rem] font-mono tabular-nums leading-5 bg-surface/70 rounded-md px-1 max-w-[calc(100%-5rem)]"}>
             <div className="flex flex-wrap gap-x-2">
               <span className="text-ink-3">
                 {new Date(legend.t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", ...(frame < 60 ? { second: "2-digit" } : {}), hour12: false })}
@@ -776,6 +819,19 @@ export function ProChart({
             Auto
           </button>
         )}
+      </div>
+
+      {/* phones: time frames under the chart and one button for the rest (like fomo) */}
+      <div className="sm:hidden flex items-center gap-2 min-w-0">
+        <div className="flex-1 min-w-0 flex [&>div]:bg-transparent [&>div]:p-0 [&>div]:w-full [&>div]:justify-between">{frameButtons}</div>
+        <button
+          type="button"
+          onClick={() => setTools((v) => !v)}
+          aria-expanded={tools}
+          className={"h-8 px-3 rounded-full text-[0.8125rem] font-semibold shrink-0 border " + (tools ? "bg-ink text-paper border-ink" : "border-line text-ink-2")}
+        >
+          Pro
+        </button>
       </div>
 
       {picker && <IndicatorSheet inds={inds} onChange={changeInds} onClose={() => setPicker(false)} />}
@@ -927,30 +983,45 @@ export function usePinchZoom(box: RefObject<HTMLDivElement | null>, chartRef: Re
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    let start: { dx: number; dy: number; from: number; to: number; pFrom: number; pTo: number } | null = null;
-    const spread = (t: TouchList) => ({ dx: Math.abs(t[0].clientX - t[1].clientX) + 20, dy: Math.abs(t[0].clientY - t[1].clientY) + 20 });
+    // Two fingers: spreading them zooms in around the point between them, sliding them moves the
+    // chart; the price scale keeps fitting what is shown (like fomo / Robinhood).
+    let start: { gap: number; mid: number; from: number; to: number; anchor: number; perPx: number } | null = null;
+    let frame = 0;
+    let want: { from: number; to: number } | null = null;
+    const gap = (t: TouchList) => Math.max(24, Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY));
+    const midX = (t: TouchList) => (t[0].clientX + t[1].clientX) / 2 - el.getBoundingClientRect().left;
+    const apply = () => {
+      frame = 0;
+      const c = chartRef.current;
+      if (!c || !want) return;
+      c.timeScale().setVisibleLogicalRange(want);
+    };
     const onStart = (e: TouchEvent) => {
       const c = chartRef.current;
       if (!c || e.touches.length !== 2) return;
-      const r = c.timeScale().getVisibleLogicalRange();
-      const p = c.priceScale("right").getVisibleRange();
-      if (!r || !p) return;
-      start = { ...spread(e.touches), from: r.from, to: r.to, pFrom: p.from, pTo: p.to };
+      const ts = c.timeScale();
+      const r = ts.getVisibleLogicalRange();
+      if (!r) return;
+      const mid = midX(e.touches);
+      const width = Math.max(1, ts.width());
+      const perPx = (r.to - r.from) / width;
+      start = { gap: gap(e.touches), mid, from: r.from, to: r.to, anchor: r.from + mid * perPx, perPx };
+      // the price scale follows what is on screen
+      try {
+        c.priceScale("right").setAutoScale(true);
+      } catch {}
     };
     const onMove = (e: TouchEvent) => {
       const c = chartRef.current;
       if (!c || !start || e.touches.length !== 2) return;
       e.preventDefault(); // the page itself must not zoom or scroll
-      const now = spread(e.touches);
-      const kx = Math.min(8, Math.max(0.125, start.dx / now.dx));
-      const ky = Math.min(8, Math.max(0.125, start.dy / now.dy));
-      const width = Math.max(10, (start.to - start.from) * kx);
-      c.timeScale().setVisibleLogicalRange({ from: start.to - width, to: start.to });
-      const mid = (start.pFrom + start.pTo) / 2;
-      const half = ((start.pTo - start.pFrom) / 2) * ky;
-      const ps = c.priceScale("right");
-      ps.setAutoScale(false);
-      ps.setVisibleRange({ from: mid - half, to: mid + half });
+      const k = Math.min(12, Math.max(1 / 12, start.gap / gap(e.touches)));
+      const span = Math.min(3000, Math.max(8, (start.to - start.from) * k));
+      const perPx = span / Math.max(1, c.timeScale().width());
+      // the candle that was under the fingers stays under them (and follows them when they slide)
+      const from = start.anchor - midX(e.touches) * perPx;
+      want = { from, to: from + span };
+      if (!frame) frame = requestAnimationFrame(apply);
     };
     const onEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) start = null;
@@ -960,6 +1031,7 @@ export function usePinchZoom(box: RefObject<HTMLDivElement | null>, chartRef: Re
     el.addEventListener("touchend", onEnd);
     el.addEventListener("touchcancel", onEnd);
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
