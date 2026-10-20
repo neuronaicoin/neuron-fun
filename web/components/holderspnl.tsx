@@ -35,7 +35,7 @@ function ago(ts: number) {
  * Everyone in the coin: what they hold now, how far up or down they are, the market cap they got
  * in at, and the last thing they said in the coin's chat.
  */
-export function HoldersPnl({ coin }: { coin: RaceCoin }) {
+export function HoldersPnl({ coin, supply }: { coin: RaceCoin; supply?: number }) {
   const [rows, setRows] = useState<WalletPnl[] | null>(null);
   const [notes, setNotes] = useState<Map<string, string>>(new Map());
   const [all, setAll] = useState(false);
@@ -44,7 +44,7 @@ export function HoldersPnl({ coin }: { coin: RaceCoin }) {
   useEffect(() => {
     let alive = true;
     const load = () =>
-      fetchCoinPnl(coin)
+      fetchCoinPnl(coin, 3000, supply)
         .then((r) => alive && setRows(r))
         .catch(() => alive && setRows((prev) => prev ?? []));
     const loadNotes = () =>
@@ -74,7 +74,7 @@ export function HoldersPnl({ coin }: { coin: RaceCoin }) {
     };
     // the coin object is refreshed every few seconds; its price changes are picked up on the next load
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coin.id]);
+  }, [coin.id, supply]);
 
   const list = (rows ?? []).filter((r) => !onlyUp || r.pnl > 0);
   const shown = all ? list : list.slice(0, 12);

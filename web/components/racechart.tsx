@@ -27,13 +27,13 @@ const PREFS = "sasa-race-chart";
  * Price chart of one race coin (dollars per coin). Line or candles, six time frames.
  * Draws from the cache at once, then refreshes every 5 s and right after the user trades.
  */
-export function RaceChart({ coinId, chainId, height = 360 }: { coinId: string; chainId: number | null; height?: number }) {
+export function RaceChart({ coinId, chainId, height = 360, supply = RACE_SUPPLY }: { coinId: string; chainId: number | null; height?: number; supply?: number }) {
   return (
     <PriceChart
       cacheKey={`${coinId}:${chainId ?? "all"}`}
       load={(frame) => fetchRaceCandles(coinId, chainId, frame)}
       tradeCoinId={coinId}
-      mcFactor={RACE_SUPPLY}
+      mcFactor={supply}
       height={height}
       seconds
       bleed

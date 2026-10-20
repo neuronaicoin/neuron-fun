@@ -34,7 +34,7 @@ export function coinPrice(c: RaceCoin): number | null {
   return ok?.priceUsd ?? null;
 }
 
-function fold(rows: TradeRow[], price: number): WalletPnl[] {
+function fold(rows: TradeRow[], price: number, supply = RACE_SUPPLY): WalletPnl[] {
   const by = new Map<string, { in: number; out: number; got: number; gave: number; lastTs: number }>();
   for (const r of rows) {
     if (r.price_usd !== undefined && !sane(Number(r.price_usd))) continue;
@@ -67,7 +67,7 @@ function fold(rows: TradeRow[], price: number): WalletPnl[] {
       value,
       pnl,
       pnlPct: w.in > 0.5 ? (pnl / w.in) * 100 : null,
-      entryMc: w.got > 0 ? (w.in / w.got) * RACE_SUPPLY : null,
+      entryMc: w.got > 0 ? (w.in / w.got) * supply : null,
       lastTs: w.lastTs,
     };
   });
@@ -86,7 +86,7 @@ async function pages(q: (from: number, to: number) => PromiseLike<{ data: unknow
 }
 
 /** Everyone who traded the coin, biggest position first (wallets that sold everything last). */
-export async function fetchCoinPnl(coin: RaceCoin, max = 3000): Promise<WalletPnl[]> {
+export async function fetchCoinPnl(coin: RaceCoin, max = 3000, supply = RACE_SUPPLY): Promise<WalletPnl[]> {
   const price = coinPrice(coin) ?? 0;
   const rows = await pages(
     (a, b) =>
@@ -99,7 +99,7 @@ export async function fetchCoinPnl(coin: RaceCoin, max = 3000): Promise<WalletPn
         .range(a, b),
     max
   );
-  return fold(rows, price)
+  return fold(rows, price, supply)
     .filter((w) => w.in > 0 || w.held > 0)
     .sort((x, y) => y.value - x.value || y.pnl - x.pnl);
 }

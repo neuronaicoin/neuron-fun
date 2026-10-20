@@ -328,6 +328,7 @@ export const raceErc20Abi = parseAbi([
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
   "function faucet(address to)",
   "function lastFaucet(address) view returns (uint256)",
   "error TooSoon(uint256 next)",
@@ -644,6 +645,38 @@ export async function fetchRaceCandles(coinId: string, chainId: number | null, b
     .sort((a, b) => a.t - b.t);
 }
 
+/**
+ * Coins that exist on one chain now. Each chain's market cap is its price times this (what
+ * DexScreener shows too): a race coin is not 1B everywhere, and after the race the losing
+ * chains' coins are burned, so the winner holds less than 1B. Cached a minute; 1B if unreadable.
+ */
+const SUPPLY = new Map<string, { at: number; v: number }>();
+export async function chainSupply(chain: RaceChain, coin: string): Promise<number> {
+  const k = `${chain.chainId}:${coin.toLowerCase()}`;
+  const hit = SUPPLY.get(k);
+  if (hit && Date.now() - hit.at < 60_000) return hit.v;
+  try {
+    const raw = (await raceClient(chain).readContract({ address: coin as Address, abi: raceErc20Abi, functionName: "totalSupply" })) as bigint;
+    const v = Number(raw) / 1e18;
+    if (v > 0 && v <= RACE_SUPPLY * 1.001) {
+      SUPPLY.set(k, { at: Date.now(), v });
+      return v;
+    }
+  } catch {}
+  return hit?.v ?? RACE_SUPPLY;
+}
+
+/** The chain a race coin's price (and market cap) comes from: the winner, or the leading chain. */
+export function priceChain(c: RaceCoin): RaceChain | null {
+  return c.winner ?? leadLane(c)?.chain ?? null;
+}
+
+/** Market-cap supply of a race coin: the coins on its price chain. */
+export function coinSupply(c: RaceCoin): Promise<number> {
+  const ch = priceChain(c);
+  return ch ? chainSupply(ch, c.coin) : Promise.resolve(RACE_SUPPLY);
+}
+
 export type RaceHolder = { holder: string; amount: number; share: number };
 
 /** Biggest holders of the coin on one chain (pool and sasa contracts left out). */
@@ -658,12 +691,13 @@ export async function fetchRaceHolders(chain: RaceChain, coin: string, limit = 2
     .order("amount", { ascending: false })
     .limit(limit + skip.size);
   if (error) throw error;
+  const supply = await chainSupply(chain, coin);
   return ((data ?? []) as Record<string, unknown>[])
     .filter((r) => !skip.has((r.holder as string).toLowerCase()))
     .slice(0, limit)
     .map((r) => {
       const amount = Number(r.amount) / 1e18;
-      return { holder: r.holder as string, amount, share: amount / RACE_SUPPLY };
+      return { holder: r.holder as string, amount, share: amount / supply };
     });
 }
 

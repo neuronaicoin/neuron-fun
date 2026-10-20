@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
 import { HoldersPnl } from "@/components/holderspnl";
+import { useChainSupply } from "@/lib/usesupply";
 import { RaceTradeBox } from "@/components/racetrade";
 import { CreatorKit, RaceShareButton } from "@/components/raceshare";
 import { CoinLinksRow } from "@/components/coinlinks";
@@ -15,7 +16,6 @@ import { RaceReplay } from "@/components/racereplay";
 import { compactUsd, shortAddr } from "@/lib/format";
 import { onTrade } from "@/lib/live";
 import {
-  RACE_SUPPLY,
   clock,
   fetchRaceCoin,
   fetchRaceHolders,
@@ -96,6 +96,9 @@ function RacePage() {
   }, [load, live, id]);
 
   const now = useNow(live);
+  // market cap = price × the coins that exist on that chain (not always 1B: see chainSupply)
+  const supplyLane = coin ? ((coin.winner ? null : coin.lanes.find((l) => l.chain.chainId === pick && l.state !== 3)) ?? leadLane(coin) ?? coin.lanes[0]) : null;
+  const supply = useChainSupply(coin?.winner ?? supplyLane?.chain, coin?.coin ?? "");
 
   if (!valid || (missing && !coin)) {
     return (
@@ -124,7 +127,7 @@ function RacePage() {
   // Before the verdict every chain has its own price; after it, the winner's is the coin's.
   const chartChain = coin.winner ? coin.winner.chainId : (lane?.chain.chainId ?? null);
   const price = lane?.priceUsd ?? null;
-  const mcap = price ? price * RACE_SUPPLY : null;
+  const mcap = price ? price * supply : null;
   const trades = coin.lanes.reduce((s, l) => s + l.buys + l.sells, 0);
   const volume = coin.lanes.reduce((s, l) => s + l.volumeUsd, 0);
 
@@ -169,7 +172,7 @@ function RacePage() {
             </div>
           </div>
 
-          <RaceChart coinId={coin.id} chainId={chartChain} />
+          <RaceChart coinId={coin.id} chainId={chartChain} supply={supply} />
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-line rounded-2xl overflow-hidden border border-line">
             <Fact label="Market cap" value={compactUsd(mcap)} />
@@ -201,7 +204,7 @@ function RacePage() {
             {lane && <RaceTradeBox coin={coin} lanes={coin.lanes} lane={lane} onLane={setPick} />}
           </div>
 
-          <Activity coin={coin} lane={lane} />
+          <Activity coin={coin} lane={lane} supply={supply} />
 
           {coin.description && (
             <section className="flex flex-col gap-2">
@@ -339,7 +342,7 @@ function LaneRow({ lane, max, coin, phase, now }: { lane: RaceLane; max: number;
   );
 }
 
-function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }) {
+function Activity({ coin, lane, supply }: { coin: RaceCoin; lane: RaceLane | undefined; supply: number }) {
   const [tab, setTab] = useState<"pnl" | "trades" | "holders">("pnl");
   const [trades, setTrades] = useState<RaceTrade[] | null>(null);
   const [holders, setHolders] = useState<RaceHolder[] | null>(null);
@@ -395,7 +398,7 @@ function Activity({ coin, lane }: { coin: RaceCoin; lane: RaceLane | undefined }
         {tabBtn("holders", "Top wallets")}
       </div>
       {tab === "pnl" ? (
-        <HoldersPnl coin={coin} />
+        <HoldersPnl coin={coin} supply={supply} />
       ) : tab === "trades" ? (
         trades === null ? (
           <Skeleton className="h-40 mt-3" />

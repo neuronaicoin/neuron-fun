@@ -10,7 +10,7 @@ import { crossBuy, crossSell, crossSendHome, spareThere, type Senders } from "@/
 import { readLegs, sellEverywhere, share, type SellLeg } from "@/lib/racesell";
 import { AutoPanel } from "@/components/autopanel";
 import { autoAnywhere } from "@/lib/auto";
-import { RACE_SUPPLY } from "@/lib/race";
+import { useChainSupply } from "@/lib/usesupply";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { call } from "@/lib/tx";
@@ -48,6 +48,7 @@ function fmtAmount(n: number, max = 2) {
 export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; lanes: RaceLane[]; lane: RaceLane; onLane: (chainId: number) => void }) {
   const w = useWallet();
   const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
+  const supply = useChainSupply(lane.chain, coin.coin);
   // the phone's Buy / Sell bar picks the side
   useEffect(() => {
     const on = (e: Event) => {
@@ -449,7 +450,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
           coinChain={chain}
           priceUsd={lane.priceUsd}
           holdings={coinBal}
-          mcFactor={RACE_SUPPLY}
+          mcFactor={supply}
         />
       ) : !tradable ? (
         <p className="text-[0.9375rem] text-ink-2">

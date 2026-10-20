@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CoinAvatar, useCoins, usd } from "@/components/coins";
 import { coinMarketCapUsd } from "@/components/discover";
 import { TARGET_USD, V6 } from "@/lib/config";
-import { RACE_SUPPLY, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, type RaceCoin } from "@/lib/race";
+import { RACE_SUPPLY, coinSupply, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, type RaceCoin } from "@/lib/race";
 import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
@@ -76,6 +76,18 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   // Race coins (mainnet): the race tabs, and the newest races at the top of "New"
   const raceTab = !V6 && (tab === "racing" || tab === "winners" || tab === "new");
   const [races, setRaces] = useState<RaceCoin[] | null>(null);
+  // coins on each race coin's price chain (market cap = price × these, not always 1B)
+  const [supplies, setSupplies] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!races?.length) return;
+    let alive = true;
+    void Promise.all(races.map(async (r) => [r.id, await coinSupply(r)] as const)).then((pairs) => {
+      if (alive) setSupplies(new Map(pairs));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [races]);
   useEffect(() => {
     if (!raceTab) {
       setRaces([]);
@@ -168,7 +180,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   }
 
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
-  const rows = [...raceRows.slice(0, shown).map(raceRow), ...visible.map((r) => toRow(r, ethUsd))];
+  const rows = [...raceRows.slice(0, shown).map((r) => raceRow(r, supplies.get(r.id))), ...visible.map((r) => toRow(r, ethUsd))];
   const loading = (!coins && !error) || (raceTab && races === null);
   const moreLoading = !!coins && (growing || (ext === null && !!extSort));
 
@@ -382,7 +394,7 @@ const raceVol = (r: RaceCoin) => r.lanes.reduce((s, l) => s + l.volumeUsd, 0);
 const raceLiq = (r: RaceCoin) => (r.totalUsd ?? r.lanes.reduce((s, l) => s + laneUsd(l), 0));
 
 /** A race coin as an Explore card: market cap from the leading (or winning) chain's price. */
-function raceRow(r: RaceCoin): Row {
+function raceRow(r: RaceCoin, supply = RACE_SUPPLY): Row {
   const lead = leadLane(r);
   const price = lead?.priceUsd ?? null;
   const phase = racePhase(r, Date.now());
@@ -394,7 +406,7 @@ function raceRow(r: RaceCoin): Row {
     symbol: r.symbol,
     image: r.logo && isImageUrl(r.logo) ? r.logo : null,
     seed: r.id,
-    mc: price ? price * RACE_SUPPLY : null,
+    mc: price ? price * supply : null,
     change: null,
     vol: raceVol(r),
     liq: raceLiq(r),
