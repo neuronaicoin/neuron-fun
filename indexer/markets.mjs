@@ -356,6 +356,39 @@ async function fillImages(pool, log) {
   if (n) log(`markets: ${n} pictures from DexScreener`);
 }
 
+/** GeckoTerminal token info -> the project's X handle (or null). Exported for tests. */
+export function handleFromGtInfo(json) {
+  const h = String(json?.data?.attributes?.twitter_handle ?? "").trim().replace(/^@/, "");
+  if (/^[A-Za-z0-9_]{1,15}$/.test(h) && !/^(i|home|intent|search|share|hashtag)$/i.test(h)) return h;
+  return xHandle((json?.data?.attributes?.websites ?? []).map((url) => ({ type: "twitter", url })));
+}
+
+/**
+ * Coins without an X account on DexScreener: ask GeckoTerminal's token info (it has the
+ * project's handle for many more coins), one coin per chain per round, busiest first, each
+ * coin at most every 3 days. Shares on X then tag the project (they may repost it).
+ */
+export async function fillHandles(pool, networks, log) {
+  let found = 0;
+  for (const n of networks) {
+    const { rows } = await pool.query(
+      `select address from ext_tokens
+        where network = $1 and x_handle is null and seen_at > now() - interval '1 day'
+          and (xh_checked_at is null or xh_checked_at < now() - interval '3 days')
+        order by vol_24h desc nulls last limit 1`,
+      [n.id]
+    );
+    const a = rows[0]?.address;
+    if (!a) continue;
+    const info = await gt(`/networks/${n.id}/tokens/${a}/info`, false).catch(() => null);
+    const h = info ? handleFromGtInfo(info) : null;
+    if (h) found++;
+    await pool.query("update ext_tokens set xh_checked_at = now(), x_handle = coalesce(x_handle, $3) where network = $1 and address = $2", [n.id, a, h]);
+    await sleep(GAP);
+  }
+  return found;
+}
+
 export async function marketsLoop(pool, log) {
   if (process.env.MARKETS_OFF === "1") return;
   const every = Number(process.env.MARKETS_EVERY_MS ?? "120000");
@@ -442,6 +475,13 @@ export async function marketsLoop(pool, log) {
     await sleep(3000); // let DexScreener's per-minute window recover after the refresh
     // Missing pictures: ask DexScreener (projects often upload theirs there first).
     await fillImages(pool, log).catch((e) => log(`markets: DexScreener ${e.message}`));
+    // Missing X accounts: GeckoTerminal token info.
+    try {
+      const h = await fillHandles(pool, networks, log);
+      if (h) log(`markets: ${h} X accounts from GeckoTerminal`);
+    } catch (e) {
+      if (round <= 3 || round % 30 === 0) log(`markets: X accounts ${e.message} (run indexer/copycats.sql)`);
+    }
     // Search pages: every real coin is kept for good in ext_archive (archive.sql), junk never is.
     try {
       const r = await pool.query("select ext_archive_sync() as n");
