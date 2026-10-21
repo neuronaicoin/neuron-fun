@@ -20,16 +20,25 @@
 set -uo pipefail
 MODE="${MODE:-dry-run}"
 REPORT="${REPORT:-/dev/stdout}"
-HUB=0x173b228d343E174D2671a61C294D3AF06946DEBf
-FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
 CHAINS="8453 56 4663 5042"
+# which contract set: v7 (one hub address on every chain) by default, or a deployments folder
+# (DEPLOYMENTS=contracts-v7/deployments/race-mainnet-v8): each chain's own hub, one factory
+declare -A HUB_OF HUB32_OF
+if [ -n "${DEPLOYMENTS:-}" ]; then
+  for id in $CHAINS; do HUB_OF[$id]=$(jq -r '.hub' "$DEPLOYMENTS/$id.json"); done
+  FACTORY=$(jq -r '.factory' "$DEPLOYMENTS/8453.json")
+  for id in $CHAINS; do [ "$(jq -r '.factory' "$DEPLOYMENTS/$id.json")" = "$FACTORY" ] || { echo "factory differs on $id"; exit 1; }; done
+else
+  for id in $CHAINS; do HUB_OF[$id]=0x173b228d343E174D2671a61C294D3AF06946DEBf; done
+  FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
+fi
+for id in $CHAINS; do HUB32_OF[$id]=$(echo "0x000000000000000000000000${HUB_OF[$id]#0x}" | tr 'A-F' 'a-f'); done
 DVN_NAMES=("LayerZero Labs" "Nethermind" "Horizen" "Canary")
 declare -A RPC NAME EID EP SEND RECV EXEC DVNS CONF FORK PIDS NONCE
 RPC[8453]="${RPC_8453:-https://mainnet.base.org}";                NAME[8453]="Base";      CONF[8453]=10
 RPC[56]="${RPC_56:-https://bsc-dataseed.bnbchain.org}";               NAME[56]="BNB";         CONF[56]=20
 RPC[4663]="${RPC_4663:-https://rpc.mainnet.chain.robinhood.com}";  NAME[4663]="Robinhood"; CONF[4663]=5
 RPC[5042]="${RPC_5042:-https://rpc.mainnet.arc.io}";               NAME[5042]="Arc";       CONF[5042]=5
-HUB32=$(echo "0x000000000000000000000000${HUB#0x}" | tr 'A-F' 'a-f')
 
 say() { echo "$*" >> "$REPORT"; }
 fail() { say ""; say "**STOPPED: $***"; cleanup; exit 1; }
@@ -84,7 +93,7 @@ say "- every chosen DVN serves every other chain: ok"
 
 OWNER=""
 for a in $CHAINS; do
-  del=$(lc "$(c call "${EP[$a]}" "delegates(address)(address)" $HUB --rpc-url "${RPC[$a]}")")
+  del=$(lc "$(c call "${EP[$a]}" "delegates(address)(address)" "${HUB_OF[$a]}" --rpc-url "${RPC[$a]}")")
   fo=$(lc "$(c call $FACTORY "owner()(address)" --rpc-url "${RPC[$a]}")")
   [ "$del" = "err" ] || [ "$fo" = "err" ] && fail "${NAME[$a]}: can't read the owner"
   [ "$del" = "$fo" ] || fail "${NAME[$a]}: hub delegate $del and factory owner $fo differ"
@@ -103,8 +112,8 @@ fi
 # messages still out from each chain's hub to Base (the stuck reports)
 declare -A OUT IN
 for a in 56 4663 5042; do
-  OUT[$a]=$(c call "${EP[$a]}" "outboundNonce(address,uint32,bytes32)(uint64)" $HUB "${EID[8453]}" "$HUB32" --rpc-url "${RPC[$a]}" | awk '{print $1}')
-  IN[$a]=$(c call "${EP[8453]}" "inboundNonce(address,uint32,bytes32)(uint64)" $HUB "${EID[$a]}" "$HUB32" --rpc-url "${RPC[8453]}" | awk '{print $1}')
+  OUT[$a]=$(c call "${EP[$a]}" "outboundNonce(address,uint32,bytes32)(uint64)" "${HUB_OF[$a]}" "${EID[8453]}" "${HUB32_OF[8453]}" --rpc-url "${RPC[$a]}" | awk '{print $1}')
+  IN[$a]=$(c call "${EP[8453]}" "inboundNonce(address,uint32,bytes32)(uint64)" "${HUB_OF[8453]}" "${EID[$a]}" "${HUB32_OF[$a]}" --rpc-url "${RPC[8453]}" | awk '{print $1}')
   [ "${OUT[$a]}" = "ERR" ] || [ "${IN[$a]}" = "ERR" ] && fail "can't read the nonces for ${NAME[$a]}"
   say "- ${NAME[$a]} -> Base: sent ${OUT[$a]}, arrived ${IN[$a]}"
   [ "${OUT[$a]}" -le 2 ] || fail "${NAME[$a]} sent ${OUT[$a]} messages to Base; expected at most 2 (only the two stuck races). Look before skipping anything."
@@ -166,8 +175,8 @@ check_chain() { # chain: read back what was set (a few tries: the node answering
     [ "$a" = "$b" ] && continue
     w=$(lc "$(want_uln "$a" "$b")"); u=$(lc "$(uln_of "$a" "$b")")
     for try in 1 2 3 4 5; do
-      s=$(lc "$(c call "${SEND[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
-      r=$(lc "$(c call "${RECV[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" $HUB "${EID[$b]}" --rpc-url "${FORK[$a]}")")
+      s=$(lc "$(c call "${SEND[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" "${HUB_OF[$a]}" "${EID[$b]}" --rpc-url "${FORK[$a]}")")
+      r=$(lc "$(c call "${RECV[$a]}" "getUlnConfig(address,uint32)((uint64,uint8,uint8,uint8,address[],address[]))" "${HUB_OF[$a]}" "${EID[$b]}" --rpc-url "${FORK[$a]}")")
       rt=$(lc "$(c call $FACTORY "routeOf(uint32)((address,address,bytes,bytes))" "${EID[$b]}" --rpc-url "${FORK[$a]}")")
       ok=1; [ "$s" = "$w" ] || ok=0; [ "$r" = "$w" ] || ok=0; echo "$rt" | grep -q "${u#0x}" || ok=0
       [ $ok = 1 ] && break
@@ -181,7 +190,7 @@ check_chain() { # chain: read back what was set (a few tries: the node answering
   [ "$open" = "false" ] && say "- ${NAME[$a]}: launches closed: ok" || { bad=1; say "- ${NAME[$a]}: launches **still open**"; }
   if [ "$a" = "8453" ]; then
     for b in 56 4663 5042; do
-      lz=$(c call "${EP[8453]}" "lazyInboundNonce(address,uint32,bytes32)(uint64)" $HUB "${EID[$b]}" "$HUB32" --rpc-url "${FORK[8453]}" | awk '{print $1}')
+      lz=$(c call "${EP[8453]}" "lazyInboundNonce(address,uint32,bytes32)(uint64)" "${HUB_OF[8453]}" "${EID[$b]}" "${HUB32_OF[$b]}" --rpc-url "${FORK[8453]}" | awk '{print $1}')
       [ "$lz" = "${OUT[$b]}" ] && say "- Base: stuck reports from ${NAME[$b]} skipped (next expected: $((lz + 1))): ok" || { bad=1; say "- Base: reports from ${NAME[$b]}: lazy nonce $lz, expected ${OUT[$b]}"; }
     done
   fi
@@ -194,8 +203,8 @@ run_chain() { # chain -> 0 done, 2 retry with a fresh copy
   for b in $CHAINS; do
     [ "$a" = "$b" ] && continue
     uln=$(uln_of "$a" "$b")
-    send "$a" "hub sends to ${NAME[$b]}: 4 DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]" || return 2
-    send "$a" "hub receives from ${NAME[$b]}: same" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" $HUB "${RECV[$a]}" "[(${EID[$b]},2,$uln)]" || return 2
+    send "$a" "hub sends to ${NAME[$b]}: 4 DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" "${HUB_OF[$a]}" "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]" || return 2
+    send "$a" "hub receives from ${NAME[$b]}: same" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" "${HUB_OF[$a]}" "${RECV[$a]}" "[(${EID[$b]},2,$uln)]" || return 2
     send "$a" "new coins' route to ${NAME[$b]}: same" $FACTORY "setRoute(uint32,(address,address,bytes,bytes))" "${EID[$b]}" "(${SEND[$a]},${RECV[$a]},$execcfg,$uln)" || return 2
   done
   open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
@@ -204,7 +213,7 @@ run_chain() { # chain -> 0 done, 2 retry with a fresh copy
     for b in 56 4663 5042; do
       n=$(( ${IN[$b]} + 1 ))
       while [ "$n" -le "${OUT[$b]}" ]; do
-        send 8453 "skip stuck report $n from ${NAME[$b]}" "${EP[8453]}" "skip(address,uint32,bytes32,uint64)" $HUB "${EID[$b]}" "$HUB32" "$n" || return 2
+        send 8453 "skip stuck report $n from ${NAME[$b]}" "${EP[8453]}" "skip(address,uint32,bytes32,uint64)" "${HUB_OF[8453]}" "${EID[$b]}" "${HUB32_OF[$b]}" "$n" || return 2
         n=$((n + 1))
       done
     done
