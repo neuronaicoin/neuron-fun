@@ -49,7 +49,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readState, writeState } from "./statefile.mjs";
 import { join } from "node:path";
-import { createPublicClient, createWalletClient, defineChain, fallback, http, parseAbi, parseAbiItem, zeroAddress } from "viem";
+import { createPublicClient, createWalletClient, defineChain, fallback, getAddress, http, parseAbi, parseAbiItem, toFunctionSelector, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { alert, heartbeat, staleServices } from "./alert.mjs";
 import { refillGas } from "./refill.mjs";
@@ -173,6 +173,18 @@ function loadChains() {
 }
 
 // Reads logs in chunks (public RPCs limit the range); stops early when the time budget is spent.
+/** The coin's seat on `c` from its builder (races(coin)), or null when it isn't launched there.
+ * The seat is the struct's first field on PancakeSwap builders, the second (after the launch
+ * position id) on the others. */
+export async function seatFromBuilder(c, coin) {
+  const { data } = await c.pub.call({ to: c.builder, data: `0x${RACES_SELECTOR}${coin.slice(2).toLowerCase().padStart(64, "0")}` });
+  if (!data || data.length < 2 + 64 * 2) return null;
+  const word = (c.builderKind ?? c.kind) === "pcs" ? 0 : 1;
+  const seat = getAddress(`0x${data.slice(2 + word * 64 + 24, 2 + (word + 1) * 64)}`);
+  return seat === zeroAddress ? null : seat;
+}
+const RACES_SELECTOR = toFunctionSelector("races(address)").slice(2);
+
 export async function scan(pub, args, from, to, { wait = 3_000 } = {}) {
   const out = [];
   let step = 2_000n;
@@ -650,6 +662,20 @@ export async function main(mode = "full") {
     }
     if (coin.oneDvn) return;
 
+    // a launch the log scan hasn't reached on some chain (an RPC that limits log reads): the
+    // builder there knows the coin's seat, so read it directly instead of waiting for the scan
+    for (const e of coin.eids) {
+      if (coin.chains[e] || !byEid.has(e)) continue;
+      const seat = await seatFromBuilder(byEid.get(e), coin.coin).catch(() => null);
+      if (seat) {
+        // its launch block isn't known: holder scans there start at the chain's scan floor
+        const c = byEid.get(e);
+        const floor = BigInt(env(`RACE_FROM_${c.chainId}`, "0"));
+        const start = BigInt(c.startBlock ?? 0);
+        coin.chains[e] = { seat, block: Number(floor > start ? floor : start) };
+        log(`${coin.name}: its launch on ${c.chainId} read from the builder`);
+      }
+    }
     const here = coin.eids.filter((e) => byEid.has(e) && coin.chains[e]);
     coin.seenAt ??= Date.now();
     if (here.length !== coin.eids.length) {
