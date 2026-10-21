@@ -28,7 +28,9 @@ export function AirdropBanner() {
 /** Top-bar button on phones and tablets (computers have "Airdrop" in the menu). Logged in, the
  * bar is fuller, so small phones get just the parachute. */
 export function AirdropButton() {
-  const { address } = useWallet();
+  const { address, hintAddress } = useWallet();
+  // a returning visitor counts as logged in while the login is restored (no jump in the bar)
+  const inn = !!(address ?? hintAddress);
   return (
     <Link
       href="/points/"
@@ -37,7 +39,7 @@ export function AirdropButton() {
       style={{ background: "#FF6B1A" }}
     >
       <span aria-hidden="true">🪂</span>
-      <span className={address ? "hidden sm:inline" : "hidden min-[380px]:inline"}>Airdrop</span>
+      <span className={inn ? "hidden sm:inline" : "hidden min-[380px]:inline"}>Airdrop</span>
     </Link>
   );
 }

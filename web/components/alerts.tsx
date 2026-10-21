@@ -144,7 +144,7 @@ function errorText(e: unknown): string {
 // ------------------------------------------------------------------ header bell
 
 export function HeaderBell() {
-  const { address } = useWallet();
+  const { address, hintAddress } = useWallet();
   const { unread, ring } = useAlerts();
   const [open, setOpen] = useState<"none" | "drop" | "sheet">("none");
   const [panel, setPanel] = useState<"none" | "alerts" | "push">("none");
@@ -173,7 +173,14 @@ export function HeaderBell() {
     };
   }, [open]);
 
-  if (!address) return null;
+  // While a returning visitor's login is being restored, keep the bell's place (a bell that
+  // pops in a moment later shifts the whole top bar sideways)
+  if (!address)
+    return hintAddress ? (
+      <span className="w-10 h-10 shrink-0 rounded-xl border border-line text-ink-2 flex items-center justify-center" aria-hidden="true">
+        <BellIcon />
+      </span>
+    ) : null;
 
   const toggle = () => {
     if (open !== "none") return setOpen("none");

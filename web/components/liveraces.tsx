@@ -41,8 +41,8 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   }, []);
 
   if (!RACE_CHAINS.length) return <>{fallback}</>;
-  // still loading: show nothing rather than the banner for a second
-  if (races === null) return null;
+  // still loading: keep the section's usual room (the list below doesn't jump when it arrives)
+  if (races === null) return <div className="h-[142px] sm:h-[171px]" aria-hidden="true" />;
   if (races.length === 0) return <>{fallback}</>;
   // stuck races (no result an hour after the end) aren't live: their pages stay, the wall skips them
   const live = races.filter((r) => (racePhase(r, now) === "racing" || racePhase(r, now) === "deciding") && !raceStuck(r, now));

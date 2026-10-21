@@ -29,7 +29,9 @@ export function TopWins() {
   }, []);
 
   const profiles = useProfiles((wins ?? []).map((w) => w.trader));
-  if (!wins || wins.length === 0) return null;
+  // still loading: keep its room (no jump); none this week: nothing
+  if (wins === null) return <div className="h-[137px] sm:h-[153px]" aria-hidden="true" />;
+  if (wins.length === 0) return null;
 
   return (
     <section aria-label="Biggest wins this week" className="px-4 sm:px-6 pt-4">
