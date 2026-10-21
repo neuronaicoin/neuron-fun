@@ -1,0 +1,53 @@
+name: race-fee
+
+# Sets the race fee per chain (paid by the coin's creator to the keeper, for the race's network
+# fees) on all four chains (contracts-v7/script/race/racefee.sh). Only future launches.
+# "dry-run" copies each chain and does it there: nothing real is sent. "apply" sends it for real.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: "Which contracts"
+        type: choice
+        options: [v8, v7]
+        default: v8
+      cents:
+        description: "Race fee per chain in cents (75 = $0.75, at most 200)"
+        required: true
+        default: "75"
+      mode:
+        description: "dry-run (nothing is sent) or apply (sent for real)"
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      confirm:
+        description: "For apply only: type APPLY"
+        required: false
+        default: ""
+
+jobs:
+  fee:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Run
+        env:
+          STACK: ${{ inputs.stack }}
+          CENTS: ${{ inputs.cents }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+        run: |
+          set -uo pipefail
+          if [ "$STACK" = "v7" ]; then export FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B; else export FACTORY=0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa; fi
+          if [ "$MODE" = "apply" ]; then
+            if [ "$CONFIRM" != "APPLY" ]; then echo "To apply, type APPLY in the confirm box." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; fi
+            k="$(printf '%s' "${RAW_KEY:-}" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+            echo "::add-mask::$k"
+            [ "$k" = "0x" ] && { echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; }
+            export PRIVATE_KEY="$k"
+          fi
+          REPORT="$GITHUB_STEP_SUMMARY" bash contracts-v7/script/race/racefee.sh
