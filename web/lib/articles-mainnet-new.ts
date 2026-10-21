@@ -35,7 +35,7 @@ export const MAINNET_NEW_ARTICLES: Article[] = [
         "Open [Create a coin](/race/launch/). On sasa a coin launches on Base, BNB Chain, Robinhood Chain and Arc at once, with the [same contract address on every chain](/learn/same-contract-address-on-every-chain/).",
         "Enter the name, ticker, picture and a short description. AI tools can help with a name or a logo; see [making a meme coin logo with AI](/learn/meme-coin-logo-with-ai/).",
         "Choose where your 30% share of trading fees goes: to you, or to [buyback and burn](/learn/buyback-and-burn-explained/) of your coin. Then set your first buy on each chain; presets are $10, $50 and $100.",
-        "Confirm. The coin goes live in real DEX pools on all four chains, with a combined starting market cap of about $3,000, and gets its own page and chart.",
+        "Confirm. The coin goes live in real DEX pools on all four chains, with each chain's pool starting at a market cap of about $3,000, and gets its own page and chart.",
         "Share the link. For five minutes buyers on every chain push their pool up. When the race ends, the chain with the most money wins and its pool is locked forever.",
       ] },
       { tip: "Your first buy is the first trade in each pool. [How big should your first buy be](/learn/how-big-should-your-first-buy-be/) covers the trade-off: too small and nobody notices, too large and buyers see a big creator stake." },
@@ -191,7 +191,7 @@ export const MAINNET_NEW_ARTICLES: Article[] = [
         "Older coins: 4 hours or 1 day to see the trend.",
       ] },
       { h2: "Reading a race coin's first minutes" },
-      { p: "A coin launched on sasa trades in real DEX pools from the first second, starting at a combined market cap of about $3,000 across four chains. For the first five minutes each chain has its own pool and its own price action (the race lanes on the coin page show each chain's money), and the trading fee starts higher before falling to 2%, which damps the first burst of bot buys. When the race ends, the losing pools' money joins the winner, so expect a step in liquidity on the winning chain. [How the 5-minute launch race works](/learn/how-the-5-minute-launch-race-works/) covers the details." },
+      { p: "A coin launched on sasa trades in real DEX pools from the first second, starting at a market cap of about $3,000 on each chain. For the first five minutes each chain has its own pool and its own price action (the race lanes on the coin page show each chain's money), and the trading fee starts higher before falling to 2%, which damps the first burst of bot buys. When the race ends, the losing pools' money joins the winner, so expect a step in liquidity on the winning chain. [How the 5-minute launch race works](/learn/how-the-5-minute-launch-race-works/) covers the details." },
       { h2: "Patterns worth knowing" },
       { ul: [
         "A steady climb with rising volume: real demand building.",

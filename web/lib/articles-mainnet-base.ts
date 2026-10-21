@@ -37,7 +37,7 @@ export const MAINNET_BASE_ARTICLES: Article[] = [
         "Share the link. Every new coin starts with zero attention, so the first minutes matter most.",
       ] },
       { h2: "How the price works after launch" },
-      { p: "Many meme launchpads sell new coins from a bonding curve and only move them to a DEX after a graduation target. sasa does not. Your coin starts in real DEX pools from the first second: coin/ETH on Uniswap v4 on Robinhood Chain and Base, coin/BNB on PancakeSwap Infinity on BNB Chain and coin/USDC on Arc, with a combined starting market cap of about $3,000. Because these are normal pools, DexScreener, GMGN and trading bots can see the coin right away." },
+      { p: "Many meme launchpads sell new coins from a bonding curve and only move them to a DEX after a graduation target. sasa does not. Your coin starts in real DEX pools from the first second: coin/ETH on Uniswap v4 on Robinhood Chain and Base, coin/BNB on PancakeSwap Infinity on BNB Chain and coin/USDC on Arc, with each chain's pool starting at a market cap of about $3,000. Because these are normal pools, DexScreener, GMGN and trading bots can see the coin right away." },
       { p: "After five minutes, the chain whose pool holds the most money, valued in dollars with Chainlink prices, wins. The other pools close, their money moves into the winner's pool minus a 2% hand-over fee, and holders' coins on the other chains move over automatically. The winning pool is locked forever: nobody, not you and not sasa, can pull it. Every race ends with a winner." },
       { tip: "Look for three things before you launch anywhere: a fixed supply, no owner who can mint more, and liquidity that is locked. Together they make the classic rug pull impossible by design." },
       { h2: "Robinhood Chain inside the race" },
@@ -91,7 +91,7 @@ export const MAINNET_BASE_ARTICLES: Article[] = [
       { h2: "Fees" },
       { p: "Every buy and sell on a curve pays a small fee, often around 1% on the large launchpads. Some platforms share part of it with the coin's creator, and many keep charging a fee in the pool after graduation." },
       { h2: "Launching without a bonding curve" },
-      { p: "A curve is not the only way to start a coin. On sasa there is no curve and no graduation target. Each coin launches on Base, BNB Chain, Robinhood Chain and Arc at once, straight into real DEX pools with a combined starting market cap of about $3,000, so DexScreener, GMGN and trading bots see it from the first second. After five minutes the chain holding the most money wins, the other pools' money moves into the winner, and the winning pool is locked forever. Every race ends with a winner, so there is no coin stuck short of a target. [Pump.fun vs Clanker vs launch races](/learn/pump-fun-vs-clanker-vs-launch-races/) compares the models side by side." },
+      { p: "A curve is not the only way to start a coin. On sasa there is no curve and no graduation target. Each coin launches on Base, BNB Chain, Robinhood Chain and Arc at once, straight into real DEX pools with each chain's pool starting at a market cap of about $3,000, so DexScreener, GMGN and trading bots see it from the first second. After five minutes the chain holding the most money wins, the other pools' money moves into the winner, and the winning pool is locked forever. Every race ends with a winner, so there is no coin stuck short of a target. [Pump.fun vs Clanker vs launch races](/learn/pump-fun-vs-clanker-vs-launch-races/) compares the models side by side." },
     ],
     faq: [
       { q: "Is a bonding curve safe?", a: "The formula itself is simple and transparent. What matters is the contract around it: a fixed supply, no owner who can take the funds, and a guaranteed sell-back until graduation." },
@@ -121,7 +121,7 @@ export const MAINNET_BASE_ARTICLES: Article[] = [
       { h2: "How it works on sasa" },
       { ol: [
         "You create the coin once on [Create a coin](/race/launch/) with a name, ticker and picture, and choose a first buy on each chain in USDC.",
-        "The coin goes live on Base, BNB Chain, Robinhood Chain and Arc at the same moment, with the same contract address everywhere. Each chain gets a real DEX pool: coin/ETH on Uniswap v4 on Base and Robinhood Chain, coin/BNB on PancakeSwap Infinity on BNB Chain, and coin/USDC on Arc. The combined starting market cap is about $3,000.",
+        "The coin goes live on Base, BNB Chain, Robinhood Chain and Arc at the same moment, with the same contract address everywhere. Each chain gets a real DEX pool: coin/ETH on Uniswap v4 on Base and Robinhood Chain, coin/BNB on PancakeSwap Infinity on BNB Chain, and coin/USDC on Arc. Each chain's pool starts at a market cap of about $3,000.",
         "For five minutes anyone can buy and sell on any of the four chains. Because the pools are ordinary DEX pools, DexScreener, GMGN and trading bots see the coin from the first second.",
         "When the five minutes are up, the chain whose pool holds the most money, valued in dollars with Chainlink prices, wins.",
         "The other pools close. Their money is converted at the Chainlink price and moved into the winner's pool minus a 2% hand-over fee, and holders' coins on those chains are moved to the winning chain automatically. The winning pool is locked forever.",

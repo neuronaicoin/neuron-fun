@@ -24,7 +24,8 @@ import { friendlyError } from "@/lib/format";
 const WALLETS: { key: string; name: string; what: string; address: Address; gas?: boolean }[] = [
   { key: "treasury", name: "Treasury", what: "sasa's earnings (80% of every fee)", address: "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F" },
   { key: "vault", name: "Fee vault", what: "Fees waiting to be split (80% goes to the treasury)", address: "0x230f730aa453397530833d8101aD6f7a07e0950a" },
-  { key: "keeper", name: "Keeper", what: "Runs the races; race fees pay its gas", address: "0x9F832eea4f7c246d196d8E9362Fe2fC75202C528", gas: true },
+  { key: "keeper", name: "Keeper (v7)", what: "Runs the v7 races; race fees pay its gas", address: "0x9F832eea4f7c246d196d8E9362Fe2fC75202C528", gas: true },
+  { key: "keeper8", name: "Keeper (v8)", what: "Runs the v8 races and auto orders; race fees pay its gas", address: "0xD89DDF65aB3c12cC4B966dB5BBe07FE01E881c21", gas: true },
   { key: "relayer", name: "Relayer", what: "Delivers launches to the other chains in seconds", address: "0xB3D38B4007B287Ad852aa4fc5dA2c1029B6082ac", gas: true },
   { key: "rewards", name: "Rewards", what: "Pays invite rewards (10% of fees, Relay fees)", address: "0x4670db0a98Ac28D4093969E3Dfbf16045E321073" },
 ];
