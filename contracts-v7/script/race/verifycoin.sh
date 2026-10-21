@@ -23,6 +23,8 @@ c() { local out; for i in 1 2 3 4 5; do out=$(cast "$@" 2>/dev/null) && { echo "
 first() { echo "$1" | awk '{print $1}'; }
 
 cd "$(dirname "$0")/../.." || exit 1
+# the verifier needs this contract built first (its cache knows the compiler profile)
+forge build src/omni/LaunchCoin.sol >/dev/null 2>&1 || forge build src/omni/LaunchCoin.sol 2>&1 | tail -5
 say "## Verify coin \`$COIN\`"
 say ""
 ok_any=0
