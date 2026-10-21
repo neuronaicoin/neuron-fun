@@ -111,7 +111,7 @@ export default function MePage() {
                 ["/copy/", "Copy signals", false],
               ]
             : []),
-          ["/points/", "Points & invites", false],
+          ["/points/", "Airdrop & invites", false],
           ["/forum/", "Forum", true],
           [`/u/${address.toLowerCase()}/`, "Public profile", true],
         ].map(([href, label, plain]) =>

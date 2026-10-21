@@ -151,3 +151,46 @@ export function useMyTotal(address: string | null | undefined): number | null {
   }, [address]);
   return total;
 }
+
+// ------------------------------------------------------------------ airdrop activity
+
+/** What counts toward the future airdrop: coins created and dollars traded (mainnet). */
+export type Airdrop = { coins: number; traded: number; rank: number; players: number };
+export type AirdropRow = { owner: string; coins: number; traded: number; rank: number };
+
+export async function fetchMyAirdrop(address: string): Promise<Airdrop | null> {
+  const { data, error } = await db.rpc("airdrop_me", { p_owner: address.toLowerCase() });
+  if (error) throw error;
+  const r = ((data ?? []) as Record<string, unknown>[])[0];
+  if (!r) return null;
+  return { coins: n(r.coins), traded: n(r.traded_usd), rank: n(r.rank), players: n(r.players) };
+}
+
+export async function fetchAirdropBoard(limit = 100): Promise<AirdropRow[]> {
+  const { data, error } = await db.rpc("airdrop_board", { p_limit: limit });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ owner: String(r.owner), coins: n(r.coins), traded: n(r.traded_usd), rank: n(r.rank) }));
+}
+
+/** Your place on the airdrop list, for the header (0 = not on it yet). Refreshes every 2 minutes. */
+export function useMyAirdrop(address: string | null | undefined): Airdrop | null {
+  const [a, setA] = useState<Airdrop | null>(null);
+  useEffect(() => {
+    if (!address) {
+      setA(null);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      fetchMyAirdrop(address)
+        .then((x) => alive && setA(x ?? { coins: 0, traded: 0, rank: 0, players: 0 }))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 120_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [address]);
+  return a;
+}

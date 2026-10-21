@@ -300,7 +300,7 @@ function CreatePageV6() {
           </svg>
           Share your coin on X
         </button>
-        <p className="text-[0.75rem] text-ink-3 mt-2">First share earns you 100 points. Coins that get shared get buyers.</p>
+        <p className="text-[0.75rem] text-ink-3 mt-2">Coins that get shared get buyers.</p>
         <Link href={coinHref({ creator: address, launchKey: coinKey ?? launchKey })} className="mt-4 h-13 rounded-2xl bg-emerald text-on-accent font-bold flex items-center justify-center">
           Go to your coin
         </Link>

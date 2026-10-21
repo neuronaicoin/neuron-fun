@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Points · sasa",
-  description: "Earn points on sasa: trade, launch, invite friends and complete quests. Climb the Season 0 leaderboard.",
+  title: "Airdrop · sasa",
+  description: "Create coins and trade on sasa to earn the future sasa airdrop. The more you create and trade, the bigger your share.",
   alternates: { canonical: "/points/" },
 };
 

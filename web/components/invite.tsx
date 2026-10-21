@@ -1,21 +1,21 @@
 "use client";
 
-/** Compact invite card: your points, your invite link with Copy, and a way to the full Points page. */
+/** Compact invite card: your invite link with Copy, and a way to the Airdrop page. */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useMyTotal } from "@/lib/points";
+import { useMyAirdrop } from "@/lib/points";
 import { copyText } from "./contract";
 import { toast } from "./alerts";
 
 export function InviteCard({ address, username }: { address: string; username: string | null }) {
-  const total = useMyTotal(address);
+  const a = useMyAirdrop(address);
   const [origin, setOrigin] = useState("https://sasapad.fun");
   useEffect(() => setOrigin(window.location.origin), []);
   const link = `${origin}/?ref=${username ?? address.toLowerCase()}`;
   const shown = link.replace(/^https?:\/\//, "");
 
   async function copy() {
-    toast((await copyText(link)) ? "Invite link copied" : "Couldn't copy. Open Points to copy it from the box.");
+    toast((await copyText(link)) ? "Invite link copied" : "Couldn't copy. Open Airdrop to copy it from the box.");
   }
 
   return (
@@ -24,16 +24,16 @@ export function InviteCard({ address, username }: { address: string; username: s
         <div className="min-w-0">
           <h2 className="font-display font-bold text-[1.0625rem] sm:text-[1.125rem]">Invite friends, earn together</h2>
           <p className="text-[0.8125rem] text-ink-2 mt-1 leading-snug">
-            They start with 100 points. You get 20% of their points and 25% of sasa&apos;s fees from their trades for a year.
+            You get 25% of sasa&apos;s fees from their trades for a year, paid daily into your cash.
           </p>
         </div>
         <Link
           href="/points/"
           className="h-9 px-3 rounded-xl border border-line bg-surface font-bold text-[0.8125rem] flex items-center gap-1 shrink-0 hover:border-emerald/60"
-          title="Your points"
+          title="Your place on the airdrop list"
         >
-          <span className="font-mono tabular-nums">{total === null ? "…" : total.toLocaleString("en-US")}</span>
-          <span className="text-ink-3 font-normal">pts</span>
+          <span aria-hidden="true">🪂</span>
+          <span className="font-mono tabular-nums">{a === null ? "…" : a.rank > 0 ? `#${a.rank.toLocaleString("en-US")}` : "Airdrop"}</span>
         </Link>
       </div>
       <div className="flex gap-2 mt-3">
