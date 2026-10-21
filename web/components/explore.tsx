@@ -124,10 +124,21 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     // Only a new list blanks the grid; loading more keeps what's on screen.
     if (firstExt.current) setExt(null);
     firstExt.current = false;
-    const load = () =>
-      fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq })
-        .then((l) => alive && setExt(l))
-        .catch(() => alive && setExt((e) => e ?? []));
+    // The list query can take a few seconds and now and then times out: try again a few times
+    // (the grid keeps its loading look) before showing an empty list.
+    const load = async (tries = 3) => {
+      for (let i = 0; i < tries; i++) {
+        try {
+          const l = await fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq });
+          if (alive) setExt(l);
+          return;
+        } catch {
+          if (!alive) return;
+          if (i < tries - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+        }
+      }
+      if (alive) setExt((e) => e ?? []);
+    };
     void load();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") void load();
