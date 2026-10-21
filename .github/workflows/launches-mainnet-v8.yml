@@ -1,0 +1,32 @@
+name: launches-mainnet-v8
+
+# v8: opens or closes new v8 coin launches on all four chains (contracts-v7/script/race/launches.sh).
+# Trading and coins already launched are never affected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      open:
+        description: "Launches open?"
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+
+jobs:
+  launches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Run
+        env:
+          OPEN: ${{ inputs.open }}
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+        run: |
+          set -uo pipefail
+          k="$(printf '%s' "${RAW_KEY:-}" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+          echo "::add-mask::$k"
+          [ "$k" = "0x" ] && { echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; }
+          export PRIVATE_KEY="$k"
+          FACTORY=0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa REPORT="$GITHUB_STEP_SUMMARY" bash contracts-v7/script/race/launches.sh
