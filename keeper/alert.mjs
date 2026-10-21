@@ -63,12 +63,13 @@ export async function alert(service, key, text) {
   await Promise.allSettled(tasks);
 }
 
-let beatAt = 0;
+// one clock per service: several services (race keeper, relayer) beat from the same process
+const beatAt = new Map();
 /** This service is alive (at most one write a minute). */
 export async function heartbeat(service, info = "") {
   const now = Date.now();
-  if (now - beatAt < 60_000) return;
-  beatAt = now;
+  if (now - (beatAt.get(service) ?? 0) < 60_000) return;
+  beatAt.set(service, now);
   const r = rest("service_heartbeats?on_conflict=service", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=minimal",
