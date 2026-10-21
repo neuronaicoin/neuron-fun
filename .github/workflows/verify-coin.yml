@@ -1,0 +1,58 @@
+name: verify-coin
+
+# Verifies a race coin's source code on Basescan, BscScan (Etherscan key), Robinhood Chain's
+# Blockscout and Arc's explorer (contracts-v7/script/race/verifycoin.sh). Sends no transaction.
+# Every coin has the same code: once one is verified, explorers match the others to it.
+# Libraries and compiler are pinned exactly as in deploy-race-mainnet-v8 (same bytecode).
+
+on:
+  workflow_dispatch:
+    inputs:
+      coin:
+        description: "Coin address (the same on every chain)"
+        required: true
+        default: "0x42729c891ee0b60d83eacaa08a707a1d8cda31d3"
+      stack:
+        description: "Which factory made it"
+        type: choice
+        options: [v8, v7]
+        default: v8
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: contracts-v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.5
+
+      - name: Get libraries
+        run: |
+          mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
+          cd lib/v4-periphery
+          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
+          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
+          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
+          cd ../../../..
+          cp -r ../contracts/lib/layerzero lib/layerzero
+          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
+          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
+
+      - name: Verify
+        env:
+          COIN: ${{ inputs.coin }}
+          STACK: ${{ inputs.stack }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: |
+          set -uo pipefail
+          if [ "$STACK" = "v7" ]; then export FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B; else export FACTORY=0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa; fi
+          REPORT="$GITHUB_STEP_SUMMARY" bash script/race/verifycoin.sh
