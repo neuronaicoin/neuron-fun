@@ -5,7 +5,8 @@
 set -uo pipefail
 OPEN="${OPEN:?OPEN=true or false}"
 REPORT="${REPORT:-/dev/stdout}"
-FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
+# the v7 factory unless FACTORY names another set's (v8: 0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa)
+FACTORY="${FACTORY:-0x88e21D24C35034f80E854efBD5ACD16507a9169B}"
 declare -A RPC NAME
 RPC[8453]="${RPC_8453:-https://mainnet.base.org}";               NAME[8453]="Base"
 RPC[56]="${RPC_56:-https://bsc-dataseed.bnbchain.org}";           NAME[56]="BNB"
