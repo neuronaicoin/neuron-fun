@@ -1,0 +1,48 @@
+name: set-mc-v8
+
+# v8: sets the launch market cap on all four chains (contracts-v7/script/race/setmc.sh).
+# "dry-run" copies each chain and does it there as the owner: nothing real is sent.
+# "apply" sends it for real with the deployer key. Only coins launched afterwards are affected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (nothing is sent) or apply (sent for real)"
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      usd:
+        description: "Launch market cap in dollars"
+        required: true
+        default: "12000"
+      confirm:
+        description: "For apply only: type APPLY"
+        required: false
+        default: ""
+
+jobs:
+  mc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Run
+        env:
+          MODE: ${{ inputs.mode }}
+          USD: ${{ inputs.usd }}
+          CONFIRM: ${{ inputs.confirm }}
+          RAW_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+        run: |
+          set -uo pipefail
+          case "$USD" in ''|*[!0-9]*) echo "usd must be a whole number of dollars" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1;; esac
+          export WANT="${USD}000000"
+          if [ "$MODE" = "apply" ]; then
+            if [ "$CONFIRM" != "APPLY" ]; then echo "To apply, type APPLY in the confirm box." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; fi
+            k="$(printf '%s' "${RAW_KEY:-}" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+            echo "::add-mask::$k"
+            [ "$k" = "0x" ] && { echo "Secret MAINNET_DEPLOYER_KEY is missing"; exit 1; }
+            export PRIVATE_KEY="$k"
+          fi
+          REPORT="$GITHUB_STEP_SUMMARY" bash contracts-v7/script/race/setmc.sh
