@@ -173,26 +173,30 @@ function loadChains() {
 }
 
 // Reads logs in chunks (public RPCs limit the range); stops early when the time budget is spent.
-async function scan(pub, args, from, to) {
+export async function scan(pub, args, from, to, { wait = 3_000 } = {}) {
   const out = [];
   let step = 2_000n;
   let start = from;
+  let limited = 0; // "limit" answers in a row for the same chunk
   while (start <= to) {
     if (!timeLeft()) break;
     const end = start + step - 1n > to ? to : start + step - 1n;
     try {
       out.push(...(await pub.getLogs({ ...args, fromBlock: start, toBlock: end })));
       start = end + 1n;
+      limited = 0;
       if (step < 50_000n) step *= 2n;
     } catch (e) {
-      // a rate limit is about requests per second, not the range: wait and try the same chunk again
+      // "limit" can mean requests per second (wait, same chunk) or the block range (BNB Chain's
+      // public nodes say "exceeds defined limit" for a wide range): wait twice, then take smaller steps
       const msg = [e.shortMessage, e.details, e.message, e.cause?.details].filter(Boolean).join(" ");
       if (/rate limit|limit exceeded|exceeds defined limit|429|too many/i.test(msg)) {
-        await new Promise((r) => setTimeout(r, 3_000));
-        if ((e._tries = (e._tries || 0) + 1) < 5 || step <= 100n) continue;
+        await new Promise((r) => setTimeout(r, wait));
+        if (++limited < 3) continue;
       }
-      if (step <= 100n) throw e;
-      step /= 4n;
+      limited = 0;
+      if (step <= 10n) throw e;
+      step = step / 4n > 10n ? step / 4n : 10n;
     }
   }
   return { logs: out, next: start };
