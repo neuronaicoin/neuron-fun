@@ -581,6 +581,19 @@ export async function main(mode = "full") {
   }
 
   // Everything one coin needs in one pass. Throws only on RPC trouble; the next pass retries.
+  // Dollars a losing chain's consolidator holds for `coin` -> sent to the winning chain.
+  // true when nothing is waiting there (any more).
+  async function forwardWaiting(c, id, coin) {
+    const [pool, bb] = await Promise.all([
+      c.pub.readContract({ address: c.consolidator, abi: consAbi, functionName: "pendingPool", args: [id] }),
+      c.pub.readContract({ address: c.consolidator, abi: consAbi, functionName: "pendingBuyback", args: [id] }),
+    ]);
+    if (pool + bb === 0n) return true;
+    const msgs = (pool > 0n ? 1n : 0n) + (bb > 0n ? 1n : 0n);
+    const fwd = (per) => ({ address: c.consolidator, abi: consAbi, functionName: "forward", args: [id], value: per * msgs });
+    return send(c, `forward ${coin.name}: ${pool} pool + ${bb} buyback to ${coin.winner}`, fwd(lzFee(c)), (req) => fwd((req * 12n) / 10n));
+  }
+
   async function handleCoin(id, coin) {
     const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
 
@@ -591,6 +604,11 @@ export async function main(mode = "full") {
       // at that moment it waits as pendingDollars: keep retrying it here too
       if (win && Date.now() - (coin.lastPendCheck ?? 0) > PEND_CHECK_MS) {
         if (!DRY) coin.lastPendCheck = Date.now();
+        // dollars still waiting on a losing chain (a node a block behind can read them as 0 right
+        // after the hand-over, so the coin got marked finished before they were sent): send them
+        for (const e of coin.eids.filter((x) => x !== coin.winner && byEid.has(x))) {
+          await forwardWaiting(byEid.get(e), id, coin).catch((err) => log(`${coin.name}: waiting-dollars check on ${byEid.get(e).chainId} failed (${err.shortMessage || err.message})`));
+        }
         await placeArrived(win, coin);
       }
       const since = Date.now() - (coin.lastCollect ?? 0);
@@ -763,20 +781,13 @@ export async function main(mode = "full") {
       if (hasNativePair(r.c)) {
         const lost = await r.c.pub.readContract({ address: r.c.builder, abi: builderAbi, functionName: "lostPending", args: [coin.coin] });
         if (lost > 0n) {
-          const ok = await send(r.c, `convert ${coin.name}'s waiting ${lost} native to dollars`, { address: r.c.builder, abi: builderAbi, functionName: "convertLost", args: [coin.coin, 0n] });
-          if (!ok) allHandedOver = false;
+          await send(r.c, `convert ${coin.name}'s waiting ${lost} native to dollars`, { address: r.c.builder, abi: builderAbi, functionName: "convertLost", args: [coin.coin, 0n] });
+          // the dollars it made are read on the next pass (a node a block behind would show 0 now)
+          allHandedOver = false;
+          continue;
         }
       }
-      const [pool, bb] = await Promise.all([
-        r.c.pub.readContract({ address: r.c.consolidator, abi: consAbi, functionName: "pendingPool", args: [id] }),
-        r.c.pub.readContract({ address: r.c.consolidator, abi: consAbi, functionName: "pendingBuyback", args: [id] }),
-      ]);
-      if (pool + bb > 0n) {
-        const msgs = (pool > 0n ? 1n : 0n) + (bb > 0n ? 1n : 0n);
-        const fwd = (per) => ({ address: r.c.consolidator, abi: consAbi, functionName: "forward", args: [id], value: per * msgs });
-        const ok = await send(r.c, `forward ${coin.name}: ${pool} pool + ${bb} buyback to ${winnerEid}`, fwd(lzFee(r.c)), (req) => fwd((req * 12n) / 10n));
-        if (!ok) allHandedOver = false;
-      }
+      if (!(await forwardWaiting(r.c, id, coin))) allHandedOver = false;
     }
 
     // 4. the winner: arrived dollars that could not be placed yet
