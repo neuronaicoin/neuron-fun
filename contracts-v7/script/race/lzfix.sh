@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Moves sasa's race (hub + new coins) off the one-DVN LayerZero setup onto four DVNs.
+# Sets sasa's race (hub + new coins) LayerZero DVNs (Oct 18 2026: one DVN -> four; Oct 21: three).
 #
 # Why: with "LayerZero Labs only", LayerZero Labs' DVN never verified the race reports (6 stuck
 # messages, Oct 18 2026). Every working app on these chains uses several DVNs together. This sets,
@@ -33,7 +33,14 @@ else
   FACTORY=0x88e21D24C35034f80E854efBD5ACD16507a9169B
 fi
 for id in $CHAINS; do HUB32_OF[$id]=$(echo "0x000000000000000000000000${HUB_OF[$id]#0x}" | tr 'A-F' 'a-f'); done
-DVN_NAMES=("LayerZero Labs" "Nethermind" "Horizen" "Canary")
+# DVN_NAMES (comma-separated): which DVNs every message needs. Oct 21 2026: Canary charged ~$0.97
+# per message (the other three ~$0.003 each), ~80% of a race's cost; it was dropped.
+IFS=',' read -r -a DVN_NAMES <<< "${DVN_NAMES:-LayerZero Labs,Nethermind,Horizen}"
+NDVN=${#DVN_NAMES[@]}
+# KEEP_OPEN=1 (default): launches stay open. KEEP_OPEN=0: they are closed (reopen with launches.sh).
+KEEP_OPEN="${KEEP_OPEN:-1}"
+# SKIP_STUCK=1 skips undelivered reports to Base (only for messages known to be stuck for good).
+SKIP_STUCK="${SKIP_STUCK:-0}"
 declare -A RPC NAME EID EP SEND RECV EXEC DVNS CONF FORK PIDS NONCE
 RPC[8453]="${RPC_8453:-https://mainnet.base.org}";                NAME[8453]="Base";      CONF[8453]=10
 RPC[56]="${RPC_56:-https://bsc-dataseed.bnbchain.org}";               NAME[56]="BNB";         CONF[56]=20
@@ -52,6 +59,7 @@ pair_conf() { local a=${CONF[$1]} b=${CONF[$2]}; [ "$a" -gt "$b" ] && echo "$a" 
 # ------------------------------------------------------------------ LayerZero's addresses
 if [ -n "${LZ_METADATA:-}" ]; then cp "$LZ_METADATA" /tmp/lzmeta.json; else
   curl -fsSL https://metadata.layerzero-api.com/v1/metadata/deployments -o /tmp/lzmeta.json || fail "LayerZero metadata unreachable"; fi
+ALLMETA=$(cat /tmp/lzmeta.json)
 for id in $CHAINS; do
   E=$(jq -c --argjson id "$id" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|test("testnet|sepolia")|not))][0].value' /tmp/lzmeta.json)
   [ "$E" = "null" ] && fail "LayerZero has no entry for chain $id"
@@ -90,6 +98,19 @@ for a in $CHAINS; do
   done
 done
 say "- every chosen DVN serves every other chain: ok"
+say ""; say "Fee per message (native units) of every DVN LayerZero lists under these names, from each chain to the next:"
+ALLN=("LayerZero Labs" "Nethermind" "Horizen" "Canary")
+for id in $CHAINS; do
+  to=8453; [ "$id" = "8453" ] && to=56
+  line="- ${NAME[$id]} -> ${NAME[$to]}:"
+  for n in "${ALLN[@]}"; do
+    addr=$(echo "$ALLMETA" | jq -r --argjson id "$id" --arg n "$n" '[to_entries[] | select(.value.chainDetails.nativeChainId == $id and (.key|test("testnet|sepolia")|not))][0].value.dvns // {} | to_entries[] | select(.value.canonicalName == $n and (.value.deprecated|not) and (.value.lzReadCompatible|not)) | .key' | head -1)
+    [ -z "$addr" ] && { line="$line $n=none;"; continue; }
+    fee=$(c call "$addr" "getFee(uint32,uint64,address,bytes)(uint256)" "${EID[$to]}" 15 "${HUB_OF[$id]}" 0x --rpc-url "${RPC[$id]}")
+    line="$line $n=$(cast from-wei "${fee:-0}" 2>/dev/null || echo "$fee");"
+  done
+  say "$line"
+done
 
 OWNER=""
 for a in $CHAINS; do
@@ -116,7 +137,9 @@ for a in 56 4663 5042; do
   IN[$a]=$(c call "${EP[8453]}" "inboundNonce(address,uint32,bytes32)(uint64)" "${HUB_OF[8453]}" "${EID[$a]}" "${HUB32_OF[$a]}" --rpc-url "${RPC[8453]}" | awk '{print $1}')
   [ "${OUT[$a]}" = "ERR" ] || [ "${IN[$a]}" = "ERR" ] && fail "can't read the nonces for ${NAME[$a]}"
   say "- ${NAME[$a]} -> Base: sent ${OUT[$a]}, arrived ${IN[$a]}"
-  [ "${OUT[$a]}" -le 2 ] || fail "${NAME[$a]} sent ${OUT[$a]} messages to Base; expected at most 2 (only the two stuck races). Look before skipping anything."
+  if [ "$SKIP_STUCK" = "1" ]; then
+    [ $(( ${OUT[$a]} - ${IN[$a]} )) -le 2 ] || fail "${NAME[$a]} has $(( ${OUT[$a]} - ${IN[$a]} )) undelivered messages to Base; expected at most 2. Look before skipping anything."
+  fi
 done
 
 # ------------------------------------------------------------------ the steps
@@ -164,9 +187,9 @@ send() { # chain, label, to, sig, args...
 }
 uln_of() { # local chain, remote chain -> abi-encoded UlnConfig
   local conf; conf=$(pair_conf "$1" "$2")
-  cast abi-encode "f((uint64,uint8,uint8,uint8,address[],address[]))" "($conf,4,0,0,[${DVNS[$1]}],[])"
+  cast abi-encode "f((uint64,uint8,uint8,uint8,address[],address[]))" "($conf,$NDVN,0,0,[${DVNS[$1]}],[])"
 }
-want_uln() { echo "($(pair_conf "$1" "$2"), 4, 0, 0, [${DVNS[$1]//,/, }], [])"; }
+want_uln() { echo "($(pair_conf "$1" "$2"), $NDVN, 0, 0, [${DVNS[$1]//,/, }], [])"; }
 
 bad=0
 check_chain() { # chain: read back what was set (a few tries: the node answering may lag a block)
@@ -186,9 +209,11 @@ check_chain() { # chain: read back what was set (a few tries: the node answering
     done
     if [ $ok = 1 ]; then say "- ${NAME[$a]} -> ${NAME[$b]}: hub send, hub receive, new-coin route: ok"; else bad=1; say "- ${NAME[$a]} -> ${NAME[$b]}: **MISMATCH** send=\`$s\` receive=\`$r\` want=\`$w\`"; fi
   done
-  open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
-  [ "$open" = "false" ] && say "- ${NAME[$a]}: launches closed: ok" || { bad=1; say "- ${NAME[$a]}: launches **still open**"; }
-  if [ "$a" = "8453" ]; then
+  if [ "$KEEP_OPEN" != "1" ]; then
+    open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
+    [ "$open" = "false" ] && say "- ${NAME[$a]}: launches closed: ok" || { bad=1; say "- ${NAME[$a]}: launches **still open**"; }
+  fi
+  if [ "$a" = "8453" ] && [ "$SKIP_STUCK" = "1" ]; then
     for b in 56 4663 5042; do
       lz=$(c call "${EP[8453]}" "lazyInboundNonce(address,uint32,bytes32)(uint64)" "${HUB_OF[8453]}" "${EID[$b]}" "${HUB32_OF[$b]}" --rpc-url "${FORK[8453]}" | awk '{print $1}')
       [ "$lz" = "${OUT[$b]}" ] && say "- Base: stuck reports from ${NAME[$b]} skipped (next expected: $((lz + 1))): ok" || { bad=1; say "- Base: reports from ${NAME[$b]}: lazy nonce $lz, expected ${OUT[$b]}"; }
@@ -203,13 +228,15 @@ run_chain() { # chain -> 0 done, 2 retry with a fresh copy
   for b in $CHAINS; do
     [ "$a" = "$b" ] && continue
     uln=$(uln_of "$a" "$b")
-    send "$a" "hub sends to ${NAME[$b]}: 4 DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" "${HUB_OF[$a]}" "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]" || return 2
+    send "$a" "hub sends to ${NAME[$b]}: $NDVN DVNs, $(pair_conf "$a" "$b") confirmations" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" "${HUB_OF[$a]}" "${SEND[$a]}" "[(${EID[$b]},1,$execcfg),(${EID[$b]},2,$uln)]" || return 2
     send "$a" "hub receives from ${NAME[$b]}: same" "${EP[$a]}" "setConfig(address,address,(uint32,uint32,bytes)[])" "${HUB_OF[$a]}" "${RECV[$a]}" "[(${EID[$b]},2,$uln)]" || return 2
     send "$a" "new coins' route to ${NAME[$b]}: same" $FACTORY "setRoute(uint32,(address,address,bytes,bytes))" "${EID[$b]}" "(${SEND[$a]},${RECV[$a]},$execcfg,$uln)" || return 2
   done
-  open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
-  if [ "$open" = "true" ]; then send "$a" "launches closed" $FACTORY "setLaunchesOpen(bool)" false || return 2; else say "- ${NAME[$a]}: launches already closed"; fi
-  if [ "$a" = "8453" ]; then
+  if [ "$KEEP_OPEN" != "1" ]; then
+    open=$(c call $FACTORY "launchesOpen()(bool)" --rpc-url "${FORK[$a]}")
+    if [ "$open" = "true" ]; then send "$a" "launches closed" $FACTORY "setLaunchesOpen(bool)" false || return 2; else say "- ${NAME[$a]}: launches already closed"; fi
+  fi
+  if [ "$a" = "8453" ] && [ "$SKIP_STUCK" = "1" ]; then
     for b in 56 4663 5042; do
       n=$(( ${IN[$b]} + 1 ))
       while [ "$n" -le "${OUT[$b]}" ]; do
