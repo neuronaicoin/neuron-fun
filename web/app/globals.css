@@ -325,6 +325,10 @@ html,
 body {
   overflow-x: clip;
 }
+/* The scrollbar's room is always kept, so pages don't shift sideways while they load and grow. */
+html {
+  scrollbar-gutter: stable;
+}
 
 
 /* Explore: "Almost graduating" cards */

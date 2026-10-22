@@ -5,7 +5,7 @@
  * coins you created and your trades. Deposit and Withdraw stay pinned at the bottom.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
@@ -86,7 +86,7 @@ export default function MePage() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-40 md:pb-28">
       {/* Profile */}
       <div className="flex items-center gap-4">
-        {profile ? <Avatar profile={profile} size={64} /> : <span className="w-16 h-16 rounded-full bg-line animate-pulse shrink-0" />}
+        {profile ? <Avatar profile={profile} size={64} /> : <span className="rounded-full bg-line animate-pulse shrink-0" style={{ width: 64, height: 64 }} />}
         <div className="min-w-0 flex-1">
           <h1 className="font-display font-semibold text-[1.5rem] sm:text-[1.875rem] tracking-tight truncate">
             {profile ? (profile.username ? displayName(profile) : "You") : "…"}
@@ -100,11 +100,14 @@ export default function MePage() {
             </button>
           </div>
         </div>
-        {profile && (
-          <button type="button" onClick={() => setEditing(true)} className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] hover:border-emerald shrink-0">
-            Edit
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={!profile}
+          onClick={() => setEditing(true)}
+          className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] hover:border-emerald shrink-0 disabled:opacity-40"
+        >
+          Edit
+        </button>
       </div>
       <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar -mx-1 px-1">
         {[
@@ -143,16 +146,34 @@ export default function MePage() {
       {/* Money */}
       <section className="mt-6 rounded-3xl border border-line bg-surface p-4 sm:p-6" aria-label="Your money">
         {!p ? (
-          <Skeleton className="h-24" />
+          <div aria-hidden="true">
+            <div className="text-[0.8125rem] text-ink-3">Total balance</div>
+            <div className="font-display text-[2.25rem] sm:text-[2.75rem] font-bold tracking-tight leading-none mt-1 relative">
+              &nbsp;
+              <span className="shimmer absolute inset-y-0 left-0 w-40 rounded-xl" />
+            </div>
+            <div className="font-mono text-[0.9375rem] font-semibold mt-1.5">&nbsp;</div>
+            {/* the same boxes as below, empty, so nothing moves when the numbers arrive */}
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {["Cash", "Coins", "Futures"].map((label) => (
+                <div key={label} className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
+                  <div className="text-[0.75rem] text-ink-3">{label}</div>
+                  <div className="font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 relative">
+                    &nbsp;
+                    <span className="shimmer absolute inset-y-0.5 left-0 w-3/4 rounded-md" />
+                  </div>
+                  <div className="text-[0.6875rem]">&nbsp;</div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <>
             <div className="text-[0.8125rem] text-ink-3">Total balance</div>
             <div className="font-display text-[2.25rem] sm:text-[2.75rem] font-bold tracking-tight leading-none mt-1">{money(p.totalUsd)}</div>
-            {p.coinsUsd > 0 && (
-              <div className={"font-mono text-[0.9375rem] font-semibold mt-1.5 " + (p.dayUsd >= 0 ? "text-up" : "text-danger")}>
-                {signed(p.dayUsd)} ({pctText(p.dayPct)}) today
-              </div>
-            )}
+            <div className={"font-mono text-[0.9375rem] font-semibold mt-1.5 " + (p.dayUsd >= 0 ? "text-up" : "text-danger")}>
+              {p.coinsUsd > 0 ? `${signed(p.dayUsd)} (${pctText(p.dayPct)}) today` : "\u00a0"}
+            </div>
             {/* what the total is made of: cash, coins, futures */}
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
@@ -244,7 +265,7 @@ export default function MePage() {
       <section className="mt-8">
         <h2 className="font-display font-semibold text-[1.25rem]">Coins you created</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {!data && <Skeleton className="h-40 sm:h-44" />}
+          {myRaces === null && [0, 1].map((i) => <Skeleton key={i} className="h-[4.75rem]" />)}
           {/* newest first; phones show the last few */}
           {myRaces?.slice(0, phone ? madeShown : undefined).map((r) => (
             <Link key={r.id} href={raceHref(r.id)} className="rounded-2xl border border-line bg-surface p-4 flex items-center gap-3 hover:border-emerald min-w-0">
@@ -324,16 +345,18 @@ const STEP = 3;
 const MORE = 10;
 
 /** Phones (under the sm breakpoint), following the window as it resizes. */
+const PHONE_Q = "(max-width: 639px)";
 function usePhone() {
-  const [phone, setPhone] = useState(false);
-  useEffect(() => {
-    const m = window.matchMedia("(max-width: 639px)");
-    const set = () => setPhone(m.matches);
-    set();
-    m.addEventListener("change", set);
-    return () => m.removeEventListener("change", set);
-  }, []);
-  return phone;
+  // read at once (not after a first paint), so a phone never shows the full list for a moment
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(PHONE_Q);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(PHONE_Q).matches,
+    () => false
+  );
 }
 
 function LoadMore({ left, onClick }: { left: number; onClick: () => void }) {

@@ -10,7 +10,7 @@ import type { Address } from "viem";
 import { CHAINS, USD_MODE, type NeuronChain } from "./config";
 import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
-import { fetchRacePositions, type RacePosition } from "./race";
+import { fetchRacePositions, verifyRacePositions, type RaceCoin, type RacePosition } from "./race";
 import { fetchExtHoldings, type ExtHolding } from "./extheld";
 import { PERPS_TRADING, fetchPerpAccount, type PerpPosition } from "./perps";
 
@@ -111,11 +111,25 @@ if (typeof window !== "undefined") {
   window.addEventListener("focus", wake);
 }
 
+// Race coins just traded, read from the chains until the indexer has caught up.
+let checkChainUntil = 0;
+const justTraded = new Map<string, RaceCoin>();
+const checkingChain = () => {
+  if (Date.now() < checkChainUntil) return true;
+  justTraded.clear();
+  return false;
+};
+
 /**
  * Right after any trade or money move: cash at once (chain reads only), then everything again
  * a few times while the chains and the lists catch up (a trade to another chain lands in seconds).
  */
-export function afterTrade(): void {
+export function afterTrade(coin?: RaceCoin): void {
+  if (coin) {
+    // for the next two minutes race balances come from the chains, not the (slower) indexer
+    checkChainUntil = Date.now() + 120_000;
+    justTraded.set(coin.coin.toLowerCase(), coin);
+  }
   void refreshCash();
   void refreshPortfolio(true);
   for (const ms of [2_500, 6_000, 12_000, 25_000, 45_000]) setTimeout(() => void refreshPortfolio(true), ms);
@@ -163,7 +177,16 @@ export async function refreshCash(): Promise<void> {
       return { chain, wei, usd: Number(wei) * perWei };
     });
     const cashUsd = cashByChain.reduce((a, c) => a + c.usd, 0);
-    set({ portfolio: { ...cur, cashByChain, cashUsd, totalUsd: cur.coinsUsd + cashUsd + (cur.futures?.valueUsd ?? 0) }, version: state.version + 1 });
+    // a coin just sold must leave the total together with the cash arriving (and a bought one arrive)
+    let racePositions = cur.racePositions;
+    let coinsUsd = cur.coinsUsd;
+    if (checkingChain()) {
+      racePositions = await verifyRacePositions(address, cur.racePositions, [...justTraded.values()]).catch(() => cur.racePositions);
+      coinsUsd = cur.coinsUsd - sumUsd(cur.racePositions) + sumUsd(racePositions);
+    }
+    const now = state.portfolio ?? cur;
+    if (state.address !== address) return;
+    set({ portfolio: { ...now, cashByChain, cashUsd, racePositions, coinsUsd, totalUsd: coinsUsd + cashUsd + (now.futures?.valueUsd ?? 0) }, version: state.version + 1 });
   } catch {
     /* the full reload will fix it */
   }
@@ -207,6 +230,8 @@ export function optimisticTrade(cashUsd: number, coinsUsd: number): () => void {
   };
 }
 
+const sumUsd = (list: RacePosition[]) => list.reduce((a, p) => a + p.valueUsd, 0);
+
 function uniqueChains(): NeuronChain[] {
   const seen = new Set<number>();
   return CHAINS.filter((c) => !seen.has(c.chain.id) && seen.add(c.chain.id));
@@ -229,7 +254,9 @@ async function loadPortfolio(address: string, prev: Portfolio | null = null, onP
     // Cash: USDC in the dollar edition (the chain's coin otherwise).
     Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
-    fetchRacePositions(address).catch(() => [] as RacePosition[]),
+    fetchRacePositions(address)
+      .catch(() => prev?.racePositions ?? ([] as RacePosition[]))
+      .then((list) => (checkingChain() ? verifyRacePositions(address, list, [...justTraded.values()]).catch(() => list) : list)),
   ]);
   const build = (extPositions: ExtHolding[], futures: Portfolio["futures"]) => buildPortfolio(pf, cash, trades, racePositions, extPositions, futures);
   if (!extrasDone && onPartial) onPartial(build(prev?.extPositions ?? [], prev?.futures ?? null));

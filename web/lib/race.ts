@@ -675,6 +675,44 @@ export async function fetchRacePositions(address: string): Promise<RacePosition[
     .sort((a, b) => b.valueUsd - a.valueUsd);
 }
 
+/**
+ * The same positions, with the coins' balances read straight from the chains instead of the
+ * indexer. Used for a couple of minutes after a trade, when the indexer can be seconds behind:
+ * a sold coin drops out of the total at once and a bought one shows up at once. `extra`: coins
+ * just traded that may not be in the list yet. A chain that can't be read keeps its old number.
+ */
+export async function verifyRacePositions(address: string, positions: RacePosition[], extra: RaceCoin[] = []): Promise<RacePosition[]> {
+  const me = address as Address;
+  const byCoin = new Map<string, RaceCoin>();
+  for (const p of positions) byCoin.set(p.coin.coin.toLowerCase(), p.coin);
+  for (const c of extra) if (!byCoin.has(c.coin.toLowerCase())) byCoin.set(c.coin.toLowerCase(), c);
+  const out = await Promise.all(
+    [...byCoin.values()].map(async (coin): Promise<RacePosition> => {
+      const old = positions.find((p) => p.coin.coin.toLowerCase() === coin.coin.toLowerCase());
+      const chains = (
+        await Promise.all(
+          coin.lanes.map(async (lane) => {
+            const before = old?.chains.find((x) => x.chain.chainId === lane.chain.chainId)?.tokens ?? 0;
+            try {
+              const wei = (await raceClient(lane.chain).readContract({ address: coin.coin, abi: raceErc20Abi, functionName: "balanceOf", args: [me] })) as bigint;
+              return { chain: lane.chain, tokens: Number(wei) / 1e18 };
+            } catch {
+              return { chain: lane.chain, tokens: before };
+            }
+          })
+        )
+      ).filter((x) => x.tokens > 0);
+      const valueUsd = chains.reduce((sum, x) => {
+        const lane = coin.lanes.find((l) => l.chain.chainId === x.chain.chainId);
+        const price = lane && lane.state !== 3 ? lane.priceUsd : leadLane(coin)?.priceUsd;
+        return sum + x.tokens * (price ?? 0);
+      }, 0);
+      return { coin, tokens: chains.reduce((a, x) => a + x.tokens, 0), valueUsd, chains };
+    })
+  );
+  return out.filter((p) => p.tokens > 0).sort((a, b) => b.valueUsd - a.valueUsd);
+}
+
 export type RaceTrade = {
   chain: RaceChain;
   txHash: string;

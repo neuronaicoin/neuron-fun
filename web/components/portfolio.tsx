@@ -100,7 +100,11 @@ export function BalancePill() {
             </span>
           </span>
         ) : (
-          <span className="shimmer inline-block w-16 h-5 rounded-md" aria-hidden="true" />
+          // shaped like the two lines that come (Total / Cash), so the buttons beside it don't move
+          <span className="flex flex-col items-start leading-none min-w-[3.75rem]" aria-hidden="true">
+            <span className="shimmer block w-[5.75rem] h-[1.0625rem] rounded-md" />
+            <span className="shimmer block w-[4.5rem] h-[0.8125rem] rounded-md mt-1" />
+          </span>
         )}
       </button>
       <button
