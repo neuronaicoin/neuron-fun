@@ -657,11 +657,22 @@ async function liveRaceMoney(pool, chains, log) {
 export async function raceLoop(pool, log) {
   const { chains, byEid } = loadRaceChains(log);
   if (!chains.length) return;
-  try {
-    await pool.query("select 1 from race_state limit 1");
-  } catch {
-    log("race indexer: run indexer/race.sql in Supabase first; race indexing is off until then");
-    return;
+  // The database can be briefly out of connections (e.g. while a new deploy replaces the old
+  // one): keep trying instead of switching race indexing off for the whole run.
+  for (let tries = 0; ; tries++) {
+    try {
+      await pool.query("select 1 from race_state limit 1");
+      break;
+    } catch (e) {
+      const missing = /race_state/.test(e?.message ?? "") && /does not exist/.test(e?.message ?? "");
+      if (!missing && tries < 60) {
+        if (tries % 6 === 0) log(`race indexer: database not reachable yet (${e?.message ?? e}); trying again`);
+        await sleep(10_000);
+        continue;
+      }
+      log("race indexer: run indexer/race.sql in Supabase first; race indexing is off until then");
+      return;
+    }
   }
   await Promise.all([...chains.map((c) => runRaceChain(pool, c, byEid, log)), liveRaceMoney(pool, chains, log)]);
 }

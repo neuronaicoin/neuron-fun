@@ -699,6 +699,12 @@ export async function main(mode = "full") {
     if (here.length !== coin.eids.length) {
       // not launched (or not configured) on every chain yet. A creator who never sends the other
       // launches leaves the race unable to finish: say so once it's clearly not just slow.
+      // Said in the log too (every 10 minutes), so a coin skipped this way is never silent.
+      if (Date.now() - (coin.partialLogged ?? 0) > 10 * 60_000) {
+        const missing = coin.eids.filter((e) => !coin.chains[e] || !byEid.has(e));
+        log(`${coin.name}: waiting, its launch isn't seen yet on ${missing.map((e) => (byEid.has(e) ? byEid.get(e).chainId : `eid ${e} (not configured)`)).join(", ")}`);
+        if (!DRY) coin.partialLogged = Date.now();
+      }
       if (Date.now() - coin.seenAt > 30 * 60_000) {
         const missing = coin.eids.filter((e) => !coin.chains[e] || !byEid.has(e));
         await alert("race keeper", `partial-${id}`, `${coin.name} was launched on only some of its chains (missing ${missing.join(", ")}) for over 30 minutes: its race can't finish until the rest launch.`);
