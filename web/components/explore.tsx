@@ -172,9 +172,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   );
   // race coins first (on a chain, only races that run there), then the rest
   const raceRows = useMemo(() => {
-    const l = (races ?? []).filter((r) => chain === "all" || r.lanes.some((ln) => ln.state !== 3 && ln.chain.key === RACE_KEY[chain]));
+    const l = (races ?? []).filter(
+      (r) => (chain === "all" || r.lanes.some((ln) => ln.state !== 3 && ln.chain.key === RACE_KEY[chain])) && !(tab !== "new" && r.lanes.length === 1)
+    );
     return minVol > 0 || minLiq > 0 ? l.filter((r) => raceVol(r) >= minVol && raceLiq(r) >= minLiq) : l;
-  }, [races, chain, minVol, minLiq]);
+  }, [races, chain, minVol, minLiq, tab]);
   const visible = ranked.slice(0, Math.max(0, shown - raceRows.length));
   const extFull = !!extSort && (ext?.length ?? 0) >= extLimit;
   const canGrow = ranked.length + raceRows.length > shown || hasMore || extFull || (raceTab && (races?.length ?? 0) >= Math.min(200, shown + STEP));
@@ -428,8 +430,9 @@ function raceRow(r: RaceCoin, supply = RACE_SUPPLY): Row {
     progress: null,
     graduated: false,
     graduating: false,
-    where: decided ? (r.winner?.short ?? null) : `${r.lanes.length} chains`,
-    badge: decided ? (r.winner ? `Won on ${r.winner.short}` : "Finished") : phase === "open" ? "Every chain" : "Racing",
+    // a coin launched on one chain doesn't race: it just trades there
+    where: r.lanes.length === 1 ? r.lanes[0].chain.short : decided ? (r.winner?.short ?? null) : `${r.lanes.length} chains`,
+    badge: r.lanes.length === 1 ? undefined : decided ? (r.winner ? `Won on ${r.winner.short}` : "Finished") : phase === "open" ? "Every chain" : "Racing",
   };
 }
 

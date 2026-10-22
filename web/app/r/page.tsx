@@ -121,6 +121,8 @@ function RacePage() {
     );
 
   const phase = racePhase(coin, now);
+  // launched on one chain only: no race to show, it simply trades there
+  const solo = coin.lanes.length === 1;
   const lead = leadLane(coin);
   const lane = (coin.winner ? null : coin.lanes.find((l) => l.chain.chainId === pick && l.state !== 3)) ?? lead ?? coin.lanes[0];
   // Before the verdict every chain has its own price; after it, the winner's is the coin's.
@@ -148,7 +150,7 @@ function RacePage() {
               by <b className="font-semibold text-ink">{shortAddr(coin.creator)}</b>
             </span>
             <span>{timeAgo(new Date(coin.launchedAt).toISOString())}</span>
-            <PhaseBadge coin={coin} phase={phase} now={now} />
+            {solo ? <SoloBadge coin={coin} /> : <PhaseBadge coin={coin} phase={phase} now={now} />}
             <RaceShareButton coin={coin} />
           </div>
           <CoinLinksRow coinId={coin.id} creator={coin.creator} className="mt-2" />
@@ -177,14 +179,14 @@ function RacePage() {
             <Fact label="Market cap" value={compactUsd(mcap)} />
             <Fact label="Volume" value={compactUsd(volume)} />
             <Fact label="Trades" value={trades.toLocaleString("en-US")} />
-            <Fact label="In the race" value={compactUsd(coin.totalUsd ?? coin.lanes.reduce((s, l) => s + laneUsd(l), 0))} />
+            <Fact label={solo ? "Raised" : "In the race"} value={compactUsd(coin.totalUsd ?? coin.lanes.reduce((s, l) => s + laneUsd(l), 0))} />
           </div>
 
-          <RaceLanes coin={coin} phase={phase} now={now} />
+          {!solo && <RaceLanes coin={coin} phase={phase} now={now} />}
 
-          {phase === "decided" && coin.winner && <RaceReplay coin={coin} />}
+          {!solo && phase === "decided" && coin.winner && <RaceReplay coin={coin} />}
 
-          <RaceChat coin={coin} now={now} />
+          {!solo && <RaceChat coin={coin} now={now} />}
 
           <CreatorKit coin={coin} now={now} />
 
@@ -258,6 +260,17 @@ function Fact({ label, value }: { label: string; value: string }) {
       <div className="text-[0.75rem] sm:text-[0.8125rem] text-ink-3 truncate">{label}</div>
       <div className="text-[1.125rem] sm:text-[1.375rem] font-bold tabular-nums truncate">{value}</div>
     </div>
+  );
+}
+
+/** A coin launched on a single chain: where it trades, no race. */
+function SoloBadge({ coin }: { coin: RaceCoin }) {
+  const c = coin.lanes[0]?.chain;
+  if (!c) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full font-semibold text-[0.75rem] text-white" style={{ background: c.color }}>
+      On {c.short}
+    </span>
   );
 }
 

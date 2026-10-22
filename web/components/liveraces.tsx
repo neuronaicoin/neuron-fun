@@ -45,8 +45,10 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   if (races === null) return <div className="h-[142px] sm:h-[171px]" aria-hidden="true" />;
   if (races.length === 0) return <>{fallback}</>;
   // stuck races (no result an hour after the end) aren't live: their pages stay, the wall skips them
-  const live = races.filter((r) => (racePhase(r, now) === "racing" || racePhase(r, now) === "deciding") && !raceStuck(r, now));
-  const done = races.filter((r) => racePhase(r, now) === "decided").slice(0, 6);
+  // a coin launched on one chain doesn't race: it shows with the finished ones right away
+  const solo = (r: RaceCoin) => r.lanes.length === 1;
+  const live = races.filter((r) => !solo(r) && (racePhase(r, now) === "racing" || racePhase(r, now) === "deciding") && !raceStuck(r, now));
+  const done = races.filter((r) => solo(r) || racePhase(r, now) === "decided").slice(0, 6);
   if (!live.length && !done.length) return <>{fallback}</>;
   const liveUsd = live.reduce((s, r) => s + r.lanes.reduce((a, l) => a + laneUsd(l), 0), 0);
 
@@ -159,7 +161,11 @@ function DoneCard({ race }: { race: RaceCoin }) {
         <div className="font-semibold text-[0.875rem] truncate">{race.name}</div>
         <div className="text-[0.75rem] text-ink-3 truncate">raised {compactUsd(total)}</div>
       </div>
-      {race.winner ? (
+      {race.lanes.length === 1 ? (
+        <span className="shrink-0 text-[0.6875rem] font-bold text-white rounded-full px-2 py-0.5" style={{ background: race.lanes[0].chain.color }}>
+          {race.lanes[0].chain.short}
+        </span>
+      ) : race.winner ? (
         <span className="shrink-0 text-[0.6875rem] font-bold text-white rounded-full px-2 py-0.5" style={{ background: race.winner.color }}>
           🏆 {race.winner.short}
         </span>
