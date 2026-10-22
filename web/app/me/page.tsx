@@ -38,6 +38,10 @@ export default function MePage() {
   const [list, setList] = useState<"followers" | "following" | null>(null);
   const [allTrades, setAllTrades] = useState(false);
   const [editing, setEditing] = useState(false);
+  // phones show the first few coins (held and created), with "Load more" for the rest
+  const phone = usePhone();
+  const [heldShown, setHeldShown] = useState(STEP);
+  const [madeShown, setMadeShown] = useState(STEP);
   // race coins this account created
   const [myRaces, setMyRaces] = useState<RaceCoin[] | null>(RACE_CHAINS.length ? null : []);
   useEffect(() => {
@@ -149,6 +153,7 @@ export default function MePage() {
                 {signed(p.dayUsd)} ({pctText(p.dayPct)}) today
               </div>
             )}
+            {/* what the total is made of: cash, coins, futures */}
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
                 <div className="text-[0.75rem] text-ink-3">Cash</div>
@@ -160,12 +165,24 @@ export default function MePage() {
                 <div className="font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 truncate">{money(p.coinsUsd)}</div>
                 <div className={"text-[0.6875rem] font-semibold truncate " + (p.openPnlUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.openPnlUsd)} open</div>
               </div>
-              <div className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5">
-                <div className="text-[0.75rem] text-ink-3">Realized</div>
-                <div className={"font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 truncate " + (p.realizedUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.realizedUsd)}</div>
-                <div className="text-[0.6875rem] text-ink-3">from sells</div>
-              </div>
+              <Link href="/perps/" className="min-w-0 rounded-2xl bg-paper border border-line px-2.5 sm:px-3 py-2.5 hover:border-emerald/60">
+                <div className="text-[0.75rem] text-ink-3">Futures</div>
+                <div className="font-mono font-semibold text-[0.9375rem] sm:text-[1.0625rem] mt-0.5 truncate">{money(p.futures?.valueUsd ?? 0)}</div>
+                <div
+                  className={
+                    "text-[0.6875rem] font-semibold truncate " +
+                    (!p.futures?.positions.length ? "text-ink-3" : futuresPnl(p) >= 0 ? "text-up" : "text-danger")
+                  }
+                >
+                  {p.futures?.positions.length ? `${signed(futuresPnl(p))} open` : "no positions"}
+                </div>
+              </Link>
             </div>
+            {p.realizedUsd !== 0 && (
+              <div className="text-[0.75rem] text-ink-3 mt-2">
+                Realized from sells: <b className={"font-mono " + (p.realizedUsd >= 0 ? "text-up" : "text-danger")}>{signed(p.realizedUsd)}</b>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -193,17 +210,22 @@ export default function MePage() {
               Nothing yet. <Link href="/explore/" className="text-emerald font-semibold">Find a coin you like</Link>.
             </p>
           ) : (
-            <ul>
-              {p.racePositions.map((pos) => (
-                <RacePositionRow key={pos.coin.id} pos={pos} big />
-              ))}
-              {p.positions.map((pos) => (
-                <PositionRow key={pos.coin.id} pos={pos} big />
-              ))}
-              {p.extPositions.map((h) => (
-                <ExtPositionRow key={`${h.network}:${h.address}`} h={h} big />
-              ))}
-            </ul>
+            (() => {
+              const rows = [
+                ...p.racePositions.map((pos) => <RacePositionRow key={pos.coin.id} pos={pos} big />),
+                ...p.positions.map((pos) => <PositionRow key={pos.coin.id} pos={pos} big />),
+                ...p.extPositions.map((h) => <ExtPositionRow key={`${h.network}:${h.address}`} h={h} big />),
+              ];
+              const shown = phone ? rows.slice(0, heldShown) : rows;
+              return (
+                <>
+                  <ul>{shown}</ul>
+                  {shown.length < rows.length && (
+                    <LoadMore left={rows.length - shown.length} onClick={() => setHeldShown((n) => n + MORE)} />
+                  )}
+                </>
+              );
+            })()
           )}
         </div>
       </section>
@@ -223,21 +245,27 @@ export default function MePage() {
         <h2 className="font-display font-semibold text-[1.25rem]">Coins you created</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {!data && <Skeleton className="h-40 sm:h-44" />}
-          {myRaces?.map((r) => (
+          {/* newest first; phones show the last few */}
+          {myRaces?.slice(0, phone ? madeShown : undefined).map((r) => (
             <Link key={r.id} href={raceHref(r.id)} className="rounded-2xl border border-line bg-surface p-4 flex items-center gap-3 hover:border-emerald min-w-0">
               <CoinAvatar logo={r.logo} symbol={r.symbol} size={44} />
               <span className="min-w-0">
                 <b className="block truncate">{r.name}</b>
                 <span className="block text-[0.8125rem] text-ink-3 truncate">
-                  ${r.symbol} · {r.winner ? `won on ${r.winner.short}` : `${r.lanes.length} chain${r.lanes.length === 1 ? "" : "s"}`}
+                  ${r.symbol} · {r.lanes.length === 1 ? `on ${r.lanes[0].chain.short}` : r.winner ? `won on ${r.winner.short}` : `${r.lanes.length} chains`}
                 </span>
               </span>
             </Link>
           ))}
-          {data?.created.map((c) => (
+          {data?.created.slice(0, phone ? Math.max(0, madeShown - (myRaces?.length ?? 0)) : undefined).map((c) => (
             <CoinCard key={c.id} coin={c} />
           ))}
         </div>
+        {phone && (myRaces?.length ?? 0) + (data?.created.length ?? 0) > madeShown && (
+          <div className="mt-3 rounded-2xl border border-line bg-surface px-4">
+            <LoadMore left={(myRaces?.length ?? 0) + (data?.created.length ?? 0) - madeShown} onClick={() => setMadeShown((n) => n + MORE)} />
+          </div>
+        )}
         {data && data.created.length === 0 && myRaces !== null && myRaces.length === 0 && (
           <div className="mt-1 text-center py-8 border border-dashed border-line rounded-2xl">
             <p className="text-ink-2">You haven&apos;t created a coin yet.</p>
@@ -289,4 +317,34 @@ export default function MePage() {
       )}
     </div>
   );
+}
+
+/** First this many coins on phones, then this many more per "Load more". */
+const STEP = 3;
+const MORE = 10;
+
+/** Phones (under the sm breakpoint), following the window as it resizes. */
+function usePhone() {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia("(max-width: 639px)");
+    const set = () => setPhone(m.matches);
+    set();
+    m.addEventListener("change", set);
+    return () => m.removeEventListener("change", set);
+  }, []);
+  return phone;
+}
+
+function LoadMore({ left, onClick }: { left: number; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="w-full h-11 my-2 rounded-xl border border-line text-[0.875rem] font-semibold text-ink-2 hover:border-emerald/60">
+      Load more ({left})
+    </button>
+  );
+}
+
+/** Open profit / loss of the futures positions. */
+function futuresPnl(p: NonNullable<ReturnType<typeof useMoney>["portfolio"]>) {
+  return (p.futures?.positions ?? []).reduce((s, x) => s + x.pnl, 0);
 }

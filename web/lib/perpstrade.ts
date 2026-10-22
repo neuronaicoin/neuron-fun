@@ -33,7 +33,7 @@ const ARBITRUM = 42161;
 const ARBITRUM_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 /** Hyperliquid's withdrawal fee (dollars), taken from what is moved out. */
 export const HL_WITHDRAW_FEE = 1;
-export const MIN_MOVE = 5;
+export const MIN_MOVE = 10; // the route fee is about a dollar: below $10 it eats too much
 /** How far a market order may fill from the mark price (open) and when closing. */
 const SLIP_OPEN = 0.01;
 const SLIP_CLOSE = 0.02;

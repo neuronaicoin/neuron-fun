@@ -584,7 +584,7 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
   }, [maxLev, lev]);
   const margin = Number(amount.replace(",", ".")) || 0;
   const futuresFree = account?.withdrawable ?? 0;
-  // cash on Base moves over by itself when an order needs it (at least $5 at a time)
+  // cash on Base moves over by itself when an order needs it (at least $10 at a time)
   const { portfolio } = useMoney();
   const cash = PERPS_TRADING ? (portfolio?.cashByChain.find((c) => c.chain.key === "base")?.usd ?? 0) : 0;
   const available = futuresFree + (cash >= 5 ? cash : 0);
