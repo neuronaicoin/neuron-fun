@@ -417,3 +417,8 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .race-step span { color: var(--color-emerald); font-weight: 700; font-size: 13px; }
 .race-step h2 { margin-top: 6px; font-family: var(--font-display); font-size: 20px; color: var(--color-ink); letter-spacing: -0.02em; }
 .race-step p { margin-top: 6px; color: var(--color-ink-3); font-size: 14.5px; line-height: 1.5; }
+
+/* Trade notice: drops in from the top */
+.toast-in { animation: toast-in .28s cubic-bezier(.2,.9,.3,1.2); }
+@keyframes toast-in { from { transform: translateY(-120%); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .toast-in { animation: none; } }

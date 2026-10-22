@@ -1,6 +1,7 @@
 "use client";
 
 import { afterTrade } from "@/lib/portfolio";
+import { showToast } from "@/lib/toast";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import { usdcGasChain } from "@/lib/usdcgas";
@@ -165,6 +166,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
           slipBps: slip,
           onStep: setStep,
         });
+        showToast({ kind: "buy", title: `Buying about ${fmtAmount(Number(formatUnits(r.coinsExpected, 18)))} ${coin.symbol}`, body: `They arrive on ${chain.short} in about a minute.`, logo: coin.logo });
         setMsg({
           ok: true,
           text: `Sent. About ${fmtAmount(Number(formatUnits(r.coinsExpected, 18)))} ${coin.symbol} arrive on ${chain.short} in about a minute (Across fee $${r.feeUsd.toFixed(2)}${r.gasUsd > 0 ? `, $${r.gasUsd.toFixed(2)} kept as ${chain.chain.nativeCurrency.symbol} for your network fees there` : ""}).`,
@@ -172,6 +174,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       } else {
         const r = await crossSell({ s: senders(), home, dest: chain, coin: coin.coin, coinsIn: parseUnits(amount, 18), slipBps: slip, onStep: setStep });
         setMsg({ ok: true, text: `Sold. About $${fmtAmount(r.usdOut)} is on its way back to your balance on Base (Across fee $${r.feeUsd.toFixed(2)}).`, tx: r.tx });
+        showToast({ kind: "sell", title: `Sold ${coin.symbol} for about $${fmtAmount(r.usdOut)}`, body: "On its way to your balance (about a minute).", logo: coin.logo, href: raceExplorerTx(chain, r.tx) });
         setAmount("");
       }
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });
@@ -179,7 +182,9 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       for (const ms of [0, 1_500, 4_000, 8_000]) setTimeout(() => void refresh(), ms);
     } catch (e) {
       const t = String((e as Error)?.message ?? "") + JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v));
-      setMsg({ ok: false, text: /RaceLostPoolShut/.test(t) ? "This chain lost the race and its pool is closed." : friendlyError(e) });
+      const text = /RaceLostPoolShut/.test(t) ? "This chain lost the race and its pool is closed." : friendlyError(e);
+      setMsg({ ok: false, text });
+      showToast({ kind: "error", title: side === "buy" ? "Buy didn't go through" : "Sell didn't go through", body: text }, 7_000);
     } finally {
       setBusy(false);
       setStep(null);
@@ -247,6 +252,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       if (now > 0) parts.push(emailMain ? `$${fmtAmount(now)} is in your balance` : `Sold for about $${fmtAmount(now)}`);
       if (later.length) parts.push(`$${fmtAmount(laterUsd)} from ${later.map((l) => l.chain.short).join(", ")} lands in your balance in about a minute`);
       setMsg({ ok: true, text: `Sold. ${parts.join("; ")}.` });
+      showToast({ kind: "sell", title: `Sold ${coin.symbol} for about $${fmtAmount(now + laterUsd)}`, body: later.length ? "Part of it lands in your balance in about a minute." : "The money is in your balance.", logo: coin.logo });
     }
   };
 
@@ -322,9 +328,23 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       }
       if (have !== null && amountIn > have) throw new Error(side === "buy" ? "Not enough USDC on this chain." : `You don't have that many ${coin.symbol}.`);
 
-      // 1. approval (once per token: the router is a fixed contract with no owner)
-      setStep("Checking approval…");
-      const allowance = (await pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [me, chain.router] })) as bigint;
+      // 1. approval (once per token) and 2. a dry run of the trade, asked at the same time
+      // (one round trip instead of two; the dry run is redone only when an approval was needed)
+      setStep("Getting the price…");
+      const fn = side === "buy" ? "buy" : "sell";
+      const simulate = () =>
+        pub.simulateContract({
+          account: me,
+          address: chain.router,
+          abi: raceRouterAbi,
+          functionName: fn,
+          args: [coin.coin, amountIn, 0n, me, deadline()],
+        });
+      const [allowance, firstSim] = await Promise.all([
+        pub.readContract({ address: token, abi: raceErc20Abi, functionName: "allowance", args: [me, chain.router] }) as Promise<bigint>,
+        simulate().catch(() => null),
+      ]);
+      let sim = firstSim;
       if (allowance < amountIn) {
         await w.send(chain.chain, [call(token, raceErc20Abi, "approve", [chain.router, maxUint256])], (s) => setStep(`Approve: ${s}`));
         // the node answering next may be a block behind the approval: wait until it sees it
@@ -333,18 +353,12 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
           if (a >= amountIn) break;
           await new Promise((r) => setTimeout(r, 1000));
         }
+        sim = null;
       }
-
-      // 2. dry run of the real trade: the exact amount out at this moment
-      setStep("Getting the price…");
-      const fn = side === "buy" ? "buy" : "sell";
-      const sim = await pub.simulateContract({
-        account: me,
-        address: chain.router,
-        abi: raceRouterAbi,
-        functionName: fn,
-        args: [coin.coin, amountIn, 0n, me, deadline()],
-      });
+      if (!sim) {
+        setStep("Getting the price…");
+        sim = await simulate();
+      }
       const out = sim.result as bigint;
       if (out === 0n) throw new Error("This trade would give nothing back. Try a bigger amount.");
       const minOut = (out * (10_000n - slip)) / 10_000n;
@@ -354,6 +368,13 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
       const tx = await w.send(chain.chain, [trade], (s) => setStep(s));
       const got = side === "buy" ? `${fmtAmount(Number(formatUnits(out, 18)))} ${coin.symbol}` : `$${fmtAmount(Number(formatUnits(out, usdDec)))}`;
       setMsg({ ok: true, text: side === "buy" ? `Bought about ${got}.` : `Sold for about ${got}.`, tx });
+      showToast({
+        kind: side === "buy" ? "buy" : "sell",
+        title: side === "buy" ? `Bought ${got}` : `Sold ${coin.symbol} for ${got}`,
+        body: side === "buy" ? `For $${fmtAmount(Number(amount))}. It's in your coins.` : "The money is in your balance.",
+        logo: coin.logo,
+        href: raceExplorerTx(chain, tx),
+      });
       signalTrade({ chainId: chain.chainId, curve: chain.router, coinId: coin.id, nativePerToken: null });
       if (side === "sell") setAmount("");
       // public nodes can be a block behind: read the balances again over the next seconds
@@ -364,6 +385,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
         ? "This chain lost the race and its pool is closed."
         : friendlyError(e).replace("Not enough ETH", `Not enough ${chain.chain.nativeCurrency.symbol}`);
       setMsg({ ok: false, text });
+      showToast({ kind: "error", title: side === "buy" ? "Buy didn't go through" : "Sell didn't go through", body: text }, 7_000);
     } finally {
       setBusy(false);
       setStep(null);

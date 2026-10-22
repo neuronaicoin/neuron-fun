@@ -13,6 +13,7 @@ import { SasaMark, SasaWordmark } from "./landing";
 import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
 import { BalancePill, MoneyHost } from "./portfolio";
+import { TradeToast } from "./tradetoast";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
 import { useMyAirdrop } from "@/lib/points";
@@ -282,6 +283,7 @@ export function Header() {
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           <AlertsSync />
           <MoneyHost />
+          <TradeToast />
           <SocialSync />
           <RefCapture />
           <PointsPill />

@@ -12,6 +12,7 @@ import { CreatorKit, RaceShareButton } from "@/components/raceshare";
 import { CoinLinksRow } from "@/components/coinlinks";
 import { RaceChat } from "@/components/racechat";
 import { RaceReplay } from "@/components/racereplay";
+import { Confetti } from "@/components/confetti";
 import { compactUsd, shortAddr } from "@/lib/format";
 import { onTrade } from "@/lib/live";
 import {
@@ -66,6 +67,17 @@ function RacePage() {
   const [missing, setMissing] = useState(false);
   const [pick, setPick] = useState<number | null>(null);
   const [failures, setFailures] = useState(0);
+  // just launched from the create page (?new=1): wait for it nicely, then celebrate
+  const [fresh] = useState(() => params.get("new") === "1");
+  const [party, setParty] = useState(false);
+  const endParty = useCallback(() => setParty(false), []);
+  useEffect(() => {
+    if (!fresh || !coin) return;
+    setParty(true);
+    const q = new URLSearchParams(window.location.search);
+    q.delete("new");
+    window.history.replaceState(null, "", `${window.location.pathname}?${q.toString()}`);
+  }, [fresh, !!coin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!valid) return;
@@ -86,19 +98,33 @@ function RacePage() {
   const live = coin ? racePhase(coin, Date.now()) !== "decided" : true;
   useEffect(() => {
     void load();
-    const t = setInterval(load, live ? 3_000 : 10_000);
+    const t = setInterval(load, fresh && !coin ? 1_000 : live ? 3_000 : 10_000);
     const stop = onTrade((s) => s.coinId.toLowerCase() === id && [1500, 4000].forEach((d) => setTimeout(load, d)));
     return () => {
       clearInterval(t);
       stop();
     };
-  }, [load, live, id]);
+  }, [load, live, id, fresh, !!coin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const now = useNow(live);
   // market cap = price × the coins that exist on that chain (not always 1B: see chainSupply)
   const supplyLane = coin ? ((coin.winner ? null : coin.lanes.find((l) => l.chain.chainId === pick && l.state !== 3)) ?? leadLane(coin) ?? coin.lanes[0]) : null;
   const supply = useChainSupply(coin?.winner ?? supplyLane?.chain, coin?.coin ?? "");
 
+  if (valid && fresh && !coin) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center flex flex-col gap-4 items-center" role="status" aria-live="polite">
+        <span className="relative flex w-16 h-16" aria-hidden="true">
+          <span className="absolute inset-0 rounded-full bg-[#ff6b1a]/25 animate-ping" />
+          <span className="relative w-16 h-16 rounded-full flex items-center justify-center text-[1.75rem]" style={{ background: "linear-gradient(135deg, #ffb020, #ff6b1a)" }}>
+            🚀
+          </span>
+        </span>
+        <h1 className="text-[1.5rem] font-bold">Your coin is going live…</h1>
+        <p className="text-ink-2 max-w-sm">It&apos;s on the chain. Its page opens here by itself in a few seconds.</p>
+      </div>
+    );
+  }
   if (!valid || (missing && !coin)) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center flex flex-col gap-3 items-center">
@@ -134,6 +160,7 @@ function RacePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-12 flex flex-col gap-5 sm:gap-6 min-w-0">
+      {party && <Confetti onDone={endParty} />}
       <Link href="/explore/" className="text-[0.9375rem] text-ink-2 self-start">
         ‹ Explore
       </Link>
