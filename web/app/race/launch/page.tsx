@@ -8,6 +8,8 @@ import { NO_ANSWER, SENT_UNCONFIRMED, useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar } from "@/components/coins";
 import { AiCoinPanel } from "@/components/aicoin";
+import { TrendRadar } from "@/components/trendradar";
+import { trendIdea } from "@/lib/trends";
 import { EMPTY_DRAFT, LinkFields, draftProblems, draftToLinks, type LinkDraft } from "@/components/coinlinks";
 import { toast } from "@/components/alerts";
 import { saveLinks } from "@/lib/coinlinks";
@@ -103,6 +105,8 @@ export default function RaceLaunchPage() {
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  // Trend Radar: a tapped theme becomes the AI's topic.
+  const [aiSeed, setAiSeed] = useState<{ text: string; n: number } | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [status, setStatus] = useState<Record<number, ChainStatus>>({});
   const [funds, setFunds] = useState<Record<number, Funds | null>>({});
@@ -548,9 +552,18 @@ export default function RaceLaunchPage() {
               </span>
               <span className="text-[0.8125rem] text-ink-2 shrink-0">{aiOpen ? "Close" : "Pick a topic, get a coin →"}</span>
             </button>
+            <TrendRadar
+              showCoins={aiOpen}
+              onTheme={(theme) => {
+                setAiOpen(true);
+                setAiSeed((s) => ({ text: trendIdea(theme), n: (s?.n ?? 0) + 1 }));
+              }}
+            />
             {aiOpen && (
               <AiCoinPanel
+                seed={aiSeed}
                 onFill={(f) => {
+                  setAiSeed(null);
                   setName(f.name);
                   setSymbol(f.symbol);
                   setDescription(f.description);

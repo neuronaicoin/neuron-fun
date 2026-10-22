@@ -5,7 +5,7 @@
  * picture), filled straight into the form. Ten a day per account; the picture is stored with
  * the coin itself like an upload, no image hosting.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
 import { aiCoin, IDEA_SPARKS } from "@/lib/ai";
@@ -24,11 +24,19 @@ async function toCoinLogo(dataUrl: string): Promise<string | null> {
   }
 }
 
-export function AiCoinPanel({ onFill }: { onFill: (f: AiFill) => void }) {
+export function AiCoinPanel({ onFill, seed }: { onFill: (f: AiFill) => void; seed?: { text: string; n: number } | null }) {
   const { address, signMessage } = useWallet();
   const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // A theme tapped in Trend Radar: start right away.
+  useEffect(() => {
+    if (!seed || !address) return;
+    setIdea(seed.text);
+    void make(seed.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.n, address]);
 
   async function make(topic: string) {
     const text = topic.trim().slice(0, 200);
