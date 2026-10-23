@@ -20,8 +20,20 @@ export const HL_TAKER_FEE = 0.00045;
 /** Hyperliquid's smallest order, in dollars of position. */
 export const MIN_NOTIONAL = 10;
 
+/** Which tab a market sits under on the Futures screen. */
+export type PerpGroup = "crypto" | "stocks" | "commodities" | "indices" | "fx";
+
 export type PerpMarket = {
+  /** Hyperliquid's name: "BTC" on the main exchange, "xyz:TSLA" on a builder exchange (HIP-3). */
   coin: string;
+  /** What the screen shows: "BTC", "TSLA". */
+  label: string;
+  /** Company / asset name when known ("Tesla", "Gold"). */
+  name: string | null;
+  /** "" = Hyperliquid's main exchange; else the HIP-3 exchange's short name ("xyz"). */
+  dex: string;
+  group: PerpGroup;
+  /** Hyperliquid's asset id used in orders (main: its place in the list; HIP-3: 100000 + 10000 × exchange + place). */
   index: number;
   szDecimals: number;
   /** Hyperliquid's limit for this market. */
@@ -73,19 +85,62 @@ export async function info<T>(body: Record<string, unknown>, signal?: AbortSigna
 type Universe = { name: string; szDecimals: number; maxLeverage: number; onlyIsolated?: true; isDelisted?: true; marginMode?: string }[];
 type Ctx = { prevDayPx: string; dayNtlVlm: string; markPx: string; funding: string; openInterest: string };
 
-/** Every live market, busiest first. */
-export async function fetchPerpMarkets(signal?: AbortSignal): Promise<PerpMarket[]> {
-  const [meta, ctxs] = await info<[{ universe: Universe }, Ctx[]]>({ type: "metaAndAssetCtxs" }, signal);
+// ------------------------------------------------------------------ stocks, commodities, indices (HIP-3)
+
+const COMMODITIES = new Set(["GOLD", "SILVER", "CL", "OIL", "WTI", "BRENTOIL", "BRENT", "NATGAS", "COPPER", "PLATINUM", "PALLADIUM", "URANIUM", "ALUMINIUM", "ALUMINUM", "COFFEE", "COCOA", "CORN", "WHEAT", "SOYBEAN", "SUGAR", "XAU", "XAG"]);
+const INDICES = new Set(["XYZ100", "SPX", "SP500", "US500", "NDX", "NAS100", "US100", "DJI", "US30", "RUT", "RUSSELL", "VIX", "DAX", "GER40", "JP225", "NIKKEI", "HSI", "KOSPI", "FTSE", "UK100", "SMALL2000", "MAG7"]);
+const FX = new Set(["EUR", "JPY", "GBP", "CHF", "AUD", "CAD", "NZD", "CNH", "DXY", "EURUSD", "USDJPY", "GBPUSD", "KRW", "MXN", "TRY"]);
+const NAMES: Record<string, string> = {
+  TSLA: "Tesla", NVDA: "Nvidia", AAPL: "Apple", MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet", GOOG: "Alphabet", META: "Meta",
+  NFLX: "Netflix", AMD: "AMD", INTC: "Intel", HOOD: "Robinhood", COIN: "Coinbase", MSTR: "Strategy", PLTR: "Palantir", ORCL: "Oracle",
+  BABA: "Alibaba", TSM: "TSMC", AVGO: "Broadcom", CRCL: "Circle", UBER: "Uber", DIS: "Disney", NKE: "Nike", JPM: "JPMorgan",
+  GME: "GameStop", SNDK: "SanDisk", MU: "Micron", SMSN: "Samsung", SKHX: "SK Hynix", RIVN: "Rivian", LLY: "Eli Lilly",
+  GOLD: "Gold", SILVER: "Silver", CL: "Crude oil", OIL: "Crude oil", WTI: "Crude oil", BRENTOIL: "Brent oil", BRENT: "Brent oil",
+  NATGAS: "Natural gas", COPPER: "Copper", PLATINUM: "Platinum", PALLADIUM: "Palladium", URANIUM: "Uranium", XAU: "Gold", XAG: "Silver",
+  XYZ100: "Nasdaq 100", NDX: "Nasdaq 100", NAS100: "Nasdaq 100", SPX: "S&P 500", SP500: "S&P 500", US500: "S&P 500", DJI: "Dow Jones",
+  US30: "Dow Jones", VIX: "Volatility index", DAX: "DAX", JP225: "Nikkei 225", EUR: "Euro", JPY: "Japanese yen", GBP: "British pound", DXY: "Dollar index",
+};
+
+/** The tab a builder-exchange market belongs to, from its symbol. */
+export function groupOf(label: string): PerpGroup {
+  const s = label.toUpperCase();
+  if (COMMODITIES.has(s)) return "commodities";
+  if (INDICES.has(s)) return "indices";
+  if (FX.has(s)) return "fx";
+  return "stocks";
+}
+
+type Dex = { name: string; index: number };
+let dexesP: Promise<Dex[]> | null = null;
+/** Hyperliquid's builder exchanges (HIP-3), read once per visit. */
+export function perpDexes(): Promise<Dex[]> {
+  if (!dexesP) {
+    dexesP = info<({ name: string } | null)[]>({ type: "perpDexs" })
+      .then((rows) => (Array.isArray(rows) ? rows : []).flatMap((d, index) => (index > 0 && d && typeof d.name === "string" && d.name ? [{ name: d.name, index }] : [])))
+      .catch(() => {
+        dexesP = null; // try again next time
+        return [];
+      });
+  }
+  return dexesP;
+}
+
+function marketsOf(meta: { universe: Universe }, ctxs: Ctx[], dex: Dex | null): PerpMarket[] {
   const out: PerpMarket[] = [];
-  meta.universe.forEach((u, index) => {
-    const c = ctxs[index];
+  (meta?.universe ?? []).forEach((u, i) => {
+    const c = ctxs?.[i];
     if (!c || u.isDelisted) return;
     const mark = num(c.markPx);
     const prev = num(c.prevDayPx);
     if (mark <= 0) return;
+    const label = dex ? u.name.slice(u.name.indexOf(":") + 1) : u.name;
     out.push({
       coin: u.name,
-      index,
+      label,
+      name: dex ? (NAMES[label.toUpperCase()] ?? null) : null,
+      dex: dex?.name ?? "",
+      group: dex ? groupOf(label) : "crypto",
+      index: dex ? 100_000 + dex.index * 10_000 + i : i,
       szDecimals: u.szDecimals,
       hlMaxLev: u.maxLeverage,
       maxLev: Math.max(1, Math.min(MAX_LEV, u.maxLeverage)),
@@ -98,7 +153,48 @@ export async function fetchPerpMarkets(signal?: AbortSignal): Promise<PerpMarket
       funding: num(c.funding),
     });
   });
-  return out.sort((a, b) => b.volume24h - a.volume24h);
+  return out;
+}
+
+/** Builder exchanges paid in USDC that have markets (learned from the last market read). */
+let usableDexes: Dex[] | null = null;
+const dexesInUse = async () => usableDexes ?? (await perpDexes());
+
+/**
+ * The stocks, commodities, indices and FX of Hyperliquid's builder exchanges (HIP-3): only
+ * those paid in USDC (the same money as the rest), no crypto (`skip` = the main exchange's
+ * coins), one market per symbol (the busiest). Busiest first.
+ */
+export async function fetchBuilderMarkets(skip: Set<string>, signal?: AbortSignal): Promise<PerpMarket[]> {
+  const dexes = await perpDexes();
+  const usable: Dex[] = [];
+  const more = await Promise.all(
+    dexes.map((d) =>
+      info<[{ universe: Universe; collateralToken?: number }, Ctx[]]>({ type: "metaAndAssetCtxs", dex: d.name }, signal)
+        .then(([dm, dc]) => {
+          if ((dm?.collateralToken ?? 0) !== 0) return [];
+          const ms = marketsOf(dm, dc, d);
+          if (ms.length) usable.push(d);
+          return ms;
+        })
+        .catch(() => [] as PerpMarket[])
+    )
+  );
+  if (dexes.length) usableDexes = usable;
+  const best = new Map<string, PerpMarket>();
+  for (const m of more.flat()) {
+    const k = m.label.toUpperCase();
+    if (skip.has(k) || m.volume24h <= 0) continue;
+    const cur = best.get(k);
+    if (!cur || m.volume24h > cur.volume24h) best.set(k, m);
+  }
+  return [...best.values()].sort((a, b) => b.volume24h - a.volume24h);
+}
+
+/** Every live market on Hyperliquid's main exchange (crypto), busiest first. */
+export async function fetchPerpMarkets(signal?: AbortSignal): Promise<PerpMarket[]> {
+  const [meta, ctxs] = await info<[{ universe: Universe }, Ctx[]]>({ type: "metaAndAssetCtxs" }, signal);
+  return marketsOf(meta, ctxs, null).sort((a, b) => b.volume24h - a.volume24h);
 }
 
 export const INTERVAL: Record<number, string> = { 60: "1m", 300: "5m", 900: "15m", 3600: "1h", 14400: "4h", 86400: "1d" };
@@ -144,14 +240,12 @@ type Clearing = {
   }[];
 };
 
-/** The user's perps account: money in it, what can be moved out, open positions. */
-export async function fetchPerpAccount(user: string, signal?: AbortSignal): Promise<PerpAccount> {
-  const s = await info<Clearing>({ type: "clearinghouseState", user: user.toLowerCase() }, signal);
+function accountOf(s: Clearing | null): PerpAccount {
   return {
-    accountValue: num(s.marginSummary?.accountValue),
-    withdrawable: num(s.withdrawable),
-    marginUsed: num(s.marginSummary?.totalMarginUsed),
-    positions: (s.assetPositions ?? [])
+    accountValue: num(s?.marginSummary?.accountValue),
+    withdrawable: num(s?.withdrawable),
+    marginUsed: num(s?.marginSummary?.totalMarginUsed),
+    positions: (s?.assetPositions ?? [])
       .map(({ position: p }) => {
         const size = num(p.szi);
         return {
@@ -173,10 +267,28 @@ export async function fetchPerpAccount(user: string, signal?: AbortSignal): Prom
   };
 }
 
+/**
+ * The user's perps account: money in it, what can be moved out, open positions. Positions on
+ * the builder exchanges (stocks, commodities…) are added in; what can be moved out is the main
+ * exchange's (money on a builder exchange goes back there by itself).
+ */
+export async function fetchPerpAccount(user: string, signal?: AbortSignal): Promise<PerpAccount> {
+  const u = user.toLowerCase();
+  const [s, dexes] = await Promise.all([info<Clearing>({ type: "clearinghouseState", user: u }, signal), dexesInUse()]);
+  const main = accountOf(s);
+  const others = await Promise.all(dexes.map((d) => info<Clearing>({ type: "clearinghouseState", user: u, dex: d.name }, signal).then(accountOf).catch(() => null)));
+  for (const a of others) {
+    if (!a || (a.accountValue === 0 && a.positions.length === 0)) continue;
+    main.accountValue += a.accountValue;
+    main.marginUsed += a.marginUsed;
+    main.positions.push(...a.positions);
+  }
+  return main;
+}
+
 type RawOrder = { coin: string; oid: number; side: "B" | "A"; orderType: string; isTrigger: boolean; triggerPx: string; limitPx: string; sz: string; reduceOnly: boolean };
 
-export async function fetchPerpOrders(user: string, signal?: AbortSignal): Promise<PerpOrder[]> {
-  const rows = await info<RawOrder[]>({ type: "frontendOpenOrders", user: user.toLowerCase() }, signal);
+function ordersOf(rows: RawOrder[] | null): PerpOrder[] {
   return (Array.isArray(rows) ? rows : []).map((o) => ({
     coin: o.coin,
     oid: o.oid,
@@ -189,6 +301,16 @@ export async function fetchPerpOrders(user: string, signal?: AbortSignal): Promi
     tpsl: /^Take Profit/.test(o.orderType) ? "tp" : /^Stop/.test(o.orderType) ? "sl" : null,
   }));
 }
+
+export async function fetchPerpOrders(user: string, signal?: AbortSignal): Promise<PerpOrder[]> {
+  const u = user.toLowerCase();
+  const [rows, dexes] = await Promise.all([info<RawOrder[]>({ type: "frontendOpenOrders", user: u }, signal), dexesInUse()]);
+  const more = await Promise.all(dexes.map((d) => info<RawOrder[]>({ type: "frontendOpenOrders", user: u, dex: d.name }, signal).catch(() => null)));
+  return [...ordersOf(rows), ...more.flatMap(ordersOf)];
+}
+
+/** "xyz:TSLA" → "TSLA" (main-exchange names stay as they are). */
+export const coinLabel = (coin: string) => coin.slice(coin.indexOf(":") + 1);
 
 export async function fetchPerpFills(user: string, signal?: AbortSignal): Promise<PerpFill[]> {
   const rows = await info<{ coin: string; px: string; sz: string; side: "B" | "A"; time: number; dir: string; closedPnl: string; fee: string; hash: string; tid?: number }[]>(
@@ -247,13 +369,14 @@ export function planOrder(m: PerpMarket, side: "long" | "short", margin: number,
   const notional = margin * lev;
   const at = entryPx > 0 ? entryPx : m.mark;
   const coins = sizeString(notional / at, m.szDecimals);
-  const fees = notional * (HL_TAKER_FEE + BUILDER_FEE);
+  // builder exchanges (stocks…) charge up to a few times Hyperliquid's base fee: count it double
+  const fees = notional * (HL_TAKER_FEE * (m.dex ? 2 : 1) + BUILDER_FEE);
   const liq = liqPrice(side, at, lev, m.hlMaxLev);
   let why: string | null = null;
   if (!(margin > 0)) why = "Enter an amount.";
   else if (notional < MIN_NOTIONAL) why = `The smallest position is $${MIN_NOTIONAL} (amount × leverage).`;
   else if (Number(coins) <= 0) why = "That amount is too small for this coin.";
-  else if (lev > m.maxLev) why = `Up to ${m.maxLev}x on ${m.coin}.`;
+  else if (lev > m.maxLev) why = `Up to ${m.maxLev}x on ${m.label}.`;
   else if (margin + fees > available + 1e-9) why = "Not enough in your futures balance. Add money first.";
   return { notional, coins, liq, fees, ok: !why, why };
 }

@@ -32,6 +32,7 @@ import {
   type Portfolio,
   type Position,
 } from "@/lib/portfolio";
+import { coinLabel } from "@/lib/perps";
 import { extNetwork } from "@/lib/extcoins";
 import type { ExtHolding } from "@/lib/extheld";
 
@@ -415,7 +416,7 @@ export function FuturesBlock({ f, big = false }: { f: NonNullable<Portfolio["fut
                   {pos.side === "long" ? "Long" : "Short"} {pos.lev}x
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold truncate">{pos.coin}</span>
+                  <span className="block font-semibold truncate">{coinLabel(pos.coin)}</span>
                   <span className="block text-[0.8125rem] text-ink-3 truncate">Size {money(Math.abs(pos.value))} · margin {money(pos.margin)}</span>
                 </span>
                 <span className="text-right shrink-0">

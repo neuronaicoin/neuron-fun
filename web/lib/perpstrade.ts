@@ -146,6 +146,25 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
 
     const builder = { b: HL_BUILDER as `0x${string}`, f: BUILDER_FEE_TENTHS_BP };
 
+    /**
+     * Stocks, commodities and indices live on Hyperliquid's builder exchanges (HIP-3). Their
+     * margin is drawn from the same futures balance once "dex abstraction" is on: switched on
+     * here the first time, by the trading key (or the email account itself), no extra popup.
+     */
+    async function builderDexReady(ex: ExchangeClient, onStep: (m: string | null) => void) {
+      if (!user) throw new Error("Log in first.");
+      const mode = await infoClient.userAbstraction({ user }).catch(() => null);
+      if (mode === "unifiedAccount" || mode === "portfolioMargin") return;
+      if ((await infoClient.userDexAbstraction({ user }).catch(() => null)) === true) return;
+      onStep("Turning on stocks & commodities (one time)…");
+      try {
+        if (w.embeddedSigner) await ex.userDexAbstraction({ user, enabled: true });
+        else await ex.agentEnableDexAbstraction();
+      } catch (e) {
+        throw hlError(e);
+      }
+    }
+
     const futuresFree = async () => Number((await infoClient.clearinghouseState({ user: user! }).catch(() => null))?.withdrawable ?? 0);
 
     /**
@@ -239,7 +258,8 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         const m = o.market;
         const buy = o.side === "long";
         // the margin and the fee, brought over from the cash balance when futures holds less
-        await fundFutures(o.margin + o.margin * o.lev * (HL_TAKER_FEE + BUILDER_FEE) + 0.05, onStep);
+        await fundFutures(o.margin + o.margin * o.lev * (HL_TAKER_FEE * (m.dex ? 2 : 1) + BUILDER_FEE) + 0.05, onStep);
+        if (m.dex) await builderDexReady(ex, onStep);
         try {
           onStep(`Setting ${o.lev}x…`);
           await ex.updateLeverage({ asset: m.index, isCross: false, leverage: o.lev });

@@ -10,7 +10,7 @@ import { MarketSwitch } from "./marketswitch";
 import { FollowButton } from "./whalefollow";
 import { Avatar } from "./datapage";
 import { compactUsd } from "@/lib/format";
-import { fetchPerpAccount, fetchPerpFills, type PerpAccount, type PerpFill } from "@/lib/perps";
+import { coinLabel, fetchPerpAccount, fetchPerpFills, type PerpAccount, type PerpFill } from "@/lib/perps";
 import { fetchWhale, fetchWhaleMoves, isAddress, moveVerb, whaleName, type Whale, type WhaleMove } from "@/lib/hldata";
 
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`);
@@ -165,7 +165,7 @@ export function WhaleProfile({ address }: { address: string }) {
                 <li key={p.coin} className="py-3 grid grid-cols-2 sm:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(0,1fr))_auto] gap-x-4 gap-y-1.5 items-center text-[0.875rem]">
                   <div className="min-w-0">
                     <div className="font-semibold text-[1rem]">
-                      {p.coin}{" "}
+                      {coinLabel(p.coin)}{" "}
                       <span className={p.side === "long" ? "text-up" : "text-danger"}>
                         {p.side === "long" ? "Long" : "Short"} {p.lev}x
                       </span>
@@ -177,7 +177,7 @@ export function WhaleProfile({ address }: { address: string }) {
                   <Cell k="Liquidation" v={px(p.liq)} cls="text-danger" />
                   <Cell k="Funding so far" v={signedUsd(p.funding)} cls={tone(p.funding)} />
                   <Link href={`/futures/?c=${encodeURIComponent(p.coin)}`} className="col-span-2 sm:col-span-1 h-9 px-3 rounded-xl border border-line font-semibold text-[0.8125rem] grid place-items-center hover:border-ink-3">
-                    Trade {p.coin}
+                    Trade {coinLabel(p.coin)}
                   </Link>
                 </li>
               ))}
@@ -222,7 +222,7 @@ export function WhaleProfile({ address }: { address: string }) {
             {fills.slice(0, 25).map((f) => (
               <li key={`${f.hash}:${f.tid}:${f.time}`} className="py-2.5 grid grid-cols-[minmax(0,1fr)_auto] gap-3 text-[0.875rem]">
                 <span className="min-w-0 truncate">
-                  <b className="font-semibold">{f.coin}</b> <span className="text-ink-2">{f.dir}</span> <span className="text-ink-3">· {compactUsd(f.sz * f.px)} at {px(f.px)}</span>
+                  <b className="font-semibold">{coinLabel(f.coin)}</b> <span className="text-ink-2">{f.dir}</span> <span className="text-ink-3">· {compactUsd(f.sz * f.px)} at {px(f.px)}</span>
                   <span className="block text-[0.75rem] text-ink-3">{new Date(f.time).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 </span>
                 <span className={"font-mono text-right " + tone(f.pnl)}>{f.pnl ? signedUsd(f.pnl) : ""}</span>

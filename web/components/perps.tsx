@@ -22,7 +22,10 @@ import {
   PERPS_TRADING,
   fetchPerpAccount,
   fetchPerpFills,
+  fetchBuilderMarkets,
   fetchPerpMarkets,
+  coinLabel,
+  type PerpGroup,
   fetchPerpOrders,
   perpsAllowedHere,
   planOrder,
@@ -81,12 +84,27 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
   const [picker, setPicker] = useState(false);
   const user = w.address ?? null;
 
+  // crypto every 5 s; stocks, commodities and indices (builder exchanges, many calls) every 30 s
+  const [crypto, setCrypto] = useState<PerpMarket[] | null>(null);
+  const [builders, setBuilders] = useState<PerpMarket[]>([]);
   useEffect(() => {
     let alive = true;
-    const load = () =>
-      fetchPerpMarkets()
-        .then((m) => alive && (setMarkets(m), setError(false)))
-        .catch(() => alive && setError(true));
+    let lastBuilders = 0;
+    const load = async () => {
+      try {
+        const m = await fetchPerpMarkets();
+        if (!alive) return;
+        setCrypto(m);
+        setError(false);
+        if (Date.now() - lastBuilders > 30_000) {
+          lastBuilders = Date.now();
+          const b = await fetchBuilderMarkets(new Set(m.map((x) => x.coin.toUpperCase()))).catch(() => null);
+          if (alive && b) setBuilders(b);
+        }
+      } catch {
+        if (alive) setError(true);
+      }
+    };
     void load();
     const t = setInterval(() => document.visibilityState === "visible" && void load(), 5_000);
     return () => {
@@ -94,6 +112,7 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
       clearInterval(t);
     };
   }, []);
+  useEffect(() => setMarkets(crypto ? [...crypto, ...builders] : null), [crypto, builders]);
 
   // the wallet now in use: answers that come back for an earlier one are dropped
   const userRef = useRef(user);
@@ -341,13 +360,35 @@ function loadFavs(): string[] {
 }
 
 type ListSort = "volume" | "gainers" | "losers";
+const GROUPS: [PerpGroup, string][] = [
+  ["crypto", "Crypto"],
+  ["stocks", "Stocks"],
+  ["commodities", "Commodities"],
+  ["indices", "Indices"],
+  ["fx", "FX"],
+];
 
 function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; coin: string; onPick: (c: string) => void }) {
   const [q, setQ] = useState("");
   const [favs, setFavs] = useState<string[]>([]);
   const [onlyFavs, setOnlyFavs] = useState(false);
   const [sort, setSort] = useState<ListSort>("volume");
+  const [group, setGroup] = useState<PerpGroup>("crypto");
   useEffect(() => setFavs(loadFavs()), []);
+  // a link to a stock (?c=xyz:TSLA) opens its tab
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || !markets) return;
+    const cur = markets.find((m) => m.coin === coin);
+    if (cur) {
+      opened.current = true;
+      setGroup(cur.group);
+    }
+  }, [markets, coin]);
+  const groups = useMemo(() => {
+    const has = new Set((markets ?? []).map((m) => m.group));
+    return GROUPS.filter(([g]) => g === "crypto" || has.has(g));
+  }, [markets]);
   const toggleFav = (c: string) =>
     setFavs((now) => {
       const next = now.includes(c) ? now.filter((x) => x !== c) : [...now, c];
@@ -358,17 +399,39 @@ function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; c
     });
   const list = useMemo(() => {
     const s = q.trim().toUpperCase();
-    const hit = (markets ?? []).filter((m) => (!s || m.coin.toUpperCase().includes(s)) && (!onlyFavs || favs.includes(m.coin)));
+    // a search or the favourites look across every tab
+    const hit = (markets ?? []).filter(
+      (m) =>
+        (s || onlyFavs || m.group === group) &&
+        (!s || m.coin.toUpperCase().includes(s) || (m.name ?? "").toUpperCase().includes(s)) &&
+        (!onlyFavs || favs.includes(m.coin))
+    );
     const ch = (m: PerpMarket) => m.change24h ?? 0;
     if (sort === "gainers") hit.sort((a, b) => ch(b) - ch(a));
     else if (sort === "losers") hit.sort((a, b) => ch(a) - ch(b));
     // favourites on top (the list is already busiest first)
     return [...hit.filter((m) => favs.includes(m.coin)), ...hit.filter((m) => !favs.includes(m.coin))];
-  }, [markets, q, favs, onlyFavs, sort]);
+  }, [markets, q, favs, onlyFavs, sort, group]);
   return (
     <div className="flex flex-col min-h-0">
       <div className="p-3 border-b border-line flex flex-col gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" aria-label="Search markets" className="w-full h-10 rounded-xl border border-line bg-paper px-3 text-[0.875rem] outline-none focus:border-ink-3" />
+        {groups.length > 1 && (
+          <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Market type">
+            {groups.map(([g, label]) => (
+              <button
+                key={g}
+                type="button"
+                role="tab"
+                aria-selected={group === g}
+                onClick={() => setGroup(g)}
+                className={"h-8 px-3 rounded-lg text-[0.8125rem] font-semibold shrink-0 " + (group === g ? "bg-ink text-mist" : "text-ink-2 hover:bg-paper")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-1 text-[0.75rem]" role="group" aria-label="Show">
           <button
             type="button"
@@ -425,8 +488,8 @@ function MarketList({ markets, coin, onPick }: { markets: PerpMarket[] | null; c
                   className="flex-1 min-w-0 pl-1.5 pr-3 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-paper"
                 >
                   <span className="min-w-0">
-                    <span className="block font-semibold text-[0.875rem] truncate">{m.coin}</span>
-                    <span className="block text-[0.6875rem] text-ink-3">{m.maxLev}x</span>
+                    <span className="block font-semibold text-[0.875rem] truncate">{m.label}</span>
+                    <span className="block text-[0.6875rem] text-ink-3 truncate">{m.name ? `${m.name} · ` : ""}{m.maxLev}x</span>
                   </span>
                   <span className="text-right shrink-0">
                     <span className="block font-mono text-[0.8125rem] tabular-nums">{px(m.mark)}</span>
@@ -452,8 +515,10 @@ function MarketHeader({ m, onPick }: { m: PerpMarket | null; onPick: () => void 
   return (
     <section className="rounded-3xl border border-line bg-surface p-3 sm:p-4 flex flex-wrap items-center gap-x-6 gap-y-2">
       <button type="button" onClick={onPick} className="flex items-center gap-2 lg:pointer-events-none" aria-label="Pick a market">
-        <span className="font-display font-bold text-[1.375rem]">{m ? `${m.coin}-USD` : "—"}</span>
+        <span className="font-display font-bold text-[1.375rem]">{m ? (m.dex ? m.label : `${m.coin}-USD`) : "—"}</span>
+        {m?.name && <span className="text-[0.8125rem] text-ink-3">{m.name}</span>}
         <span className="h-6 px-2 rounded-full bg-paper border border-line text-[0.6875rem] font-bold flex items-center">{m ? `${m.maxLev}x` : ""}</span>
+        {m?.dex && <span className="h-6 px-2 rounded-full bg-emerald-soft text-emerald text-[0.6875rem] font-bold flex items-center">24/7</span>}
         <svg className="lg:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>
@@ -617,7 +682,7 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
         ok: true,
         text: r.resting
           ? `Limit order placed at ${px(limitN)}. It waits under "TP/SL & orders" until the price gets there.`
-          : `${side === "long" ? "Long" : "Short"} ${m.coin} opened at ${px(r.avgPx)}.`,
+          : `${side === "long" ? "Long" : "Short"} ${m.label} opened at ${px(r.avgPx)}.`,
       });
       // TP / SL / liquidation alerts: signed-in users and email accounts are signed up without a prompt
       const silent = !!sessionToken() || w.embedded;
@@ -1037,9 +1102,9 @@ function Positions({
               <li key={p.coin} className="py-3 grid grid-cols-2 sm:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,1fr))_auto] gap-x-3 gap-y-1.5 items-center text-[0.8125rem]">
                 <div className="min-w-0">
                   <div className="font-semibold text-[0.9375rem]">
-                    {p.coin} <span className={p.side === "long" ? "text-up" : "text-danger"}>{p.side === "long" ? "Long" : "Short"} {p.lev}x</span>
+                    {coinLabel(p.coin)} <span className={p.side === "long" ? "text-up" : "text-danger"}>{p.side === "long" ? "Long" : "Short"} {p.lev}x</span>
                   </div>
-                  <div className="text-ink-3 font-mono">{Math.abs(p.size)} {p.coin}</div>
+                  <div className="text-ink-3 font-mono">{Math.abs(p.size)} {coinLabel(p.coin)}</div>
                 </div>
                 <Cell k="Value" v={usd(p.value)} />
                 <Cell k="Entry / mark" v={`${px(p.entry)} / ${px(markOf(p.coin))}`} />
@@ -1065,7 +1130,7 @@ function Positions({
                   <button
                     type="button"
                     onClick={() => setShare(p)}
-                    aria-label={`Share your ${p.coin} result`}
+                    aria-label={`Share your ${coinLabel(p.coin)} result`}
                     title="Share your result"
                     className="h-9 w-9 rounded-xl border border-line grid place-items-center text-ink-2 hover:border-ink-3 hover:text-ink"
                   >
@@ -1099,7 +1164,7 @@ function Positions({
             {orders.map((o) => (
               <li key={o.oid} className="py-2.5 flex items-center justify-between gap-3 text-[0.8125rem]">
                 <span className="min-w-0">
-                  <b className="font-semibold">{o.coin}</b>{" "}
+                  <b className="font-semibold">{coinLabel(o.coin)}</b>{" "}
                   {o.tpsl === "tp" ? "Take profit" : o.tpsl === "sl" ? "Stop loss" : `${o.type} ${o.side === "B" ? "long" : "short"}`}
                   {o.triggerPx ? ` at ${px(o.triggerPx)}` : o.limitPx ? ` at ${px(o.limitPx)}` : ""}
                 </span>
@@ -1122,7 +1187,7 @@ function Positions({
           {fills.map((f) => (
             <li key={`${f.hash}:${f.tid}:${f.time}:${f.px}`} className="py-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-[0.8125rem]">
               <span className="min-w-0 truncate">
-                <b className="font-semibold">{f.coin}</b> {f.dir} · {f.sz} at {px(f.px)}
+                <b className="font-semibold">{coinLabel(f.coin)}</b> {f.dir} · {f.sz} at {px(f.px)}
                 <span className="block text-ink-3 text-[0.75rem]">{new Date(f.time).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
               </span>
               <span className={"font-mono text-right " + tone(f.pnl)}>{f.pnl ? signedUsd(f.pnl) : ""}</span>
@@ -1154,7 +1219,7 @@ function CloseSheet({ p, m, trade, onClose }: { p: PerpPosition; m: PerpMarket; 
     }
   };
   return (
-    <Sheet title={`Close ${p.coin} ${p.side === "long" ? "long" : "short"}`} onClose={onClose}>
+    <Sheet title={`Close ${coinLabel(p.coin)} ${p.side === "long" ? "long" : "short"}`} onClose={onClose}>
       <div className="flex flex-col gap-4 pb-2">
         <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="How much to close">
           {[25, 50, 75, 100].map((x) => (
@@ -1172,7 +1237,7 @@ function CloseSheet({ p, m, trade, onClose }: { p: PerpPosition; m: PerpMarket; 
         <dl className="rounded-2xl bg-paper px-4 py-3 text-[0.875rem] grid grid-cols-[1fr_auto] gap-y-1.5">
           <dt className="text-ink-3">Closing</dt>
           <dd className="font-mono text-right">
-            {sizeString(Math.abs(p.size) * f, m.szDecimals)} {p.coin} · {usd(value)}
+            {sizeString(Math.abs(p.size) * f, m.szDecimals)} {coinLabel(p.coin)} · {usd(value)}
           </dd>
           <dt className="text-ink-3">At about</dt>
           <dd className="font-mono text-right">{px(m.mark)}</dd>
@@ -1186,7 +1251,7 @@ function CloseSheet({ p, m, trade, onClose }: { p: PerpPosition; m: PerpMarket; 
           )}
         </dl>
         <button type="button" disabled={busy} onClick={() => void go()} className="h-12 rounded-full bg-ink text-paper font-bold disabled:opacity-50">
-          {busy ? "Closing…" : part === 100 ? `Close all ${p.coin}` : `Close ${part}%`}
+          {busy ? "Closing…" : part === 100 ? `Close all ${coinLabel(p.coin)}` : `Close ${part}%`}
         </button>
         {err && <p className="rounded-xl px-3 py-2 text-[0.875rem] bg-warn-bg text-warn-ink">{err}</p>}
       </div>
@@ -1219,7 +1284,7 @@ function TpslSheet({ p, m, orders, trade, onClose }: { p: PerpPosition; m: PerpM
     }
   };
   return (
-    <Sheet title={`TP/SL · ${p.coin} ${p.side === "long" ? "long" : "short"} ${p.lev}x`} onClose={onClose}>
+    <Sheet title={`TP/SL · ${coinLabel(p.coin)} ${p.side === "long" ? "long" : "short"} ${p.lev}x`} onClose={onClose}>
       <div className="flex flex-col gap-4 pb-2">
         <div className="grid grid-cols-3 gap-2 text-[0.75rem]">
           <Cell k="Entry" v={px(p.entry)} />
