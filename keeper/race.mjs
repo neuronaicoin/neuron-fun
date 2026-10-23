@@ -51,7 +51,7 @@ import { readState, writeState } from "./statefile.mjs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, defineChain, fallback, getAddress, http, parseAbi, parseAbiItem, toFunctionSelector, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { alert, heartbeat, staleServices } from "./alert.mjs";
+import { alert, heartbeat, remoteLog, staleServices } from "./alert.mjs";
 import { refillGas } from "./refill.mjs";
 
 const env = (n, d) => {
@@ -62,7 +62,10 @@ const env = (n, d) => {
   }
   return v;
 };
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+const log = (...a) => {
+  console.log(new Date().toISOString(), ...a);
+  remoteLog(process.env.KEEPER_NAME || "race keeper", a.map((x) => (typeof x === "string" ? x : String(x))).join(" "));
+};
 const DRY = env("DRY_RUN", "false") === "true";
 const DEPLOYMENTS = env("DEPLOYMENTS", "../contracts-v7/deployments/race");
 const STATE_FILE = env("STATE_FILE", "./race-state.json");

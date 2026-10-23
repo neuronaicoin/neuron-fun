@@ -30,6 +30,7 @@ export async function alert(service, key, text) {
   last.set(key, now);
   const msg = `⚠️ sasa ${service}: ${text}`;
   console.log(new Date().toISOString(), "ALERT", msg);
+  remoteLog(service, `ALERT ${msg}`);
   const tasks = [];
   // the admin's own 🔔 (only that wallet sees it); the indexer pushes it to the admin's phone
   if (/^0x[0-9a-f]{40}$/.test(ADMIN)) {
@@ -89,3 +90,34 @@ export async function staleServices(names, minutes = 15) {
   // a service that never beat isn't running here at all: only ones that went quiet count
   return names.filter((n) => seen.has(n) && Date.now() - seen.get(n) >= minutes * 60_000);
 }
+
+// ------------------------------------------------------------------ remote log
+// The keeper's meaningful log lines (status, sends, failures, alerts) also go to the database
+// table keeper_log (indexer/keeper-log.sql), readable without Railway access. Batched every 10 s;
+// rows older than 3 days are removed once an hour. Never throws.
+const queue = [];
+let flushing = false;
+let lastPrune = 0;
+const NOISE = /(coins known$|^pass done$|^race keeper: full pass)/;
+export function remoteLog(service, line) {
+  const text = String(line ?? "").trim();
+  if (!text || NOISE.test(text)) return;
+  queue.push({ service: String(service).slice(0, 60), line: text.slice(0, 500), at: new Date().toISOString() });
+  if (queue.length > 500) queue.splice(0, queue.length - 500);
+}
+async function flushRemote() {
+  if (flushing || !queue.length) return;
+  flushing = true;
+  const batch = queue.splice(0, 200);
+  try {
+    const r = rest("keeper_log", { method: "POST", prefer: "return=minimal", body: batch });
+    if (r) await r.catch(() => {});
+    if (Date.now() - lastPrune > 3_600_000) {
+      lastPrune = Date.now();
+      const r2 = rest(`keeper_log?at=lt.${new Date(Date.now() - 3 * 86_400_000).toISOString()}`, { method: "DELETE", prefer: "return=minimal" });
+      if (r2) await r2.catch(() => {});
+    }
+  } catch {}
+  flushing = false;
+}
+if (typeof setInterval === "function") setInterval(() => void flushRemote(), 10_000).unref?.();
