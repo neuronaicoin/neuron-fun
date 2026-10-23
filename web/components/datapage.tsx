@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MarketSwitch } from "./marketswitch";
 import { FollowButton } from "./whalefollow";
+import { CopyButton } from "./whalecopy";
 import { compactUsd } from "@/lib/format";
 import { fetchPerpMarkets, type PerpMarket } from "@/lib/perps";
 import { fearGreed, fgLabel, type FearGreed } from "@/lib/feargreed.js";
@@ -750,7 +751,10 @@ function TopTraders({ whales }: { whales: Whale[] | null }) {
                 <td className={"py-2 group-hover:bg-paper text-right tabular-nums hidden sm:table-cell " + tone(w.roiMonth)}>{period !== "pnlMonth" ? "—" : w.roiMonth > 1000 ? "1000%+" : pct(w.roiMonth, 0)}</td>
                 <td className="py-2 group-hover:bg-paper text-right tabular-nums hidden md:table-cell text-ink-2">{compactUsd(w.accountValue)}</td>
                 <td className="py-2 pr-2 rounded-r-xl group-hover:bg-paper text-right">
-                  <FollowButton whale={w.address} compact />
+                  <span className="inline-flex items-center gap-1.5 pl-3">
+                    <CopyButton whale={w.address} name={whaleName(w, w.address)} compact />
+                    <FollowButton whale={w.address} compact />
+                  </span>
                 </td>
               </tr>
             ))}

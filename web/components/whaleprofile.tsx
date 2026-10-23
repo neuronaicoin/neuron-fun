@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { MarketSwitch } from "./marketswitch";
 import { FollowButton } from "./whalefollow";
+import { CopyButton } from "./whalecopy";
 import { Avatar } from "./datapage";
 import { compactUsd } from "@/lib/format";
 import { coinLabel, fetchPerpAccount, fetchPerpFills, type PerpAccount, type PerpFill } from "@/lib/perps";
@@ -114,7 +115,10 @@ export function WhaleProfile({ address }: { address: string }) {
             {whale && <span>· #{whale.rank} on the 30-day list</span>}
           </div>
         </div>
-        <FollowButton whale={a} />
+        <div className="flex items-center gap-2">
+          <CopyButton whale={a} name={whale?.name ?? (whale ? `Whale #${whale.rank}` : null)} />
+          <FollowButton whale={a} />
+        </div>
       </header>
 
       <dl className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

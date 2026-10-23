@@ -39,6 +39,8 @@ export const MIN_MOVE = 10; // the route fee is about a dollar: below $10 it eat
 const SLIP_OPEN = 0.01;
 const SLIP_CLOSE = 0.02;
 const AGENT_NAME = "sasa";
+/** The key sasa copies trades with (copy trading): its own name, so it never replaces the trading key. */
+const COPY_AGENT_NAME = "sasa copy";
 
 /** `limitPx`: a limit order that waits at that price; none: a market order. */
 export type OpenOrder = { market: PerpMarket; side: "long" | "short"; margin: number; lev: number; coins: string; tp: number | null; sl: number | null; limitPx?: number | null };
@@ -55,6 +57,8 @@ export type PerpsTrade = {
   predictBuy: (o: PredictOutcome, side: 0 | 1, usd: number, onStep: (m: string | null) => void) => Promise<{ shares: number; avgPx: number | null }>;
   /** Sells all the shares of a holding at the best price on offer. */
   predictSell: (h: PredictHolding, onStep: (m: string | null) => void) => Promise<{ usd: number | null }>;
+  /** Approves sasa's copy-trading key (it trades, never withdraws) and sasa's fee, once. */
+  approveCopy: (agent: string, onStep: (m: string | null) => void) => Promise<void>;
   /** Moves Predict cash back to the futures balance. */
   predictToFutures: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
 };
@@ -483,6 +487,28 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
           void after();
           if (!f || !(f.sz > 0)) throw new Error("The price moved before it filled. Try again.");
           return { usd: f.sz * f.px || null };
+        } catch (e) {
+          throw hlError(e);
+        }
+      },
+
+      async approveCopy(agent, onStep) {
+        if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
+        if (!user) throw new Error("Log in first.");
+        if (!/^0x[0-9a-fA-F]{40}$/.test(agent)) throw new Error("Copying isn't ready. Try again.");
+        try {
+          const max = await infoClient.maxBuilderFee({ user, builder: HL_BUILDER }).catch(() => 0);
+          if (Number(max) < BUILDER_FEE_TENTHS_BP) {
+            onStep("Approve trading (one time)…");
+            await mainClient().approveBuilderFee({ maxFeeRate: `${BUILDER_FEE_TENTHS_BP / 1000}%`, builder: HL_BUILDER });
+          }
+          const agents = await infoClient.extraAgents({ user }).catch(() => [] as { address: string; validUntil: number | null }[]);
+          const live = agents.some((a) => a.address.toLowerCase() === agent.toLowerCase() && (a.validUntil ?? Number.MAX_SAFE_INTEGER) > Date.now() + 86_400_000);
+          if (!live) {
+            onStep("Approve copying in your wallet (once)…");
+            await mainClient().approveAgent({ agentAddress: agent as `0x${string}`, agentName: COPY_AGENT_NAME });
+          }
+          onStep(null);
         } catch (e) {
           throw hlError(e);
         }

@@ -8,6 +8,9 @@
 //   WHALES_OFF=1           switch this off
 //   WHALE_ALERT_MS         time between looks at followed traders (default 30000)
 //   SITE_URL               used in notification links (default https://sasapad.fun)
+//   COPY_KEY_SECRET        turns on copy trading (copytrade.mjs; the same secret as on Cloudflare)
+
+import { copyChanges, copyStopRound } from "./copytrade.mjs";
 
 const HL_INFO = "https://api.hyperliquid.xyz/info";
 const LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";
@@ -186,7 +189,11 @@ export function whaleChanges(before, now) {
 // the same trader and coin isn't announced more than once in 10 minutes (opens and closes always are)
 const lastNote = new Map();
 
-export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read = info, now = Date.now(), topN = 30, log = () => {} } = {}) {
+/**
+ * `onChanges(whale, changes)`: called with every trader's moves after they are saved (copy
+ * trading, copytrade.mjs); its errors are logged, never stop the round.
+ */
+export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read = info, now = Date.now(), topN = 30, log = () => {}, onChanges = null } = {}) {
   const { rows } = await pool.query(
     // the top 30 traders (their moves go on the Data page) and everyone someone follows
     `select a.whale, s.positions, s.checked_at, w.name, w.rank
@@ -259,6 +266,13 @@ export async function whaleAlertRound(pool, { site = "https://sasapad.fun", read
     } finally {
       db.release();
     }
+    if (changes.length && onChanges) {
+      try {
+        await onChanges(r.whale, changes);
+      } catch (e) {
+        log(`whales: copy: ${String(e.message).slice(0, 200)}`);
+      }
+    }
     // every move of a top trader (not only the ones told by alert) goes on the public list;
     // someone only followed stays off it (who sasa users follow isn't shown to anyone)
     if (changes.length && r.rank && r.rank <= topN) {
@@ -298,6 +312,7 @@ export async function whalesLoop(pool, log) {
   const site = (process.env.SITE_URL || "https://sasapad.fun").replace(/\/$/, "");
   let lastBoard = 0;
   let lastFg = 0;
+  let lastStop = 0;
   const warned = new Set();
   const warn = (k, e) => {
     const missing = /relation "(whales|fear_greed|whale_follows|whale_state)" does not exist/.test(e.message);
@@ -329,11 +344,16 @@ export async function whalesLoop(pool, log) {
       }
     }
     try {
-      await whaleAlertRound(pool, { site, log });
+      await whaleAlertRound(pool, { site, log, onChanges: (whale, changes) => copyChanges(pool, whale, changes, { site, log }) });
       warned.delete("alerts");
       if (new Date().getMinutes() === 30) await pruneMoves(pool).catch(() => {});
     } catch (e) {
       missing = warn("alerts", e) || missing;
+    }
+    // copiers' stops: once a minute
+    if (Date.now() - lastStop > 60e3) {
+      lastStop = Date.now();
+      await copyStopRound(pool, { site, log }).catch((e) => log(`whales: copy stops: ${String(e.message).slice(0, 200)}`));
     }
     await sleep(missing ? 10 * 60e3 : Math.max(5_000, every - (Date.now() - started)));
   }

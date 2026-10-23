@@ -8,6 +8,7 @@
     "start": "node indexer.mjs"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "0.33.3",
     "@resvg/resvg-js": "^2.6.2",
     "pg": "8.16.3",
     "viem": "2.56.8",
