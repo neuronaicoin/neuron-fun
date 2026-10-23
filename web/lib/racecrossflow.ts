@@ -228,7 +228,7 @@ export async function spareThere(dest: RaceChain, user: Address): Promise<bigint
 }
 
 /** Sends `amount` (dest units) of the user's dollars on `dest` back to Base. */
-export async function crossSendHome(o: { s: Senders; home: RaceChain; dest: RaceChain; amount: bigint; onStep?: (m: string) => void }): Promise<CrossSellResult> {
+export async function crossSendHome(o: { s: Senders; home: RaceChain; dest: RaceChain; amount: bigint; onStep?: (m: string) => void; maxFeeBps?: number }): Promise<CrossSellResult> {
   const { s, home, dest } = o;
   if (!dest.cross) throw new Error(`${dest.short} isn't open to sasa accounts yet.`);
   const pub = raceClient(dest);
@@ -237,6 +237,8 @@ export async function crossSendHome(o: { s: Senders; home: RaceChain; dest: Race
   o.onStep?.("Getting the fee…");
   const fee = await homeFee(dest, home, s.user, o.amount);
   if (fee >= o.amount) throw new Error("That's too little to send back to Base.");
+  // a caller moving money on its own (not asked by the user) only moves it when the fee is small
+  if (o.maxFeeBps !== undefined && fee * 10_000n > o.amount * BigInt(o.maxFeeBps)) throw new Error("The fee is too big a share of this amount; it waits for more.");
   await approveThere(s, dest, dest.usd, dest.cross, o.amount, o.onStep);
   const move = await withGas(pub, s.user, call(dest.cross, raceCrossAbi, "sendHome", [o.amount, fee]));
   const tx = await s.sendThere(dest.chain, [move], o.onStep);

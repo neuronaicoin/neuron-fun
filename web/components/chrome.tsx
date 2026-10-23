@@ -14,6 +14,7 @@ import { shortAddr } from "@/lib/format";
 import { AlertsSync, HeaderBell } from "./alerts";
 import { BalancePill, MoneyHost } from "./portfolio";
 import { TradeToast } from "./tradetoast";
+import { AutoSweep } from "./autosweep";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
 import { useMyAirdrop } from "@/lib/points";
@@ -284,6 +285,7 @@ export function Header() {
           <AlertsSync />
           <MoneyHost />
           <TradeToast />
+          <AutoSweep />
           <SocialSync />
           <RefCapture />
           <PointsPill />
