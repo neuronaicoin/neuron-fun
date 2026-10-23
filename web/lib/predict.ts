@@ -37,6 +37,8 @@ export type PredictOutcome = {
   /** The money it trades in ("USDC"); only USDC markets can be bought here. */
   quote: string;
   tradable: boolean;
+  /** Hyperliquid's own text (shown with ?raw=1, to check how a new kind of market reads). */
+  raw: string;
 };
 
 /** A question with several answers (a price range, a match winner): one row per answer. */
@@ -61,7 +63,8 @@ export const sideCoin = (outcome: number, side: 0 | 1) => `#${10 * outcome + sid
 export function specOf(description: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (description ?? "").split("|")) {
-    const [k, ...v] = part.split(":");
+    // "metadata=category:crypto" → category: crypto
+    const [k, ...v] = part.replace(/^\s*metadata=/, "").split(":");
     if (k && v.length) out[k.trim()] = v.join(":").trim();
   }
   return out;
@@ -107,16 +110,106 @@ export function tabOf(text: string): PredictTab {
   return "other";
 }
 
+// ------------------------------------------------------------------ templates
+//
+// Markets made from Hyperliquid's templates name themselves "template:<id>" (sides "template:Yes",
+// "template:{shortNameA}") and carry their values in the description ("perp:BTC|threshold:82000|…").
+// The template catalog (outcomeTemplates) has the readable name with {keyword} places to fill.
+
+export type Template = { id: string; name: string; keywords: [string, string][] };
+let templatesP: Promise<Map<string, Template>> | null = null;
+export function fetchTemplates(signal?: AbortSignal): Promise<Map<string, Template>> {
+  if (!templatesP)
+    templatesP = info<Template[]>({ type: "outcomeTemplates" }, signal)
+      .then((rows) => new Map((Array.isArray(rows) ? rows : []).map((t) => [t.id, t])))
+      .catch(() => {
+        templatesP = null;
+        return new Map<string, Template>();
+      });
+  return templatesP;
+}
+
+/** "policyRateNoChange" → "Policy rate no change" */
+export function humanize(id: string): string {
+  const words = id
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim()
+    .toLowerCase();
+  return words ? words[0].toUpperCase() + words.slice(1) : id;
+}
+
+const PRICE_KEYS = /^(threshold|target|low|high|price|strike|targetPrice|level)$/i;
+const DATE_RE = /^\d{8}(-\d{4})?$/;
+const FRIENDLY: Record<string, string> = {
+  policyRateNoChange: "No change",
+  policyRateDecrease: "Cut",
+  policyRateIncrease: "Hike",
+  Yes: "Yes",
+  No: "No",
+  Over: "Over",
+  Under: "Under",
+};
+
+/** A keyword's value as people read it: dates in local time, prices with $ and commas. */
+function valueText(key: string, v: string, type?: string): string {
+  if (type === "dateTime" || type === "date" || DATE_RE.test(v)) {
+    const ms = expiryMs(v.length === 8 ? `${v}-2359` : v);
+    if (ms) return whenText(ms);
+  }
+  if (PRICE_KEYS.test(key) && Number.isFinite(Number(v))) return priceText(v);
+  return v;
+}
+
+/** Fills a "template:…" string with the market's values; plain strings pass through. */
+export function fillTemplate(s: string, spec: Record<string, string>, templates: Map<string, Template>): string {
+  if (!s) return s;
+  let t = s.startsWith("template:") ? s.slice("template:".length) : s;
+  const tpl = templates.get(t);
+  if (tpl) t = tpl.name;
+  else if (FRIENDLY[t]) t = FRIENDLY[t];
+  else if (/^[a-z][A-Za-z0-9]*$/.test(t) && /[A-Z]/.test(t)) t = humanize(t);
+  const types = new Map((tpl?.keywords ?? []).map(([k, ty]) => [k, ty]));
+  t = t.replace(/\{(\w+)\}/g, (_, k: string) => (spec[k] !== undefined ? valueText(k, spec[k], types.get(k)) : humanize(k)));
+  return t.replace(/\s+/g, " ").trim();
+}
+
+/** The settle time from any date the market carries ("time", "expiry", or any date value). */
+function expiryOf(spec: Record<string, string>): number | null {
+  for (const k of ["time", "expiry", "settleTime", "endTime", "date"]) if (spec[k]) {
+    const ms = expiryMs(spec[k].length === 8 ? `${spec[k]}-2359` : spec[k]);
+    if (ms) return ms;
+  }
+  for (const v of Object.values(spec)) if (DATE_RE.test(v)) {
+    const ms = expiryMs(v.length === 8 ? `${v}-2359` : v);
+    if (ms) return ms;
+  }
+  return null;
+}
+
+/** Which tab a template-made market goes under. */
+function tabOfTemplate(id: string, spec: Record<string, string>): PredictTab | null {
+  const cat = `${spec.category ?? ""} ${spec.subCategory ?? ""}`.toLowerCase();
+  if (/sport/.test(cat) || /^sports/i.test(id)) return "sports";
+  if (/macro|rate|econom/.test(cat) || /policyRate|rate|cpi|inflation/i.test(id)) return "rates";
+  if (/crypto|price/.test(cat) || /price|touch|scalar/i.test(id)) return "price";
+  return null;
+}
+
 /** Reads the open outcome markets and their prices. */
 export async function fetchPredict(signal?: AbortSignal): Promise<PredictBoard> {
-  const [meta, mids] = await Promise.all([info<Meta>({ type: "outcomeMeta" }, signal), info<Record<string, string>>({ type: "allMids" }, signal).catch(() => ({}) as Record<string, string>)]);
-  return boardOf(meta, mids);
+  const [meta, mids, templates] = await Promise.all([
+    info<Meta>({ type: "outcomeMeta" }, signal),
+    info<Record<string, string>>({ type: "allMids" }, signal).catch(() => ({}) as Record<string, string>),
+    fetchTemplates(signal),
+  ]);
+  return boardOf(meta, mids, templates);
 }
 
 /** The board from Hyperliquid's answers (exported for tests). */
-export function boardOf(meta: Meta, mids: Record<string, string>): PredictBoard {
-  const outcomes = Array.isArray(meta?.outcomes) ? meta.outcomes : [];
-  const questions = Array.isArray(meta?.questions) ? meta.questions : [];
+export function boardOf(meta: Meta, mids: Record<string, string>, templates: Map<string, Template> = new Map()): PredictBoard {
+  const outcomes = (Array.isArray(meta?.outcomes) ? meta.outcomes : []).filter((o) => o && Number.isInteger(o.outcome));
+  const questions = (Array.isArray(meta?.questions) ? meta.questions : []).filter((q) => q && Array.isArray(q.namedOutcomes));
   const fallback = new Set(questions.map((q) => q.fallbackOutcome));
   const ownerOf = new Map<number, Meta["questions"][number]>();
   for (const q of questions) for (const o of q.namedOutcomes ?? []) ownerOf.set(o, q);
@@ -125,9 +218,10 @@ export function boardOf(meta: Meta, mids: Record<string, string>): PredictBoard 
     const v = Number(mids?.[coin]);
     return Number.isFinite(v) && v > 0 && v < 1 ? v : null;
   };
-  const sideOf = (o: Meta["outcomes"][number], i: 0 | 1): PredictSide => {
+  const sideOf = (o: Meta["outcomes"][number], i: 0 | 1, spec: Record<string, string>): PredictSide => {
     const enc = 10 * o.outcome + i;
-    return { name: o.sideSpecs?.[i]?.name || (i === 0 ? "Yes" : "No"), coin: `#${enc}`, token: `+${enc}`, asset: 100_000_000 + enc, price: mid(`#${enc}`) };
+    const name = fillTemplate(o.sideSpecs?.[i]?.name || "", spec, templates) || (i === 0 ? "Yes" : "No");
+    return { name, coin: `#${enc}`, token: `+${enc}`, asset: 100_000_000 + enc, price: mid(`#${enc}`) };
   };
 
   const made = new Map<number, PredictOutcome>();
@@ -152,6 +246,29 @@ export function boardOf(meta: Meta, mids: Record<string, string>): PredictBoard 
       const i = q!.namedOutcomes.indexOf(o.outcome);
       label = a && b ? (i === 0 ? `Below ${shortPrice(a)}` : i === 1 ? `${shortPrice(a)} – ${shortPrice(b)}` : `Above ${shortPrice(b)}`) : o.name;
       title = `${qspec.underlying} price ${expiry ? whenText(expiry) : ""}`.trim();
+    } else if (o.name.startsWith("template:") || (q?.name ?? "").startsWith("template:")) {
+      // a market made from a template: its values fill the template's words
+      const id = o.name.startsWith("template:") ? o.name.slice(9) : "";
+      const qid = (q?.name ?? "").startsWith("template:") ? q!.name.slice(9) : "";
+      const all = { ...qspec, ...spec };
+      expiry = expiryOf(spec) ?? expiryOf(qspec);
+      tab = tabOfTemplate(id || qid, all) ?? tabOfTemplate(qid, all) ?? "other";
+      const perp = all.perp ?? all.underlying ?? all.coin;
+      if (id === "binaryPrice" && perp && (all.threshold ?? all.targetPrice)) {
+        title = `${perp} above ${priceText(all.threshold ?? all.targetPrice)}${expiry ? ` ${whenText(expiry)}` : ""}?`;
+        label = "";
+      } else if (id === "priceTouch" && perp && (all.target ?? all.threshold)) {
+        title = `${perp} touches ${priceText(all.target ?? all.threshold)}${expiry ? ` by ${whenText(expiry)}` : ""}?`;
+        label = "";
+      } else if (id === "scalarPrice" && perp && all.low && all.high) {
+        title = `${perp} between ${priceText(all.low)} and ${priceText(all.high)}${expiry ? ` ${whenText(expiry)}` : ""}?`;
+        label = "";
+      } else {
+        const filled = fillTemplate(o.name, all, templates);
+        label = filled;
+        const qTitle = q && q.namedOutcomes.length > 1 ? fillTemplate(q.name, all, templates) : "";
+        title = qTitle || (filled.endsWith("?") ? filled : / vs\.? /i.test(filled) ? `${filled}: who wins?` : `${filled}?`);
+      }
     } else {
       expiry = expiryMs(spec.expiry) ?? expiryMs(qspec.expiry);
       const text = `${q?.name ?? ""} ${o.name} ${o.description} ${q?.description ?? ""}`;
@@ -159,7 +276,18 @@ export function boardOf(meta: Meta, mids: Record<string, string>): PredictBoard 
       title = q && q.namedOutcomes.length > 1 ? q.name : o.name.endsWith("?") ? o.name : `${o.name}?`;
     }
     const quote = String(o.quoteToken ?? "");
-    made.set(o.outcome, { outcome: o.outcome, tab, title, label, expiry, sides: [sideOf(o, 0), sideOf(o, 1)], quote, tradable: /usdc/i.test(quote) || quote === "" || quote === "0" });
+    const all = { ...qspec, ...spec };
+    made.set(o.outcome, {
+      outcome: o.outcome,
+      tab,
+      title,
+      label,
+      expiry,
+      sides: [sideOf(o, 0, all), sideOf(o, 1, all)],
+      quote,
+      tradable: /usdc/i.test(quote) || quote === "" || quote === "0",
+      raw: `${q ? `Q ${q.name} | ${q.description} || ` : ""}${o.name} | ${o.description} | sides: ${(o.sideSpecs ?? []).map((x) => x.name).join(", ")} | quote: ${quote}`,
+    });
   }
 
   const groups: PredictGroup[] = [];
@@ -172,7 +300,7 @@ export function boardOf(meta: Meta, mids: Record<string, string>): PredictBoard 
     groups.push({
       question: q.question,
       tab: answers[0].tab,
-      title: qspec.class === "priceBucket" ? `${answers[0].title}: which range?` : q.name,
+      title: qspec.class === "priceBucket" ? `${answers[0].title}: which range?` : fillTemplate(q.name, qspec, templates),
       expiry: answers[0].expiry,
       answers,
     });

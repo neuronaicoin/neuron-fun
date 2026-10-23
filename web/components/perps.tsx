@@ -44,6 +44,7 @@ import { hlSubscribe } from "@/lib/hlws";
 import { haptic } from "@/lib/haptics";
 import { authedGet, authedPost, checkPush, enablePush, sessionToken, useAlerts } from "@/lib/alerts";
 import { MarketSwitch } from "./marketswitch";
+import { postOnX } from "./share";
 
 const usd = (v: number, d = 2) => `$${v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
 const signedUsd = (v: number) => `${v >= 0 ? "+" : "−"}${usd(Math.abs(v))}`;
@@ -520,6 +521,28 @@ function MarketHeader({ m, onPick }: { m: PerpMarket | null; onPick: () => void 
         {m?.name && <span className="text-[0.8125rem] text-ink-3">{m.name}</span>}
         <span className="h-6 px-2 rounded-full bg-paper border border-line text-[0.6875rem] font-bold flex items-center">{m ? `${m.maxLev}x` : ""}</span>
         {m?.dex && <span className="h-6 px-2 rounded-full bg-emerald-soft text-emerald text-[0.6875rem] font-bold flex items-center">24/7</span>}
+        {m && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Share ${m.label} on X`}
+            title="Share on X"
+            onClick={(e) => {
+              e.stopPropagation();
+              postOnX(
+                m.dex
+                  ? `trading ${m.name ?? m.label} 24/7 with up to ${m.maxLev}x, weekends too 👀`
+                  : `${m.label} at ${px(m.mark)} (${pct(m.change24h)} today). long or short, up to ${m.maxLev}x 👀`,
+                `https://sasapad.fun/futures/?c=${encodeURIComponent(m.coin)}`
+              );
+            }}
+            className="w-7 h-7 rounded-full text-ink-3 hover:text-ink hover:bg-paper flex items-center justify-center pointer-events-auto"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M18.9 2H22l-7.6 8.7L23 22h-6.8l-5.3-6.9L4.8 22H1.7l8.1-9.3L1 2h6.9l4.8 6.3L18.9 2zm-1.2 18h1.9L6.4 3.9H4.4L17.7 20z" />
+            </svg>
+          </span>
+        )}
         <svg className="lg:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>

@@ -11,6 +11,7 @@ import { useWallet } from "./wallet";
 import { afterTrade } from "@/lib/portfolio";
 import { friendlyError } from "@/lib/format";
 import { showToast } from "@/lib/toast";
+import { postOnX } from "./share";
 import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
 import {
@@ -54,6 +55,29 @@ function useNow(every = 1000) {
 }
 
 type Pick = { o: PredictOutcome; side: 0 | 1 };
+
+const SITE = "https://sasapad.fun";
+function shareOutcome(o: PredictOutcome, title: string) {
+  const p = o.sides[0].price;
+  const odds = p !== null ? `market says ${o.sides[0].name} ${cents(p)} vs ${o.sides[1].name} ${cents(o.sides[1].price)}` : "";
+  postOnX(`${title}\n\n${odds} 👀 what's your call?`, `${SITE}/predict/?m=${o.outcome}`);
+}
+function ShareBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="Share on X" title="Share on X" className="shrink-0 w-8 h-8 -mr-1 -mt-1 rounded-full text-ink-3 hover:text-ink hover:bg-paper flex items-center justify-center">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M18.9 2H22l-7.6 8.7L23 22h-6.8l-5.3-6.9L4.8 22H1.7l8.1-9.3L1 2h6.9l4.8 6.3L18.9 2zm-1.2 18h1.9L6.4 3.9H4.4L17.7 20z" />
+      </svg>
+    </button>
+  );
+}
+const showRaw = () => {
+  try {
+    return new URLSearchParams(window.location.search).get("raw") === "1";
+  } catch {
+    return false;
+  }
+};
 
 export function PredictScreen() {
   const w = useWallet();
@@ -115,6 +139,19 @@ export function PredictScreen() {
     const has = new Set([...(board?.singles ?? []).map((o) => o.tab), ...(board?.groups ?? []).map((g) => g.tab)]);
     return TABS.filter(([t]) => t !== "other" || has.has("other"));
   }, [board]);
+  // a shared link (?m=<outcome>) opens its tab and lights up its card
+  const [hot, setHot] = useState<number | null>(null);
+  useEffect(() => {
+    if (!board || hot !== null) return;
+    const m = Number(new URLSearchParams(window.location.search).get("m"));
+    if (!Number.isInteger(m) || m <= 0) return setHot(-1);
+    const single = board.singles.find((o) => o.outcome === m);
+    const group = board.groups.find((g) => g.answers.some((a) => a.outcome === m));
+    setHot(m);
+    const t = single?.tab ?? group?.tab;
+    if (t) setTab(t);
+    setTimeout(() => document.getElementById(single ? `m${m}` : `q${group?.question}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+  }, [board, hot]);
   const singles = (board?.singles ?? []).filter((o) => o.tab === tab);
   const groups = (board?.groups ?? []).filter((g) => g.tab === tab);
 
@@ -171,10 +208,10 @@ export function PredictScreen() {
           ) : (
             <>
               {singles.map((o) => (
-                <SingleCard key={o.outcome} o={o} now={now} onPick={(side) => setPick({ o, side })} />
+                <SingleCard key={o.outcome} o={o} now={now} hot={hot === o.outcome} onPick={(side) => setPick({ o, side })} />
               ))}
               {groups.map((g) => (
-                <GroupCard key={g.question} g={g} now={now} onPick={(o, side) => setPick({ o, side })} />
+                <GroupCard key={g.question} g={g} now={now} hot={g.answers.some((a) => a.outcome === hot)} onPick={(o, side) => setPick({ o, side })} />
               ))}
             </>
           )}
@@ -225,11 +262,15 @@ function SideButtons({ o, onPick, small = false }: { o: PredictOutcome; onPick: 
   );
 }
 
-function SingleCard({ o, now, onPick }: { o: PredictOutcome; now: number; onPick: (side: 0 | 1) => void }) {
+function SingleCard({ o, now, onPick, hot }: { o: PredictOutcome; now: number; onPick: (side: 0 | 1) => void; hot?: boolean }) {
   const ends = left(o.expiry, now);
   return (
-    <article className="rounded-2xl border border-line bg-surface p-4 flex flex-col gap-3 min-w-0">
-      <h2 className="font-semibold text-[1rem] leading-snug">{o.title}</h2>
+    <article id={`m${o.outcome}`} className={"rounded-2xl border bg-surface p-4 flex flex-col gap-3 min-w-0 " + (hot ? "border-emerald ring-1 ring-emerald" : "border-line")}>
+      <div className="flex items-start gap-2">
+        <h2 className="flex-1 font-semibold text-[1rem] leading-snug">{o.title}</h2>
+        <ShareBtn onClick={() => shareOutcome(o, o.title)} />
+      </div>
+      {showRaw() && <p className="text-[0.6875rem] font-mono text-ink-3 break-all">{o.raw}</p>}
       <Bar p={o.sides[0].price} />
       <SideButtons o={o} onPick={onPick} />
       {ends && <div className="text-[0.75rem] text-ink-3">{ends}</div>}
@@ -237,11 +278,15 @@ function SingleCard({ o, now, onPick }: { o: PredictOutcome; now: number; onPick
   );
 }
 
-function GroupCard({ g, now, onPick }: { g: PredictGroup; now: number; onPick: (o: PredictOutcome, side: 0 | 1) => void }) {
+function GroupCard({ g, now, onPick, hot }: { g: PredictGroup; now: number; onPick: (o: PredictOutcome, side: 0 | 1) => void; hot?: boolean }) {
   const ends = left(g.expiry, now);
   return (
-    <article className="rounded-2xl border border-line bg-surface p-4 flex flex-col gap-2 min-w-0 sm:col-span-2">
-      <h2 className="font-semibold text-[1rem] leading-snug">{g.title}</h2>
+    <article id={`q${g.question}`} className={"rounded-2xl border bg-surface p-4 flex flex-col gap-2 min-w-0 sm:col-span-2 " + (hot ? "border-emerald ring-1 ring-emerald" : "border-line")}>
+      <div className="flex items-start gap-2">
+        <h2 className="flex-1 font-semibold text-[1rem] leading-snug">{g.title}</h2>
+        <ShareBtn onClick={() => shareOutcome(g.answers[0], `${g.title}: ${g.answers[0].label}?`)} />
+      </div>
+      {showRaw() && <p className="text-[0.6875rem] font-mono text-ink-3 break-all">{g.answers.map((a) => a.raw).join(" ;; ")}</p>}
       <ul className="divide-y divide-line">
         {g.answers.map((o) => (
           <li key={o.outcome} className="py-2 flex items-center gap-3">

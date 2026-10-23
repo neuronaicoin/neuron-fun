@@ -388,7 +388,7 @@ export function planOrder(m: PerpMarket, side: "long" | "short", margin: number,
  * trading stays hidden: better a retry than leverage where it isn't allowed.
  */
 /** Wallets that may use Futures, Predict and Copy from anywhere (sasa's own test wallets). */
-const GEO_EXEMPT = new Set(["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b"]);
+const GEO_EXEMPT = new Set(["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"]);
 export const geoExempt = (address: string | null | undefined) => !!address && GEO_EXEMPT.has(address.toLowerCase());
 
 export async function perpsAllowedHere(): Promise<boolean> {
