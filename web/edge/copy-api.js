@@ -28,7 +28,7 @@ async function sb(env, path, { method = "GET", body, prefer } = {}) {
   const text = await r.text();
   if (!r.ok) {
     const err = new Error(`db ${r.status}: ${text.slice(0, 200)}`);
-    err.missing = /copy_(agents|follows|positions)/.test(text) && /does not exist|schema cache/.test(text);
+    err.missing = /whale_cop(ies|y_agents|y_positions)/.test(text) && /does not exist|schema cache/.test(text);
     throw err;
   }
   return text ? JSON.parse(text) : null;
@@ -51,24 +51,24 @@ export async function copyRoute(env, me, parts, method, body) {
   try {
     if (parts.length === 1 && method === "GET") {
       const [copies, agent] = await Promise.all([
-        sb(env, `copy_follows?follower=eq.${owner}&select=whale,per_trade,max_lev,copy_closes,stop_loss,active,paused_why&order=created_at.desc`),
-        sb(env, `copy_agents?follower=eq.${owner}&select=agent_address`),
+        sb(env, `whale_copies?follower=eq.${owner}&select=whale,per_trade,max_lev,copy_closes,stop_loss,active,paused_why&order=created_at.desc`),
+        sb(env, `whale_copy_agents?follower=eq.${owner}&select=agent_address`),
       ]);
       return json({ copies: copies || [], agent: agent?.[0]?.agent_address ?? null });
     }
     if (parts.length === 2 && parts[1] === "agent" && method === "POST") {
-      const have = await sb(env, `copy_agents?follower=eq.${owner}&select=agent_address`);
+      const have = await sb(env, `whale_copy_agents?follower=eq.${owner}&select=agent_address`);
       if (have?.[0]) return json({ agent: have[0].agent_address });
       if (!env.COPY_KEY_SECRET) return json({ error: "Copy trading opens soon." }, 503);
       const key = newKey();
       const agent = privateKeyToAccount(key).address.toLowerCase();
-      await sb(env, "copy_agents?on_conflict=follower", {
+      await sb(env, "whale_copy_agents?on_conflict=follower", {
         method: "POST",
         prefer: "resolution=ignore-duplicates",
         body: { follower: owner, agent_address: agent, key_enc: await encryptKey(key, env.COPY_KEY_SECRET) },
       });
       // two taps at once: the first key stored wins
-      const now = await sb(env, `copy_agents?follower=eq.${owner}&select=agent_address`);
+      const now = await sb(env, `whale_copy_agents?follower=eq.${owner}&select=agent_address`);
       return json({ agent: now?.[0]?.agent_address ?? agent });
     }
     if (parts.length === 1 && method === "POST") {
@@ -80,11 +80,11 @@ export async function copyRoute(env, me, parts, method, body) {
       if (per === null) return json({ error: "Per trade is $10 to $5,000." }, 400);
       if (lev === null) return json({ error: "Leverage is 1x to 20x." }, 400);
       if (body?.stop_loss != null && body?.stop_loss !== "" && stop === null) return json({ error: "Enter the stop as a dollar amount." }, 400);
-      const agent = await sb(env, `copy_agents?follower=eq.${owner}&select=agent_address`);
+      const agent = await sb(env, `whale_copy_agents?follower=eq.${owner}&select=agent_address`);
       if (!agent?.[0]) return json({ error: "Approve copying first." }, 400);
-      const rows = await sb(env, `copy_follows?follower=eq.${owner}&active=eq.true&select=whale`);
+      const rows = await sb(env, `whale_copies?follower=eq.${owner}&active=eq.true&select=whale`);
       if ((rows || []).length >= MAX_COPIES && !(rows || []).some((r) => r.whale === whale)) return json({ error: `You can copy up to ${MAX_COPIES} traders. Stop one first.` }, 400);
-      await sb(env, "copy_follows?on_conflict=follower,whale", {
+      await sb(env, "whale_copies?on_conflict=follower,whale", {
         method: "POST",
         prefer: "resolution=merge-duplicates",
         body: { follower: owner, whale, per_trade: per, max_lev: Math.round(lev), copy_closes: body?.copy_closes !== false, stop_loss: stop, active: true, paused_why: null, updated_at: new Date().toISOString() },
@@ -96,7 +96,7 @@ export async function copyRoute(env, me, parts, method, body) {
     if (parts.length === 2 && method === "DELETE") {
       const whale = String(parts[1] || "").toLowerCase();
       if (!isAddr(whale)) return json({ error: "That isn't a trader's address." }, 400);
-      await sb(env, `copy_follows?follower=eq.${owner}&whale=eq.${whale}`, { method: "PATCH", body: { active: false, paused_why: "stopped", updated_at: new Date().toISOString() } });
+      await sb(env, `whale_copies?follower=eq.${owner}&whale=eq.${whale}`, { method: "PATCH", body: { active: false, paused_why: "stopped", updated_at: new Date().toISOString() } });
       return json({ ok: true });
     }
   } catch (e) {

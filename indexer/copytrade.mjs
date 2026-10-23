@@ -1,6 +1,6 @@
 // Copying whales on Futures (copytrade.sql). whales.mjs watches traders every 30 s; when a
 // trader someone copies opens, flips or closes a position, this places the same move for each
-// copier with their own trading key (copy_agents, approved by them on Hyperliquid: it can trade,
+// copier with their own trading key (whale_copy_agents, approved by them on Hyperliquid: it can trade,
 // never withdraw):
 //   - open:  the same side, the copier's own amount (per_trade) at the trader's leverage, capped
 //            by the copier's max and the market's; skipped if the copier already holds that coin
@@ -79,7 +79,7 @@ async function tell(pool, owner, title, body, url) {
   await pool.query(`insert into notifications (owner, coin_id, kind, title, body, url, pushed) values ($1, null, 'copy', $2, $3, $4, false)`, [owner, title, body, url]).catch(() => {});
 }
 async function pause(pool, follower, whale, why) {
-  await pool.query(`update copy_follows set active = false, paused_why = $3, updated_at = now() where follower = $1 and (whale = $2 or $2 is null)`, [follower, whale, why]).catch(() => {});
+  await pool.query(`update whale_copies set active = false, paused_why = $3, updated_at = now() where follower = $1 and (whale = $2 or $2 is null)`, [follower, whale, why]).catch(() => {});
 }
 
 /** What went wrong, for the copier and for us. */
@@ -102,12 +102,12 @@ export async function copyChanges(pool, whale, changes, { site = "https://sasapa
   try {
     ({ rows } = await pool.query(
       `select f.follower, f.per_trade, f.max_lev, f.copy_closes, a.key_enc
-       from copy_follows f join copy_agents a on a.follower = f.follower
+       from whale_copies f join whale_copy_agents a on a.follower = f.follower
        where f.whale = $1 and f.active`,
       [whale]
     ));
   } catch (e) {
-    if (/copy_(follows|agents)/.test(e.message)) return { placed: 0 }; // copytrade.sql not run yet
+    if (/whale_cop(ies|y_agents)/.test(e.message)) return { placed: 0 }; // copytrade.sql not run yet
     throw e;
   }
   if (!rows.length) return { placed: 0 };
@@ -133,7 +133,7 @@ export async function copyChanges(pool, whale, changes, { site = "https://sasapa
       try {
         // ---------------------------------------------------------------- close (and the first half of a flip)
         if (c.kind === "close" || c.kind === "flip") {
-          const { rows: mine } = await pool.query(`select side from copy_positions where follower = $1 and coin = $2 and whale = $3`, [r.follower, c.coin, whale]);
+          const { rows: mine } = await pool.query(`select side from whale_copy_positions where follower = $1 and coin = $2 and whale = $3`, [r.follower, c.coin, whale]);
           if (mine.length && (r.copy_closes || c.kind === "flip")) {
             const p = ((await stateNow()).assetPositions || []).map((a) => a.position).find((p) => p.coin === c.coin);
             const s = num(p?.szi);
@@ -151,13 +151,13 @@ export async function copyChanges(pool, whale, changes, { site = "https://sasapa
               state = null;
             }
             // closed by the copier themselves meanwhile: nothing left to copy
-            await pool.query(`delete from copy_positions where follower = $1 and coin = $2`, [r.follower, c.coin]);
+            await pool.query(`delete from whale_copy_positions where follower = $1 and coin = $2`, [r.follower, c.coin]);
           }
           if (c.kind === "close") continue;
         }
 
         // ---------------------------------------------------------------- open (and the second half of a flip)
-        const { rows: held } = await pool.query(`select 1 from copy_positions where follower = $1 and coin = $2`, [r.follower, c.coin]);
+        const { rows: held } = await pool.query(`select 1 from whale_copy_positions where follower = $1 and coin = $2`, [r.follower, c.coin]);
         if (held.length) continue; // already copying this coin (from another trader): no stacking
         const st = await stateNow();
         if ((st.assetPositions || []).some((a) => a.position?.coin === c.coin && num(a.position?.szi) !== 0)) continue; // their own position: left alone
@@ -188,7 +188,7 @@ export async function copyChanges(pool, whale, changes, { site = "https://sasapa
         if (!filled || !(num(filled.totalSz) > 0)) continue; // the price ran away: not chased
         placed++;
         await pool.query(
-          `insert into copy_positions (follower, whale, coin, side, size, entry) values ($1, $2, $3, $4, $5, $6)
+          `insert into whale_copy_positions (follower, whale, coin, side, size, entry) values ($1, $2, $3, $4, $5, $6)
            on conflict (follower, coin) do update set whale = excluded.whale, side = excluded.side, size = excluded.size, entry = excluded.entry, opened_at = now()`,
           [r.follower, whale, c.coin, c.side, num(filled.totalSz), num(filled.avgPx)]
         );
@@ -222,19 +222,19 @@ export async function copyStopRound(pool, { site = "https://sasapad.fun", log = 
   try {
     ({ rows } = await pool.query(
       `select f.follower, min(f.stop_loss) as stop, a.key_enc
-       from copy_follows f join copy_agents a on a.follower = f.follower
+       from whale_copies f join whale_copy_agents a on a.follower = f.follower
        where f.active and f.stop_loss is not null
-         and exists (select 1 from copy_positions p where p.follower = f.follower)
+         and exists (select 1 from whale_copy_positions p where p.follower = f.follower)
        group by f.follower, a.key_enc`
     ));
   } catch (e) {
-    if (/copy_(follows|agents|positions)/.test(e.message)) return { stopped: 0 };
+    if (/whale_cop(ies|y_agents|y_positions)/.test(e.message)) return { stopped: 0 };
     throw e;
   }
   let stopped = 0;
   for (const r of rows) {
     try {
-      const { rows: mine } = await pool.query(`select coin, side from copy_positions where follower = $1`, [r.follower]);
+      const { rows: mine } = await pool.query(`select coin, side from whale_copy_positions where follower = $1`, [r.follower]);
       const st = await info.clearinghouseState({ user: r.follower });
       const open = (st.assetPositions || []).map((a) => a.position).filter((p) => mine.some((x) => x.coin === p.coin && x.side === (num(p.szi) > 0 ? "long" : "short")));
       const pnl = open.reduce((s, p) => s + num(p.unrealizedPnl), 0);
@@ -255,7 +255,7 @@ export async function copyStopRound(pool, { site = "https://sasapad.fun", log = 
           })
           .catch((e) => log(`copy stop: ${r.follower} ${p.coin}: ${e.message}`));
       }
-      await pool.query(`delete from copy_positions where follower = $1`, [r.follower]);
+      await pool.query(`delete from whale_copy_positions where follower = $1`, [r.follower]);
       await pause(pool, r.follower, null, "stop reached");
       await tell(pool, r.follower, "🐋 Copying stopped: your stop was hit", `Your copied positions were down ${money(pnl)} together, past your ${money(num(r.stop))} stop. They were closed.`, `${site}/futures/`);
       stopped++;

@@ -7,18 +7,18 @@
 -- The key is stored encrypted (COPY_KEY_SECRET, the same on Cloudflare and the indexer).
 
 -- one trading key per follower
-create table if not exists copy_agents (
+create table if not exists whale_copy_agents (
   follower      text primary key,                -- lowercase sasa address
   agent_address text        not null,            -- the key's address (approved on Hyperliquid by the follower)
   key_enc       text        not null,            -- AES-GCM, base64(iv | ciphertext)
   created_at    timestamptz not null default now()
 );
-alter table copy_agents enable row level security;
-revoke all on copy_agents from anon, authenticated;
-grant all on copy_agents to service_role;
+alter table whale_copy_agents enable row level security;
+revoke all on whale_copy_agents from anon, authenticated;
+grant all on whale_copy_agents to service_role;
 
 -- what each follower copies, and how
-create table if not exists copy_follows (
+create table if not exists whale_copies (
   follower    text        not null,
   whale       text        not null,
   per_trade   numeric     not null,              -- dollars of margin per copied position
@@ -31,13 +31,13 @@ create table if not exists copy_follows (
   updated_at  timestamptz not null default now(),
   primary key (follower, whale)
 );
-create index if not exists copy_follows_whale_idx on copy_follows (whale) where active;
-alter table copy_follows enable row level security;
-revoke all on copy_follows from anon, authenticated;
-grant all on copy_follows to service_role;
+create index if not exists whale_copies_whale_idx on whale_copies (whale) where active;
+alter table whale_copies enable row level security;
+revoke all on whale_copies from anon, authenticated;
+grant all on whale_copies to service_role;
 
 -- positions opened by copying (so only those are closed, never the follower's own)
-create table if not exists copy_positions (
+create table if not exists whale_copy_positions (
   follower  text        not null,
   whale     text        not null,
   coin      text        not null,
@@ -47,9 +47,9 @@ create table if not exists copy_positions (
   opened_at timestamptz not null default now(),
   primary key (follower, coin)
 );
-alter table copy_positions enable row level security;
-revoke all on copy_positions from anon, authenticated;
-grant all on copy_positions to service_role;
+alter table whale_copy_positions enable row level security;
+revoke all on whale_copy_positions from anon, authenticated;
+grant all on whale_copy_positions to service_role;
 
 grant usage, select on all sequences in schema public to service_role;
 notify pgrst, 'reload schema';
