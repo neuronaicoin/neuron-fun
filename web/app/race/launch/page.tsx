@@ -90,6 +90,9 @@ const perChainOf = (total: string, n: number): string => {
 };
 const cleanSym = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
 
+/** The chain picker's order: Robinhood first, then the rest as listed. */
+const CHAIN_ORDER = [...RACE_CHAINS].sort((a, b) => (b.short === "Robinhood" ? 1 : 0) - (a.short === "Robinhood" ? 1 : 0));
+
 export default function RaceLaunchPage() {
   const w = useWallet();
   const router = useRouter();
@@ -100,7 +103,8 @@ export default function RaceLaunchPage() {
   const [socials, setSocials] = useState<LinkDraft>(EMPTY_DRAFT);
   const [socialsOpen, setSocialsOpen] = useState(false);
   const [feeMode, setFeeMode] = useState<0 | 1>(0);
-  const [chains, setChains] = useState<number[]>(RACE_CHAINS.map((c) => c.chainId));
+  // Robinhood alone by default (cheapest, one undivided pool); the 4-chain race is one tap away
+  const [chains, setChains] = useState<number[]>(() => [(RACE_CHAINS.find((c) => c.short === "Robinhood") ?? RACE_CHAINS[0]).chainId]);
   const [firstBuy, setFirstBuy] = useState("10");
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
@@ -660,9 +664,9 @@ export default function RaceLaunchPage() {
           )}
 
           <div className="flex flex-col gap-2">
-            <span className="text-[0.8125rem] text-ink-3">Pick your chains (multi-chain recommended)</span>
+            <span className="text-[0.8125rem] text-ink-3">Your chain</span>
             <div className="grid grid-cols-2 gap-2">
-              {RACE_CHAINS.map((c) => {
+              {CHAIN_ORDER.map((c) => {
                 const on = chains.includes(c.chainId);
                 return (
                   <button
@@ -678,6 +682,29 @@ export default function RaceLaunchPage() {
                 );
               })}
             </div>
+            {chains.length < CHAIN_ORDER.length ? (
+              <div className="rounded-2xl border border-emerald/40 bg-emerald-soft p-3 sm:p-4 flex flex-col gap-2">
+                <span className="font-bold text-[0.9375rem] text-ink">🏁 Want more buyers? Race it on 4 chains</span>
+                <span className="text-[0.8125rem] text-ink-2 leading-snug">
+                  Launch on Robinhood, Base, BNB and Arc at once. Four communities trade it for 5 minutes, then the chain with the most money wins and
+                  takes the money from the other chains. Only sasa can do this.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setChains(CHAIN_ORDER.map((c) => c.chainId))}
+                  className="self-start h-10 px-4 rounded-full bg-emerald text-on-accent font-semibold text-[0.875rem]"
+                >
+                  Race on all 4 chains
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald/40 bg-emerald-soft p-3 flex items-center gap-2 text-[0.8125rem] text-ink-2">
+                <span>🏁 4-chain race on: after 5 minutes the winning chain takes all the money.</span>
+                <button type="button" onClick={() => setChains([CHAIN_ORDER[0].chainId])} className="ml-auto shrink-0 font-semibold text-ink underline">
+                  Just {CHAIN_ORDER[0].short}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -737,12 +764,6 @@ export default function RaceLaunchPage() {
                   : `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
                 : "Split evenly over the chains you pick. Your first buy pays the 2% floor fee."}
             </span>
-            {raceFeeUsd > 0 && (
-              <span className="text-[0.8125rem] text-ink-3">
-                Race fee: ${raceFeeUsd.toFixed(2)} (covers the network fees of running your race). Total: $
-                {((Number.isFinite(buyN) ? Number(perChain) * picked.length : 0) + raceFeeUsd).toFixed(2)}
-              </span>
-            )}
           </div>
         </div>
 
