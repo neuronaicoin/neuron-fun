@@ -11,7 +11,7 @@ import { useWallet } from "./wallet";
 import { afterTrade } from "@/lib/portfolio";
 import { friendlyError } from "@/lib/format";
 import { showToast } from "@/lib/toast";
-import { PERPS_TRADING, perpsAllowedHere } from "@/lib/perps";
+import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
 import {
   PREDICT_MIN,
@@ -118,8 +118,9 @@ export function PredictScreen() {
   const singles = (board?.singles ?? []).filter((o) => o.tab === tab);
   const groups = (board?.groups ?? []).filter((g) => g.tab === tab);
 
-  if (allowed === null) return <div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>;
-  if (!allowed)
+  const exempt = geoExempt(user);
+  if (allowed === null && !exempt) return <div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>;
+  if (!allowed && !exempt)
     return (
       <div className="max-w-xl mx-auto px-4 py-10">
         <MarketSwitch at="predict" />

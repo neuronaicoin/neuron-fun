@@ -387,6 +387,10 @@ export function planOrder(m: PerpMarket, side: "long" | "short", margin: number,
  * Whether Perps is offered where the visitor is (functions/geo.js). If the answer can't be had,
  * trading stays hidden: better a retry than leverage where it isn't allowed.
  */
+/** Wallets that may use Futures, Predict and Copy from anywhere (sasa's own test wallets). */
+const GEO_EXEMPT = new Set(["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b"]);
+export const geoExempt = (address: string | null | undefined) => !!address && GEO_EXEMPT.has(address.toLowerCase());
+
 export async function perpsAllowedHere(): Promise<boolean> {
   for (let i = 0; i < 3; i++) {
     try {

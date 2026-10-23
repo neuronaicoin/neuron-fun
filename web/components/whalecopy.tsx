@@ -11,7 +11,7 @@ import { useWallet } from "./wallet";
 import { sessionToken } from "@/lib/alerts";
 import { copyAgent, myCopies, startCopy, stopCopy, type CopySettings } from "@/lib/copytrade";
 import { friendlyError } from "@/lib/format";
-import { PERPS_TRADING, perpsAllowedHere } from "@/lib/perps";
+import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
 import { showToast } from "@/lib/toast";
 
@@ -157,7 +157,7 @@ function CopySheet({ whale, name, mine, onClose }: { whale: string; name: string
 
   return (
     <Sheet title={`Copy ${who}`} onClose={onClose}>
-      {allowed === false ? (
+      {allowed === false && !geoExempt(w.address) ? (
         <p className="text-ink-2">Copy trading uses futures, which aren&apos;t offered where you are.</p>
       ) : (
         <div className="flex flex-col gap-4">
@@ -221,7 +221,7 @@ function CopySheet({ whale, name, mine, onClose }: { whale: string; name: string
           ) : (
             <button
               type="button"
-              disabled={busy || !PERPS_TRADING || allowed === null}
+              disabled={busy || !PERPS_TRADING || (allowed === null && !geoExempt(w.address))}
               onClick={() => void start()}
               className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
             >

@@ -28,6 +28,7 @@ import {
   type PerpGroup,
   fetchPerpOrders,
   perpsAllowedHere,
+  geoExempt,
   planOrder,
   chartDecimals,
   priceDecimals,
@@ -66,7 +67,7 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
       setAdminFor(sessionStorage.getItem("sasa-futures-admin"));
     } catch {}
   }, [w.address]);
-  const adminTest = !!w.address && adminFor === w.address.toLowerCase();
+  const adminTest = !!w.address && (adminFor === w.address.toLowerCase() || geoExempt(w.address));
   useEffect(() => {
     let alive = true;
     void perpsAllowedHere().then((ok) => alive && setAllowed(ok));
