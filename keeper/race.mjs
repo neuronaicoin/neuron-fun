@@ -459,6 +459,7 @@ export async function oneDvnCoin(coin, byEid) {
 
 const FAST_MS = Number(env("FAST_SECONDS", "3")) * 1000;
 const COIN_PARALLEL = Number(env("COIN_PARALLEL", "25"));
+const STATUS_MS = Number(env("STATUS_MINUTES", "60")) * 60_000;
 const PEND_CHECK_MS = Number(env("PEND_CHECK_SECONDS", "120")) * 1000; // finished coins: arrived-dollars check
 const STUCK_MS = Number(env("STUCK_ALERT_MIN", "3")) * 60_000;
 /** A race that needs quick passes: about to end (last minute), or ended and not finished. */
@@ -596,6 +597,18 @@ export async function main(mode = "full") {
 
   async function handleCoin(id, coin) {
     const win = coin.winner !== undefined ? byEid.get(coin.winner) : null;
+
+    // Once an hour, one line per coin saying where it stands, so a coin that silently isn't
+    // collected or finished shows up in the log (STATUS_MINUTES, default 60).
+    if (Date.now() - (coin.statusLogged ?? 0) > STATUS_MS) {
+      const seen = coin.eids.map((e) => (byEid.has(e) ? `${byEid.get(e).chainId}${coin.chains[e] ? "" : "(not seen)"}` : `eid ${e}(no RPC)`));
+      log(
+        `status ${coin.name}: ${coin.oneDvn ? "old one-DVN coin, no race steps" : coin.finished ? "finished" : "in progress"}, ` +
+          `winner ${coin.winner === undefined ? "not decided" : win ? win.chainId : `eid ${coin.winner} (chain not configured here)`}, ` +
+          `chains ${seen.join(" ")}, last fee collect ${coin.lastCollectDone ? new Date(coin.lastCollectDone).toISOString() : "never"}`
+      );
+      if (!DRY) coin.statusLogged = Date.now();
+    }
 
     // ---- after the race: fees and buybacks on the winner, every COLLECT_MINUTES if it traded
     if (coin.finished) {
