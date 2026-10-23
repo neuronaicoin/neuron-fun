@@ -227,6 +227,7 @@ const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/market/", label: "Market", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
+  { href: "/predict/", label: "Predict", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/me/", label: "You", from: "lg" },
   // in "More" on computers too: a short, calm top bar
@@ -234,7 +235,7 @@ const NAV_ALL = [
   { href: "/copy/", label: "Copy", from: "never" },
   { href: "/points/", label: "Airdrop", from: "lg" },
   { href: "/forum/", label: "Forum", from: "never" },
-  { href: "/stats/", label: "Stats", from: "lg" },
+  { href: "/stats/", label: "Stats", from: "xl" },
 ] as const;
 const NAV = NAV_ALL.filter((n) => V6 || !V6_ONLY.has(n.href));
 const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", never: "hidden" } as const;
@@ -304,6 +305,7 @@ export function Header() {
 const MORE_ALL = [
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
+  { href: "/predict/", label: "Predict", note: "Yes or no on prices, matches and rates" },
   { href: "/me/", label: "You", note: "Your coins, futures and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
   { href: "/copy/", label: "Copy trading", note: "Signals from traders you copy" },
