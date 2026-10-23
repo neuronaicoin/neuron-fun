@@ -34,6 +34,9 @@ export type Senders = {
 const now = () => Math.floor(Date.now() / 1000);
 /** Room left for the network fee on Base, which is paid in USDC from the same balance. */
 export const HOME_FEE_ROOM_CENTS = 5;
+/** A launch is one big bundle (approve, launch, an Across deposit per other chain): its network
+ * fee, paid in USDC, can reach a few dimes, so it keeps more room than a single trade. */
+export const LAUNCH_FEE_ROOM_CENTS = 60;
 /** Across's fee is quoted for one moment; a little more keeps relayers interested on the way back. */
 const FEE_BUFFER_PCT = 20n;
 
@@ -44,10 +47,15 @@ async function homeBalance(home: RaceChain, user: Address): Promise<bigint> {
   return (await raceClient(home).readContract({ address: home.usd, abi: raceErc20Abi, functionName: "balanceOf", args: [user] })) as bigint;
 }
 
-function roomCheck(have: bigint, spend: bigint, dec: number) {
-  if (spend + cents(HOME_FEE_ROOM_CENTS, dec) > have) {
-    const max = have > cents(HOME_FEE_ROOM_CENTS, dec) ? have - cents(HOME_FEE_ROOM_CENTS, dec) : 0n;
-    throw new Error(`Not enough USDC. You can use up to $${usd(max, dec).toFixed(2)} (a few cents stay for the network fee).`);
+function roomCheck(have: bigint, spend: bigint, dec: number, roomCents = HOME_FEE_ROOM_CENTS) {
+  const room = cents(roomCents, dec);
+  if (spend + room > have) {
+    const max = have > room ? have - room : 0n;
+    throw new Error(
+      roomCents > HOME_FEE_ROOM_CENTS
+        ? `Not enough USDC on Base: this launch needs $${usd(spend + room, dec).toFixed(2)} (with the network fee), you have $${usd(have, dec).toFixed(2)}. Lower the first buy or add money with the + button.`
+        : `Not enough USDC. You can use up to $${usd(max, dec).toFixed(2)} (a few cents stay for the network fee).`
+    );
   }
 }
 
@@ -388,7 +396,7 @@ export async function planLaunch(o: {
 /** Sends the plan (one Base bundle) after checking the balance; returns the transaction. */
 export async function sendLaunch(o: { s: Senders; home: RaceChain; plan: LaunchPlan; onStep?: (m: string) => void }): Promise<Hex> {
   const homeDec = await usdDecimals(o.home);
-  roomCheck(await homeBalance(o.home, o.s.user), o.plan.totalHome, homeDec);
+  roomCheck(await homeBalance(o.home, o.s.user), o.plan.totalHome, homeDec, LAUNCH_FEE_ROOM_CENTS);
   return o.s.sendHome(o.home.chain, o.plan.calls, o.onStep);
 }
 

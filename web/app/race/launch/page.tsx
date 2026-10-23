@@ -20,7 +20,7 @@ import { isImageUrl } from "@/lib/data";
 import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 import { GAS_ASK_CENTS, crossReady, homeChain } from "@/lib/racecross";
-import { liveOn, planLaunch, sendLaunch, type LaunchPlan } from "@/lib/racecrossflow";
+import { LAUNCH_FEE_ROOM_CENTS, liveOn, planLaunch, sendLaunch, type LaunchPlan } from "@/lib/racecrossflow";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -208,7 +208,8 @@ export default function RaceLaunchPage() {
     const closed = picked.find((c) => home && c.chainId !== home.chainId && !crossReady(c));
     if (closed) return `${closed.short} isn't open to email accounts yet. Untick it.`;
     const have = Number(formatUnits(homeFunds.usd, homeFunds.usdDec));
-    if (have < viaBaseTotal + 0.05) return `Needs about $${(viaBaseTotal + 0.05).toFixed(2)} USDC on Base, you have $${have.toFixed(2)}. Add money with the + button.`;
+    const need = viaBaseTotal + LAUNCH_FEE_ROOM_CENTS / 100;
+    if (have < need) return `Needs about $${need.toFixed(2)} USDC on Base (with the network fee), you have $${have.toFixed(2)}. Lower the first buy or add money with the + button.`;
     return null;
   };
 
