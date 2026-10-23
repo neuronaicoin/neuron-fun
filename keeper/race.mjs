@@ -49,7 +49,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readState, writeState } from "./statefile.mjs";
 import { join } from "node:path";
-import { createPublicClient, createWalletClient, defineChain, fallback, getAddress, http, parseAbi, parseAbiItem, toFunctionSelector, zeroAddress } from "viem";
+import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, fallback, getAddress, http, keccak256, parseAbi, parseAbiItem, toFunctionSelector, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { alert, heartbeat, remoteLog, staleServices } from "./alert.mjs";
 import { refillGas } from "./refill.mjs";
@@ -170,6 +170,8 @@ function loadChains() {
       // a receipt is looked for every second (viem's default is 4 s: most of a race's wait)
       pub: createPublicClient({ chain, transport, pollingInterval: 1_000 }),
       wallet: createWalletClient({ chain, account, transport }),
+      // one client per RPC: a signed transaction goes to all of them (signAndSend)
+      senders: rpcs.map((u) => createPublicClient({ chain, transport: http(u, { retryCount: 1, timeout: 15_000 }) })),
     });
   }
   return out;
@@ -271,14 +273,69 @@ export function withChainLock(c, fn) {
   chainLocks.set(c.chainId, run.catch(() => {}));
   return run;
 }
+// The lowest tip a chain's validators take. BNB Chain's blocks have a base fee of 0, so a node
+// that answers a 0 (or too small) tip makes a transaction that is never mined, and raising 0 by
+// 30% stays 0. MIN_TIP_WEI_<chainId> overrides; BNB Chain defaults to 0.1 gwei (a fraction of a cent).
+const DEFAULT_MIN_TIP = { 56: 100_000_000n };
+export function minTip(chainId) {
+  const v = process.env[`MIN_TIP_WEI_${chainId}`];
+  if (v && /^\d+$/.test(v.trim())) return BigInt(v.trim());
+  return DEFAULT_MIN_TIP[chainId] ?? 0n;
+}
+/** Fees raised to the chain's floor (never lowered). */
+export function withFeeFloor(chainId, req) {
+  const floor = minTip(chainId);
+  if (floor === 0n) return req;
+  const max = (a, b) => (a > b ? a : b);
+  if (req.gasPrice !== undefined) return { ...req, gasPrice: max(req.gasPrice, floor) };
+  if (req.maxFeePerGas !== undefined) {
+    const tip = max(req.maxPriorityFeePerGas ?? 0n, floor);
+    return { ...req, maxPriorityFeePerGas: tip, maxFeePerGas: max(req.maxFeePerGas, tip) };
+  }
+  return { ...req, gasPrice: floor };
+}
+
+/**
+ * Signs here and hands the signed transaction to EVERY RPC of the chain at once, so one node
+ * that takes a transaction but never passes it on can't leave it stuck. The hash is known
+ * from the signed bytes; it counts as sent when any node took it (or already had it).
+ */
+async function signAndSend(c, r) {
+  const to = r.address ?? r.to;
+  const data = r.abi ? encodeFunctionData({ abi: r.abi, functionName: r.functionName, args: r.args ?? [] }) + (r.dataSuffix ? r.dataSuffix.slice(2) : "") : r.data;
+  const fees = {};
+  for (const k of ["gasPrice", "maxFeePerGas", "maxPriorityFeePerGas"]) if (r[k] !== undefined) fees[k] = r[k];
+  let req = await c.wallet.prepareTransactionRequest({
+    account,
+    to,
+    data,
+    value: r.value,
+    ...(r.gas !== undefined ? { gas: r.gas } : {}),
+    ...(r.nonce !== undefined ? { nonce: r.nonce } : {}),
+    ...fees,
+  });
+  req = withFeeFloor(c.chainId, req);
+  const raw = await c.wallet.signTransaction(req);
+  const hash = keccak256(raw);
+  const results = await Promise.allSettled(c.senders.map((s) => s.request({ method: "eth_sendRawTransaction", params: [raw] })));
+  if (results.some((x) => x.status === "fulfilled")) return hash;
+  const errs = results.map((x) => x.reason);
+  const text = (e) => `${e?.shortMessage ?? ""} ${e?.details ?? ""} ${e?.message ?? ""}`;
+  if (errs.some((e) => /already known|known transaction|already imported|AlreadyKnown/i.test(text(e)))) return hash;
+  throw errs[0];
+}
+
 export function broadcast(c, req) {
-  const write = (r) => (!r.abi && r.data ? c.wallet.sendTransaction(r) : c.wallet.writeContract(r));
+  const write = (r) => signAndSend(c, r);
   // a replacement names its nonce itself
   if (req.nonce !== undefined) return withChainLock(c, () => write(req));
   return withChainLock(c, async () => {
-    const pending = await c.pub.getTransactionCount({ address: account.address, blockTag: "pending" });
+    // the mined count, not "pending": a node holding a transaction that never gets mined would
+    // otherwise push every later one past a gap, where they'd wait forever too. A transaction
+    // of ours still on its way keeps its place through nextNonce.
+    const latest = await c.pub.getTransactionCount({ address: account.address, blockTag: "latest" });
     const mine = nextNonce.get(c.chainId);
-    const nonce = mine !== undefined && mine > pending ? mine : pending;
+    const nonce = mine !== undefined && mine > latest ? mine : latest;
     try {
       const hash = await write({ ...req, nonce });
       nextNonce.set(c.chainId, nonce + 1);
@@ -322,7 +379,10 @@ export async function sendAndWait(c, request) {
       const done = await c.pub.getTransactionReceipt({ hash: h }).catch(() => null);
       if (done) return done;
     }
-    if (round >= 3) throw new Error(`still not mined after ${hashes.length} tries (${hashes.join(", ")})`);
+    if (round >= 3) {
+      nextNonce.delete(c.chainId); // the next send starts again from the mined count and replaces it
+      throw new Error(`still not mined after ${hashes.length} tries (${hashes.join(", ")})`);
+    }
     const tx = await c.pub.getTransaction({ hash: hashes[hashes.length - 1] }).catch(() => null);
     if (!tx) continue; // not visible right now: wait once more
     const up = (v) => (v == null ? undefined : (v * 13n) / 10n + 1n); // a 0 tip goes up to 1 wei, never left to guess
