@@ -760,9 +760,9 @@ export default function RaceLaunchPage() {
             <span className="text-[0.8125rem] text-ink-3">
               {picked.length > 0 && perChainN > 0
                 ? picked.length === 1
-                  ? `$${perChain} on ${picked[0].short}. Your first buy pays the 2% floor fee.`
-                  : `$${perChain} on each of your ${picked.length} chains. Your first buy pays the 2% floor fee.`
-                : "Split evenly over the chains you pick. Your first buy pays the 2% floor fee."}
+                  ? `$${perChain} on ${picked[0].short}.`
+                  : `$${perChain} on each of your ${picked.length} chains.`
+                : "Split evenly over the chains you pick."}
             </span>
           </div>
         </div>
@@ -855,8 +855,7 @@ export default function RaceLaunchPage() {
               {(problem || viaBaseShort()) && <p className="text-[0.8125rem] text-ink-2 text-center">{problem || viaBaseShort()}</p>}
               {error && <p className="text-[0.8125rem] text-danger text-center">{error}</p>}
               <p className="text-[0.75rem] text-ink-3 text-center">
-                About ${viaBaseTotal.toFixed(2)} from your balance on Base, in one step: first buys, race fees
-                {crossCount > 0 ? ", Across fees and a little gas on the other chains" : ""}. Other chains go live about a minute after Base.
+                About ${viaBaseTotal.toFixed(2)} from your balance on Base, in one step.
               </p>
             </>
           )}
