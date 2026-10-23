@@ -220,7 +220,7 @@ export async function scan(pub, args, from, to, { wait = 3_000 } = {}) {
 // LayerZero fees differ per chain and per day. When the endpoint says the native fee we sent
 // is too low it tells us the required amount: `bump(required)` returns the params to retry
 // with (default: the same call with 20% over the required fee).
-async function send(c, what, params, bump) {
+async function send(c, what, params, bump, refilledRetry = false) {
   log(`${DRY ? "[dry] " : ""}${c.chainId}: ${what}`);
   if (DRY) return true;
   try {
@@ -246,6 +246,13 @@ async function send(c, what, params, bump) {
     log(`   ok ${r.transactionHash}`);
     return true;
   } catch (e) {
+    // out of gas money (the balance can't cover the fee + value): refill right now and try once
+    // more, instead of failing every pass until the next scheduled check
+    if (!refilledRetry && /insufficient funds|exceeds the balance|InsufficientFunds|OutOfFunds|exceeds balance/i.test(`${e?.shortMessage} ${e?.message} ${e?.details}`)) {
+      log(`   not enough gas on ${c.chainId} for "${what}": refilling now`);
+      const res = await checkGas(c, true);
+      if (res === "refilled") return send(c, what, params, bump, true);
+    }
     log(`   failed: ${e.shortMessage || e.message}`);
     if (/still not mined/.test(e.message || "")) await alert("race keeper", `stuck-tx-${c.chainId}`, `A keeper transaction on chain ${c.chainId} is stuck: ${e.message}`);
     return false;
@@ -471,6 +478,21 @@ const hot = (coin, now = Date.now()) => !coin.finished && coin.oneDvn !== true &
 let CHAINS = null;
 let STATE = null;
 
+const gasCheckedAt = new Map();
+/** Gas check + refill for one chain. `force`: a send just failed for lack of gas, don't wait. */
+async function checkGas(c, force = false) {
+  if (!force && Date.now() - (gasCheckedAt.get(c.chainId) ?? 0) < 60_000) return "skipped";
+  gasCheckedAt.set(c.chainId, Date.now());
+  const res = await refillGas(c, account, {
+    send: sendAndWait,
+    log,
+    force,
+    env: DRY ? { ...process.env, GAS_REFILL: "false" } : process.env,
+  }).catch((e) => `alert:keeper gas check on chain ${c.chainId} failed (${e.shortMessage || e.message})`);
+  if (res.startsWith("alert:")) await alert("race keeper", `gas-${c.chainId}`, res.slice(6));
+  return res;
+}
+
 /**
  * One pass. "full": everything (gas, hops, vault, fees, new launches, every coin). "fast": only
  * the races about to end or being decided. Returns how many races are hot.
@@ -481,15 +503,10 @@ export async function main(mode = "full") {
   if (chains.length === 0) throw new Error("no chains configured");
   if (!fast) await heartbeat(KEEPER_NAME, "pass started");
   const byEid = new Map(chains.map((c) => [c.eid, c]));
-  // gas: the race fees arrive here as USDC; when ETH / BNB runs low a few are swapped into it
-  for (const c of fast ? [] : chains) {
-    const res = await refillGas(c, account, {
-      send: sendAndWait,
-      log,
-      env: DRY ? { ...process.env, GAS_REFILL: "false" } : process.env,
-    }).catch((e) => `alert:keeper gas check on chain ${c.chainId} failed (${e.shortMessage || e.message})`);
-    if (res.startsWith("alert:")) await alert("race keeper", `gas-${c.chainId}`, res.slice(6));
-  }
+  // gas: the race fees arrive here as USDC; when ETH / BNB runs low some are swapped into it.
+  // Checked on every pass, the quick ones during busy race endings too (at most once a minute
+  // per chain), all chains at once so one slow RPC doesn't hold up the others.
+  await Promise.all(chains.map((c) => checkGas(c)));
   // Testnets with no Chainlink use our TestFeed: anyone may refresh its timestamp, and the
   // builders refuse a feed older than maxFeedAge, so keep it fresh (never runs on a mainnet).
   for (const c of fast ? [] : chains) {

@@ -24,9 +24,24 @@ fail() { say ""; say "**STOPPED: $***"; exit 1; }
 c() { local out; for i in 1 2 3 4 5; do out=$(cast "$@" 2>/dev/null) && { echo "$out" | awk '{print $1}'; return 0; }; sleep 3; done; echo "ERR"; }
 lc() { echo "$1" | tr 'A-F' 'a-f'; }
 
-[[ "$CENTS" =~ ^[0-9]+$ ]] && [ "$CENTS" -le 200 ] || fail "CENTS must be 0..200"
+# CENTS: one number for every chain ("75"), or one per chain ("8453:150,56:125,4663:40,5042:75";
+# a chain left out keeps its fee).
+declare -A CC
+if [[ "$CENTS" =~ ^[0-9]+$ ]]; then
+  for a in $CHAINS; do CC[$a]=$CENTS; done
+else
+  IFS=',' read -ra PARTS <<< "$CENTS"
+  for p in "${PARTS[@]}"; do
+    [[ "$p" =~ ^(8453|56|4663|5042):([0-9]+)$ ]] || fail "CENTS: \"$p\" isn't chainId:cents (e.g. 8453:150)"
+    CC[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+  done
+fi
+for a in $CHAINS; do
+  [ -n "${CC[$a]:-}" ] || continue
+  [ "${CC[$a]}" -le 200 ] || fail "${NAME[$a]}: at most 200 cents (\$2)"
+done
 
-say "## Race fee: \$$(printf '%d.%02d' $((CENTS / 100)) $((CENTS % 100))) per chain ($MODE)"
+say "## Race fee per chain ($MODE): $CENTS"
 say ""; say "Factory \`$FACTORY\`"; say ""
 say "| chain | owner | dollar decimals | race fee now | new |"; say "|---|---|---|---|---|"
 declare -A WANT
@@ -37,7 +52,7 @@ for a in $CHAINS; do
   dec=$(c call "$usdc" "decimals()(uint8)" --rpc-url "${RPC[$a]}")
   now=$(c call "$FACTORY" "raceFee()(uint256)" --rpc-url "${RPC[$a]}")
   for v in "$own" "$usdc" "$dec" "$now"; do [ "$v" = "ERR" ] || [ "$v" = "err" ] && fail "${NAME[$a]}: can't read the factory"; done
-  WANT[$a]=$(python3 -c "print($CENTS * 10**$dec // 100)")
+  if [ -n "${CC[$a]:-}" ]; then WANT[$a]=$(python3 -c "print(${CC[$a]} * 10**$dec // 100)"); else WANT[$a]=$now; fi
   say "| ${NAME[$a]} | \`$own\` | $dec | $now | ${WANT[$a]} |"
   [ -z "$OWNER" ] && OWNER=$own
   [ "$OWNER" = "$own" ] || fail "the owner differs between chains"
@@ -50,6 +65,7 @@ fi
 
 say ""
 for a in $CHAINS; do
+  if [ -z "${CC[$a]:-}" ]; then FORK[$a]="${RPC[$a]}"; say "- ${NAME[$a]}: unchanged"; continue; fi
   if [ "$MODE" = "apply" ]; then
     FORK[$a]="${RPC[$a]}"
     out=$(cast send --rpc-url "${FORK[$a]}" --private-key "$PRIVATE_KEY" "$FACTORY" "setRaceFee(uint256)" "${WANT[$a]}" 2>&1)
