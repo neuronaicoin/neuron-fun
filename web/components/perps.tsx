@@ -529,10 +529,21 @@ function MarketHeader({ m, onPick }: { m: PerpMarket | null; onPick: () => void 
             title="Share on X"
             onClick={(e) => {
               e.stopPropagation();
+              const tag = `#${m.label.replace(/[^A-Za-z0-9_]/g, "")}`;
+              const more =
+                m.group === "stocks"
+                  ? ["#Stocks", "#Futures", "#Trading", "#Crypto"]
+                  : m.group === "commodities"
+                    ? ["#Commodities", "#Futures", "#Trading", "#Crypto"]
+                    : m.group === "indices"
+                      ? ["#Stocks", "#Indices", "#Futures", "#Trading"]
+                      : ["#Crypto", "#Futures", "#Trading", "#Leverage"];
+              const nameTag = m.name ? `#${m.name.replace(/[^A-Za-z0-9_]/g, "")}` : "";
+              const tags = [...new Set([nameTag, ...more].filter((t) => t.length > 1 && t.toLowerCase() !== tag.toLowerCase()))].slice(0, 5).join(" ");
               postOnX(
                 m.dex
-                  ? `trading ${m.name ?? m.label} 24/7 with up to ${m.maxLev}x, weekends too 👀`
-                  : `${m.label} at ${px(m.mark)} (${pct(m.change24h)} today). long or short, up to ${m.maxLev}x 👀`,
+                  ? `${tag} ${m.name ?? ""} at ${px(m.mark)} (${pct(m.change24h)} today). trade it 24/7 with up to ${m.maxLev}x, weekends too 👀\n\n${tags}`
+                  : `${tag} at ${px(m.mark)} (${pct(m.change24h)} today). long or short, up to ${m.maxLev}x 👀\n\n${tags}`,
                 `https://sasapad.fun/futures/?c=${encodeURIComponent(m.coin)}`
               );
             }}

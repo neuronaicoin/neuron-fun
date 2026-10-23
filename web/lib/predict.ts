@@ -39,6 +39,8 @@ export type PredictOutcome = {
   tradable: boolean;
   /** Hyperliquid's own text (shown with ?raw=1, to check how a new kind of market reads). */
   raw: string;
+  /** What it is about, for a hashtag: "BTC", "LAL", "Fed". */
+  tag: string;
 };
 
 /** A question with several answers (a price range, a match winner): one row per answer. */
@@ -277,7 +279,15 @@ export function boardOf(meta: Meta, mids: Record<string, string>, templates: Map
     }
     const quote = String(o.quoteToken ?? "");
     const all = { ...qspec, ...spec };
+    const tagOf = () => {
+      const perp = all.perp ?? all.underlying ?? all.coin;
+      if (perp) return String(perp).replace(/^[a-z0-9]+:/i, "");
+      if (tab === "sports") return fillTemplate(o.sideSpecs?.[0]?.name ?? "", all, templates);
+      if (all.institution) return all.institution;
+      return title.split(/\s+/)[0] ?? "";
+    };
     made.set(o.outcome, {
+      tag: tagOf(),
       outcome: o.outcome,
       tab,
       title,

@@ -32,7 +32,13 @@ const TABS: [PredictTab, string][] = [
   ["rates", "Rates"],
   ["other", "Other"],
 ];
-const cents = (p: number | null) => (p === null ? "—" : `${Math.max(1, Math.min(99, Math.round(p * 100)))}¢`);
+/** A side's price in dollars ($0.62 = 62% chance; it pays $1 if right). */
+const cents = (p: number | null) => (p === null ? "—" : `$${Math.max(0.01, Math.min(0.99, p)).toFixed(2)}`);
+/** "#BTC" from "BTC", "#Fed" from "Fed": letters and digits only. */
+const hashtag = (s: string) => {
+  const t = String(s || "").replace(/[^A-Za-z0-9_]/g, "");
+  return /^[A-Za-z][A-Za-z0-9_]{0,29}$/.test(t) ? `#${t}` : "";
+};
 const usd = (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function left(ms: number | null, now: number): string | null {
@@ -60,7 +66,13 @@ const SITE = "https://sasapad.fun";
 function shareOutcome(o: PredictOutcome, title: string) {
   const p = o.sides[0].price;
   const odds = p !== null ? `market says ${o.sides[0].name} ${cents(p)} vs ${o.sides[1].name} ${cents(o.sides[1].price)}` : "";
-  postOnX(`${title}\n\n${odds} 👀 what's your call?`, `${SITE}/predict/?m=${o.outcome}`);
+  // the product's hashtag leads the post ("#BTC above $82,000…"), then at least four in all
+  const lead = hashtag(o.tag);
+  const head = lead && title.toLowerCase().startsWith(o.tag.toLowerCase()) ? `${lead}${title.slice(o.tag.length)}` : lead ? `${lead} ${title}` : title;
+  const more = o.tab === "sports" ? ["#Sports", "#Predictions", "#Betting", "#Crypto"] : o.tab === "rates" ? ["#Fed", "#Rates", "#Predictions", "#Macro", "#Crypto"] : ["#Predictions", "#PredictionMarket", "#Crypto", "#Trading"];
+  const sideTag = o.tab === "sports" ? hashtag(o.sides[1].name) : "";
+  const tags = [...new Set([sideTag, ...more].filter((t) => t && t.toLowerCase() !== lead.toLowerCase()))].slice(0, 5).join(" ");
+  postOnX(`${head}\n\n${odds} 👀 what's your call?\n\n${tags}`, `${SITE}/predict/?m=${o.outcome}`);
 }
 function ShareBtn({ onClick }: { onClick: () => void }) {
   return (
@@ -223,7 +235,7 @@ export function PredictScreen() {
       </div>
 
       <p className="text-[0.75rem] text-ink-3">
-        Prices are the market&apos;s chance (62¢ = 62%). A share pays $1 if it comes true and $0 if not; you can sell before it ends. Powered by Hyperliquid. Predictions can lose all you put in.
+        Prices are the market&apos;s chance ($0.62 = 62%). A share pays $1 if it comes true and $0 if not; you can sell before it ends. Powered by Hyperliquid. Predictions can lose all you put in.
       </p>
 
       {pick && <BuySheet pick={pick} onSide={(side) => setPick({ ...pick, side })} onClose={() => setPick(null)} trade={trade} />}

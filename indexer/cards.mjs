@@ -517,3 +517,6 @@ export async function raceCardLoop(pool, log) {
     await new Promise((r) => setTimeout(r, every));
   }
 }
+
+// shared with marketcards.mjs (futures and prediction share cards)
+export { mark, WORDMARK, FONTS, upload, esc as escXml, clip };
