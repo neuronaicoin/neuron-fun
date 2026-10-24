@@ -139,8 +139,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         try {
           const [l, sol] = await Promise.all([
             fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }),
-            // All chains: Solana coins launched on sasa too (for people who see Solana yet)
-            solChip && chain === "all" ? fetchSasaSolCoins(20, search).catch(() => []) : Promise.resolve([] as ExtCoin[]),
+            // All chains, New: Solana coins launched on sasa too (for people who see Solana yet;
+            // the other lists rank them on their own numbers, under the Solana chip)
+            solChip && chain === "all" && extSort === "new" ? fetchSasaSolCoins(20, search).catch(() => []) : Promise.resolve([] as ExtCoin[]),
           ]);
           if (alive) setExt(sol.length ? [...l, ...sol.filter((c) => !l.some((x) => x.address === c.address))] : l);
           return;

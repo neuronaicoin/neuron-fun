@@ -43,7 +43,8 @@ async function otherPool(network: string, token: string): Promise<string | null>
   if (!r) throw new Error("chart data unreachable");
   if (!r.ok && r.status !== 404) throw new Error(`chart data ${r.status}`);
   const j = r.ok ? ((await r.json().catch(() => null)) as { data?: { attributes?: { address?: string } }[] } | null) : null;
-  const addr = j?.data?.find((p) => /^0x[0-9a-fA-F]{40}$/.test(p.attributes?.address ?? ""))?.attributes?.address ?? null;
+  // EVM pools are 0x addresses; Solana pools are base58
+  const addr = j?.data?.find((p) => /^0x[0-9a-fA-F]{40}$|^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(p.attributes?.address ?? ""))?.attributes?.address ?? null;
   POOL.set(k, addr);
   return addr;
 }
@@ -83,4 +84,38 @@ export async function fetchExtCandles(network: string, pool: string, token: stri
   RECENT.set(url, { at: Date.now(), rows });
   if (RECENT.size > 60) RECENT.delete(RECENT.keys().next().value as string);
   return rows;
+}
+
+/** One trade on another DEX's pool (GeckoTerminal's last 24 hours, newest first). */
+export type ExtTrade = { id: string; t: number; buy: boolean; usd: number; trader: string; tx: string };
+
+/** The latest trades of a coin's pool; [] when there are none or the pool isn't known. */
+export async function fetchExtTrades(network: string, pool: string, token: string): Promise<ExtTrade[]> {
+  const known = POOL.get(`${network}:${token}`.toLowerCase());
+  let use = known === undefined ? pool : known;
+  if (use === null) return [];
+  const url = (p: string) => `${GT}/networks/${encodeURIComponent(network)}/pools/${p}/trades?token=${token}`;
+  let r = await gtGet(url(use));
+  if (r && r.status === 404 && known === undefined) {
+    const other = await otherPool(network, token);
+    if (!other || other.toLowerCase() === pool.toLowerCase()) return [];
+    use = other;
+    r = await gtGet(url(use));
+  }
+  if (!r || !r.ok) {
+    if (r && r.status === 404) return [];
+    throw new Error(`trades ${r ? r.status : "unreachable"}`);
+  }
+  type A = { block_timestamp?: string; kind?: string; volume_in_usd?: string; tx_from_address?: string; tx_hash?: string };
+  const j = (await r.json()) as { data?: { id?: string; attributes?: A }[] };
+  return (j.data ?? [])
+    .map((d): ExtTrade | null => {
+      const a = d.attributes ?? {};
+      const t = Date.parse(a.block_timestamp ?? "");
+      const usd = Number(a.volume_in_usd);
+      if (!Number.isFinite(t) || !Number.isFinite(usd) || (a.kind !== "buy" && a.kind !== "sell")) return null;
+      return { id: d.id ?? `${a.tx_hash}:${t}`, t, buy: a.kind === "buy", usd, trader: a.tx_from_address ?? "", tx: a.tx_hash ?? "" };
+    })
+    .filter((x): x is ExtTrade => x !== null)
+    .sort((a, b) => b.t - a.t);
 }

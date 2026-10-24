@@ -63,7 +63,14 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
   ]);
   const rows = new Map<string, Record<string, unknown>>();
   for (const r of ((ours.error ? [] : ours.data) ?? []) as Record<string, unknown>[]) rows.set(String(r.address), r);
-  for (const r of ((market.data ?? []) as Record<string, unknown>[])) if (!rows.has(String(r.address)) || r.price_usd) rows.set(String(r.address), { ...rows.get(String(r.address)), ...r });
+  // market numbers win, but never wipe out what the market list lacks (a sasa coin's picture)
+  for (const r of (market.data ?? []) as Record<string, unknown>[]) {
+    const k = String(r.address);
+    if (rows.has(k) && !r.price_usd) continue;
+    const merged: Record<string, unknown> = { ...rows.get(k) };
+    for (const [f, v] of Object.entries(r)) if (v !== null && v !== undefined && v !== "") merged[f] = v;
+    rows.set(k, merged);
+  }
   const out: ExtHolding[] = [];
   for (const r of rows.values()) {
     const e = toExt(r);

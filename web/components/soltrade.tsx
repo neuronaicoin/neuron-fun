@@ -29,9 +29,13 @@ import { solanaFor } from "@/lib/solana";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const FEE = 0.007;
-/** Below this much SOL, a buy brings a little SOL along (for the network fee of a later sale). */
-const SOL_FLOOR = 4_000_000n; // 0.004 SOL
-const SOL_TOPUP = 6_000_000n; // 0.006 SOL
+/**
+ * A sale on Solana needs a little SOL in the wallet: the network fee, and the rent of the token
+ * accounts the route opens (about 0.002 SOL each). Below SOL_FLOOR, a buy brings SOL_TOPUP along,
+ * and a sale first tops the wallet up from Cash by itself (nothing for the user to do).
+ */
+const SOL_FLOOR = 8_000_000n; // 0.008 SOL
+const SOL_TOPUP = 10_000_000n; // 0.01 SOL
 const fmt = (t: number) =>
   t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t >= 1 || t <= 0 ? t.toFixed(2) : String(Number(t.toPrecision(3)));
 
@@ -86,7 +90,8 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
               { user: sol.address!, recipient: w.address!, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" },
               ctrl.signal
             );
-      q.then(setQuote).catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
+      // a sale's preview can fail only because the wallet has no SOL yet: the sale adds it, so no error here
+      q.then(setQuote).catch((e) => !ctrl.signal.aborted && side === "buy" && setError(friendlyError(e)));
     }, 400);
     return () => {
       clearTimeout(t);
@@ -138,11 +143,40 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       }
   }
 
+  /** Tops the Solana wallet up to SOL_TOPUP from Cash when it's below SOL_FLOOR, and waits for it. */
+  async function ensureSol(solAddress: string) {
+    const { solBalance } = await import("@/lib/sollaunch");
+    const bal = await solBalance(solAddress).catch(() => 0n);
+    if (bal >= SOL_FLOOR) return;
+    setBusy("Getting the network fee ready…");
+    const gas = await getQuote({
+      user: w.address!,
+      recipient: solAddress,
+      originChainId: BASE.chain.id,
+      originCurrency: BASE.usdc,
+      destinationChainId: SOLANA_ID,
+      destinationCurrency: SOL_NATIVE,
+      // never a tiny amount (routes have a minimum)
+      amount: (SOL_TOPUP - bal > 5_000_000n ? SOL_TOPUP - bal : 5_000_000n).toString(),
+      tradeType: "EXACT_OUTPUT",
+      fee: "deposit",
+    });
+    const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
+    if (cash < BigInt(gas.inRaw || "0") + (w.embedded ? 50_000n : 0n))
+      throw new Error("Selling on Solana needs about $1 in your Cash for the network fee. Add a little and try again.");
+    await w.send(BASE.chain, quoteCalls(gas, BASE), (m) => setBusy(m));
+    setBusy("Getting the network fee ready…");
+    for (let i = 0; i < 45 && alive.current; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      if ((await solBalance(solAddress).catch(() => 0n)) >= SOL_FLOOR) return;
+    }
+    throw new Error("The network fee is still on its way. Try the sale again in a minute.");
+  }
+
   async function sell() {
     if (!w.address || raw <= 0n) return;
     const s = await sol.get();
-    const { solBalance } = await import("@/lib/sollaunch");
-    if ((await solBalance(s.address).catch(() => 0n)) < 1_000_000n) throw new Error("Your Solana wallet needs a little SOL for the network fee. Buy any amount once and it comes along.");
+    await ensureSol(s.address);
     setBusy("Getting the price…");
     const q = await getQuote({ user: s.address, recipient: w.address, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" });
     const { sendSolanaQuote } = await import("@/lib/solrelay");
@@ -231,7 +265,7 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       {side === "sell" && held !== null && <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>}
       <button
         type="button"
-        disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n) || (side === "sell" && !quote)}
+        disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n)}
         onClick={() => void go()}
         className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
       >

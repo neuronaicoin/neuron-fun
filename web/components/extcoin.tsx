@@ -27,6 +27,7 @@ import { extPageUrl } from "@/lib/extcoins";
 import { topPageUrl } from "@/lib/topcoins";
 import { PriceChart } from "@/components/racechart";
 import { fetchExtCandles } from "@/lib/extchart";
+import { ExtTradesList, useExtLiveTrades, useExtTrades } from "@/components/exttrades";
 
 const EXPLORER: Record<string, string> = {
   base: "https://basescan.org/token/",
@@ -45,6 +46,9 @@ export type MarketInfo = { id: string; rank: number | null; via: string | null; 
 export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; backLink?: boolean; market?: MarketInfo }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
+  // who bought and sold: the list under the chart, and the same trades on the chart
+  const tradeRows = useExtTrades(coin);
+  const liveTrades = useExtLiveTrades(coin, tradeRows);
   const ch = coin.change24h;
   const kpis: [string, string, string?][] = [
     ["Price", price(coin.priceUsd)],
@@ -130,10 +134,12 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No chart data for this coin yet."
                 since={coin.poolCreated ? Date.parse(coin.poolCreated) || undefined : undefined}
+                trades={liveTrades}
               />
             </section>
           )}
 
+          {coin.pool && <ExtTradesList coin={coin} rows={tradeRows} />}
           {!market && <TokenCheck coin={coin} />}
           <AboutCoin coin={coin} chain={net.label} market={market} />
         </div>

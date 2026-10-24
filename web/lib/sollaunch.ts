@@ -123,12 +123,29 @@ const b58sig = (tx: VersionedTransaction) => {
 };
 
 /** Sends and waits until confirmed (sent again every 2 s; gives up when its blockhash runs out). */
+/** Why Solana's check refused a transaction, in words a person can act on (from its logs). */
+function refusedReason(e: unknown): string {
+  const err = e as { message?: string; logs?: string[]; transactionLogs?: string[] };
+  const logs = (err.logs ?? err.transactionLogs ?? []).join("\n");
+  const all = `${err.message ?? ""}\n${logs}`;
+  if (/insufficient (lamports|funds)|InsufficientFunds|0x1\b|rent/i.test(all))
+    return "Your Solana wallet needs a little more SOL for the network fee. Try again: sasa adds it from your Cash.";
+  if (/slippage|TooLittle|TooMuch|0x1771|0x1772|exceeds desired/i.test(all)) return "The price moved while sending. Try again.";
+  if (/blockhash not found|BlockhashNotFound/i.test(all)) return "Solana was busy. Try again.";
+  const last = logs.split("\n").reverse().find((l) => /failed|error/i.test(l));
+  return `Solana refused it${last ? `: ${last.replace(/^Program \w+ /, "").slice(0, 120)}` : ". Try again in a moment."}`;
+}
+
 export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHeight: number, onStep?: (m: string) => void): Promise<string> {
   const c = solConnection();
   const raw = tx.serialize();
   const sig = b58sig(tx);
   // the first send checks it (a clear error now instead of a silent drop later)
-  await c.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 0 });
+  try {
+    await c.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 0 });
+  } catch (e) {
+    throw new Error(refusedReason(e));
+  }
   onStep?.("Confirming…");
   const started = Date.now();
   let lastSend = Date.now();

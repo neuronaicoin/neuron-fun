@@ -6,9 +6,6 @@
  *   gainers   biggest 24h rise, among coins with at least $10K volume
  *   losers    biggest 24h fall, same volume bar
  *   new       newest first (launch time / pool creation)
- *
- * One exception: a coin launched on sasa in the last day (a Solana one: EVM ones show as races)
- * goes first on trending and new, or a fresh launch with no volume yet is never seen.
  */
 import type { Coin, SortKey } from "./data";
 import type { ExtCoin } from "./extcoins";
@@ -38,10 +35,5 @@ export function rankMerged(ours: Coin[], ext: ExtCoin[], sort: SortKey, ethUsd: 
   else if (sort === "losers")
     out = all.filter((x) => x.vol >= MIN_MOVER_VOLUME_USD && x.change !== null && x.change < 0).sort((a, b) => (a.change ?? 0) - (b.change ?? 0));
   else if (sort === "new") out = [...all].sort((a, b) => b.t - a.t);
-  if (sort === "trending" || sort === "new") {
-    const day = Date.now() - 86_400_000;
-    const fresh = (x: (typeof all)[number]) => x.r.kind === "ext" && !!x.r.coin.sasa && x.t >= day;
-    out = [...out.filter(fresh).sort((a, b) => b.t - a.t), ...out.filter((x) => !fresh(x))];
-  }
   return out.map((x) => x.r);
 }

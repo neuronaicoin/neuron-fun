@@ -141,9 +141,17 @@ export async function fetchExtCoins(
   if (error) throw error;
   const list = ((data ?? []) as Record<string, unknown>[]).map(toExt);
   if (!ours.length) return list;
-  // Solana coins launched on sasa first (a fresh launch has no volume yet to make the list)
-  const mine = new Set(ours.map((c) => c.address));
-  return [...ours, ...list.filter((c) => !mine.has(c.address))].slice(0, Math.max(limit, ours.length));
+  // Solana coins launched on sasa: their own picture where the market list has none; on "new"
+  // the ones the list doesn't have yet join it by launch time (other lists rank on their numbers)
+  const own = new Map(ours.map((c) => [c.address, c]));
+  const out = list.map((c) => {
+    const o = own.get(c.address);
+    return o ? { ...c, image: c.image ?? o.image, sasa: true } : c;
+  });
+  if (sort !== "new") return out;
+  const have = new Set(out.map((c) => c.address));
+  const t = (c: ExtCoin) => Date.parse(c.poolCreated ?? "") || 0;
+  return [...out, ...ours.filter((c) => !have.has(c.address))].sort((a, b) => t(b) - t(a)).slice(0, limit);
 }
 
 /** Solana coins launched on sasa (checked on chain by the keeper), newest first. */
@@ -164,12 +172,19 @@ export async function fetchSasaSolCoins(limit = 50, search = "", owner?: string)
  */
 export async function fetchExtCoin(network: string, address: string): Promise<ExtCoin | null> {
   if (isSolExt(network)) {
-    const { data, error } = await db.from("sol_ext_coins_all").select("*").eq("address", address).maybeSingle();
-    if (error) throw error;
-    if (data) return toExt(data as Record<string, unknown>);
-    // a coin just launched on sasa (not on DexScreener yet)
-    const ours = await db.from("sol_sasa_coins").select("*").eq("address", address).maybeSingle();
-    return ours.data ? toExt(ours.data as Record<string, unknown>) : null;
+    const [{ data, error }, ours] = await Promise.all([
+      db.from("sol_ext_coins_all").select("*").eq("address", address).maybeSingle(),
+      // a coin launched on sasa: its own picture and name (the market list often has no picture)
+      db.from("sol_sasa_coins").select("*").eq("address", address).maybeSingle(),
+    ]);
+    const own = ours.error || !ours.data ? null : { ...toExt(ours.data as Record<string, unknown>), sasa: true };
+    if (error && !own) throw error;
+    if (data) {
+      const c = toExt(data as Record<string, unknown>);
+      return own ? { ...c, image: c.image ?? own.image, name: own.name || c.name, sasa: true } : c;
+    }
+    // just launched (not on DexScreener yet)
+    return own;
   }
   const a = address.toLowerCase();
   const [live, arch] = await Promise.all([
