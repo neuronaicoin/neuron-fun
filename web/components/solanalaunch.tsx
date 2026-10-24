@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { useWallet } from "./wallet";
 import { SolanaMark } from "./solanamoney";
+import { SolCashBack } from "./soltrade";
 import { CoinAvatar } from "./coins";
 import { postOnX } from "./share";
 import { toast } from "./alerts";
@@ -72,12 +73,14 @@ export function SolanaLaunchBox(p: {
   const [done, setDone] = useState<Done | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const alive = useRef(true);
-  useEffect(
-    () => () => {
+  // one launch at a time: locked before anything is awaited (a double tap can't launch twice)
+  const lock = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
       alive.current = false;
-    },
-    []
-  );
+    };
+  }, []);
   useEffect(() => setPending(loadPending()), []);
 
   const usdBuy = Number(p.firstBuy);
@@ -145,7 +148,8 @@ export function SolanaLaunchBox(p: {
   };
 
   const start = async () => {
-    if (busy || problem || !w.address) return;
+    if (lock.current || busy || problem || !w.address) return;
+    lock.current = true;
     setBusy(true);
     setError("");
     try {
@@ -201,13 +205,15 @@ export function SolanaLaunchBox(p: {
     } catch (e) {
       setError(friendlyError(e));
     } finally {
+      lock.current = false;
       setBusy(false);
       setStep("");
     }
   };
 
   const finish = async (pd: Pending) => {
-    if (busy) return;
+    if (lock.current || busy) return;
+    lock.current = true;
     setBusy(true);
     setError("");
     try {
@@ -222,6 +228,7 @@ export function SolanaLaunchBox(p: {
     } catch (e) {
       setError(friendlyError(e));
     } finally {
+      lock.current = false;
       setBusy(false);
       setStep("");
     }
@@ -268,6 +275,7 @@ export function SolanaLaunchBox(p: {
           </button>
         )}
         {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+        <SolCashBack />
       </div>
     );
 

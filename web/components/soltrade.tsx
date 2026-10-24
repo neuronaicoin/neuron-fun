@@ -1,0 +1,301 @@
+"use client";
+
+/**
+ * Buying and selling a Solana coin with USDC (only for people who see Solana: lib/solana.ts).
+ *
+ *   Buy   the user's USDC on Base → the coin, delivered to their Solana wallet (one Base step
+ *         through Relay; email accounts pay its network fee in USDC). A wallet with almost no
+ *         SOL gets a little with it, so it can pay the network fee of a later sale.
+ *   Sell  the coin → USDC in Cash (the Solana wallet signs; Relay delivers the USDC on Base).
+ *
+ * The user only sees dollars and the coin.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Address } from "viem";
+import { useWallet } from "./wallet";
+import { useSolSigner } from "./usesolsigner";
+import { toast } from "./alerts";
+import { usdcAbi } from "@/lib/abis";
+import { CHAINS } from "@/lib/config";
+import { clientFor } from "@/lib/data";
+import { quoteCalls } from "@/lib/extswap";
+import { friendlyError } from "@/lib/format";
+import { afterTrade } from "@/lib/portfolio";
+import { getQuote, requestStatus, type Quote } from "@/lib/relay";
+import { SOLANA_ID, SOL_NATIVE } from "@/lib/solana";
+import type { ExtCoin } from "@/lib/extcoins";
+import { IS_TESTNET } from "@/lib/config";
+import { solanaFor } from "@/lib/solana";
+
+const BASE = CHAINS.find((c) => c.key === "base")!;
+const FEE = 0.007;
+/** Below this much SOL, a buy brings a little SOL along (for the network fee of a later sale). */
+const SOL_FLOOR = 4_000_000n; // 0.004 SOL
+const SOL_TOPUP = 6_000_000n; // 0.006 SOL
+const fmt = (t: number) =>
+  t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t >= 1 || t <= 0 ? t.toFixed(2) : String(Number(t.toPrecision(3)));
+
+export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
+  const w = useWallet();
+  const sol = useSolSigner();
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [usd, setUsd] = useState("25");
+  const [pct, setPct] = useState(100);
+  const [held, setHeld] = useState<bigint | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  // one trade at a time: locked before anything is awaited (a double tap can't send two)
+  const lock = useRef(false);
+  const [topup, setTopup] = useState(false);
+  const amount = Number(usd.replace(",", ".")) || 0;
+  const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
+  const mint = coin.address;
+
+  const loadHeld = useCallback(async () => {
+    if (!sol.address) return setHeld(null);
+    const { solTokenBalance } = await import("@/lib/solrelay");
+    setHeld(await solTokenBalance(sol.address, mint).catch(() => 0n));
+  }, [sol.address, mint]);
+  useEffect(() => {
+    void loadHeld();
+  }, [loadHeld]);
+
+  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : held !== null ? (held * BigInt(pct)) / 100n : 0n;
+  // the price shown (a buy is priced once the Solana wallet's address is known)
+  useEffect(() => {
+    setQuote(null);
+    setError("");
+    if (!w.address || !sol.address || raw <= 0n) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      const q =
+        side === "buy"
+          ? getQuote(
+              { user: w.address!, recipient: sol.address!, originChainId: BASE.chain.id, originCurrency: BASE.usdc, destinationChainId: SOLANA_ID, destinationCurrency: mint, amount: raw.toString(), fee: "swap" },
+              ctrl.signal
+            )
+          : getQuote(
+              { user: sol.address!, recipient: w.address!, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" },
+              ctrl.signal
+            );
+      q.then(setQuote).catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w.address, sol.address, side, raw.toString(), mint]);
+
+  async function buy() {
+    if (!w.address || raw <= 0n) return;
+    const s = await sol.get();
+    setBusy("Getting the price…");
+    const q = await getQuote({ user: w.address, recipient: s.address, originChainId: BASE.chain.id, originCurrency: BASE.usdc, destinationChainId: SOLANA_ID, destinationCurrency: mint, amount: raw.toString(), fee: "swap" });
+    let calls = quoteCalls(q, BASE);
+    let need = raw;
+    // almost no SOL in the Solana wallet: a little comes along for a later sale's network fee
+    const { solBalance } = await import("@/lib/sollaunch");
+    if ((await solBalance(s.address).catch(() => 0n)) < SOL_FLOOR) {
+      const gas = await getQuote({
+        user: w.address,
+        recipient: s.address,
+        originChainId: BASE.chain.id,
+        originCurrency: BASE.usdc,
+        destinationChainId: SOLANA_ID,
+        destinationCurrency: SOL_NATIVE,
+        amount: SOL_TOPUP.toString(),
+        tradeType: "EXACT_OUTPUT",
+        fee: "deposit",
+      }).catch(() => null);
+      if (gas) {
+        calls = [...calls, ...quoteCalls(gas, BASE)];
+        need += BigInt(gas.inRaw || "0");
+        setTopup(true);
+      }
+    }
+    const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
+    if (cash < need + (w.embedded ? 50_000n : 0n)) throw new Error("Not enough USDC in your Cash for this buy.");
+    setBusy("Buying…");
+    await w.send(BASE.chain, calls, (m) => setBusy(m));
+    afterTrade();
+    toast(`Buying $${coin.symbol}: arriving in a few seconds ✓`);
+    // watch it arrive
+    if (q.requestId)
+      for (let i = 0; i < 30 && alive.current; i++) {
+        const st = await requestStatus(q.requestId).catch(() => "waiting" as const);
+        if (st === "success") break;
+        if (st === "failure" || st === "refund") throw new Error("The buy didn't go through. Your USDC went back to your Cash.");
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+  }
+
+  async function sell() {
+    if (!w.address || raw <= 0n) return;
+    const s = await sol.get();
+    const { solBalance } = await import("@/lib/sollaunch");
+    if ((await solBalance(s.address).catch(() => 0n)) < 1_000_000n) throw new Error("Your Solana wallet needs a little SOL for the network fee. Buy any amount once and it comes along.");
+    setBusy("Getting the price…");
+    const q = await getQuote({ user: s.address, recipient: w.address, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" });
+    const { sendSolanaQuote } = await import("@/lib/solrelay");
+    setBusy("Selling…");
+    await sendSolanaQuote(q, s, (m) => setBusy(m));
+    toast(`Sold $${coin.symbol}: USDC arriving in your Cash in a few seconds ✓`);
+    for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
+  }
+
+  async function go() {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(side === "buy" ? "Buying…" : "Selling…");
+    setError("");
+    try {
+      if (side === "buy") await buy();
+      else await sell();
+      for (const ms of [1500, 6000, 15000, 30000]) setTimeout(() => void loadHeld(), ms);
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      lock.current = false;
+      setBusy("");
+    }
+  }
+
+  // hidden until Solana opens (lib/solana.ts), and mainnet only
+  if (IS_TESTNET || !solanaFor(w.address))
+    return (
+      <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24 text-center text-[0.875rem] text-ink-2">
+        Trading Solana coins on sasa opens soon.
+      </aside>
+    );
+
+  return (
+    <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24">
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
+        {(["buy", "sell"] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            role="tab"
+            aria-selected={side === s}
+            onClick={() => setSide(s)}
+            className={"h-11 rounded-xl font-bold " + (side === s ? (s === "buy" ? "bg-up text-on-accent" : "bg-danger text-white") : "text-ink-2")}
+          >
+            {s === "buy" ? "Buy" : "Sell"}
+          </button>
+        ))}
+      </div>
+      {side === "buy" ? (
+        <>
+          <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+            <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
+            <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
+          </label>
+          <div className="grid grid-cols-4 gap-1.5 mt-2">
+            {[10, 25, 50, 100].map((v) => (
+              <button key={v} type="button" aria-pressed={amount === v} onClick={() => setUsd(String(v))} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (amount === v ? "border-emerald text-emerald" : "border-line")}>
+                ${v}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-4 gap-1.5 mt-4">
+          {[25, 50, 75, 100].map((v) => (
+            <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
+              {v === 100 ? "All" : `${v}%`}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
+        <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
+        <b className="font-mono">
+          {quote
+            ? side === "buy"
+              ? `${fmt(Number(quote.outAmount))} $${coin.symbol}`
+              : `$${Number(quote.outAmount).toFixed(2)}`
+            : side === "buy" && estimate !== null
+              ? `${fmt(estimate)} $${coin.symbol}`
+              : "—"}
+        </b>
+      </div>
+      {side === "sell" && held !== null && <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>}
+      <button
+        type="button"
+        disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n) || (side === "sell" && !quote)}
+        onClick={() => void go()}
+        className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+      >
+        {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
+      </button>
+      {error && <p className="mt-2 text-[0.8125rem] text-danger break-words">{error}</p>}
+      <p className="text-[0.6875rem] text-ink-3 mt-2">
+        {side === "buy"
+          ? `Paid with your USDC. The coin goes to your Solana wallet.${topup ? " Your first buy also brings about $1 of SOL for later network fees." : ""}`
+          : "Your USDC arrives in your Cash."}
+        {sol.walletName && sol.address ? ` · ${sol.walletName} ${sol.address.slice(0, 4)}…${sol.address.slice(-4)}` : ""}
+      </p>
+      <SolCashBack />
+    </aside>
+  );
+}
+
+/** SOL sitting in the Solana wallet (launch leftovers, a buy's fee money) → back to Cash. */
+export function SolCashBack() {
+  const w = useWallet();
+  const sol = useSolSigner();
+  const [q, setQ] = useState<Quote | null>(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const lock = useRef(false);
+  const load = useCallback(async () => {
+    if (!sol.address || !w.address) return setQ(null);
+    const { quoteSolToCash } = await import("@/lib/solrelay");
+    setQ(await quoteSolToCash(sol.address, w.address).catch(() => null));
+  }, [sol.address, w.address]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  if (!q || q.outUsd < 1) return null;
+  const move = async () => {
+    if (lock.current || !w.address) return;
+    lock.current = true;
+    setBusy("Moving…");
+    setErr("");
+    try {
+      const s = await sol.get();
+      const { solToCash } = await import("@/lib/solrelay");
+      setBusy("Moving…");
+      await solToCash(s, w.address, (m) => setBusy(m));
+      toast("Moving to your Cash ✓");
+      for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
+      setTimeout(() => void load(), 8000);
+      setQ(null);
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      lock.current = false;
+      setBusy("");
+    }
+  };
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-paper p-3 flex items-center gap-3 text-[0.8125rem]">
+      <span className="flex-1 min-w-0">
+        <b>${q.outUsd.toFixed(2)}</b> <span className="text-ink-2">waiting in your Solana wallet</span>
+        {err && <span className="block text-danger break-words">{err}</span>}
+      </span>
+      <button type="button" onClick={() => void move()} disabled={!!busy} className="h-9 px-3 rounded-full bg-ink text-paper font-semibold shrink-0 disabled:opacity-50">
+        {busy || "Move to Cash"}
+      </button>
+    </div>
+  );
+}

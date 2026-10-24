@@ -26,6 +26,7 @@ import { cardLoop, extCardLoop, raceCardLoop } from "./cards.mjs";
 import { marketCardLoop } from "./marketcards.mjs";
 import { xbotLoop } from "./xbot.mjs";
 import { solKeeperLoop } from "./solkeeper.mjs";
+import { solMarketsLoop } from "./solmarkets.mjs";
 import { alertLoop } from "./alerts.mjs";
 import { watchdogLoop } from "./watchdog.mjs";
 import { safetyLoop } from "./safety.mjs";
@@ -548,6 +549,7 @@ async function main() {
     keep("points", () => pointsLoop(pool, log)),
     keep("badges", () => badgesLoop(pool, log)),
     keep("markets", () => marketsLoop(pool, log)),
+    keep("markets solana", () => solMarketsLoop(pool, log)),
     keep("seo", () => seoLoop(pool, log)),
     // Market: the 300 biggest coins (topcoins.sql), from CoinGecko + DexScreener
     keep("top coins", () => topLoop(pool, log)),

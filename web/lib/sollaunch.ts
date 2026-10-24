@@ -69,7 +69,7 @@ export async function solBalance(address: string): Promise<bigint> {
 }
 
 /** Network priority fee (micro-lamports per compute unit): what recent launches paid, within bounds. */
-async function priorityFee(): Promise<number> {
+export async function priorityFee(): Promise<number> {
   try {
     const fees = await solConnection().getRecentPrioritizationFees({ lockedWritableAccounts: [PUMP_PROGRAM_ID] });
     const v = fees.map((f) => f.prioritizationFee).sort((a, b) => a - b);
@@ -95,7 +95,7 @@ function compile(payer: PublicKey, ixs: TransactionInstruction[], blockhash: str
 const budget = (units: number, price: number) => [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price })];
 
 /** Signs with the wallet, then with the coin's own key (kept last, so a wallet that rewrites the transaction can't drop it). */
-async function signAll(tx: VersionedTransaction, signer: SolSigner, extra: Keypair[]): Promise<VersionedTransaction> {
+export async function signAll(tx: VersionedTransaction, signer: SolSigner, extra: Keypair[]): Promise<VersionedTransaction> {
   const out = VersionedTransaction.deserialize(await signer.sign(tx.serialize()));
   if (extra.length) out.sign(extra);
   // every required signature must be there before it goes out
@@ -123,7 +123,7 @@ const b58sig = (tx: VersionedTransaction) => {
 };
 
 /** Sends and waits until confirmed (sent again every 2 s; gives up when its blockhash runs out). */
-async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHeight: number, onStep?: (m: string) => void): Promise<string> {
+export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHeight: number, onStep?: (m: string) => void): Promise<string> {
   const c = solConnection();
   const raw = tx.serialize();
   const sig = b58sig(tx);

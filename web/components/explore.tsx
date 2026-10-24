@@ -12,7 +12,9 @@ import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 import { compactUsd } from "@/lib/format";
-import { EXT_NETWORKS, extHref, extNetwork, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { useWallet } from "@/components/wallet";
+import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 import { RaceBanner } from "@/components/racepromo";
 import { LiveRaces } from "@/components/liveraces";
@@ -60,6 +62,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   // the v6 list only knows its own sorts (and is empty on mainnet anyway)
   const sort: SortKey = tab === "racing" || tab === "winners" ? "new" : tab;
   const [chain, setChain] = useState<string>("all");
+  // Solana's coins: a chip of their own, for people who see Solana yet
+  const { address: me } = useWallet();
+  const solChip = solanaFor(me);
+  useEffect(() => {
+    if (!solChip && chain === "solana") setChain("all");
+  }, [solChip, chain]);
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const { coins, error, reload, hasMore, loadMore, loadingMore } = useCoins(sort, search);
@@ -255,7 +263,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
         <div className="px-4 sm:px-6 pt-2.5 flex items-center gap-2">
           <div className="ex-tabs flex-1 min-w-0 flex gap-1 overflow-x-auto" role="group" aria-label="Chain">
-            {[{ key: "all", short: "All chains", color: "" }, ...EXT_NETWORKS.map((n) => ({ key: n.id, short: n.label, color: n.color }))].map((c) => (
+            {[{ key: "all", short: "All chains", color: "" }, ...[...EXT_NETWORKS, ...(solChip ? [SOL_EXT_NETWORK] : [])].map((n) => ({ key: n.id, short: n.label, color: n.color }))].map((c) => (
               <button
                 key={c.key}
                 type="button"

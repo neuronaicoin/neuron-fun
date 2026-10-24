@@ -15,6 +15,8 @@ import { raceClient } from "@/lib/race";
 import { reportExtTrade } from "@/lib/exttrades";
 import { rememberExtBuy } from "@/lib/extheld";
 import { AutoPanel } from "./autopanel";
+import { SolanaTradeBox } from "./soltrade";
+import { isSolExt } from "@/lib/extcoins";
 
 import { ContractAddress } from "./contract";
 import Link from "next/link";
@@ -32,6 +34,7 @@ const EXPLORER: Record<string, string> = {
   eth: "https://etherscan.io/token/",
   robinhood: "https://explorer.chain.robinhood.com/token/",
   arc: "https://arcscan.app/token/",
+  solana: "https://solscan.io/token/",
 };
 const FEE = 0.007;
 
@@ -74,6 +77,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <span className="font-mono text-[0.8125rem] text-ink-3">${coin.symbol}</span>
                   <span className="h-6 px-2 rounded-full text-[0.6875rem] font-bold text-white flex items-center" style={{ background: net.color }}>{net.label}</span>
+                  {!isSolExt(coin.network) && (
                   <button
                     type="button"
                     onClick={() =>
@@ -90,6 +94,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.9 2H22l-6.8 7.8L23 22h-6.2l-4.8-6.3L6.4 22H3.3l7.3-8.3L1 2h6.3l4.4 5.8L18.9 2Z" /></svg>
                     Share
                   </button>
+                  )}
                   {EXPLORER[coin.network] && (
                     <a href={EXPLORER[coin.network] + coin.address} target="_blank" rel="noopener noreferrer" className="text-[0.75rem] text-emerald font-semibold">Explorer ↗</a>
                   )}
@@ -131,7 +136,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           {!market && <TokenCheck coin={coin} />}
           <AboutCoin coin={coin} chain={net.label} market={market} />
         </div>
-        <TradeBox coin={coin} />
+        {isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}
       </div>
     </div>
   );
@@ -159,7 +164,9 @@ function AboutCoin({ coin, chain, market }: { coin: ExtCoin; chain: string; mark
   ].filter(Boolean);
   const faq: [string, string][] = [
     [`How do I buy ${sym}?`, IS_TESTNET ? `Trading coins from other DEXs opens when sasa's mainnet starts. Then: log in with your email or a wallet, add USDC, and tap Buy on this page.` : `Log in on sasa with your email or a wallet, add USDC, and tap Buy on this page. sasa finds the best price across DEXs; you don't need ${chain === "Base" ? "ETH" : "that chain's gas coin"} or a bridge.`],
-    [`Can I set a take profit or stop loss on ${sym}?`, `Yes. Use the Auto tab next to Buy and Sell: pick a price once and the order runs on its own, even with sasa closed. It costs 0.1% when it runs.`],
+    ...(isSolExt(coin.network)
+      ? []
+      : ([[`Can I set a take profit or stop loss on ${sym}?`, `Yes. Use the Auto tab next to Buy and Sell: pick a price once and the order runs on its own, even with sasa closed. It costs 0.1% when it runs.`]] as [string, string][])),
     [`What is the ${sym} contract address?`, `${coin.address} on ${chain}. Always check the address before you buy: other coins can use the same name.`],
   ];
   return (
@@ -187,7 +194,7 @@ function TokenCheck({ coin }: { coin: ExtCoin }) {
   const pct = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(v * 100 < 1 && v > 0 ? 1 : 0)}%`);
   const rows: { ok: boolean | null; text: string }[] = checked
     ? [
-        { ok: true, text: "Can be sold (checked by a sale simulation)" },
+        { ok: true, text: isSolExt(coin.network) ? "Can be sold (nobody can freeze or lock it)" : "Can be sold (checked by a sale simulation)" },
         { ok: (coin.buyTax ?? 0) <= 0.05 && (coin.sellTax ?? 0) <= 0.05, text: `Buy / sell tax: ${pct(coin.buyTax)} / ${pct(coin.sellTax)}` },
         { ok: coin.mintable === null ? null : !coin.mintable, text: coin.mintable ? "The owner can create new coins" : coin.mintable === false ? "The owner can't create new coins" : "Minting: unknown" },
         ...(coin.top10 !== null ? [{ ok: coin.top10 < 0.5, text: `Top 10 wallets hold ${pct(coin.top10)} of the supply` }] : []),

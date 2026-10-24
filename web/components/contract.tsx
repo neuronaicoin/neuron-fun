@@ -50,7 +50,8 @@ export function ContractAddress({
   /** Short line after the address, e.g. "same on every chain" for v6 coins. */
   note?: string;
 }) {
-  const list = entries.filter((e) => /^0x[0-9a-fA-F]{40}$/.test(e.address));
+  // EVM addresses, and Solana's (base58)
+  const list = entries.filter((e) => /^0x[0-9a-fA-F]{40}$/.test(e.address) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(e.address));
   const [i, setI] = useState(0);
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

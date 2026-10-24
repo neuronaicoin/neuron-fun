@@ -48,7 +48,16 @@ export const EXT_NETWORKS: { id: string; label: string; color: string }[] = [
   { id: "arc", label: "Arc", color: "#7c5cff" },
   { id: "eth", label: "Ethereum", color: "#627eea" },
 ];
-export const extNetwork = (id: string) => EXT_NETWORKS.find((n) => n.id === id);
+/**
+ * Solana: its own list (sol_ext_coins, indexer/solmarkets.mjs), shown only to people who see
+ * Solana yet (lib/solana.ts solanaFor). Not in EXT_NETWORKS, so every other list leaves it out.
+ */
+export const SOL_EXT_NETWORK = { id: "solana", label: "Solana", color: "#9945FF" };
+export const extNetwork = (id: string) => (id === SOL_EXT_NETWORK.id ? SOL_EXT_NETWORK : EXT_NETWORKS.find((n) => n.id === id));
+/** Solana addresses are case-sensitive (EVM ones are kept lowercase). */
+export const isSolExt = (network: string) => network === SOL_EXT_NETWORK.id;
+const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+export const extAddressOk = (network: string, address: string) => (isSolExt(network) ? B58.test(address) : /^0x[0-9a-f]{40}$/.test(address));
 
 export type ExtSort = "trending" | "gainers" | "losers" | "new" | "volume";
 
@@ -105,11 +114,17 @@ export async function fetchExtCoins(
 ): Promise<ExtCoin[]> {
   const s = search.replace(/[%,()]/g, "").trim();
   // Lists show coins trading right now; a search looks through the last 30 days.
-  let q = db.from(s ? "ext_coins_all" : "ext_coins").select("*");
-  if (network) q = q.eq("network", network);
+  const sol = !!network && isSolExt(network);
+  let q = db.from(sol ? "sol_ext_coins" : s ? "ext_coins_all" : "ext_coins").select("*");
+  if (network && !sol) q = q.eq("network", network);
   if (filters.minVol && filters.minVol > 0) q = q.gte("vol_24h", filters.minVol);
   if (filters.minLiq && filters.minLiq > 0) q = q.gte("liq_usd", filters.minLiq);
-  if (s) q = /^0x[0-9a-fA-F]{40}$/.test(s) ? q.eq("address", s.toLowerCase()) : q.or(`symbol.ilike.%${s}%,name.ilike.%${s}%`);
+  if (s)
+    q = /^0x[0-9a-fA-F]{40}$/.test(s)
+      ? q.eq("address", s.toLowerCase())
+      : sol && B58.test(s)
+        ? q.eq("address", s)
+        : q.or(`symbol.ilike.%${s}%,name.ilike.%${s}%`);
   q =
     sort === "new"
       ? q.order("pool_created", { ascending: false, nullsFirst: false })
@@ -130,6 +145,11 @@ export async function fetchExtCoins(
  * saw, kept for good; never junk). Bad coins (honeypots…) are in neither.
  */
 export async function fetchExtCoin(network: string, address: string): Promise<ExtCoin | null> {
+  if (isSolExt(network)) {
+    const { data, error } = await db.from("sol_ext_coins_all").select("*").eq("address", address).maybeSingle();
+    if (error) throw error;
+    return data ? toExt(data as Record<string, unknown>) : null;
+  }
   const a = address.toLowerCase();
   const [live, arch] = await Promise.all([
     db.from("ext_coins_all").select("*").eq("network", network).eq("address", a).maybeSingle(),
@@ -160,7 +180,8 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
 }
 
 /** A coin page's address for links outside the app (search engines, shares, notifications). */
-export const extPageUrl = (site: string, c: { network: string; address: string }) => `${site}/x/${encodeURIComponent(c.network)}/${c.address.toLowerCase()}/`;
+export const extPageUrl = (site: string, c: { network: string; address: string }) =>
+  isSolExt(c.network) ? `${site}/x/?n=solana&a=${c.address}` : `${site}/x/${encodeURIComponent(c.network)}/${c.address.toLowerCase()}/`;
 
 export const extHref = (c: { network: string; address: string }) => `/x/?n=${encodeURIComponent(c.network)}&a=${c.address}`;
 
