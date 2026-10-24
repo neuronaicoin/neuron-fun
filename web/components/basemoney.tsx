@@ -175,11 +175,13 @@ export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
               <span className="text-black/40 text-[0.8125rem]">QR</span>
             )}
           </div>
-          <button type="button" onClick={copy} className="w-full rounded-xl border border-line px-3 py-2.5 text-left min-w-0" aria-label="Copy your deposit address">
-            <span className="block text-[0.75rem] text-ink-3">Your USDC address on {NET}</span>
-            <span className="block font-mono text-[0.8125rem] break-all">{address}</span>
-            <span className="block text-[0.75rem] font-semibold text-emerald-dark mt-1">{copied ? "Copied ✓" : "Tap to copy"}</span>
-          </button>
+          <div className="w-full rounded-2xl border-2 border-line bg-paper p-3 min-w-0">
+            <span className="block text-[0.8125rem] text-ink-2 font-semibold">Your USDC address on {NET}</span>
+            <span className="block font-mono font-semibold text-[0.9375rem] text-ink break-all mt-1">{address}</span>
+            <button type="button" onClick={copy} className="mt-2.5 w-full h-11 rounded-full bg-emerald text-on-accent font-bold" aria-label="Copy your deposit address">
+              {copied ? "Copied ✓" : "Copy address"}
+            </button>
+          </div>
         </div>
         <Warning>
           Send only <b>USDC</b> on the <b>{NET}</b> network. Other coins or networks can be lost. On an exchange, pick &ldquo;Base&rdquo; as the withdrawal network.
