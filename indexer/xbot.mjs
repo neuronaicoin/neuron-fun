@@ -28,6 +28,7 @@ import { FONTS, WORDMARK, clip, escXml as esc, mark, raceCardName } from "./card
 import { futuresCardSvg, futuresMarkets, predictCardSvg } from "./marketcards.mjs";
 import { fetchPredict } from "./predictboard.mjs";
 import * as card from "./xbotcards.mjs";
+import * as say from "./xbottext.mjs";
 
 const API = "https://api.x.com";
 const W = 1200;
@@ -610,6 +611,15 @@ export function slotTime(kind, at, now = Date.now()) {
   return Date.parse(`${day}T00:00:00Z`) - TR + ((hh * 60 + mm + jitter) * 60e3);
 }
 
+/** One of `list` ([id, text]) not used for this kind in the last 7 days: { text, tpl }. */
+async function fresh(pool, kind, list) {
+  const { rows } = await pool.query(`select meta->>'tpl' as tpl from xbot_posts where kind = $1 and posted_at > now() - interval '7 days' and meta ? 'tpl'`, [kind]).catch(() => ({ rows: [] }));
+  const used = new Set(rows.map((r) => r.tpl));
+  const left = list.filter(([id]) => !used.has(id));
+  const [tpl, text] = (left.length ? left : list)[Math.floor(Math.random() * (left.length || list.length))];
+  return { text, tpl };
+}
+
 const NETNAME = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
 
 /** What each planned kind posts (null: nothing worth posting right now; tried again later). */
@@ -618,11 +628,15 @@ function makers(pool) {
   return {
     fear: async () => {
       const f = await fearNow(pool);
-      return f && { ref: `f:${today}`, text: fearText(f.score, f.prev), image: card.fearCard(f.score) };
+      if (!f) return null;
+      const w = await fresh(pool, "fear", say.fear(f.score, f.prev));
+      return { ref: `f:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.fearCard(f.score) };
     },
     biggest: async () => {
       const p = (await whalePositionsNow(pool)).sort((a, b) => b.v - a.v)[0];
-      return p && p.v >= 5_000_000 && { ref: `b:${today}`, text: biggestText(p), image: card.biggestCard(p) };
+      if (!p || p.v < 5_000_000) return null;
+      const w = await fresh(pool, "biggest", say.biggest(p));
+      return { ref: `b:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.biggestCard(p) };
     },
     predict: async () => {
       const q = await nextPrediction();
@@ -631,7 +645,8 @@ function makers(pool) {
       const ends = q.expiry ? new Date(q.expiry).toISOString().slice(11, 16) + " UTC" : null;
       const m = /^(\w+) above \$([\d,.]+)/.exec(q.title);
       const meta = m && q.expiry ? { underlying: m[1], target: Number(m[2].replace(/,/g, "")), expiry: q.expiry, yes: q.sides[0].price } : null;
-      return { ref: `p:${q.outcome}`, text: predictText({ ...q, title: q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2") }, q.sides[0].price), image: card.predictCard({ title, ends, yes: q.sides[0].price }), meta };
+      const w = await fresh(pool, "predict", say.predict(q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2"), q.sides[0].price, m ? m[1] : "BTC"));
+      return { ref: `p:${q.outcome}`, text: w.text, image: card.predictCard({ title, ends, yes: q.sides[0].price }), meta: { ...(meta || {}), tpl: w.tpl } };
     },
     stock: async () => {
       const all = (await futuresMarkets()).filter((x) => x.dex && (x.group === "stocks" || x.group === "commodities") && x.change !== null && x.vol > 100_000);
@@ -646,20 +661,31 @@ function makers(pool) {
       } catch {}
       const d = new Date();
       const closed = d.getUTCDay() === 0 || d.getUTCDay() === 6 || d.getUTCHours() < 13 || d.getUTCHours() >= 20;
-      return { ref: `s:${today}`, text: stockText(m, closed), image: card.stockCard(m, tape, line, closed) };
+      const w = await fresh(pool, "stock", say.stock(m, closed));
+      return { ref: `s:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.stockCard(m, tape, line, closed) };
     },
     spot: async () => {
       const c = await nextSpot(pool);
-      return c && { ref: `g:${c.cg_id}:${today}`, text: spotText(c), image: card.spotCard(c) };
+      if (!c) return null;
+      const w = await fresh(pool, "spot", say.spot(c));
+      return { ref: `g:${c.cg_id}:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.spotCard(c) };
     },
     meme: async () => {
       const c = await nextMeme(pool);
-      return c && { ref: `m:${c.network}:${c.address}`, text: memeText(c), image: card.memeCard(c, NETNAME[c.network] || String(c.network).toUpperCase()) };
+      if (!c) return null;
+      const net = NETNAME[c.network] || String(c.network).toUpperCase();
+      const w = await fresh(pool, "meme", say.meme(c, net));
+      return { ref: `m:${c.network}:${c.address}`, text: w.text, meta: { tpl: w.tpl }, image: card.memeCard(c, net) };
     },
-    poll: async () => ({ ref: `q:${today}`, text: pollText(), poll: { options: ["UP 📈", "DOWN 📉"], duration_minutes: 360 } }),
+    poll: async () => {
+      const w = await fresh(pool, "poll", say.poll());
+      return { ref: `q:${today}`, text: w.text, meta: { tpl: w.tpl }, poll: { options: ["UP 📈", "DOWN 📉"], duration_minutes: 360 } };
+    },
     recap: async () => {
       const top = await topToday(pool);
-      return top.length >= 3 && top[0].pnl_day >= 100_000 && { ref: `c:${today}`, text: recapText(top), image: card.recapCard(top) };
+      if (top.length < 3 || top[0].pnl_day < 100_000) return null;
+      const w = await fresh(pool, "recap", say.recap(top));
+      return { ref: `c:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.recapCard(top) };
     },
   };
 }
@@ -713,13 +739,18 @@ export async function xbotLoop(pool, log) {
         const f = await nextFollowup(pool).catch(() => null);
         if (f) {
           await pool.query(`update xbot_posts set done = true where id = $1`, [f.post.id]);
-          if (f.pnl !== null && Math.abs(f.pnl) >= 50_000) await send({ kind: "followup", ref: `fu:${f.post.id}`, text: followupText(f), replyTo: f.post.post_id === "dry" ? null : f.post.post_id });
+          if (f.pnl !== null && Math.abs(f.pnl) >= 50_000) {
+            const t = await fresh(pool, "followup", say.followup(f));
+            await send({ kind: "followup", ref: `fu:${f.post.id}`, text: t.text, meta: { tpl: t.tpl }, replyTo: f.post.post_id === "dry" ? null : f.post.post_id });
+          }
         } else {
           const r = await nextResult(pool).catch(() => null);
           if (r) {
             await pool.query(`update xbot_posts set done = true where id = $1`, [r.post.id]);
-            const text = resultText(r);
-            if (text) await send({ kind: "result", ref: `pr:${r.post.id}`, text, replyTo: r.post.post_id === "dry" ? null : r.post.post_id });
+            if (r.yesWon !== null) {
+              const t = await fresh(pool, "result", say.result(r, r.post.meta.underlying));
+              await send({ kind: "result", ref: `pr:${r.post.id}`, text: t.text, meta: { tpl: t.tpl }, replyTo: r.post.post_id === "dry" ? null : r.post.post_id });
+            }
           }
         }
       }
@@ -729,7 +760,10 @@ export async function xbotLoop(pool, log) {
         let post = null;
         if (n("whale") < whalesPerDay) {
           const w = await nextWhale(pool, minUsd);
-          if (w) post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: whaleText(w, w), image: card.whaleCard(w, w), meta: { address: w.address, coin: w.coin, kind: w.kind, side: w.side, px: w.px, usd: w.usd } };
+          if (w) {
+            const t = await fresh(pool, "whale", say.whale(w, w));
+            post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: t.text, image: card.whaleCard(w, w), meta: { address: w.address, coin: w.coin, kind: w.kind, side: w.side, px: w.px, usd: w.usd, tpl: t.tpl } };
+          }
         }
         if (!post) {
           const make = makers(pool);
