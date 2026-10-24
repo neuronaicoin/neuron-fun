@@ -28,7 +28,16 @@ import {
   type TransactionInstruction,
 } from "@solana/web3.js";
 import BN from "bn.js";
-import { OnlinePumpSdk, PUMP_PROGRAM_ID, PUMP_SDK, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, type Global } from "@pump-fun/pump-sdk";
+import {
+  OnlinePumpSdk,
+  PUMP_PROGRAM_ID,
+  PUMP_SDK,
+  bondingCurvePda,
+  feeSharingConfigPda,
+  getBuyTokenAmountFromSolAmount,
+  getSellSolAmountFromTokenAmount,
+  type Global,
+} from "@pump-fun/pump-sdk";
 import { SOL_RPC } from "./solana";
 
 /** Who signs on Solana: the email account's own Solana wallet, or Phantom & co. */
@@ -410,4 +419,96 @@ export async function recordCoin(r: { mint: string; creator: string; uri: string
     if (i >= 2) throw new Error("Couldn't reach sasa. Nothing was launched: try again in a moment.");
     await new Promise((x) => setTimeout(x, 1000));
   }
+}
+
+
+// ------------------------------------------------------------------ trading on the launch curve
+
+/**
+ * Buying and selling a coin that is still on its launch curve (every coin launched on sasa,
+ * until it fills up and moves to its pool), straight on the curve with SOL: no route in
+ * between, so nothing on the way can refuse it. sasa's trade box uses these first and falls
+ * back to a Relay route once the curve is complete (or for other coins).
+ */
+async function curveState(mint: PublicKey, user: PublicKey) {
+  const sdk = new OnlinePumpSdk(solConnection());
+  const [global, feeConfig, st] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBuyState(mint, user, TOKEN_2022)]);
+  return { global, feeConfig, st };
+}
+
+/** true while `mint` trades on its launch curve (false when it has moved on, or isn't a curve coin). */
+export async function onCurve(mint: string): Promise<boolean> {
+  try {
+    const sdk = new OnlinePumpSdk(solConnection());
+    const st = await sdk.fetchSellState(new PublicKey(mint), PublicKey.default, TOKEN_2022);
+    return !st.bondingCurve.complete && st.bondingCurve.quoteMint !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/** Sells `amount` (raw) of `mint` on its curve for SOL into the same wallet; returns the SOL (lamports) expected. */
+export async function curveSell(signer: SolSigner, mint: string, amount: bigint, onStep?: (m: string) => void): Promise<bigint> {
+  const c = solConnection();
+  const user = new PublicKey(signer.address);
+  const m = new PublicKey(mint);
+  const { global, feeConfig, st } = await curveState(m, user);
+  if (st.bondingCurve.complete) throw new Error("This coin has moved to its pool. Try again.");
+  const tokens = new BN(amount.toString());
+  const sol = getSellSolAmountFromTokenAmount({ global, feeConfig, mintSupply: st.bondingCurve.tokenTotalSupply, bondingCurve: st.bondingCurve, amount: tokens, quoteTransferFee: st.quoteTransferFee });
+  if (sol.lten(0)) throw new Error("That amount is too small to sell.");
+  const ixs = await PUMP_SDK.sellInstructions({
+    global,
+    bondingCurveAccountInfo: st.bondingCurveAccountInfo,
+    bondingCurve: st.bondingCurve,
+    mint: m,
+    user,
+    amount: tokens,
+    solAmount: sol,
+    slippage: 3,
+    tokenProgram: TOKEN_2022,
+    mayhemMode: st.bondingCurve.isMayhemMode,
+  });
+  const [price, bh] = await Promise.all([priorityFee(), c.getLatestBlockhash("confirmed")]);
+  const tx = compile(user, [...budget(200_000, price), ...ixs], bh.blockhash, null);
+  if (!tx) throw new Error("Couldn't build the sale. Try again.");
+  onStep?.("Selling…");
+  await sendAndConfirm(await signAll(tx, signer, []), bh.lastValidBlockHeight, onStep);
+  return BigInt(sol.toString());
+}
+
+/** Buys `mint` on its curve with `lamports` of the wallet's SOL. */
+export async function curveBuy(signer: SolSigner, mint: string, lamports: bigint, onStep?: (m: string) => void): Promise<void> {
+  const c = solConnection();
+  const user = new PublicKey(signer.address);
+  const m = new PublicKey(mint);
+  const { global, feeConfig, st } = await curveState(m, user);
+  if (st.bondingCurve.complete) throw new Error("This coin has moved to its pool. Try again.");
+  const solAmount = new BN(lamports.toString());
+  const amount = getBuyTokenAmountFromSolAmount({
+    global,
+    feeConfig,
+    mintSupply: st.bondingCurve.tokenTotalSupply,
+    bondingCurve: st.bondingCurve,
+    amount: solAmount,
+    quoteMint: st.bondingCurve.quoteMint,
+  });
+  if (amount.lten(0)) throw new Error("That amount is too small to buy.");
+  const ixs = await PUMP_SDK.buyInstructions({
+    global,
+    bondingCurveAccountInfo: st.bondingCurveAccountInfo,
+    bondingCurve: st.bondingCurve,
+    associatedUserAccountInfo: st.associatedUserAccountInfo,
+    mint: m,
+    user,
+    amount,
+    solAmount,
+    slippage: 3,
+    tokenProgram: TOKEN_2022,
+  });
+  const [price, bh] = await Promise.all([priorityFee(), c.getLatestBlockhash("confirmed")]);
+  const tx = compile(user, [...budget(250_000, price), ...ixs], bh.blockhash, null);
+  if (!tx) throw new Error("Couldn't build the buy. Try again.");
+  onStep?.("Buying…");
+  await sendAndConfirm(await signAll(tx, signer, []), bh.lastValidBlockHeight, onStep);
 }

@@ -90,8 +90,9 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
               { user: sol.address!, recipient: w.address!, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" },
               ctrl.signal
             );
-      // a sale's preview can fail only because the wallet has no SOL yet: the sale adds it, so no error here
-      q.then(setQuote).catch((e) => !ctrl.signal.aborted && side === "buy" && setError(friendlyError(e)));
+      // only a preview: when it can't be priced the estimate shows instead (a coin on its launch
+      // curve is traded on the curve itself, which a route can't always price)
+      q.then(setQuote).catch(() => {});
     }, 400);
     return () => {
       clearTimeout(t);
@@ -104,7 +105,21 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (!w.address || raw <= 0n) return;
     const s = await sol.get();
     setBusy("Getting the price…");
-    const q = await getQuote({ user: w.address, recipient: s.address, originChainId: BASE.chain.id, originCurrency: BASE.usdc, destinationChainId: SOLANA_ID, destinationCurrency: mint, amount: raw.toString(), fee: "swap" });
+    const L = await import("@/lib/sollaunch");
+    // still on its launch curve (every coin launched on sasa at first): the dollars arrive as
+    // SOL, then the coin is bought on the curve itself (no route in between that could refuse it)
+    const curve = await L.onCurve(mint);
+    const q = await getQuote({
+      user: w.address,
+      recipient: s.address,
+      originChainId: BASE.chain.id,
+      originCurrency: BASE.usdc,
+      destinationChainId: SOLANA_ID,
+      destinationCurrency: curve ? SOL_NATIVE : mint,
+      amount: raw.toString(),
+      fee: "swap",
+    });
+    const solBefore = curve ? await L.solBalance(s.address).catch(() => 0n) : 0n;
     let calls = quoteCalls(q, BASE);
     let need = raw;
     // almost no SOL in the Solana wallet: a little comes along for a later sale's network fee
@@ -131,6 +146,22 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (cash < need + (w.embedded ? 50_000n : 0n)) throw new Error("Not enough USDC in your Cash for this buy.");
     setBusy("Buying…");
     await w.send(BASE.chain, calls, (m) => setBusy(m));
+    if (curve) {
+      // wait for the SOL, then buy on the curve with it (a little stays for network fees)
+      const want = BigInt(q.outRaw || "0");
+      let bal = solBefore;
+      for (let i = 0; i < 60 && alive.current; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        bal = await L.solBalance(s.address).catch(() => bal);
+        if (bal >= solBefore + (want * 95n) / 100n) break;
+      }
+      const spend = bal - 3_000_000n < want ? bal - 3_000_000n : want;
+      if (spend <= 0n) throw new Error("Your dollars are still on their way. They'll show in your Solana wallet in a moment; try the buy again then.");
+      await L.curveBuy(s, mint, spend, (m) => setBusy(m));
+      afterTrade();
+      toast(`Bought $${coin.symbol} ✓`);
+      return;
+    }
     afterTrade();
     toast(`Buying $${coin.symbol}: arriving in a few seconds ✓`);
     // watch it arrive
@@ -178,6 +209,17 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     const s = await sol.get();
     await ensureSol(s.address);
     setBusy("Getting the price…");
+    const L = await import("@/lib/sollaunch");
+    if (await L.onCurve(mint)) {
+      // on its launch curve: sold on the curve for SOL, then the SOL goes to Cash as USDC
+      await L.curveSell(s, mint, raw, (m) => setBusy(m));
+      setBusy("Moving the dollars to your Cash…");
+      const { solToCash } = await import("@/lib/solrelay");
+      const moved = await solToCash(s, w.address, (m) => setBusy(m)).catch(() => null);
+      toast(moved ? `Sold $${coin.symbol}: USDC arriving in your Cash in a few seconds ✓` : `Sold $${coin.symbol} ✓ The dollars move to your Cash in a moment.`);
+      for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
+      return;
+    }
     const q = await getQuote({ user: s.address, recipient: w.address, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" });
     const { sendSolanaQuote } = await import("@/lib/solrelay");
     setBusy("Selling…");
@@ -259,7 +301,9 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
               : `$${Number(quote.outAmount).toFixed(2)}`
             : side === "buy" && estimate !== null
               ? `${fmt(estimate)} $${coin.symbol}`
-              : "—"}
+              : side === "sell" && coin.priceUsd && raw > 0n
+                ? `about $${((Number(raw) / 1e6) * coin.priceUsd * (1 - FEE)).toFixed(2)}`
+                : "—"}
         </b>
       </div>
       {side === "sell" && held !== null && <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>}
