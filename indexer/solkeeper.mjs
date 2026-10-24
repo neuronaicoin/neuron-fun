@@ -370,6 +370,7 @@ export async function solKeeperLoop(pool, log) {
   let lastPayout = 0;
   let lastTable = 0;
   let lastLow = 0;
+  let lastNote = 0;
   for (;;) {
     try {
       await checkNew(pool, S, log);
@@ -397,7 +398,28 @@ export async function solKeeperLoop(pool, log) {
         const bal = await conn.getBalance(S.keeper.publicKey).catch(() => null);
         if (bal !== null && bal < 50_000_000) {
           lastLow = Date.now();
-          log(`sol: keeper wallet ${S.keeper.publicKey.toBase58()} is low (${(bal / 1e9).toFixed(4)} SOL): top it up`);
+          const addr = S.keeper.publicKey.toBase58();
+          log(`sol: keeper wallet ${addr} is low (${(bal / 1e9).toFixed(4)} SOL): top it up`);
+          // the admin hears it too (🔔 on the site, pushed to the phone), at most once a day
+          if (Date.now() - lastNote > 24 * 3600_000) {
+            lastNote = Date.now();
+            const admins = (process.env.ADMINS || "0xe0ba5905940d748b23dc01266aa884e2391cca2f,0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b")
+              .split(",")
+              .map((x) => x.trim().toLowerCase())
+              .filter((x) => /^0x[0-9a-f]{40}$/.test(x));
+            await pool
+              .query(
+                `insert into notifications (owner, coin_id, kind, title, body, url, pushed)
+                 select a, null, 'system', $2, $3, $4, false from unnest($1::text[]) a`,
+                [
+                  admins,
+                  "⚠️ Solana payout wallet is low",
+                  `It has ${(bal / 1e9).toFixed(4)} SOL left. Send about 0.05 SOL to ${addr} so creator-fee payouts keep running.`,
+                  `https://solscan.io/account/${addr}`,
+                ]
+              )
+              .catch((e) => log(`sol: low-balance note failed (${e?.message ?? e})`));
+          }
         }
       }
     }
