@@ -287,7 +287,7 @@ export async function aiRoute(ctx, me, parts, method, body) {
 
   if (parts[1] === "reply") {
     // the admins, and the team's phone wallet (same list as the geo exemption in lib/perps.ts)
-    const helpers = ["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"];
+    const helpers = ["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f", "0xf4bc1b22e117a621e1118d09f7bb015c685a9617"];
     if (!adminView && !helpers.includes(String(me).toLowerCase())) return fail(403, "Admins only.");
     const post = await readTweet(body.url);
     if (!post) return fail(400, "Paste a link to a post on X (x.com/…/status/…).");

@@ -142,7 +142,7 @@ export default function AdminPage() {
   }
 
   // sasa's admin wallet: sees sasa's money (and the safety controls below, where it has a role)
-  const isAdmin = eq(address, SASA_TREASURY) || eq(address, "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F");
+  const isAdmin = eq(address, SASA_TREASURY) || eq(address, "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F") || eq(address, "0xf4bc1b22e117a621e1118d09f7bb015c685a9617");
 
   if (loaded && !anyAccess && !isAdmin) {
     return (

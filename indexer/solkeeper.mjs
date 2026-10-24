@@ -483,7 +483,7 @@ export async function solKeeperLoop(pool, log) {
           // the admin hears it too (🔔 on the site, pushed to the phone), at most once a day
           if (Date.now() - lastNote > 24 * 3600_000) {
             lastNote = Date.now();
-            const admins = (process.env.ADMINS || "0xe0ba5905940d748b23dc01266aa884e2391cca2f,0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b")
+            const admins = (process.env.ADMINS || "0xe0ba5905940d748b23dc01266aa884e2391cca2f,0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b,0xf4bc1b22e117a621e1118d09f7bb015c685a9617")
               .split(",")
               .map((x) => x.trim().toLowerCase())
               .filter((x) => /^0x[0-9a-f]{40}$/.test(x));

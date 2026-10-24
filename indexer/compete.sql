@@ -17,6 +17,7 @@ language sql stable security definer set search_path = public as $$
       and lower(creator) not in (
         '0x3c4e66b4b4ddd1f6348ad5fdfae7e60ac35aca6f', -- sasa treasury
         '0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b', -- team
+        '0xf4bc1b22e117a621e1118d09f7bb015c685a9617', -- team (second account)
         '0x9f832eea4f7c246d196d8e9362fe2fc75202c528', -- keeper (v7)
         '0xd89ddf65ab3c12cc4b966db5bbe07fe01e881c21', -- keeper (v8)
         '0xb3d38b4007b287ad852aa4fc5da2c1029b6082ac'  -- relayer
