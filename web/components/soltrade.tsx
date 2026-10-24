@@ -249,7 +249,11 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
   );
 }
 
-/** SOL sitting in the Solana wallet (launch leftovers, a buy's fee money) → back to Cash. */
+/**
+ * SOL sitting in the Solana wallet (launch leftovers) goes back to Cash on its own: email
+ * accounts sign without a popup, so it just happens. A browser wallet (Phantom…) must approve
+ * anything that leaves it, so those get one button.
+ */
 export function SolCashBack() {
   const w = useWallet();
   const sol = useSolSigner();
@@ -257,6 +261,7 @@ export function SolCashBack() {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const lock = useRef(false);
+  const tried = useRef(false);
   const load = useCallback(async () => {
     if (!sol.address || !w.address) return setQ(null);
     const { quoteSolToCash } = await import("@/lib/solrelay");
@@ -265,36 +270,45 @@ export function SolCashBack() {
   useEffect(() => {
     void load();
   }, [load]);
-  if (!q || q.outUsd < 1) return null;
-  const move = async () => {
+  const move = useCallback(async () => {
     if (lock.current || !w.address) return;
     lock.current = true;
-    setBusy("Moving…");
+    setBusy("Moving to your Cash…");
     setErr("");
     try {
       const s = await sol.get();
       const { solToCash } = await import("@/lib/solrelay");
-      setBusy("Moving…");
-      await solToCash(s, w.address, (m) => setBusy(m));
-      toast("Moving to your Cash ✓");
+      const done = await solToCash(s, w.address, () => {});
+      if (done) toast(`$${done.outUsd.toFixed(2)} moved to your Cash ✓`);
       for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
-      setTimeout(() => void load(), 8000);
       setQ(null);
+      setTimeout(() => void load(), 8000);
     } catch (e) {
       setErr(friendlyError(e));
     } finally {
       lock.current = false;
       setBusy("");
     }
-  };
+  }, [w.address, sol, load]);
+  // email accounts: automatic, once per visit
+  const auto = w.embedded && !!q && q.outUsd >= 1;
+  useEffect(() => {
+    if (!auto || tried.current) return;
+    tried.current = true;
+    void move();
+  }, [auto, move]);
+
+  if (!q || q.outUsd < 1) return null;
+  if (w.embedded && !err)
+    return busy ? <p className="mt-3 text-[0.75rem] text-ink-3 text-center">Moving ${q.outUsd.toFixed(2)} back to your Cash…</p> : null;
   return (
     <div className="mt-3 rounded-2xl border border-line bg-paper p-3 flex items-center gap-3 text-[0.8125rem]">
       <span className="flex-1 min-w-0">
-        <b>${q.outUsd.toFixed(2)}</b> <span className="text-ink-2">waiting in your Solana wallet</span>
+        <b>${q.outUsd.toFixed(2)}</b> <span className="text-ink-2">{w.embedded ? "couldn't move to your Cash yet" : "waiting in your Solana wallet"}</span>
         {err && <span className="block text-danger break-words">{err}</span>}
       </span>
       <button type="button" onClick={() => void move()} disabled={!!busy} className="h-9 px-3 rounded-full bg-ink text-paper font-semibold shrink-0 disabled:opacity-50">
-        {busy || "Move to Cash"}
+        {busy ? "…" : w.embedded ? "Try again" : "Move to Cash"}
       </button>
     </div>
   );
