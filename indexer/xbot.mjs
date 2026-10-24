@@ -27,6 +27,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { FONTS, WORDMARK, clip, escXml as esc, mark, raceCardName } from "./cards.mjs";
 import { futuresCardSvg, futuresMarkets, predictCardSvg } from "./marketcards.mjs";
 import { fetchPredict } from "./predictboard.mjs";
+import * as card from "./xbotcards.mjs";
 
 const API = "https://api.x.com";
 const W = 1200;
@@ -375,7 +376,7 @@ const sym = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice
 /** The biggest gainer of the top 300 today (not posted in the last 24 h). */
 async function nextSpot(pool) {
   const { rows } = await pool.query(
-    `select cg_id, rank, name, symbol, price_usd, change_24h, mcap_usd from top_coins
+    `select cg_id, rank, name, symbol, price_usd, change_24h, mcap_usd, spark from top_coins
      where listed and rank <= 300 and change_24h >= 5 and coalesce(vol_24h, 0) >= 1000000
        and not exists (select 1 from xbot_posts p where p.ref = 'g:' || cg_id || ':' || to_char(now(), 'YYYY-MM-DD'))
      order by change_24h desc limit 1`
@@ -582,20 +583,99 @@ export function resultText(r) {
   ]);
 }
 
-// ------------------------------------------------------------------ the loop
+// ------------------------------------------------------------------ the day's plan
 
-const PRIME = (d = new Date()) => d.getUTCHours() >= 14 && d.getUTCHours() < 19; // 17:00–22:00 Türkiye, US market open
+// About 10 posts a day: up to 2 whale moves of $1M+ the moment they happen, and 8 planned posts.
+// Times are Türkiye time (UTC+3); every day each one moves by up to ±25 minutes, so nothing goes
+// out at the same minute two days running (people notice a bot on a timer).
+export const PLAN = [
+  { kind: "fear", at: "10:00" },
+  { kind: "biggest", at: "13:00" },
+  { kind: "predict", at: "15:00" },
+  { kind: "stock", at: "16:30" },
+  { kind: "spot", at: "17:30" },
+  { kind: "meme", at: "18:30" },
+  { kind: "poll", at: "19:30" },
+  { kind: "recap", at: "21:00" },
+];
+const TR = 3 * 3600e3;
+
+/** Today's time for a planned post (ms), moved by a fixed ±25 min for that day and kind. */
+export function slotTime(kind, at, now = Date.now()) {
+  const day = new Date(now + TR).toISOString().slice(0, 10);
+  let h = 2166136261;
+  for (const ch of `${day}:${kind}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const jitter = (h % 51) - 25; // minutes
+  const [hh, mm] = at.split(":").map(Number);
+  return Date.parse(`${day}T00:00:00Z`) - TR + ((hh * 60 + mm + jitter) * 60e3);
+}
+
+const NETNAME = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
+
+/** What each planned kind posts (null: nothing worth posting right now; tried again later). */
+function makers(pool) {
+  const today = new Date(Date.now() + TR).toISOString().slice(0, 10);
+  return {
+    fear: async () => {
+      const f = await fearNow(pool);
+      return f && { ref: `f:${today}`, text: fearText(f.score, f.prev), image: card.fearCard(f.score) };
+    },
+    biggest: async () => {
+      const p = (await whalePositionsNow(pool)).sort((a, b) => b.v - a.v)[0];
+      return p && p.v >= 5_000_000 && { ref: `b:${today}`, text: biggestText(p), image: card.biggestCard(p) };
+    },
+    predict: async () => {
+      const q = await nextPrediction();
+      if (!q) return null;
+      const title = q.title.replace(/\s*(today|tomorrow)?\s*at\s*\d{2}:\d{2}\??$/i, "?").replace(/\?+$/, "?");
+      const ends = q.expiry ? new Date(q.expiry).toISOString().slice(11, 16) + " UTC" : null;
+      const m = /^(\w+) above \$([\d,.]+)/.exec(q.title);
+      const meta = m && q.expiry ? { underlying: m[1], target: Number(m[2].replace(/,/g, "")), expiry: q.expiry, yes: q.sides[0].price } : null;
+      return { ref: `p:${q.outcome}`, text: predictText({ ...q, title: q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2") }, q.sides[0].price), image: card.predictCard({ title, ends, yes: q.sides[0].price }), meta };
+    },
+    stock: async () => {
+      const all = (await futuresMarkets()).filter((x) => x.dex && (x.group === "stocks" || x.group === "commodities") && x.change !== null && x.vol > 100_000);
+      const m = [...all].sort((a, b) => Math.abs(b.change) - Math.abs(a.change))[0];
+      if (!m || Math.abs(m.change) < 1) return null;
+      const tape = [...all].sort((a, b) => b.vol - a.vol).slice(0, 8).map((x) => ({ label: x.label.toUpperCase(), change: x.change }));
+      let line = [];
+      try {
+        const now = Date.now();
+        const c = await hl({ type: "candleSnapshot", req: { coin: m.coin, interval: "1h", startTime: now - 24 * 3600e3, endTime: now } });
+        line = (c || []).map((k) => num(k.c)).filter((v) => v > 0);
+      } catch {}
+      const d = new Date();
+      const closed = d.getUTCDay() === 0 || d.getUTCDay() === 6 || d.getUTCHours() < 13 || d.getUTCHours() >= 20;
+      return { ref: `s:${today}`, text: stockText(m, closed), image: card.stockCard(m, tape, line, closed) };
+    },
+    spot: async () => {
+      const c = await nextSpot(pool);
+      return c && { ref: `g:${c.cg_id}:${today}`, text: spotText(c), image: card.spotCard(c) };
+    },
+    meme: async () => {
+      const c = await nextMeme(pool);
+      return c && { ref: `m:${c.network}:${c.address}`, text: memeText(c), image: card.memeCard(c, NETNAME[c.network] || String(c.network).toUpperCase()) };
+    },
+    poll: async () => ({ ref: `q:${today}`, text: pollText(), poll: { options: ["UP 📈", "DOWN 📉"], duration_minutes: 360 } }),
+    recap: async () => {
+      const top = await topToday(pool);
+      return top.length >= 3 && top[0].pnl_day >= 100_000 && { ref: `c:${today}`, text: recapText(top), image: card.recapCard(top) };
+    },
+  };
+}
+
+// ------------------------------------------------------------------ the loop
 
 export async function xbotLoop(pool, log) {
   if (process.env.XBOT_OFF === "1") return;
   const keys = { apiKey: process.env.X_API_KEY, apiSecret: process.env.X_API_SECRET, accessToken: process.env.X_ACCESS_TOKEN, accessSecret: process.env.X_ACCESS_SECRET };
   if (!keys.apiKey || !keys.apiSecret || !keys.accessToken || !keys.accessSecret) return;
   const dry = process.env.XBOT_DRY === "1";
-  const minUsd = Number(process.env.XBOT_MIN_USD ?? "500000");
-  const perDay = Number(process.env.XBOT_PER_DAY ?? "30");
-  const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "8");
+  const minUsd = Number(process.env.XBOT_MIN_USD ?? "1000000");
+  const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "2");
+  const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "6");
   await pool.query(SQL);
-  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; whale moves of ${money(minUsd)}+, up to ${perDay} posts + ${repliesPerDay} follow-ups a day`);
+  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day + up to ${whalesPerDay} whale moves of ${money(minUsd)}+`);
 
   const send = async (post) => {
     if (dry) {
@@ -621,24 +701,15 @@ export async function xbotLoop(pool, log) {
   let failures = 0;
   for (;;) {
     try {
-      const { rows } = await pool.query(`select kind, count(*)::int as n, max(posted_at) as last from xbot_posts where posted_at > now() - interval '24 hours' group by kind`);
-      const s = { day: 0, replies: 0, last: {}, count: {}, latest: null };
-      for (const r of rows) {
-        s.count[r.kind] = r.n;
-        s.last[r.kind] = new Date(r.last).getTime();
-        if (r.kind === "followup" || r.kind === "result") s.replies += r.n;
-        else {
-          s.day += r.n;
-          if (!s.latest || s.last[r.kind] > s.latest) s.latest = s.last[r.kind];
-        }
-      }
       const now = Date.now();
-      const prime = PRIME();
-      const ago = (kind) => (s.last[kind] ? (now - s.last[kind]) / 3600e3 : Infinity);
-      const n = (kind) => s.count[kind] || 0;
+      const dayStart = Date.parse(`${new Date(now + TR).toISOString().slice(0, 10)}T00:00:00Z`) - TR; // midnight, Türkiye
+      const { rows } = await pool.query(`select kind, count(*)::int as n, max(posted_at) as last from xbot_posts where posted_at >= to_timestamp($1 / 1000.0) group by kind`, [dayStart]);
+      const n = (k) => rows.find((r) => r.kind === k)?.n || 0;
+      const lastAny = Math.max(0, ...rows.filter((r) => r.kind !== "followup" && r.kind !== "result").map((r) => new Date(r.last).getTime()));
+      const replies = n("followup") + n("result");
 
-      // follow-ups under our own posts (their own daily limit)
-      if (s.replies < repliesPerDay && ago("followup") * 60 >= 5 && ago("result") * 60 >= 5) {
+      // follow-ups under our own posts (not counted in the 10)
+      if (replies < repliesPerDay) {
         const f = await nextFollowup(pool).catch(() => null);
         if (f) {
           await pool.query(`update xbot_posts set done = true where id = $1`, [f.post.id]);
@@ -653,68 +724,25 @@ export async function xbotLoop(pool, log) {
         }
       }
 
-      const gap = (prime ? 15 : 45) / 60;
-      const since = s.latest ? (now - s.latest) / 3600e3 : Infinity;
-      if (s.day < perDay && since >= gap) {
+      // at least 20 minutes between our own posts
+      if (now - lastAny >= 20 * 60e3) {
         let post = null;
-        const w = await nextWhale(pool, minUsd);
-        if (w) post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: whaleText(w, w), svg: whaleCardSvg(w, w), meta: { address: w.address, coin: w.coin, kind: w.kind, side: w.side, px: w.px, usd: w.usd } };
-        if (!post && n("race") < 2) {
-          const r = await nextRace(pool).catch(() => null);
-          const card = r && (await raceCard(r.id).catch(() => null));
-          if (r && card) post = { kind: "race", ref: `r:${r.id}`, text: raceText(r), image: card };
+        if (n("whale") < whalesPerDay) {
+          const w = await nextWhale(pool, minUsd);
+          if (w) post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: whaleText(w, w), image: card.whaleCard(w, w), meta: { address: w.address, coin: w.coin, kind: w.kind, side: w.side, px: w.px, usd: w.usd } };
         }
-        // the rest: whichever is due and was posted longest ago
-        const today = new Date().toISOString().slice(0, 10);
-        const hour = new Date().toISOString().slice(0, 13);
-        const kinds = [
-          { kind: "fear", ok: n("fear") < 1 && new Date().getUTCHours() >= 5 && new Date().getUTCHours() < 10, make: async () => { const f = await fearNow(pool); return f && { ref: `f:${today}`, text: fearText(f.score, f.prev), svg: fearCardSvg(f.score) }; } },
-          { kind: "recap", ok: ago("recap") >= 8, make: async () => { const top = await topToday(pool); return top.length >= 3 && top[0].pnl_day >= 100_000 && { ref: `c:${hour}`, text: recapText(top), svg: recapCardSvg(top) }; } },
-          { kind: "stock", ok: prime && n("stock") < 3 && ago("stock") >= 1.5, make: async () => {
-              const m = (await futuresMarkets()).filter((x) => x.dex && (x.group === "stocks" || x.group === "commodities") && x.change !== null && x.vol > 100_000).sort((a, b) => Math.abs(b.change) - Math.abs(a.change))[0];
-              const day = new Date().getUTCDay();
-              return m && Math.abs(m.change) >= 1 && { ref: `s:${hour}`, text: stockText(m, day === 0 || day === 6), svg: futuresCardSvg(m) };
-            } },
-          { kind: "spot", ok: prime && n("spot") < 2 && ago("spot") >= 2, make: async () => { const c = await nextSpot(pool); return c && { ref: `g:${c.cg_id}:${today}`, text: spotText(c), svg: spotCardSvg(c) }; } },
-          { kind: "meme", ok: prime && n("meme") < 2 && ago("meme") >= 2, make: async () => { const c = await nextMeme(pool); return c && { ref: `m:${c.network}:${c.address}`, text: memeText(c), svg: memeCardSvg(c) }; } },
-          { kind: "poll", ok: prime && n("poll") < 1, make: async () => ({ ref: `q:${today}`, text: pollText(), poll: { options: ["UP 📈", "DOWN 📉"], duration_minutes: 360 } }) },
-          { kind: "crowd", ok: prime && n("crowd") < 1, make: async () => {
-              const pos = await whalePositionsNow(pool);
-              for (const coin of ["BTC", "ETH", "SOL"]) {
-                const p = pos.filter((x) => x.coin === coin);
-                const longUsd = p.filter((x) => x.side === "long").reduce((a, x) => a + x.v, 0);
-                const shortUsd = p.filter((x) => x.side === "short").reduce((a, x) => a + x.v, 0);
-                if (longUsd + shortUsd < 5_000_000) continue;
-                const longPct = (100 * longUsd) / (longUsd + shortUsd);
-                if (Math.abs(longPct - 50) < 10) continue;
-                const [meta, ctxs] = await hl({ type: "metaAndAssetCtxs" });
-                const i = meta.universe.findIndex((u) => u.name === coin);
-                const fundingPos = num(ctxs[i]?.funding) >= 0;
-                return { ref: `k:${today}`, text: crowdText(coin, longPct, fundingPos), svg: crowdCardSvg(coin, longPct, longUsd, shortUsd) };
-              }
-              return null;
-            } },
-          { kind: "biggest", ok: n("biggest") < 1 && !prime, make: async () => {
-              const p = (await whalePositionsNow(pool)).sort((a, b) => b.v - a.v)[0];
-              return p && p.v >= 5_000_000 && { ref: `b:${today}`, text: biggestText(p), svg: whaleCardSvg({ coin: p.coin, kind: "open", side: p.side, usd: p.v, px: p.e, lev: p.l }, { rank: p.rank, pnl_month: 0, account_value: 0 }) };
-            } },
-          { kind: "funding", ok: n("funding") < 1, make: async () => { const f = await extremeFunding(); return f && { ref: `u:${today}`, text: fundingText(f), svg: fundingCardSvg(f) }; } },
-          { kind: "predict", ok: ago("predict") >= (prime ? 1.5 : 3), make: async () => {
-              const q = await nextPrediction();
-              if (!q) return null;
-              const title = q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2");
-              const m = /^(\w+) above \$([\d,.]+)/.exec(q.title);
-              const meta = m && q.expiry ? { underlying: m[1], target: Number(m[2].replace(/,/g, "")), expiry: q.expiry, yes: q.sides[0].price } : null;
-              return { ref: `p:${q.outcome}`, text: predictText({ ...q, title }, q.sides[0].price), svg: predictCardSvg({ tab: q.tab, title, sides: q.sides }), meta };
-            } },
-        ]
-          .filter((k) => k.ok)
-          .sort((a, b) => (s.last[a.kind] || 0) - (s.last[b.kind] || 0));
-        for (const k of post ? [] : kinds) {
-          const made = await k.make().catch((e) => (log(`x bot: ${k.kind}: ${String(e.message).slice(0, 150)}`), null));
-          if (made) {
-            post = { kind: k.kind, ...made };
-            break;
+        if (!post) {
+          const make = makers(pool);
+          // a planned post whose time has come today (and not more than 3 hours late)
+          for (const p of PLAN) {
+            if (n(p.kind) > 0) continue;
+            const t = slotTime(p.kind, p.at, now);
+            if (now < t || now > t + 3 * 3600e3) continue;
+            const made = await make[p.kind]().catch((e) => (log(`x bot: ${p.kind}: ${String(e.message).slice(0, 150)}`), null));
+            if (made) {
+              post = { kind: p.kind, ...made };
+              break;
+            }
           }
         }
         if (post) await send(post);
