@@ -81,12 +81,20 @@ function b58decode(s) {
   return Uint8Array.from(bytes);
 }
 
+/**
+ * The keeper's key, in whichever form a wallet exports it: base58 (Phantom, MetaMask), hex
+ * (with or without 0x), or a [1,2,…] list; the full 64-byte key or its 32-byte seed.
+ */
 function keeperKeypair(web3, raw) {
-  const t = String(raw || "").trim();
+  const t = String(raw || "").trim().replace(/^["']|["']$/g, "");
   if (!t) return null;
-  const bytes = t.startsWith("[") ? Uint8Array.from(JSON.parse(t)) : b58decode(t);
-  if (bytes.length !== 64) throw new Error("SOLANA_KEEPER_KEY should be a 64-byte secret key");
-  return web3.Keypair.fromSecretKey(bytes);
+  let bytes;
+  if (t.startsWith("[")) bytes = Uint8Array.from(JSON.parse(t));
+  else if (/^(0x)?[0-9a-fA-F]{64}$|^(0x)?[0-9a-fA-F]{128}$/.test(t)) bytes = Uint8Array.from(Buffer.from(t.replace(/^0x/, ""), "hex"));
+  else bytes = b58decode(t);
+  if (bytes.length === 32) return web3.Keypair.fromSeed(bytes);
+  if (bytes.length === 64) return web3.Keypair.fromSecretKey(bytes);
+  throw new Error("SOLANA_KEEPER_KEY isn't a Solana secret key (copy it again from the wallet)");
 }
 
 /** Sends a signed transaction and waits until it's confirmed (or its blockhash runs out). */
