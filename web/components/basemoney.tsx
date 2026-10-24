@@ -19,6 +19,8 @@ import { friendlyError } from "@/lib/format";
 import { openMoney, refreshPortfolio, afterTrade } from "@/lib/portfolio";
 import { call } from "@/lib/tx";
 import { gasUsdcOf, usdcGasChain } from "@/lib/usdcgas";
+import { solanaFor } from "@/lib/solana";
+import { NetworkPicker, SolanaDeposit, SolanaWithdraw } from "./solanamoney";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const NET = IS_TESTNET ? "Base Sepolia" : "Base";
@@ -146,11 +148,24 @@ export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const sol = solanaFor(address);
+  const [net, setNet] = useState<"base" | "solana">("solana");
+  if (sol && net === "solana")
+    return (
+      <Sheet title="Deposit" onClose={onClose}>
+        <div className="flex flex-col gap-4 min-w-0">
+          <MoneyTabs active="deposit" />
+          <NetworkPicker value={net} onChange={setNet} />
+          <SolanaDeposit />
+        </div>
+      </Sheet>
+    );
+
   return (
     <Sheet title="Deposit" onClose={onClose}>
       <div className="flex flex-col gap-4 min-w-0">
         <MoneyTabs active="deposit" />
-        <NetworkTag />
+        {sol ? <NetworkPicker value={net} onChange={setNet} /> : <NetworkTag />}
         <div className="flex flex-col items-center gap-3">
           <div className="w-[180px] h-[180px] rounded-2xl bg-white p-2 grid place-items-center border border-line">
             {qr ? (
@@ -186,6 +201,8 @@ export function BaseDepositSheet({ onClose }: { onClose: () => void }) {
 
 export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
   const { address, send, embedded } = useWallet();
+  const sol = solanaFor(address);
+  const [net, setNet] = useState<"base" | "solana">("solana");
   const { bal, reload } = useBaseUsdc(address, 8000);
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
@@ -236,6 +253,17 @@ export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
     }
   };
 
+  if (sol && net === "solana")
+    return (
+      <Sheet title="Withdraw" onClose={onClose}>
+        <div className="flex flex-col gap-4 min-w-0">
+          <MoneyTabs active="withdraw" />
+          <NetworkPicker value={net} onChange={setNet} />
+          <SolanaWithdraw onDone={onClose} />
+        </div>
+      </Sheet>
+    );
+
   if (scan)
     return (
       <QrScanner
@@ -269,7 +297,7 @@ export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <div className="flex flex-col gap-4 min-w-0">
-          <NetworkTag />
+          {sol ? <NetworkPicker value={net} onChange={setNet} /> : <NetworkTag />}
           <label className="flex flex-col gap-1.5">
             <span className="text-[0.8125rem] text-ink-3">To ({NET} address)</span>
             <div className="flex gap-2 min-w-0">
