@@ -2,7 +2,7 @@
 
 /**
  * The user's Solana wallet, whichever kind: an email account's own Solana wallet (made the
- * first time it's needed), or Phantom & co. for people who use a browser wallet.
+ * first time it's needed), or the browser wallet's Solana account (MetaMask, Phantom & co.).
  */
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "./wallet";
@@ -17,13 +17,12 @@ export function useSolSigner() {
   useEffect(() => {
     if (w.embedded || !w.address || ext) return;
     let alive = true;
-    void import("@/lib/solwallet").then(async ({ solanaProvider }) => {
-      const found = solanaProvider();
+    void import("@/lib/solwallet").then(async ({ solanaWallet }) => {
+      const found = solanaWallet();
       if (!found) return;
       try {
-        const r = await found.p.connect({ onlyIfTrusted: true });
-        const key = (r && "publicKey" in r && r.publicKey) || found.p.publicKey;
-        if (alive && key) setExt({ name: found.name, address: key.toString() });
+        const address = await found.connect(true);
+        if (alive && address) setExt({ name: found.name, address });
       } catch {
         /* not trusted yet: it asks when the user acts */
       }
