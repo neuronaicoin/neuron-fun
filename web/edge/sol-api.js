@@ -13,7 +13,8 @@
  *                               (sent before signing); the keeper checks it on chain (and takes
  *                               its creator from there) before sasa lists it
  *   GET  /api/sol/coin/<mint>   { status }: pending / live / bad
- *   GET  /api/sol/recent        the last 10 launches with what the keeper found (to check on them)
+ *   GET  /api/sol/recent        the last 50 launches with what the keeper found and paid out (to check
+ *                               on them); paid_sol / sasa_sol: creator fees paid so far, and sasa's half
  *
  * No sign-in needed (the launch is checked on chain); a signed-in user's sasa address is kept
  * with the coin. Rate-limited per network address.
@@ -159,8 +160,11 @@ async function status(env, mint, sb) {
 
 /** The latest Solana launches and what the keeper found (public facts, all on chain anyway). */
 async function recent(env, sb) {
-  const { data } = await sb(env, "sol_coins?select=mint,name,symbol,status,note,locked,created_at,checked_at,price_usd&order=created_at.desc&limit=10");
-  return json({ coins: data || [] });
+  const { data } = await sb(env, "sol_coins?select=mint,name,symbol,status,note,locked,created_at,checked_at,price_usd,paid_lamports,payouts,paid_at&order=created_at.desc&limit=50");
+  const coins = data || [];
+  // creator fees paid out so far (each payout splits 50/50: half to sasa's treasury)
+  const paid = coins.reduce((n, c) => n + Number(c.paid_lamports || 0), 0) / 1e9;
+  return json({ paid_sol: Number(paid.toFixed(6)), sasa_sol: Number((paid / 2).toFixed(6)), coins });
 }
 
 export async function solRoute(env, request, me, parts, method, body, { sb, underLimit }) {
