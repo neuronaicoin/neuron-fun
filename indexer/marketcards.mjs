@@ -126,7 +126,7 @@ function png(svg) {
 }
 
 /** The markets worth a card: the busiest crypto, and every stock, commodity, index and FX (USDC builder exchanges). */
-async function futuresMarkets() {
+export async function futuresMarkets() {
   const [meta, ctxs] = await info({ type: "metaAndAssetCtxs" });
   const rows = [];
   meta.universe.forEach((u, i) => {

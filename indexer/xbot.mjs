@@ -3,6 +3,10 @@
 //   - whale moves: a top-30 trader (Data tab) opens, flips, adds to or closes a position worth
 //     $500K or more (whale_moves, written by whales.mjs)
 //   - predictions: now and then an open BTC / ETH price question that is close to 50/50
+//   - sasa races: a decided race (coin, chains, winner), at most 2 a day
+//   - recap: the day's best traders so far, every 8 hours (3 a day)
+//   - stocks: the biggest stock / commodity futures mover, every 8 hours (3 a day)
+//   - fear & greed: once a day
 //
 // It never replies, mentions, follows, likes or reads anyone's posts (X's automation rules allow
 // automated posts on your own account; automated replies to others are not allowed). No links in
@@ -10,6 +14,7 @@
 //
 // Limits: at most XBOT_PER_DAY posts in 24 hours (default 30), at least XBOT_GAP_MIN minutes apart
 // (default 30), the same trader + coin at most once in 6 hours, a prediction at most every 3 hours.
+// Whale moves come first; the other kinds fill the quiet times.
 //
 // Env (all four keys are the @sasapadfun app's OAuth 1.0a keys, from console.x.com):
 //   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET   without them this does nothing
@@ -19,8 +24,8 @@
 
 import { createHmac, randomBytes } from "node:crypto";
 import { Resvg } from "@resvg/resvg-js";
-import { FONTS, WORDMARK, clip, escXml as esc, mark } from "./cards.mjs";
-import { predictCardSvg } from "./marketcards.mjs";
+import { FONTS, WORDMARK, clip, escXml as esc, mark, raceCardName } from "./cards.mjs";
+import { futuresCardSvg, futuresMarkets, predictCardSvg } from "./marketcards.mjs";
 import { fetchPredict } from "./predictboard.mjs";
 
 const API = "https://api.x.com";
@@ -67,14 +72,21 @@ async function xPost(keys, path, body) {
   return j;
 }
 
-/** Posts `text` with one PNG; returns the post id. */
-export async function postWithImage(keys, text, png) {
-  const m = await xPost(keys, "/2/media/upload", { media: Buffer.from(png).toString("base64"), media_category: "tweet_image" });
-  const mediaId = m?.data?.id;
-  if (!mediaId) throw new Error("X media upload: no id");
-  const t = await xPost(keys, "/2/tweets", { text, media: { media_ids: [String(mediaId)] } });
+/** Posts `text` (with one PNG, a poll, or as a reply / quote of one of our posts); returns the post id. */
+export async function postTweet(keys, { text, png = null, poll = null, replyTo = null, quote = null }) {
+  const body = { text };
+  if (png) {
+    const m = await xPost(keys, "/2/media/upload", { media: Buffer.from(png).toString("base64"), media_category: "tweet_image" });
+    if (!m?.data?.id) throw new Error("X media upload: no id");
+    body.media = { media_ids: [String(m.data.id)] };
+  }
+  if (poll) body.poll = poll;
+  if (replyTo) body.reply = { in_reply_to_tweet_id: String(replyTo) };
+  if (quote) body.quote_tweet_id = String(quote);
+  const t = await xPost(keys, "/2/tweets", body);
   return t?.data?.id ?? null;
 }
+export const postWithImage = (keys, text, png) => postTweet(keys, { text, png });
 
 // ------------------------------------------------------------------ words
 
@@ -155,6 +167,54 @@ export function predictText(q, yes) {
   return `${pick(lines)}\n\n#${L} #Predictions #Crypto #${NAMES[L] ? NAMES[L].replace(/[^A-Za-z]/g, "") : "Trading"}`;
 }
 
+const CHAIN = { 8453: "BASE", 56: "BNB", 4663: "ROBINHOOD", 5042: "ARC" };
+
+export function raceText(r) {
+  const chains = (r.chains || []).map((c) => CHAIN[c]).filter(Boolean);
+  const win = CHAIN[r.winner_chain] || "one chain";
+  const sym = `$${String(r.symbol).toUpperCase().replace(/[^A-Z0-9]/g, "")}`;
+  const usd = num(r.total_usd) > 0 ? money(num(r.total_usd)) : null;
+  const lines = [
+    `${sym} just raced on ${chains.length || "several"} chains at once. ${win} won${usd ? ` with ${usd} in` : ""} 🏁\n\nall the money from the losing chains moved to the winner`,
+    `5 minutes. ${chains.length || "4"} chains. one winner.\n\n${sym} picked ${win}${usd ? `, ${usd} raced` : ""} 👀`,
+    `${win} took the ${sym} race 🏁${usd ? ` ${usd} in, the losers' money merged into it` : ""}\n\nnext race could be yours`,
+  ];
+  return `${pick(lines)}\n\n#${sym.slice(1)} #MemeCoin #${win === "ROBINHOOD" ? "RobinhoodChain" : win === "BNB" ? "BNBChain" : win === "ARC" ? "Arc" : "Base"} #Crypto`;
+}
+
+export function recapText(top) {
+  const a = top[0];
+  const lines = [
+    `today's best WHALE is already up ${money(a.pnl_day)} 👀\n\n#2 and #3 aren't far behind. guess what they're holding`,
+    `${money(a.pnl_day)} made today by one wallet. TODAY.\n\nhere's who's printing right now`,
+    `the top 3 WHALES made ${money(top.reduce((x, w) => x + w.pnl_day, 0))} between them today. you're watching the wrong charts`,
+  ];
+  return `${pick(lines)}\n\n#Whales #Crypto #Trading #WhaleAlert`;
+}
+
+export function stockText(m, weekend) {
+  const L = m.label.toUpperCase();
+  const ch = `${m.change >= 0 ? "+" : "-"}${Math.abs(m.change).toFixed(1)}%`;
+  const name = NAMES[L] || m.name || L;
+  const lines = weekend
+    ? [`markets are closed. ${L} isn't 👀 ${ch} this weekend\n\nmonday open is gonna be interesting`, `wall street is sleeping and ${name} is ${ch} 👀\n\nyou can still long or short it right now`]
+    : [`${name} ${ch} today and it's not stopping when the bell rings 👀\n\ntrades 24/7, nights and weekends`, `${L} ${ch}. biggest mover of the day\n\nlong or short it 24/7, even when the market's closed`];
+  return `${pick(lines)}\n\n#${L} #${name.replace(/[^A-Za-z0-9]/g, "")} #Stocks #Trading`.replace(`#${L} #${L} `, `#${L} `);
+}
+
+const FG = (v) => (v <= 24 ? "EXTREME FEAR" : v <= 44 ? "FEAR" : v <= 55 ? "NEUTRAL" : v <= 74 ? "GREED" : "EXTREME GREED");
+export function fearText(score, prev) {
+  const label = FG(score);
+  const move = prev !== null && prev !== undefined && prev !== score ? ` (${prev > score ? "down" : "up"} from ${prev} yesterday)` : "";
+  const lines =
+    score <= 44
+      ? [`crypto fear & greed is at ${score}${move}. ${label} 😬\n\nbe greedy when others are fearful… right?`, `${score}/100. ${label}.\n\nthis is usually where WHALES start buying quietly 👀`]
+      : score >= 56
+        ? [`fear & greed just hit ${score}${move}. ${label} 🤑\n\nlast time it was this high, people got liquidated`, `${score}/100. everyone's feeling smart again 👀`]
+        : [`fear & greed sitting at ${score}${move}. nobody knows what's next and that's exactly when the big moves come 👀`];
+  return `${pick(lines)}\n\n#Bitcoin #Crypto #FearAndGreed #BTC`;
+}
+
 // ------------------------------------------------------------------ cards
 
 const frame = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
@@ -186,6 +246,35 @@ ${stat(780, w.account_value > 0 ? money(w.account_value) : "—", "account")}
 <text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">Follow every move live <tspan fill="#FF6B1A">· copy with one tap on sasa</tspan></text>`);
 }
 
+export function recapCardSvg(top) {
+  const rows = top
+    .slice(0, 3)
+    .map((w, i) => {
+      const y = 260 + i * 105;
+      return `<text x="80" y="${y + 52}" font-family="Sora" font-weight="700" font-size="44" fill="#8F7F73">#${i + 1}</text>
+<text x="190" y="${y + 52}" font-family="Sora" font-weight="700" font-size="44" fill="#FFF4EC">${esc(clip(w.name || `Whale #${w.rank}`, 18))}</text>
+<text x="1120" y="${y + 52}" text-anchor="end" font-family="Sora" font-weight="700" font-size="52" fill="#2BC06D">+${esc(money(w.pnl_day))}</text>`;
+    })
+    .join("\n");
+  return frame(`<g transform="translate(80,140)"><rect width="300" height="48" rx="24" fill="#FF6B1A"/><text x="150" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FFFFFF">TODAY'S TOP WHALES</text></g>
+${rows}
+<text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">See what they hold <tspan fill="#FF6B1A">· copy with one tap on sasa</tspan></text>`);
+}
+
+export function fearCardSvg(score) {
+  const label = FG(score);
+  const color = score <= 24 ? "#F0565E" : score <= 44 ? "#F59E42" : score <= 55 ? "#E8C547" : score <= 74 ? "#8BD15A" : "#2BC06D";
+  const x = 80 + (1040 * score) / 100;
+  return frame(`<g transform="translate(80,140)"><rect width="300" height="48" rx="24" fill="#2A1A10"/><text x="150" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FF6B1A">FEAR &amp; GREED INDEX</text></g>
+<text x="76" y="350" font-family="Sora" font-weight="700" font-size="150" fill="${color}">${score}</text>
+<text x="${76 + String(score).length * 92 + 40}" y="340" font-family="Sora" font-weight="700" font-size="60" fill="#FFF4EC">${esc(label)}</text>
+<defs><linearGradient id="fg" x1="0" x2="1"><stop offset="0" stop-color="#F0565E"/><stop offset="0.5" stop-color="#E8C547"/><stop offset="1" stop-color="#2BC06D"/></linearGradient></defs>
+<rect x="80" y="420" width="1040" height="22" rx="11" fill="url(#fg)"/>
+<circle cx="${x}" cy="431" r="22" fill="#FFF4EC" stroke="#0B0806" stroke-width="6"/>
+<text x="80" y="480" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">0 fear</text><text x="1120" y="480" text-anchor="end" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">greed 100</text>
+<text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">Live market mood <tspan fill="#FF6B1A">· on sasa</tspan></text>`);
+}
+
 const png = (svg) => new Resvg(svg, { fitTo: { mode: "width", value: W }, font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: "Sora" } }).render().asPng();
 
 // ------------------------------------------------------------------ the loop
@@ -198,6 +287,8 @@ const SQL = `create table if not exists xbot_posts (
   post_id   text,
   posted_at timestamptz not null default now()
 );
+alter table xbot_posts add column if not exists meta jsonb;
+alter table xbot_posts add column if not exists done boolean not null default false;
 alter table xbot_posts enable row level security;
 revoke all on xbot_posts from anon, authenticated;`;
 
@@ -215,6 +306,11 @@ async function nextWhale(pool, minUsd) {
   for (const r of rows) {
     const recent = await pool.query(`select 1 from xbot_posts where kind = 'whale' and ref like $1 and posted_at > now() - interval '6 hours' limit 1`, [`w:%:${r.address}:${r.coin}`]);
     if (recent.rowCount) continue;
+    // a close of a position we already posted: the follow-up under that post says it instead
+    if (r.kind === "close") {
+      const ours = await pool.query(`select 1 from xbot_posts where kind = 'whale' and meta->>'address' = $1 and meta->>'coin' = $2 and posted_at > now() - interval '3 days' limit 1`, [r.address, r.coin]);
+      if (ours.rowCount) continue;
+    }
     // numeric columns arrive as strings
     return { ...r, usd: num(r.usd), px: num(r.px), lev: num(r.lev), rank: num(r.rank) || null, pnl_month: num(r.pnl_month), account_value: num(r.account_value) };
   }
@@ -233,6 +329,263 @@ async function nextPrediction() {
   return ok[0] || null;
 }
 
+async function nextRace(pool) {
+  const { rows } = await pool.query(
+    `select c.id, c.symbol, c.name, c.winner_chain, c.total_usd, array_agg(r.chain_id) as chains
+     from race_coins c join race_chains r on r.coin_id = c.id
+     where c.winner_chain is not null and c.decided_at > now() - interval '2 hours'
+       and c.name !~* '^test' and not exists (select 1 from xbot_posts p where p.ref = 'r:' || c.id)
+     group by c.id order by c.total_usd desc nulls last limit 1`
+  );
+  return rows[0] || null;
+}
+
+async function raceCard(id) {
+  const base = process.env.SUPABASE_URL;
+  if (!base) return null;
+  const r = await fetch(`${base}/storage/v1/object/public/cards/${raceCardName(id)}`);
+  return r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+}
+
+async function topToday(pool) {
+  const { rows } = await pool.query(`select address, rank, name, pnl_day from whales where listed and pnl_day > 0 order by pnl_day desc limit 3`);
+  return rows.map((r) => ({ ...r, pnl_day: num(r.pnl_day), rank: num(r.rank) }));
+}
+
+async function fearNow(pool) {
+  const { rows } = await pool.query(
+    `select (select score from fear_greed order by t desc limit 1) as now,
+            (select score from fear_greed where t <= now() - interval '23 hours' order by t desc limit 1) as prev`
+  );
+  return rows[0]?.now === null || rows[0]?.now === undefined ? null : { score: num(rows[0].now), prev: rows[0].prev === null ? null : num(rows[0].prev) };
+}
+
+// ------------------------------------------------------------------ more kinds
+
+const HL = "https://api.hyperliquid.xyz/info";
+async function hl(body) {
+  const r = await fetch(HL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`hyperliquid ${r.status}`);
+  return r.json();
+}
+const pct = (v) => `${v >= 0 ? "+" : "-"}${Math.abs(v) >= 100 ? Math.round(Math.abs(v)) : Math.abs(v).toFixed(1)}%`;
+const NET = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
+const sym = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) || "COIN";
+
+/** The biggest gainer of the top 300 today (not posted in the last 24 h). */
+async function nextSpot(pool) {
+  const { rows } = await pool.query(
+    `select cg_id, rank, name, symbol, price_usd, change_24h, mcap_usd from top_coins
+     where listed and rank <= 300 and change_24h >= 5 and coalesce(vol_24h, 0) >= 1000000
+       and not exists (select 1 from xbot_posts p where p.ref = 'g:' || cg_id || ':' || to_char(now(), 'YYYY-MM-DD'))
+     order by change_24h desc limit 1`
+  );
+  const r = rows[0];
+  return r ? { ...r, price_usd: num(r.price_usd), change_24h: num(r.change_24h), mcap_usd: num(r.mcap_usd), rank: num(r.rank) } : null;
+}
+
+/** The hottest meme of the day on other DEXs: real volume and liquidity, passed the safety check. */
+async function nextMeme(pool) {
+  const { rows } = await pool.query(
+    `select network, address, name, symbol, price_usd, change_24h, mcap_usd, fdv_usd, vol_24h, liq_usd from ext_coins
+     where change_24h >= 30 and vol_24h >= 200000 and liq_usd >= 75000 and coalesce(mcap_usd, fdv_usd) >= 300000
+       and not exists (select 1 from xbot_posts p where p.ref = 'm:' || network || ':' || address)
+     order by change_24h desc limit 1`
+  );
+  const r = rows[0];
+  return r ? { ...r, change_24h: num(r.change_24h), mcap: num(r.mcap_usd) || num(r.fdv_usd), vol: num(r.vol_24h), liq: num(r.liq_usd) } : null;
+}
+
+export function spotText(c) {
+  const S = sym(c.symbol);
+  const lines = [
+    `${S} ${pct(c.change_24h)} today. biggest gainer in the top 300 right now 👀\n\nstill early or already too late?`,
+    `nothing in the top 300 is pumping like ${S} today. ${pct(c.change_24h)} 🚀\n\nyou holding any?`,
+    `${c.name} just did ${pct(c.change_24h)} in a day. #${c.rank} by market cap and moving like a meme 👀`,
+  ];
+  return `${pick(lines)}\n\n#${S} #Crypto #Altcoins #TopGainers`;
+}
+export function memeText(c) {
+  const S = sym(c.symbol);
+  const net = NET[c.network] || String(c.network).toUpperCase();
+  const lines = [
+    `this meme is ${pct(c.change_24h)} today on ${net} 👀\n\n$${S}. ${money(c.vol)} volume in 24h. people are paying attention`,
+    `$${S} ${pct(c.change_24h)} in 24 hours. ${money(c.mcap)} market cap now\n\nwho caught this one early? 🙋`,
+    `${pct(c.change_24h)} today. $${S} on ${net} is the hottest meme out there right now 🔥`,
+  ];
+  return `${pick(lines)}\n\n#${S} #MemeCoin #${net === "BNB" ? "BNBChain" : net.charAt(0) + net.slice(1).toLowerCase()} #Crypto`;
+}
+
+export function spotCardSvg(c) {
+  const S = sym(c.symbol);
+  const up = c.change_24h >= 0;
+  return frame(`<g transform="translate(80,140)"><rect width="330" height="48" rx="24" fill="#FF6B1A"/><text x="165" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FFFFFF">TOP GAINER TODAY</text></g>
+<text x="76" y="320" font-family="Sora" font-weight="700" font-size="${S.length <= 6 ? 120 : 84}" fill="#FFF4EC">${esc(S)}</text>
+<text x="80" y="385" font-family="Sora" font-weight="600" font-size="38" fill="#A8978A">${esc(clip(c.name, 26))}${c.rank ? ` · #${c.rank}` : ""}</text>
+<text x="1120" y="320" text-anchor="end" font-family="Sora" font-weight="700" font-size="110" fill="${up ? "#2BC06D" : "#F0565E"}">${esc(pct(c.change_24h))}</text>
+<text x="1120" y="385" text-anchor="end" font-family="IBM Plex Mono" font-size="38" fill="#FFF4EC">${esc(c.price_usd ? px(c.price_usd) : "")}</text>
+<line x1="80" y1="445" x2="1120" y2="445" stroke="#2E231A" stroke-width="2"/>
+<text x="80" y="520" font-family="Sora" font-weight="700" font-size="40" fill="#FFF4EC">Buy or sell <tspan fill="#FF6B1A">${esc(S)}</tspan> on sasa</text>
+<text x="80" y="575" font-family="Sora" font-weight="600" font-size="26" fill="#8F7F73">The 300 biggest coins, one tap, any chain.</text>`);
+}
+export function memeCardSvg(c) {
+  const S = sym(c.symbol);
+  const net = NET[c.network] || String(c.network).toUpperCase();
+  const stat = (x, v, l) => `<text x="${x}" y="500" font-family="Sora" font-weight="700" font-size="44" fill="#FFF4EC">${esc(v)}</text><text x="${x + 2}" y="540" font-family="IBM Plex Mono" font-size="22" fill="#8F7F73">${esc(l)}</text>`;
+  return frame(`<g transform="translate(80,140)"><rect width="300" height="48" rx="24" fill="#FF6B1A"/><text x="150" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FFFFFF">HOTTEST MEME</text></g>
+<text x="76" y="320" font-family="Sora" font-weight="700" font-size="${S.length <= 6 ? 120 : 84}" fill="#FFF4EC">$${esc(S)}</text>
+<text x="80" y="385" font-family="Sora" font-weight="600" font-size="38" fill="#A8978A">${esc(clip(c.name || S, 22))} · ${esc(net)}</text>
+<text x="1120" y="320" text-anchor="end" font-family="Sora" font-weight="700" font-size="110" fill="#2BC06D">${esc(pct(c.change_24h))}</text>
+${stat(80, money(c.mcap), "market cap")}${stat(450, money(c.vol), "volume 24h")}${stat(780, money(c.liq), "liquidity")}
+<text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">Trade any meme <tspan fill="#FF6B1A">· or launch your own on sasa</tspan></text>`);
+}
+
+/** The top 30 traders' positions, from whale_state: [{ address, rank, coin, side, v, e, l }]. */
+async function whalePositionsNow(pool) {
+  const { rows } = await pool.query(
+    `select w.address, w.rank, w.name, s.positions from whales w join whale_state s on s.address = w.address
+     where w.listed and w.rank <= 30 and s.checked_at > now() - interval '30 minutes'`
+  );
+  const out = [];
+  for (const r of rows)
+    for (const [coin, p] of Object.entries(r.positions || {})) out.push({ address: r.address, rank: num(r.rank), name: r.name, coin, side: p.s > 0 ? "long" : "short", v: num(p.v), e: num(p.e), l: num(p.l) });
+  return out;
+}
+
+export function crowdText(coin, longPct, fundingPos) {
+  const L = labelOf(coin);
+  const side = longPct >= 50 ? "LONG" : "SHORT";
+  const p = Math.round(longPct >= 50 ? longPct : 100 - longPct);
+  const crowd = fundingPos ? "long" : "short";
+  const disagree = (side === "LONG") !== fundingPos;
+  const lines = disagree
+    ? [`top 30 WHALES are ${p}% ${side} on ${L} right now. the crowd is ${crowd}. someone's about to be very wrong 👀`, `smart money: ${p}% ${side} on ${L}. everyone else: ${crowd}.\n\nwho are you betting on?`]
+    : [`${p}% of the top 30 WHALES are ${side} on ${L} right now. the crowd agrees… that's usually when it gets interesting 👀`, `WHALES and retail both ${side.toLowerCase()} ${L}. ${p}% of the big money on one side. what could go wrong`];
+  return `${pick(lines)}\n\n#${L} #Whales #Crypto #${NAMES[L] ? NAMES[L].replace(/[^A-Za-z]/g, "") : "Trading"}`;
+}
+export function crowdCardSvg(coin, longPct, longUsd, shortUsd) {
+  const L = labelOf(coin);
+  const w = Math.round(1040 * longPct / 100);
+  return frame(`<g transform="translate(80,140)"><rect width="330" height="48" rx="24" fill="#2A1A10"/><text x="165" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FF6B1A">TOP 30 WHALES ON ${esc(L)}</text></g>
+<text x="76" y="320" font-family="Sora" font-weight="700" font-size="100" fill="#2BC06D">${Math.round(longPct)}% LONG</text>
+<text x="1120" y="320" text-anchor="end" font-family="Sora" font-weight="700" font-size="56" fill="#F0565E">${Math.round(100 - longPct)}% SHORT</text>
+<rect x="80" y="380" width="1040" height="36" rx="18" fill="#F0565E"/><rect x="80" y="380" width="${Math.max(36, w)}" height="36" rx="18" fill="#2BC06D"/>
+<text x="80" y="470" font-family="IBM Plex Mono" font-size="26" fill="#A8978A">${esc(money(longUsd))} long</text><text x="1120" y="470" text-anchor="end" font-family="IBM Plex Mono" font-size="26" fill="#A8978A">${esc(money(shortUsd))} short</text>
+<text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">See every position live <tspan fill="#FF6B1A">· on sasa</tspan></text>`);
+}
+
+export function biggestText(p) {
+  const L = labelOf(p.coin);
+  const lines = [
+    `the biggest bet a top WHALE has on right now: ${money(p.v)} ${p.side.toUpperCase()} on ${L} 👀\n\nif this goes wrong…`,
+    `${money(p.v)}. one position. ${L} ${p.side.toUpperCase()}${p.l ? ` at ${Math.round(p.l)}x` : ""}\n\nthis is what conviction looks like`,
+    `someone is sitting on a ${money(p.v)} ${L} ${p.side} right now and not blinking 😳`,
+  ];
+  return `${pick(lines)}\n\n${tagsFor(L)}`;
+}
+
+/** The most extreme funding among busy markets: { coin, rate (hourly), apr, oi }. */
+async function extremeFunding() {
+  const [meta, ctxs] = await hl({ type: "metaAndAssetCtxs" });
+  let best = null;
+  meta.universe.forEach((u, i) => {
+    const c = ctxs[i];
+    if (!c || u.isDelisted) return;
+    const oi = num(c.openInterest) * num(c.markPx);
+    const f = num(c.funding);
+    if (oi < 5_000_000) return;
+    if (!best || Math.abs(f) > Math.abs(best.rate)) best = { coin: u.name, rate: f, apr: f * 24 * 365 * 100, oi };
+  });
+  return best && Math.abs(best.rate) >= 0.0001 ? best : null; // ≥ 0.01% an hour (~88% a year)
+}
+export function fundingText(f) {
+  const L = labelOf(f.coin);
+  const payers = f.rate > 0 ? "longs are paying shorts" : "shorts are paying longs";
+  const lines = [
+    `${payers} ${Math.abs(f.apr).toFixed(0)}% a year on ${L} right now 😳\n\nthat doesn't last. something's about to snap`,
+    `funding on ${L} just went crazy. ${payers} every hour\n\nthis is how squeezes start 👀`,
+  ];
+  return `${pick(lines)}\n\n#${L} #Funding #Crypto #Trading`;
+}
+export function fundingCardSvg(f) {
+  const L = labelOf(f.coin);
+  return frame(`<g transform="translate(80,140)"><rect width="300" height="48" rx="24" fill="#2A1A10"/><text x="150" y="32" text-anchor="middle" font-family="Sora" font-weight="700" font-size="21" fill="#FF6B1A">FUNDING ALERT</text></g>
+<text x="76" y="320" font-family="Sora" font-weight="700" font-size="120" fill="#FFF4EC">${esc(clip(L, 10))}</text>
+<text x="1120" y="320" text-anchor="end" font-family="Sora" font-weight="700" font-size="96" fill="${f.rate > 0 ? "#F0565E" : "#2BC06D"}">${Math.abs(f.apr).toFixed(0)}%/yr</text>
+<text x="80" y="400" font-family="Sora" font-weight="600" font-size="40" fill="#A8978A">${f.rate > 0 ? "longs paying shorts" : "shorts paying longs"} · ${esc(money(f.oi))} open</text>
+<text x="80" y="600" font-family="Sora" font-weight="600" font-size="24" fill="#8F7F73">Long or short ${esc(L)} <tspan fill="#FF6B1A">· on sasa</tspan></text>`);
+}
+
+export function pollText() {
+  const lines = [
+    `BTC by tonight. UP or DOWN? 👇\n\nno "crab" option, pick a side`,
+    `where's bitcoin by the end of the day? vote and come back to flex 👇`,
+    `quick one. BTC tonight 👇`,
+  ];
+  return `${pick(lines)}\n\n#BTC #Bitcoin #Crypto #Poll`;
+}
+
+/** A whale open we posted that has since been closed: { post, pnl, hours, closePx }. */
+async function nextFollowup(pool) {
+  const { rows } = await pool.query(
+    `select p.id, p.post_id, p.meta, p.posted_at, m.px as close_px, m.t as closed_at
+     from xbot_posts p
+     join lateral (select px, t from whale_moves m where m.address = p.meta->>'address' and m.coin = p.meta->>'coin'
+                   and m.kind = 'close' and m.t > p.posted_at order by m.t limit 1) m on true
+     where p.kind = 'whale' and not p.done and p.post_id is not null and p.meta->>'kind' in ('open','flip','add')
+       and p.posted_at > now() - interval '3 days'
+     order by m.t limit 1`
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const o = r.meta;
+  const entry = num(o.px);
+  const close = num(r.close_px);
+  if (!(entry > 0 && close > 0)) return { post: r, pnl: null };
+  const pnl = (close / entry - 1) * num(o.usd) * (o.side === "long" ? 1 : -1);
+  return { post: r, pnl, hours: (new Date(r.closed_at) - new Date(r.posted_at)) / 3600e3, closePx: close };
+}
+export function followupText(f) {
+  const t = f.hours < 1 ? `${Math.max(1, Math.round(f.hours * 60))} minutes` : `${Math.round(f.hours)}h`;
+  if (f.pnl === null) return `he just closed it 👀`;
+  if (f.pnl >= 0)
+    return pick([`remember this one? he just closed it. +${money(f.pnl)} in ${t} 👀\n\nfollow so you catch the next one`, `and it's done. +${money(f.pnl)} in ${t}. told you this wallet doesn't miss much 🐋`]);
+  return pick([`closed. -${money(-f.pnl)} this time. even WHALES get it wrong sometimes`, `he's out. took a -${money(-f.pnl)} hit on this one. next move is the one to watch 👀`]);
+}
+
+/** A prediction we posted whose time is up: { post, yesWon, closePx }. */
+async function nextResult(pool) {
+  const { rows } = await pool.query(
+    `select id, post_id, meta from xbot_posts
+     where kind = 'predict' and not done and post_id is not null and meta ? 'expiry'
+       and (meta->>'expiry')::bigint < extract(epoch from now()) * 1000 - 120000
+       and posted_at > now() - interval '1 day'
+     order by posted_at limit 1`
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const m = r.meta;
+  const t = num(m.expiry);
+  const candles = await hl({ type: "candleSnapshot", req: { coin: m.underlying, interval: "1m", startTime: t - 120000, endTime: t + 60000 } });
+  const c = (candles || []).filter((k) => num(k.t) < t).pop();
+  if (!c) return { post: r, yesWon: null };
+  const close = num(c.c);
+  return { post: r, yesWon: close > num(m.target), closePx: close, yes: num(m.yes) };
+}
+export function resultText(r) {
+  const m = r.post.meta;
+  if (r.yesWon === null) return null;
+  const right = Math.round((r.yesWon ? r.yes : 1 - r.yes) * 100);
+  return pick([
+    `${r.yesWon ? "YES" : "NO"} won. ${m.underlying} was at ${px(r.closePx)} 👀\n\n${right}% called it. next one's already live`,
+    `and the answer is… ${r.yesWon ? "YES" : "NO"}. ${m.underlying} ${px(r.closePx)}\n\n${right < 50 ? "only " : ""}${right}% got it right. you in for the next one?`,
+  ]);
+}
+
+// ------------------------------------------------------------------ the loop
+
+const PRIME = (d = new Date()) => d.getUTCHours() >= 14 && d.getUTCHours() < 19; // 17:00–22:00 Türkiye, US market open
+
 export async function xbotLoop(pool, log) {
   if (process.env.XBOT_OFF === "1") return;
   const keys = { apiKey: process.env.X_API_KEY, apiSecret: process.env.X_API_SECRET, accessToken: process.env.X_ACCESS_TOKEN, accessSecret: process.env.X_ACCESS_SECRET };
@@ -240,45 +593,131 @@ export async function xbotLoop(pool, log) {
   const dry = process.env.XBOT_DRY === "1";
   const minUsd = Number(process.env.XBOT_MIN_USD ?? "500000");
   const perDay = Number(process.env.XBOT_PER_DAY ?? "30");
-  const gap = Number(process.env.XBOT_GAP_MIN ?? "30") * 60e3;
+  const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "8");
   await pool.query(SQL);
-  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; whale moves of ${money(minUsd)}+, up to ${perDay} posts a day`);
+  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; whale moves of ${money(minUsd)}+, up to ${perDay} posts + ${repliesPerDay} follow-ups a day`);
+
+  const send = async (post) => {
+    if (dry) {
+      log(`x bot (dry) ${post.kind}: ${post.text.replace(/\n+/g, " / ")}`);
+      await pool.query(`insert into xbot_posts (kind, ref, text, meta, post_id) values ($1, $2, $3, $4, 'dry') on conflict (ref) do nothing`, [post.kind, post.ref, post.text, post.meta ? JSON.stringify(post.meta) : null]);
+      return;
+    }
+    // the row first: if X takes the post but the answer is lost, it is never posted twice
+    const ins = await pool.query(`insert into xbot_posts (kind, ref, text, meta) values ($1, $2, $3, $4) on conflict (ref) do nothing returning id`, [post.kind, post.ref, post.text, post.meta ? JSON.stringify(post.meta) : null]);
+    if (!ins.rowCount) return;
+    let id;
+    try {
+      id = await postTweet(keys, { text: post.text, png: post.image ?? (post.svg ? png(post.svg) : null), poll: post.poll, replyTo: post.replyTo });
+    } catch (e) {
+      // a reply X won't take: say it as a quote of our own post instead
+      if (post.replyTo && /\b403\b/.test(e.message)) id = await postTweet(keys, { text: post.text, quote: post.replyTo });
+      else throw e;
+    }
+    await pool.query(`update xbot_posts set post_id = $2 where id = $1`, [ins.rows[0].id, id]);
+    log(`x bot: posted ${post.kind} (${id})`);
+  };
+
   let failures = 0;
   for (;;) {
     try {
-      const { rows } = await pool.query(
-        `select count(*)::int as day, max(posted_at) as last,
-                max(posted_at) filter (where kind = 'predict') as last_predict
-         from xbot_posts where posted_at > now() - interval '24 hours'`
-      );
-      const s = rows[0];
-      const since = s.last ? Date.now() - new Date(s.last).getTime() : Infinity;
+      const { rows } = await pool.query(`select kind, count(*)::int as n, max(posted_at) as last from xbot_posts where posted_at > now() - interval '24 hours' group by kind`);
+      const s = { day: 0, replies: 0, last: {}, count: {}, latest: null };
+      for (const r of rows) {
+        s.count[r.kind] = r.n;
+        s.last[r.kind] = new Date(r.last).getTime();
+        if (r.kind === "followup" || r.kind === "result") s.replies += r.n;
+        else {
+          s.day += r.n;
+          if (!s.latest || s.last[r.kind] > s.latest) s.latest = s.last[r.kind];
+        }
+      }
+      const now = Date.now();
+      const prime = PRIME();
+      const ago = (kind) => (s.last[kind] ? (now - s.last[kind]) / 3600e3 : Infinity);
+      const n = (kind) => s.count[kind] || 0;
+
+      // follow-ups under our own posts (their own daily limit)
+      if (s.replies < repliesPerDay && ago("followup") * 60 >= 5 && ago("result") * 60 >= 5) {
+        const f = await nextFollowup(pool).catch(() => null);
+        if (f) {
+          await pool.query(`update xbot_posts set done = true where id = $1`, [f.post.id]);
+          if (f.pnl !== null && Math.abs(f.pnl) >= 50_000) await send({ kind: "followup", ref: `fu:${f.post.id}`, text: followupText(f), replyTo: f.post.post_id === "dry" ? null : f.post.post_id });
+        } else {
+          const r = await nextResult(pool).catch(() => null);
+          if (r) {
+            await pool.query(`update xbot_posts set done = true where id = $1`, [r.post.id]);
+            const text = resultText(r);
+            if (text) await send({ kind: "result", ref: `pr:${r.post.id}`, text, replyTo: r.post.post_id === "dry" ? null : r.post.post_id });
+          }
+        }
+      }
+
+      const gap = (prime ? 15 : 45) / 60;
+      const since = s.latest ? (now - s.latest) / 3600e3 : Infinity;
       if (s.day < perDay && since >= gap) {
         let post = null;
         const w = await nextWhale(pool, minUsd);
-        if (w) {
-          post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: whaleText(w, w), svg: whaleCardSvg(w, w) };
-        } else if (!s.last_predict || Date.now() - new Date(s.last_predict).getTime() > 3 * 3600e3) {
-          const q = await nextPrediction().catch(() => null);
-          if (q) {
-            const title = q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2");
-            post = { kind: "predict", ref: `p:${q.outcome}`, text: predictText({ ...q, title }, q.sides[0].price), svg: predictCardSvg({ tab: q.tab, title, sides: q.sides }) };
+        if (w) post = { kind: "whale", ref: `w:${w.id}:${w.address}:${w.coin}`, text: whaleText(w, w), svg: whaleCardSvg(w, w), meta: { address: w.address, coin: w.coin, kind: w.kind, side: w.side, px: w.px, usd: w.usd } };
+        if (!post && n("race") < 2) {
+          const r = await nextRace(pool).catch(() => null);
+          const card = r && (await raceCard(r.id).catch(() => null));
+          if (r && card) post = { kind: "race", ref: `r:${r.id}`, text: raceText(r), image: card };
+        }
+        // the rest: whichever is due and was posted longest ago
+        const today = new Date().toISOString().slice(0, 10);
+        const hour = new Date().toISOString().slice(0, 13);
+        const kinds = [
+          { kind: "fear", ok: n("fear") < 1 && new Date().getUTCHours() >= 5 && new Date().getUTCHours() < 10, make: async () => { const f = await fearNow(pool); return f && { ref: `f:${today}`, text: fearText(f.score, f.prev), svg: fearCardSvg(f.score) }; } },
+          { kind: "recap", ok: ago("recap") >= 8, make: async () => { const top = await topToday(pool); return top.length >= 3 && top[0].pnl_day >= 100_000 && { ref: `c:${hour}`, text: recapText(top), svg: recapCardSvg(top) }; } },
+          { kind: "stock", ok: prime && n("stock") < 3 && ago("stock") >= 1.5, make: async () => {
+              const m = (await futuresMarkets()).filter((x) => x.dex && (x.group === "stocks" || x.group === "commodities") && x.change !== null && x.vol > 100_000).sort((a, b) => Math.abs(b.change) - Math.abs(a.change))[0];
+              const day = new Date().getUTCDay();
+              return m && Math.abs(m.change) >= 1 && { ref: `s:${hour}`, text: stockText(m, day === 0 || day === 6), svg: futuresCardSvg(m) };
+            } },
+          { kind: "spot", ok: prime && n("spot") < 2 && ago("spot") >= 2, make: async () => { const c = await nextSpot(pool); return c && { ref: `g:${c.cg_id}:${today}`, text: spotText(c), svg: spotCardSvg(c) }; } },
+          { kind: "meme", ok: prime && n("meme") < 2 && ago("meme") >= 2, make: async () => { const c = await nextMeme(pool); return c && { ref: `m:${c.network}:${c.address}`, text: memeText(c), svg: memeCardSvg(c) }; } },
+          { kind: "poll", ok: prime && n("poll") < 1, make: async () => ({ ref: `q:${today}`, text: pollText(), poll: { options: ["UP 📈", "DOWN 📉"], duration_minutes: 360 } }) },
+          { kind: "crowd", ok: prime && n("crowd") < 1, make: async () => {
+              const pos = await whalePositionsNow(pool);
+              for (const coin of ["BTC", "ETH", "SOL"]) {
+                const p = pos.filter((x) => x.coin === coin);
+                const longUsd = p.filter((x) => x.side === "long").reduce((a, x) => a + x.v, 0);
+                const shortUsd = p.filter((x) => x.side === "short").reduce((a, x) => a + x.v, 0);
+                if (longUsd + shortUsd < 5_000_000) continue;
+                const longPct = (100 * longUsd) / (longUsd + shortUsd);
+                if (Math.abs(longPct - 50) < 10) continue;
+                const [meta, ctxs] = await hl({ type: "metaAndAssetCtxs" });
+                const i = meta.universe.findIndex((u) => u.name === coin);
+                const fundingPos = num(ctxs[i]?.funding) >= 0;
+                return { ref: `k:${today}`, text: crowdText(coin, longPct, fundingPos), svg: crowdCardSvg(coin, longPct, longUsd, shortUsd) };
+              }
+              return null;
+            } },
+          { kind: "biggest", ok: n("biggest") < 1 && !prime, make: async () => {
+              const p = (await whalePositionsNow(pool)).sort((a, b) => b.v - a.v)[0];
+              return p && p.v >= 5_000_000 && { ref: `b:${today}`, text: biggestText(p), svg: whaleCardSvg({ coin: p.coin, kind: "open", side: p.side, usd: p.v, px: p.e, lev: p.l }, { rank: p.rank, pnl_month: 0, account_value: 0 }) };
+            } },
+          { kind: "funding", ok: n("funding") < 1, make: async () => { const f = await extremeFunding(); return f && { ref: `u:${today}`, text: fundingText(f), svg: fundingCardSvg(f) }; } },
+          { kind: "predict", ok: ago("predict") >= (prime ? 1.5 : 3), make: async () => {
+              const q = await nextPrediction();
+              if (!q) return null;
+              const title = q.title.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2");
+              const m = /^(\w+) above \$([\d,.]+)/.exec(q.title);
+              const meta = m && q.expiry ? { underlying: m[1], target: Number(m[2].replace(/,/g, "")), expiry: q.expiry, yes: q.sides[0].price } : null;
+              return { ref: `p:${q.outcome}`, text: predictText({ ...q, title }, q.sides[0].price), svg: predictCardSvg({ tab: q.tab, title, sides: q.sides }), meta };
+            } },
+        ]
+          .filter((k) => k.ok)
+          .sort((a, b) => (s.last[a.kind] || 0) - (s.last[b.kind] || 0));
+        for (const k of post ? [] : kinds) {
+          const made = await k.make().catch((e) => (log(`x bot: ${k.kind}: ${String(e.message).slice(0, 150)}`), null));
+          if (made) {
+            post = { kind: k.kind, ...made };
+            break;
           }
         }
-        if (post) {
-          if (dry) {
-            log(`x bot (dry): ${post.text.replace(/\n+/g, " / ")}`);
-            await pool.query(`insert into xbot_posts (kind, ref, text) values ($1, $2, $3) on conflict (ref) do nothing`, [post.kind, post.ref, post.text]);
-          } else {
-            // the row first: if X takes the post but the answer is lost, it is never posted twice
-            const ins = await pool.query(`insert into xbot_posts (kind, ref, text) values ($1, $2, $3) on conflict (ref) do nothing returning id`, [post.kind, post.ref, post.text]);
-            if (ins.rowCount) {
-              const id = await postWithImage(keys, post.text, png(post.svg));
-              await pool.query(`update xbot_posts set post_id = $2 where id = $1`, [ins.rows[0].id, id]);
-              log(`x bot: posted ${post.kind} (${id})`);
-            }
-          }
-        }
+        if (post) await send(post);
       }
       failures = 0;
     } catch (e) {
