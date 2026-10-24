@@ -9,6 +9,11 @@
  * Cash stays one USDC number: a Solana deposit goes through a one-time Relay address and lands
  * as USDC in the same account as every other deposit; a Solana withdrawal is a Relay route from
  * that USDC to any Solana address. No Solana wallet is needed for either.
+ *
+ * Step 2 (lib/sollaunch.ts + components/solanalaunch.tsx): a coin launched on Solana, on the
+ * standard Solana launch curve, so it shows up at once in every Solana app (explorers,
+ * DexScreener, GMGN, wallets). Half of the coin's creator fees go to sasa (SOLANA_TREASURY, set
+ * on the server), half to the creator, fixed for good in the launch itself.
  */
 import { SOLANA_ID } from "./relay";
 
@@ -23,3 +28,12 @@ export { SOLANA_ID };
 /** Circle's USDC on Solana. */
 export const SOLANA_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const SOLANA_EXPLORER_TX = (sig: string) => `https://solscan.io/tx/${sig}`;
+
+/** sasa's own path to a Solana node (functions/sol-rpc). */
+export const SOL_RPC = "/sol-rpc";
+/** Relay's id for SOL itself on Solana. */
+export const SOL_NATIVE = "11111111111111111111111111111111";
+export const LAMPORTS = 1_000_000_000;
+export const solscanToken = (mint: string) => `https://solscan.io/token/${mint}`;
+export const dexscreenerSol = (mint: string) => `https://dexscreener.com/solana/${mint}`;
+export const gmgnSol = (mint: string) => `https://gmgn.ai/sol/token/${mint}`;

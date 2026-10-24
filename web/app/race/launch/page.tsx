@@ -21,6 +21,9 @@ import { IS_TESTNET } from "@/lib/config";
 import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, raceExplorerTx, raceFactoryAbi, raceHref, withGas, type RaceChain } from "@/lib/race";
 import { GAS_ASK_CENTS, crossReady, homeChain } from "@/lib/racecross";
 import { LAUNCH_FEE_ROOM_CENTS, liveOn, planLaunch, sendLaunch, type LaunchPlan } from "@/lib/racecrossflow";
+import { solanaFor } from "@/lib/solana";
+import { SolanaMark } from "@/components/solanamoney";
+import { SolanaLaunchBox } from "@/components/solanalaunch";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -99,6 +102,12 @@ export default function RaceLaunchPage() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [logo, setLogo] = useState("");
+  // the picked picture itself (Solana launches store a bigger copy of it)
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  // Solana on its own (not part of the race); only for people who see Solana yet
+  const [solo, setSolo] = useState(false);
+  const solOk = solanaFor(w.address);
+  const onSolana = solo && solOk;
   const [description, setDescription] = useState("");
   const [socials, setSocials] = useState<LinkDraft>(EMPTY_DRAFT);
   const [socialsOpen, setSocialsOpen] = useState(false);
@@ -187,7 +196,8 @@ export default function RaceLaunchPage() {
   const buyN = Number(firstBuy);
   const perChain = perChainOf(firstBuy, picked.length);
   const perChainN = Number(perChain);
-  const problem = !name.trim()
+  // what every launch needs (any chain)
+  const formProblem = !name.trim()
     ? "Give your coin a name."
     : sym.length < 2
       ? "The ticker needs at least 2 letters or numbers."
@@ -195,7 +205,12 @@ export default function RaceLaunchPage() {
         ? "That picture could not be used."
         : Object.values(draftProblems(socials)).some(Boolean)
           ? "One of the links doesn't look right. Fix it or leave it empty."
-        : picked.length < 1
+          : "";
+  const problem = formProblem
+    ? formProblem
+    : onSolana
+      ? "Creating on Solana."
+      : picked.length < 1
           ? "Pick at least one chain."
           : links && !chainsLinked(chains, links)
             ? unlinkedText(chains, links)
@@ -574,10 +589,12 @@ export default function RaceLaunchPage() {
                   setDescription(f.description);
                   if (f.logo) {
                     setLogo(f.logo);
+                    setLogoFile(f.logoFile ?? null);
                     setPicError("");
                   } else {
                     // the old picture belonged to the previous idea
                     setLogo("");
+                    setLogoFile(null);
                     setPicError(f.logoError ?? "");
                   }
                   setAiOpen(false);
@@ -611,6 +628,7 @@ export default function RaceLaunchPage() {
                   setPicBusy(true);
                   try {
                     setLogo(await fileToLogo(f));
+                    setLogoFile(f);
                   } catch (err) {
                     setPicError((err as Error).message);
                   } finally {
@@ -633,7 +651,14 @@ export default function RaceLaunchPage() {
             </div>
           </div>
           {logo && (
-            <button type="button" onClick={() => setLogo("")} className="self-start text-[0.8125rem] text-ink-3 underline">
+            <button
+              type="button"
+              onClick={() => {
+                setLogo("");
+                setLogoFile(null);
+              }}
+              className="self-start text-[0.8125rem] text-ink-3 underline"
+            >
               Remove picture
             </button>
           )}
@@ -667,12 +692,18 @@ export default function RaceLaunchPage() {
             <span className="text-[0.8125rem] text-ink-3">Your chain</span>
             <div className="grid grid-cols-2 gap-2">
               {CHAIN_ORDER.map((c) => {
-                const on = chains.includes(c.chainId);
+                const on = !onSolana && chains.includes(c.chainId);
                 return (
                   <button
                     key={c.chainId}
                     type="button"
-                    onClick={() => toggle(c.chainId)}
+                    onClick={() => {
+                      if (onSolana) {
+                        // from Solana back to the race chains: start with the one tapped
+                        setSolo(false);
+                        setChains([c.chainId]);
+                      } else toggle(c.chainId);
+                    }}
                     className={"h-11 rounded-xl border px-3 flex items-center gap-2 text-[0.9375rem] min-w-0 " + (on ? "border-ink font-semibold" : "border-line text-ink-3")}
                     aria-pressed={on}
                   >
@@ -682,7 +713,21 @@ export default function RaceLaunchPage() {
                 );
               })}
             </div>
-            {chains.length < CHAIN_ORDER.length ? (
+            {solOk && (
+              <button
+                type="button"
+                onClick={() => setSolo((v) => !v)}
+                aria-pressed={onSolana}
+                className={"h-11 rounded-xl border px-3 flex items-center gap-2 text-[0.9375rem] min-w-0 " + (onSolana ? "border-ink font-semibold" : "border-line text-ink-3")}
+              >
+                <SolanaMark size={18} />
+                <span className="truncate">Solana</span>
+                <span className="ml-auto text-[0.6875rem] font-bold tracking-wide rounded-full px-2 py-0.5 bg-night text-ink-2">SOLO</span>
+              </button>
+            )}
+            {onSolana ? (
+              <p className="text-[0.8125rem] text-ink-2">Your coin goes live on Solana and shows up on DexScreener, GMGN and every Solana app at once.</p>
+            ) : chains.length < CHAIN_ORDER.length ? (
               <div className="rounded-2xl border border-emerald/40 bg-emerald-soft p-3 sm:p-4 flex flex-col gap-2">
                 <span className="font-bold text-[0.9375rem] text-ink">🏁 Want more buyers? Race it on 4 chains</span>
                 <span className="text-[0.8125rem] text-ink-2 leading-snug">
@@ -707,6 +752,7 @@ export default function RaceLaunchPage() {
             )}
           </div>
 
+          {!onSolana && (
           <div className="flex flex-col gap-2">
             <span className="text-[0.8125rem] text-ink-3">Trading fees</span>
             <div className="grid grid-cols-2 gap-2">
@@ -727,9 +773,10 @@ export default function RaceLaunchPage() {
               ))}
             </div>
           </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] text-ink-3">Your first buy, in total (USDC)</span>
+            <span className="text-[0.8125rem] text-ink-3">{onSolana ? "Your first buy (USDC)" : "Your first buy, in total (USDC)"}</span>
             <div className="grid grid-cols-3 gap-2">
               {["10", "50", "100"].map((v) => (
                 <button
@@ -754,11 +801,13 @@ export default function RaceLaunchPage() {
                 className={input + " pl-8"}
               />
             </label>
-            {Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
+            {!onSolana && Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
               <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more, so your coin starts with some weight.</span>
             )}
             <span className="text-[0.8125rem] text-ink-3">
-              {picked.length > 0 && perChainN > 0
+              {onSolana
+                ? "Bought on Solana right as your coin goes live."
+                : picked.length > 0 && perChainN > 0
                 ? picked.length === 1
                   ? `$${perChain} on ${picked[0].short}.`
                   : `$${perChain} on each of your ${picked.length} chains.`
@@ -768,7 +817,18 @@ export default function RaceLaunchPage() {
         </div>
 
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">
-          {!w.address ? (
+          {onSolana ? (
+            <SolanaLaunchBox
+              name={name.trim()}
+              symbol={sym}
+              description={description.trim()}
+              logo={logo}
+              logoFile={logoFile}
+              socials={socials}
+              firstBuy={firstBuy}
+              problem={formProblem}
+            />
+          ) : !w.address ? (
             <ConnectButton />
           ) : w.embedded && !viaBase ? (
             IS_TESTNET ? <p className="text-[0.8125rem] text-ink-3">Testnet: create with a browser wallet.</p> : null
@@ -842,7 +902,7 @@ export default function RaceLaunchPage() {
             </ul>
           )}
 
-          {viaBase && (
+          {viaBase && !onSolana && (
             <>
               <button
                 type="button"
@@ -860,7 +920,7 @@ export default function RaceLaunchPage() {
             </>
           )}
 
-          {w.address && !w.embedded && (
+          {w.address && !w.embedded && !onSolana && (
             <>
               <button
                 type="button"
@@ -877,9 +937,11 @@ export default function RaceLaunchPage() {
               </p>
             </>
           )}
-          <Link href="/race/" className="text-[0.8125rem] text-ink-3 underline self-center">
-            How the race works
-          </Link>
+          {!onSolana && (
+            <Link href="/race/" className="text-[0.8125rem] text-ink-3 underline self-center">
+              How the race works
+            </Link>
+          )}
         </aside>
       </div>
     </div>

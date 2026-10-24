@@ -96,6 +96,8 @@ export type QuoteInput = {
   refundTo?: string;
   /** Which sasa fee applies (mainnet only): moving money in, or buying/selling a coin. */
   fee?: "deposit" | "swap";
+  /** EXACT_OUTPUT: `amount` is what arrives (destination token units). Default EXACT_INPUT. */
+  tradeType?: "EXACT_INPUT" | "EXACT_OUTPUT";
 };
 
 export type StepItem = {
@@ -110,6 +112,8 @@ export type Quote = {
   requestId: string | null;
   depositAddress: string | null;
   inUsd: number;
+  /** Raw amount in (smallest unit of the origin token). */
+  inRaw: string;
   outAmount: string;
   /** Raw amount out (smallest unit). */
   outRaw: string;
@@ -124,7 +128,7 @@ type RawQuote = {
   steps?: Step[];
   message?: string;
   details?: {
-    currencyIn?: { amountUsd?: string };
+    currencyIn?: { amount?: string; amountUsd?: string };
     currencyOut?: { amount?: string; amountFormatted?: string; amountUsd?: string; currency?: { symbol?: string } };
     totalImpact?: { usd?: string };
     timeEstimate?: number;
@@ -147,8 +151,8 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     headers: { "content-type": "application/json" },
     signal,
     body: JSON.stringify({
-      ...Object.fromEntries(Object.entries(q).filter(([k]) => k !== "fee")),
-      tradeType: "EXACT_INPUT",
+      ...Object.fromEntries(Object.entries(q).filter(([k]) => k !== "fee" && k !== "tradeType")),
+      tradeType: q.tradeType ?? "EXACT_INPUT",
       ...(!IS_TESTNET && q.fee ? { appFees: [{ recipient: RELAY_FEE_TO, fee: String(FEE_BPS[q.fee]) }] } : {}),
     }),
   });
@@ -164,6 +168,7 @@ export async function getQuote(q: QuoteInput, signal?: AbortSignal): Promise<Quo
     requestId: first?.requestId ?? null,
     depositAddress: j.steps.find((s) => s.depositAddress)?.depositAddress ?? null,
     inUsd,
+    inRaw: d.currencyIn?.amount ?? "0",
     outAmount: d.currencyOut?.amountFormatted ?? "0",
     outRaw: d.currencyOut?.amount ?? "0",
     outUsd,

@@ -12,13 +12,22 @@ import { aiCoin, IDEA_SPARKS } from "@/lib/ai";
 import { fileToLogo } from "@/lib/image";
 import { friendlyError } from "@/lib/format";
 
-export type AiFill = { name: string; symbol: string; description: string; logo: string | null; logoError: string | null };
+export type AiFill = {
+  name: string;
+  symbol: string;
+  description: string;
+  logo: string | null;
+  logoError: string | null;
+  /** The full-size picture (for Solana launches, whose apps show it bigger). */
+  logoFile?: File | null;
+};
 
-/** The AI picture as the same small JPEG an upload becomes. */
-async function toCoinLogo(dataUrl: string): Promise<string | null> {
+/** The AI picture as the same small JPEG an upload becomes (and the picture itself). */
+async function toCoinLogo(dataUrl: string): Promise<{ logo: string; file: File } | null> {
   try {
     const blob = await (await fetch(dataUrl)).blob();
-    return await fileToLogo(new File([blob], "logo.jpg", { type: blob.type || "image/jpeg" }));
+    const file = new File([blob], "logo.jpg", { type: blob.type || "image/jpeg" });
+    return { logo: await fileToLogo(file), file };
   } catch {
     return null;
   }
@@ -48,8 +57,15 @@ export function AiCoinPanel({ onFill, seed }: { onFill: (f: AiFill) => void; see
     setError("");
     try {
       const c = await aiCoin(signMessage, text);
-      const logo = c.image ? await toCoinLogo(c.image) : null;
-      onFill({ name: c.name, symbol: c.symbol, description: c.description, logo, logoError: logo ? null : (c.imageError ?? "Couldn't use the picture. Upload your own.") });
+      const pic = c.image ? await toCoinLogo(c.image) : null;
+      onFill({
+        name: c.name,
+        symbol: c.symbol,
+        description: c.description,
+        logo: pic?.logo ?? null,
+        logoFile: pic?.file ?? null,
+        logoError: pic ? null : (c.imageError ?? "Couldn't use the picture. Upload your own."),
+      });
     } catch (e) {
       setError(friendlyError(e));
     } finally {

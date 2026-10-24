@@ -26,6 +26,7 @@
  *   POST   /api/perps/watch        futures TP / SL / liquidation alerts (edge/perps-api.js)
  *   GET    /api/perps/admin        { admin }: admins may test Futures from a blocked country
  *   /api/whales/follow             follow traders on the Data tab for alerts (edge/whales-api.js)
+ *   /api/sol/*                     Solana launches (edge/sol-api.js)
  *
  * Optional env: FORUM_ADMINS  comma-separated wallet addresses that can moderate every forum board
  */
@@ -41,6 +42,7 @@ import { perpsRoute } from "../../edge/perps-api.js";
 import { whalesRoute } from "../../edge/whales-api.js";
 import { copyRoute } from "../../edge/copy-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
+import { solRoute } from "../../edge/sol-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SESSION_DAYS = 7; // a stolen token stops working within a week
@@ -398,7 +400,7 @@ export async function onRequest(ctx) {
   let who = null; // for the admin-only error detail below
   try {
     // Profile pictures travel as a data URL (a 256px WebP is ~10-40 KB); everything else stays small.
-    const limit = parts[0] === "social" && parts[1] === "avatar" ? 400_000 : 8192;
+    const limit = parts[0] === "social" && parts[1] === "avatar" ? 400_000 : parts[0] === "sol" && parts[1] === "meta" ? 420_000 : 8192;
     const body = method === "GET" || method === "HEAD" ? {} : await readBody(request, limit);
     if (body === null) return fail(400, "Bad request.");
 
@@ -411,6 +413,8 @@ export async function onRequest(ctx) {
     who = me;
     // The help form works signed out too.
     if (parts[0] === "help" && parts.length === 1 && method === "POST") return await submitHelp(env, request, body, me);
+    // Solana launches: checked on chain by the keeper, so signed out works too
+    if (parts[0] === "sol") return await solRoute(env, request, me, parts, method, body, { sb, underLimit });
     if (!me) return fail(401, "Please sign in again.");
     if (parts[0] === "help") return await adminHelp(env, me, parts, method, body, url);
 

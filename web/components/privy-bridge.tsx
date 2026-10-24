@@ -13,6 +13,11 @@ import { CHAINS, PRIVY_APP_ID } from "@/lib/config";
 import { RACE_CHAINS } from "@/lib/race";
 import { usdcGasChain } from "@/lib/usdcgas";
 import { base, baseSepolia, mainnet } from "viem/chains";
+import dynamic from "next/dynamic";
+import type { PrivySolState } from "./privy-sol";
+
+// The Solana wallet part: loaded only for people who see Solana (lib/solana.ts solanaFor).
+const PrivySol = dynamic(() => import("./privy-sol"), { ssr: false });
 
 /** A copy of `v` with every bigint turned into its decimal string (same values, JSON-safe). */
 export function jsonSafe(v: unknown): unknown {
@@ -55,7 +60,18 @@ function oneAtATime<T>(job: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export default function PrivyBridge({ onState, loginRequests }: { onState: (s: PrivyState) => void; loginRequests: number }) {
+export default function PrivyBridge({
+  onState,
+  loginRequests,
+  solana = false,
+  onSolana,
+}: {
+  onState: (s: PrivyState) => void;
+  loginRequests: number;
+  /** Load the Solana wallet part (see PrivySol). */
+  solana?: boolean;
+  onSolana?: (s: PrivySolState | null) => void;
+}) {
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
@@ -85,6 +101,7 @@ export default function PrivyBridge({ onState, loginRequests }: { onState: (s: P
       }}
     >
       <Reporter onState={onState} loginRequests={loginRequests} />
+      {solana && onSolana && <PrivySol onState={onSolana} />}
     </PrivyProvider>
   );
 }

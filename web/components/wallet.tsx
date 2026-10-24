@@ -9,6 +9,8 @@ import type { Call } from "@/lib/tx";
 import { clientFor } from "@/lib/data";
 import { chainTransport } from "@/lib/race";
 import type { PrivyState } from "./privy-bridge";
+import type { PrivySolState } from "./privy-sol";
+import { solanaFor } from "@/lib/solana";
 import type { SmartWalletClient } from "@alchemy/wallet-apis";
 import { sendWithUsdcGas, usdcGasChain } from "@/lib/usdcgas";
 
@@ -133,6 +135,8 @@ type WalletState = {
   sendOwnGas: (chain: Chain, calls: Call[], onStep?: (msg: string) => void) => Promise<Hex>;
   /** Email users only: the embedded wallet as a signer (EIP-712 signatures, no popup). */
   embeddedSigner: LocalAccount | null;
+  /** Email users who see Solana (lib/solana.ts): their own Solana wallet (made when first needed). */
+  solana: PrivySolState | null;
   /**
    * True for the first moments after a page load while the login of someone who was signed in
    * last time is coming back (the login code loads, a wallet answers). Pages show that person's
@@ -201,6 +205,7 @@ async function ensureNetwork(p: Eip1193, chain: Chain) {
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [privy, setPrivy] = useState<PrivyState | null>(null);
+  const [privySol, setPrivySol] = useState<PrivySolState | null>(null);
   const [loadPrivy, setLoadPrivy] = useState(false);
   const [loginRequests, setLoginRequests] = useState(0);
   const smartClients = useRef(new Map<string, unknown>());
@@ -578,14 +583,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       signMessage,
       sendOwnGas,
       embeddedSigner: embedded ? (privy?.signer ?? null) : null,
+      solana: embedded ? privySol : null,
     }),
-    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, loginWithEmail, send, signMessage, sendOwnGas, restoring, hint]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, privySol, loginWithEmail, send, signMessage, sendOwnGas, restoring, hint]
   );
 
   return (
     <WalletContext.Provider value={value}>
       {children}
-      {loadPrivy && <PrivyBridge onState={setPrivy} loginRequests={loginRequests} />}
+      {loadPrivy && <PrivyBridge onState={setPrivy} loginRequests={loginRequests} solana={!!embeddedAddress && solanaFor(embeddedAddress)} onSolana={setPrivySol} />}
     </WalletContext.Provider>
   );
 }
