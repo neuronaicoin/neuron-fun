@@ -13,6 +13,7 @@ import { SolanaMark } from "./solanamoney";
 import { SolCashBack } from "./soltrade";
 import { CoinAvatar } from "./coins";
 import { Confetti } from "./confetti";
+import { justLaunched } from "@/lib/extcoins";
 import { postOnX } from "./share";
 import { toast } from "./alerts";
 import { draftToLinks, type LinkDraft } from "./coinlinks";
@@ -205,6 +206,7 @@ export function SolanaLaunchBox(p: {
         setPending({ ...coin, creator: s.address });
       }
       setDone({ ...coin, finished: res.finished, bought: res.bought || buyLamports === 0n });
+      if (res.finished) justLaunched({ address: res.mint, name: p.name, symbol: p.symbol, image: info.image });
       toast("Your coin is live on Solana ✓");
     } catch (e) {
       setError(friendlyError(e));

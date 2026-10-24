@@ -23,6 +23,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Pools GeckoTerminal doesn't know (the coin came from DexScreener): the coin's busiest pool there instead, or none. */
 const POOL = new Map<string, string | null>();
+/** When a "no pool" answer was saved: asked again after a minute (a new coin gets one soon). */
+const NONE_AT = new Map<string, number>();
+function knownPool(k: string): string | null | undefined {
+  const v = POOL.get(k);
+  if (v === null && Date.now() - (NONE_AT.get(k) ?? 0) > 60_000) {
+    POOL.delete(k);
+    return undefined;
+  }
+  return v;
+}
+function noPool(k: string) {
+  POOL.set(k, null);
+  NONE_AT.set(k, Date.now());
+}
 
 async function gtGet(url: string): Promise<Response | null> {
   // the free API allows about 30 calls a minute: when it says "too many", wait and ask again
@@ -38,21 +52,23 @@ async function gtGet(url: string): Promise<Response | null> {
 
 async function otherPool(network: string, token: string): Promise<string | null> {
   const k = `${network}:${token}`.toLowerCase();
-  if (POOL.has(k)) return POOL.get(k)!;
+  const had = knownPool(k);
+  if (had !== undefined) return had;
   const r = await gtGet(`${GT}/networks/${encodeURIComponent(network)}/tokens/${token}/pools?page=1`);
   if (!r) throw new Error("chart data unreachable");
   if (!r.ok && r.status !== 404) throw new Error(`chart data ${r.status}`);
   const j = r.ok ? ((await r.json().catch(() => null)) as { data?: { attributes?: { address?: string } }[] } | null) : null;
   // EVM pools are 0x addresses; Solana pools are base58
   const addr = j?.data?.find((p) => /^0x[0-9a-fA-F]{40}$|^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(p.attributes?.address ?? ""))?.attributes?.address ?? null;
-  POOL.set(k, addr);
+  if (addr) POOL.set(k, addr);
+  else noPool(k);
   return addr;
 }
 
 /** An empty list means "no chart for this coin" (the chart says so at once instead of waiting). */
 export async function fetchExtCandles(network: string, pool: string, token: string, frameSec: number): Promise<RaceCandle[]> {
   const { timeframe, aggregate } = gtFrame(frameSec);
-  const known = POOL.get(`${network}:${token}`.toLowerCase());
+  const known = knownPool(`${network}:${token}`.toLowerCase());
   const use = known === undefined ? pool : known;
   if (use === null) return [];
   const url = `${GT}/networks/${encodeURIComponent(network)}/pools/${use}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=300&currency=usd&token=${token}`;
@@ -63,7 +79,7 @@ export async function fetchExtCandles(network: string, pool: string, token: stri
     // GeckoTerminal doesn't have this pool: try the coin's own pool list once
     const other = await otherPool(network, token);
     if (!other || other.toLowerCase() === pool.toLowerCase()) {
-      POOL.set(`${network}:${token}`.toLowerCase(), null);
+      noPool(`${network}:${token}`.toLowerCase());
       return [];
     }
     return fetchExtCandles(network, pool, token, frameSec);
@@ -91,7 +107,7 @@ export type ExtTrade = { id: string; t: number; buy: boolean; usd: number; trade
 
 /** The latest trades of a coin's pool; [] when there are none or the pool isn't known. */
 export async function fetchExtTrades(network: string, pool: string, token: string): Promise<ExtTrade[]> {
-  const known = POOL.get(`${network}:${token}`.toLowerCase());
+  const known = knownPool(`${network}:${token}`.toLowerCase());
   let use = known === undefined ? pool : known;
   if (use === null) return [];
   const url = (p: string) => `${GT}/networks/${encodeURIComponent(network)}/pools/${p}/trades?token=${token}`;

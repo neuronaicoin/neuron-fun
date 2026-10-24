@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CoinAvatar } from "@/components/coins";
 import { compactUsd } from "@/lib/format";
 import { useWallet } from "@/components/wallet";
-import { extHref, fetchSasaSolCoins, type ExtCoin } from "@/lib/extcoins";
+import { JUST_EVENT, extHref, fetchSasaSolCoins, justLaunchedList, toExt, type ExtCoin } from "@/lib/extcoins";
 import { solanaFor } from "@/lib/solana";
 import { RACE_CHAINS, clock, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, raceStuck, type RaceCoin } from "@/lib/race";
 
@@ -34,13 +34,23 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
     let alive = true;
     const load = () =>
       fetchSasaSolCoins(6)
-        .then((l) => alive && setSol(l.filter((c) => Date.now() - (Date.parse(c.poolCreated ?? "") || 0) < 86_400_000)))
+        .then((l) => {
+          if (!alive) return;
+          const listed = l.filter((c) => Date.now() - (Date.parse(c.poolCreated ?? "") || 0) < 86_400_000);
+          // this device's launch shows at once, before the keeper has listed it for everyone
+          const mine = justLaunchedList()
+            .filter((j) => !listed.some((c) => c.address === j.address))
+            .map((j) => ({ ...toExt({ network: "solana", address: j.address, name: j.name, symbol: j.symbol, image: j.image, pool_created: new Date(j.at).toISOString() }), sasa: true }));
+          setSol([...mine, ...listed]);
+        })
         .catch(() => {});
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 10_000);
+    window.addEventListener(JUST_EVENT, load);
     return () => {
       alive = false;
       clearInterval(t);
+      window.removeEventListener(JUST_EVENT, load);
     };
   }, [solOn]);
 

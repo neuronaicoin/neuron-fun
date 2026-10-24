@@ -236,3 +236,26 @@ export async function fetchExtCount(): Promise<number | null> {
   const { count, error } = await db.from("ext_coins").select("address", { count: "exact", head: true });
   return error ? null : count ?? null;
 }
+
+/**
+ * A Solana coin this device just launched: shown in Explore's "Just finished" row at once (the
+ * keeper lists it for everyone within seconds; until then only its creator sees it). Kept 10 min.
+ */
+export type JustLaunched = { address: string; name: string; symbol: string; image: string | null; at: number };
+const JUST_KEY = "sasa.sol.justlaunched";
+export const JUST_EVENT = "sasa:sollaunched";
+export function justLaunched(c: Omit<JustLaunched, "at">) {
+  try {
+    const list = [{ ...c, at: Date.now() }, ...justLaunchedList().filter((x) => x.address !== c.address)].slice(0, 5);
+    localStorage.setItem(JUST_KEY, JSON.stringify(list));
+  } catch {}
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(JUST_EVENT));
+}
+export function justLaunchedList(): JustLaunched[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(JUST_KEY) ?? "[]") as JustLaunched[];
+    return Array.isArray(v) ? v.filter((x) => x && B58.test(x.address) && Date.now() - x.at < 600_000) : [];
+  } catch {
+    return [];
+  }
+}

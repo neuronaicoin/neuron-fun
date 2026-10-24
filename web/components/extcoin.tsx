@@ -46,8 +46,28 @@ export type MarketInfo = { id: string; rank: number | null; via: string | null; 
 export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; backLink?: boolean; market?: MarketInfo }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
+  // a coin launched on sasa that the market lists don't have yet: its launch curve is its pool
+  // (the chart and trades read it there from the first minute)
+  const [curvePool, setCurvePool] = useState<string | null>(null);
+  useEffect(() => {
+    if (coin.pool || !coin.sasa || !isSolExt(coin.network)) return setCurvePool(null);
+    let alive = true;
+    import("@solana/web3.js")
+      .then(({ PublicKey }) => {
+        const [pda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("bonding-curve"), new PublicKey(coin.address).toBytes()],
+          new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+        );
+        if (alive) setCurvePool(pda.toBase58());
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [coin.pool, coin.sasa, coin.network, coin.address]);
+  const pool = coin.pool ?? curvePool;
   // who bought and sold: the list under the chart, and the same trades on the chart
-  const tradeRows = useExtTrades(coin);
+  const tradeRows = useExtTrades(pool === coin.pool ? coin : { ...coin, pool });
   const liveTrades = useExtLiveTrades(coin, tradeRows);
   const ch = coin.change24h;
   const kpis: [string, string, string?][] = [
@@ -124,12 +144,12 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             )}
           </section>
 
-          {coin.pool && (
+          {pool && (
             <section className="sm:rounded-3xl sm:border sm:border-line sm:bg-surface sm:p-5 min-w-0">
               <PriceChart
                 bleed
-                cacheKey={`ext:${coin.network}:${coin.pool}`}
-                load={(frame) => fetchExtCandles(coin.network, coin.pool!, coin.address, frame)}
+                cacheKey={`ext:${coin.network}:${pool}`}
+                load={(frame) => fetchExtCandles(coin.network, pool, coin.address, frame)}
                 refreshMs={30_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No chart data for this coin yet."
@@ -139,7 +159,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             </section>
           )}
 
-          {coin.pool && <ExtTradesList coin={coin} rows={tradeRows} />}
+          {pool && <ExtTradesList coin={coin} rows={tradeRows} />}
           {!market && <TokenCheck coin={coin} />}
           <AboutCoin coin={coin} chain={net.label} market={market} />
         </div>

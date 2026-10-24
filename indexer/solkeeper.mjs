@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const PUBLIC_RPC = "https://api.mainnet-beta.solana.com";
 const SHARE = 5000;
-const CHECK_MS = 20_000;
+const CHECK_MS = 8_000; // a new launch is listed within seconds
 const FULL_CHECK_EVERY_MS = 6 * 3600_000;
 
 const SQL = `create table if not exists sol_coins (

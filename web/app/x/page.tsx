@@ -25,18 +25,52 @@ function ExtCoinPage() {
   const address = isSolExt(network) ? rawAddress.trim() : rawAddress.toLowerCase();
   const valid = !!extNetwork(network) && extAddressOk(network, address);
   const [coin, setCoin] = useState<ExtCoin | null | undefined>(undefined);
+  const [goingLive, setGoingLive] = useState(false);
 
   useEffect(() => {
     if (!valid) return;
     let alive = true;
-    const load = () => fetchExtCoin(network, address).then((c) => alive && setCoin(c)).catch(() => alive && setCoin((x) => x ?? null));
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      let c: ExtCoin | null = null;
+      try {
+        c = await fetchExtCoin(network, address);
+      } catch {
+        if (alive) setCoin((x) => x ?? null);
+      }
+      if (!alive) return;
+      // a Solana coin launched on sasa a moment ago: the keeper lists it within seconds
+      let soon = false;
+      if (!c && isSolExt(network)) {
+        const st = await fetch(`/api/sol/coin/${address}`)
+          .then((r) => r.json() as Promise<{ status?: string | null }>)
+          .catch(() => ({ status: null }));
+        soon = st.status === "pending";
+      }
+      if (!alive) return;
+      setGoingLive(soon);
+      if (c || !soon) setCoin((x) => c ?? (x === undefined ? null : x));
+      // fast while it's new (going live, or its market numbers not in yet), then every minute
+      const fast = soon || (c !== null && (!c.pool || c.mcapUsd === null));
+      timer = setTimeout(() => (document.visibilityState === "visible" ? void load() : (timer = setTimeout(load, 5_000))), fast ? 5_000 : 60_000);
+    };
     void load();
-    const t = setInterval(() => document.visibilityState === "visible" && void load(), 60_000);
     return () => {
       alive = false;
-      clearInterval(t);
+      if (timer) clearTimeout(timer);
     };
   }, [network, address, valid]);
+  if (goingLive && !coin)
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center flex flex-col gap-4 items-center" role="status" aria-live="polite">
+        <span className="relative flex w-16 h-16" aria-hidden="true">
+          <span className="absolute inset-0 rounded-full bg-[#9945ff]/25 animate-ping" />
+          <span className="relative w-16 h-16 rounded-full flex items-center justify-center text-[1.75rem] bg-[#9945ff]">🚀</span>
+        </span>
+        <h1 className="text-[1.5rem] font-bold">This coin is going live…</h1>
+        <p className="text-ink-2 max-w-sm">It&apos;s on Solana. Its page opens here by itself in a few seconds.</p>
+      </div>
+    );
 
   if (!valid || coin === null)
     return (
