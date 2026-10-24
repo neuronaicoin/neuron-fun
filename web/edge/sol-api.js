@@ -13,6 +13,7 @@
  *                               (sent before signing); the keeper checks it on chain (and takes
  *                               its creator from there) before sasa lists it
  *   GET  /api/sol/coin/<mint>   { status }: pending / live / bad
+ *   GET  /api/sol/recent        the last 10 launches with what the keeper found (to check on them)
  *
  * No sign-in needed (the launch is checked on chain); a signed-in user's sasa address is kept
  * with the coin. Rate-limited per network address.
@@ -156,7 +157,14 @@ async function status(env, mint, sb) {
   return json({ status: (data && data[0] && data[0].status) || null });
 }
 
+/** The latest Solana launches and what the keeper found (public facts, all on chain anyway). */
+async function recent(env, sb) {
+  const { data } = await sb(env, "sol_coins?select=mint,name,symbol,status,note,locked,created_at,checked_at,price_usd&order=created_at.desc&limit=10");
+  return json({ coins: data || [] });
+}
+
 export async function solRoute(env, request, me, parts, method, body, { sb, underLimit }) {
+  if (parts[1] === "recent" && parts.length === 2 && method === "GET") return await recent(env, sb);
   if (parts[1] === "config" && parts.length === 2 && method === "GET") return await config(env, sb);
   if (parts[1] === "meta" && parts.length === 2 && method === "POST") return await meta(env, request, body, underLimit);
   if (parts[1] === "coin" && parts.length === 2 && method === "POST") return await record(env, request, body, me, sb, underLimit);
