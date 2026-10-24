@@ -225,7 +225,7 @@ async function drawLogo(env, art) {
 }
 
 /** A public post on X: { author, text, id } through X's free oEmbed (no API key). */
-async function readTweet(url) {
+export async function readTweet(url) {
   const m = /^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})/.exec(String(url || "").trim());
   if (!m) return null;
   const link = `https://twitter.com/${m[1]}/status/${m[2]}`;
@@ -250,7 +250,7 @@ const REPLY_STYLE =
   "no slogans, no 'great post', no flattery, no financial advice, nothing rude. " +
   'Reply with ONLY a JSON array of 3 strings, no other text.';
 
-async function makeReplies(env, post, extra) {
+export async function makeReplies(env, post, extra) {
   let lastErr = null;
   for (const model of TEXT_MODELS) {
     try {
