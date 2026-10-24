@@ -11,6 +11,7 @@ import { chainTransport } from "@/lib/race";
 import type { PrivyState } from "./privy-bridge";
 import type { PrivySolState } from "./privy-sol";
 import { solanaFor } from "@/lib/solana";
+import { rememberSolWallet } from "@/lib/solheld";
 import type { SmartWalletClient } from "@alchemy/wallet-apis";
 import { sendWithUsdcGas, usdcGasChain } from "@/lib/usdcgas";
 
@@ -206,6 +207,10 @@ async function ensureNetwork(p: Eip1193, chain: Chain) {
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [privy, setPrivy] = useState<PrivyState | null>(null);
   const [privySol, setPrivySol] = useState<PrivySolState | null>(null);
+  // the email account's Solana wallet: its coins count in the balance (lib/solheld.ts)
+  useEffect(() => {
+    if (privy?.address && privySol?.address) rememberSolWallet(privy.address, privySol.address);
+  }, [privy?.address, privySol?.address]);
   const [loadPrivy, setLoadPrivy] = useState(false);
   const [loginRequests, setLoginRequests] = useState(0);
   const smartClients = useRef(new Map<string, unknown>());

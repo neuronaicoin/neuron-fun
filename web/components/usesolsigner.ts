@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "./wallet";
 import type { SolSigner } from "@/lib/sollaunch";
+import { rememberSolWallet } from "@/lib/solheld";
 
 export function useSolSigner() {
   const w = useWallet();
@@ -34,6 +35,10 @@ export function useSolSigner() {
 
   /** The Solana address, once known (an email account's wallet may not be made yet). */
   const address = w.embedded ? (w.solana?.address ?? null) : (ext?.address ?? null);
+  // the balance shows this wallet's Solana coins from now on (lib/solheld.ts)
+  useEffect(() => {
+    if (w.address && address) rememberSolWallet(w.address, address);
+  }, [w.address, address]);
 
   const get = useCallback(async (): Promise<SolSigner> => {
     if (w.embedded) {

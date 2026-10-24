@@ -12,6 +12,7 @@ import { usdcAbi } from "./abis";
 import { clientFor, fetchPortfolio, fetchTrades, nativePerToken, type Coin } from "./data";
 import { fetchRacePositions, verifyRacePositions, type RaceCoin, type RacePosition } from "./race";
 import { fetchExtHoldings, type ExtHolding } from "./extheld";
+import { fetchSolHoldings } from "./solheld";
 import { PERPS_TRADING, fetchPerpAccount, type PerpPosition } from "./perps";
 
 /** What cash is held in: dollars (USDC; USDG on Robinhood mainnet) in the dollar edition. */
@@ -246,7 +247,11 @@ async function loadPortfolio(address: string, prev: Portfolio | null = null, onP
   const chains = uniqueChains();
   let extrasDone = false;
   const extras = Promise.all([
-    fetchExtHoldings(address).catch(() => prev?.extPositions ?? ([] as ExtHolding[])),
+    Promise.all([
+      fetchExtHoldings(address).catch(() => prev?.extPositions.filter((h) => h.network !== "solana") ?? ([] as ExtHolding[])),
+      // Solana coins (only for people who see Solana yet; nothing for anyone else)
+      fetchSolHoldings(address).catch(() => prev?.extPositions.filter((h) => h.network === "solana") ?? ([] as ExtHolding[])),
+    ]).then(([evm, sol]) => [...evm, ...sol].sort((a, b) => b.valueUsd - a.valueUsd)),
     PERPS_TRADING ? fetchPerpAccount(address).catch(() => null) : Promise.resolve(null),
   ]).finally(() => (extrasDone = true));
   const [pf, cash, trades, racePositions] = await Promise.all([
