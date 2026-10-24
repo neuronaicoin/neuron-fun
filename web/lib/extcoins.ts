@@ -135,8 +135,22 @@ export async function fetchExtCoins(
           : sort === "volume"
             ? q.order("vol_24h", { ascending: false, nullsFirst: false })
           : q.order("trending_rank", { ascending: true, nullsFirst: false }).order("vol_24h", { ascending: false });
-  const { data, error } = await q.limit(Math.min(Math.max(1, limit), 500));
+  const [{ data, error }, ours] = await Promise.all([q.limit(Math.min(Math.max(1, limit), 500)), sol ? fetchSasaSolCoins(50, s) : Promise.resolve([])]);
   if (error) throw error;
+  const list = ((data ?? []) as Record<string, unknown>[]).map(toExt);
+  if (!ours.length) return list;
+  // Solana coins launched on sasa first (a fresh launch has no volume yet to make the list)
+  const mine = new Set(ours.map((c) => c.address));
+  return [...ours, ...list.filter((c) => !mine.has(c.address))].slice(0, Math.max(limit, ours.length));
+}
+
+/** Solana coins launched on sasa (checked on chain by the keeper), newest first. */
+export async function fetchSasaSolCoins(limit = 50, search = ""): Promise<ExtCoin[]> {
+  let q = db.from("sol_sasa_coins").select("*");
+  if (search) q = B58.test(search) ? q.eq("address", search) : q.or(`symbol.ilike.%${search}%,name.ilike.%${search}%`);
+  const { data, error } = await q.order("created_at", { ascending: false }).limit(limit);
+  // the view is made by the indexer: before it exists there's simply nothing to add
+  if (error) return [];
   return ((data ?? []) as Record<string, unknown>[]).map(toExt);
 }
 
@@ -148,7 +162,10 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
   if (isSolExt(network)) {
     const { data, error } = await db.from("sol_ext_coins_all").select("*").eq("address", address).maybeSingle();
     if (error) throw error;
-    return data ? toExt(data as Record<string, unknown>) : null;
+    if (data) return toExt(data as Record<string, unknown>);
+    // a coin just launched on sasa (not on DexScreener yet)
+    const ours = await db.from("sol_sasa_coins").select("*").eq("address", address).maybeSingle();
+    return ours.data ? toExt(ours.data as Record<string, unknown>) : null;
   }
   const a = address.toLowerCase();
   const [live, arch] = await Promise.all([

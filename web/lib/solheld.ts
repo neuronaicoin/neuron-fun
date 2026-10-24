@@ -56,13 +56,20 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
   }
   if (!amounts.size) return [];
   const mints = [...amounts.keys()].slice(0, 100);
-  const { data } = await db.from("sol_ext_coins_all").select("*").in("address", mints);
+  const [market, ours] = await Promise.all([
+    db.from("sol_ext_coins_all").select("*").in("address", mints),
+    // coins launched on sasa: priced from their launch curve before DexScreener has them
+    db.from("sol_sasa_coins").select("*").in("address", mints),
+  ]);
+  const rows = new Map<string, Record<string, unknown>>();
+  for (const r of ((ours.error ? [] : ours.data) ?? []) as Record<string, unknown>[]) rows.set(String(r.address), r);
+  for (const r of ((market.data ?? []) as Record<string, unknown>[])) if (!rows.has(String(r.address)) || r.price_usd) rows.set(String(r.address), { ...rows.get(String(r.address)), ...r });
   const out: ExtHolding[] = [];
-  for (const r of (data ?? []) as Record<string, unknown>[]) {
+  for (const r of rows.values()) {
     const e = toExt(r);
     const tokens = amounts.get(e.address) ?? 0;
     const valueUsd = e.priceUsd ? tokens * e.priceUsd : 0;
-    if (valueUsd < 0.01) continue; // dust
+    if (tokens <= 0 || (e.priceUsd && valueUsd < 0.01)) continue; // dust
     out.push({
       network: "solana",
       chainId: SOLANA_ID,

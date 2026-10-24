@@ -11,6 +11,7 @@
 // Env: MARKETS_SOLANA=0 switches it off. MARKETS_EVERY_MS / MARKETS_GAP_MS as in markets.mjs.
 
 import { MAX_SANE_USD, notMeme, sane, xHandle } from "./markets.mjs";
+import { ensureSasaSolView } from "./solkeeper.mjs";
 
 const GT = "https://api.geckoterminal.com/api/v2";
 const DS = "https://api.dexscreener.com";
@@ -264,6 +265,7 @@ async function goplusSol(addresses) {
 export async function solMarketsLoop(pool, log) {
   if (process.env.MARKETS_SOLANA === "0" || process.env.MARKETS_OFF === "1") return;
   await pool.query(SQL);
+  await ensureSasaSolView(pool).catch(() => {});
   const every = Number(process.env.MARKETS_EVERY_MS ?? "120000");
   log("markets: watching solana (sol_ext_tokens)");
   for (let round = 1; ; round++) {
@@ -298,7 +300,12 @@ export async function solMarketsLoop(pool, log) {
         `select address from sol_ext_tokens where seen_at > now() - interval '24 hours' and coalesce(vol_24h, 0) >= 5000
          order by vol_24h desc nulls last limit 400`
       );
-      const addrs = [...new Set([...[...want].slice(0, 90), ...known.map((r) => r.address)])];
+      // sasa's own Solana coins always (fresh launches have no volume yet)
+      const ours = await pool
+        .query(`select mint from sol_coins where status = 'live' order by created_at desc limit 200`)
+        .then((r) => r.rows.map((x) => x.mint))
+        .catch(() => []);
+      const addrs = [...new Set([...ours, ...[...want].slice(0, 90), ...known.map((r) => r.address)])];
       let n = 0;
       for (let i = 0; i < addrs.length; i += 30) {
         const got = solRowsFromDexscreener(await ds(`/tokens/v1/solana/${addrs.slice(i, i + 30).join(",")}`).catch(() => []));

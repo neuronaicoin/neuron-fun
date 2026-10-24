@@ -60,7 +60,38 @@ create table if not exists sol_config (
 );
 alter table sol_config enable row level security;
 revoke all on sol_config from anon, authenticated;
+alter table sol_coins add column if not exists price_usd double precision;
+alter table sol_coins add column if not exists mcap_usd double precision;
+alter table sol_coins add column if not exists curve_done boolean;
+alter table sol_coins add column if not exists priced_at timestamptz;
 notify pgrst, 'reload schema';`;
+
+/**
+ * sasa's own Solana coins for the site's lists and coin pages (public: name, picture, price),
+ * with market data from solmarkets.mjs once DexScreener has the coin, and the keeper's own
+ * price from the launch curve before that. Made by whichever loop starts second (it needs both
+ * sol_coins and sol_ext_tokens).
+ */
+export async function ensureSasaSolView(pool) {
+  await pool.query(`do $$ begin
+    if to_regclass('public.sol_coins') is not null and to_regclass('public.sol_ext_tokens') is not null then
+      execute $v$
+        create or replace view sol_sasa_coins as
+        select 'solana'::text as network, 792703809::bigint as chain_id, c.mint as address, t.pool,
+               coalesce(t.dex, 'pumpfun') as dex, coalesce(c.name, t.name) as name, coalesce(c.symbol, t.symbol) as symbol,
+               coalesce(t.image, c.image) as image, coalesce(t.price_usd, c.price_usd) as price_usd, t.fdv_usd,
+               coalesce(t.mcap_usd, c.mcap_usd) as mcap_usd, t.liq_usd, t.vol_24h, t.change_1h, t.change_24h,
+               t.buys_24h, t.sells_24h, coalesce(t.pool_created, c.created_at) as pool_created, null::integer as trending_rank,
+               coalesce(t.seen_at, c.created_at) as seen_at, t.gp_checked_at, t.gp_buy_tax, t.gp_sell_tax, t.gp_mintable,
+               t.gp_top10, t.x_handle, c.created_at
+        from sol_coins c left join sol_ext_tokens t on t.address = c.mint
+        where c.status = 'live'
+      $v$;
+      execute 'grant select on sol_sasa_coins to anon, authenticated';
+    end if;
+  end $$;
+  notify pgrst, 'reload schema';`);
+}
 
 function b58decode(s) {
   let n = 0n;
@@ -256,6 +287,49 @@ async function payouts(pool, S, log) {
   }
 }
 
+// ------------------------------------------------------------------ prices
+
+let solUsd = { v: null, at: 0 };
+async function solPrice() {
+  if (solUsd.v && Date.now() - solUsd.at < 60_000) return solUsd.v;
+  try {
+    const r = await fetch("https://api.coinbase.com/v2/prices/SOL-USD/spot", { signal: AbortSignal.timeout(8000) });
+    const p = Number((await r.json())?.data?.amount);
+    if (Number.isFinite(p) && p > 0) solUsd = { v: p, at: Date.now() };
+  } catch {}
+  return solUsd.v;
+}
+
+/** Price and market cap of sasa's own coins from their launch curve (before DexScreener has them). */
+async function curvePrices(pool, S) {
+  const { web3, pump, conn } = S;
+  const usd = await solPrice();
+  if (!usd) return;
+  const { rows } = await pool.query(
+    `select mint from sol_coins where status = 'live' and coalesce(curve_done, false) = false
+     order by created_at desc limit 300`
+  );
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100);
+    const infos = await conn.getMultipleAccountsInfo(chunk.map((r) => pump.bondingCurvePda(new web3.PublicKey(r.mint))), "confirmed");
+    for (let j = 0; j < chunk.length; j++) {
+      try {
+        if (!infos[j]) continue;
+        const c = pump.PUMP_SDK.decodeBondingCurve(infos[j]);
+        const vq = Number(c.virtualQuoteReserves.toString()) / 1e9; // SOL
+        const vt = Number(c.virtualTokenReserves.toString()) / 1e6; // tokens (6 decimals)
+        const supply = Number(c.tokenTotalSupply.toString()) / 1e6;
+        if (c.complete || vt <= 0) {
+          await pool.query(`update sol_coins set curve_done = true where mint = $1`, [chunk[j].mint]);
+          continue;
+        }
+        const price = (vq / vt) * usd;
+        await pool.query(`update sol_coins set price_usd = $2, mcap_usd = $3, priced_at = now() where mint = $1`, [chunk[j].mint, price, price * supply]);
+      } catch {}
+    }
+  }
+}
+
 // ------------------------------------------------------------------ lookup table
 
 /** Every account a launch uses that is the same for every launch (programs, global accounts, fee wallets). */
@@ -346,6 +420,7 @@ async function keepLookupTable(pool, S, log) {
 export async function solKeeperLoop(pool, log) {
   if (process.env.SOLKEEPER_OFF === "1") return log("sol keeper off (SOLKEEPER_OFF=1)");
   await pool.query(SQL);
+  await ensureSasaSolView(pool).catch((e) => log(`sol: view (${e?.message ?? e})`));
   const treasuryRaw = String(process.env.SOLANA_TREASURY || "").trim();
   if (!treasuryRaw) {
     log("sol keeper waiting: set SOLANA_TREASURY (and SOLANA_RPC_URL, SOLANA_KEEPER_KEY) to turn it on");
@@ -368,6 +443,7 @@ export async function solKeeperLoop(pool, log) {
   await pool.query(`insert into sol_config (key, value) values ('treasury', $1) on conflict (key) do update set value = excluded.value, updated_at = now()`, [S.treasury.toBase58()]);
   log(`sol keeper on (treasury ${S.treasury.toBase58()}, ${S.keeper ? `keeper ${S.keeper.publicKey.toBase58()}` : "no keeper key: checks only, no payouts"})`);
   let lastPayout = 0;
+  let lastPrices = 0;
   let lastTable = 0;
   let lastLow = 0;
   let lastNote = 0;
@@ -376,6 +452,10 @@ export async function solKeeperLoop(pool, log) {
       await checkNew(pool, S, log);
     } catch (e) {
       log(`sol: check failed (${e?.message ?? e})`);
+    }
+    if (Date.now() - lastPrices > 60_000) {
+      lastPrices = Date.now();
+      await curvePrices(pool, S).catch((e) => log(`sol: prices failed (${e?.message ?? e})`));
     }
     if (S.keeper && Date.now() - lastTable > 12 * 3600_000) {
       try {

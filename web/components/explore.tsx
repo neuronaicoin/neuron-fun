@@ -12,7 +12,7 @@ import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 import { compactUsd } from "@/lib/format";
-import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchExtCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchExtCoins, fetchSasaSolCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
 import { useWallet } from "@/components/wallet";
 import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
@@ -137,8 +137,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     const load = async (tries = 3) => {
       for (let i = 0; i < tries; i++) {
         try {
-          const l = await fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq });
-          if (alive) setExt(l);
+          const [l, sol] = await Promise.all([
+            fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }),
+            // All chains: Solana coins launched on sasa too (for people who see Solana yet)
+            solChip && chain === "all" ? fetchSasaSolCoins(20, search).catch(() => []) : Promise.resolve([] as ExtCoin[]),
+          ]);
+          if (alive) setExt(sol.length ? [...l, ...sol.filter((c) => !l.some((x) => x.address === c.address))] : l);
           return;
         } catch {
           if (!alive) return;
@@ -155,7 +159,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       alive = false;
       clearInterval(t);
     };
-  }, [extSort, chain, search, extLimit, minVol, minLiq]);
+  }, [extSort, chain, search, extLimit, minVol, minLiq, solChip]);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
