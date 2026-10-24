@@ -129,6 +129,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 refreshMs={30_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No chart data for this coin yet."
+                since={coin.poolCreated ? Date.parse(coin.poolCreated) || undefined : undefined}
               />
             </section>
           )}

@@ -50,7 +50,7 @@ export function PauseBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, restoring, wallets, connecting, connect, loginWithEmail } = useWallet();
+  const { address, restoring, hintAddress, wallets, connecting, connect, loginWithEmail } = useWallet();
   const [sheet, setSheet] = useState<"none" | "pick">("none");
   const [error, setError] = useState("");
   const base =
@@ -74,21 +74,35 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
 
   // Logged in: the balance (opens the portfolio, with address and log out) and ＋ Deposit.
   // the login of last time is coming back: its balance, never a "Log in" that flashes and jumps
+  const loginButton = (cls = "") => (
+    <button
+      type="button"
+      className={base + "bg-ink text-on-accent hover:bg-ink-2 disabled:opacity-60 " + cls}
+      disabled={connecting}
+      onClick={() => {
+        setError("");
+        setSheet("pick");
+      }}
+    >
+      {connecting ? "Connecting…" : "Log in"}
+    </button>
+  );
+  // the first moment after loading, before we know whether someone was logged in: the page's
+  // head script already knows (html.is-guest), so the right one shows at once and nothing jumps
+  if (!address && restoring && !hintAddress && !full)
+    return (
+      <>
+        <span className="guest-hide contents">
+          <BalancePill />
+        </span>
+        {loginButton("guest-show")}
+      </>
+    );
   if (address || (restoring && !full)) return <BalancePill />;
   if (restoring) return <div className={base + "bg-night shimmer"} aria-hidden="true" />;
   return (
     <>
-      <button
-        type="button"
-        className={base + "bg-ink text-on-accent hover:bg-ink-2 disabled:opacity-60"}
-        disabled={connecting}
-        onClick={() => {
-          setError("");
-          setSheet("pick");
-        }}
-      >
-        {connecting ? "Connecting…" : "Log in"}
-      </button>
+      {loginButton()}
       {error && sheet === "none" && <p className="text-[0.8125rem] text-danger mt-2 max-w-xs">{error}</p>}
       {sheet === "pick" && (
         <Sheet title="Log in to sasa" onClose={() => setSheet("none")}>

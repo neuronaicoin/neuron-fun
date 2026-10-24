@@ -23,9 +23,9 @@
   --color-warn-bg: #2d2410;
   --color-warn-ink: #f6c56d;
   /* Sora for headings and big numbers, Instrument Sans for text; the system font while they load. */
-  --font-display: "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sora), "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--font-inst), "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-inst), "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* Calmer corners everywhere. */
   --radius-xl: 0.625rem;
   --radius-2xl: 0.75rem;
@@ -422,3 +422,9 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .toast-in { animation: toast-in .28s cubic-bezier(.2,.9,.3,1.2); }
 @keyframes toast-in { from { transform: translateY(-120%); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .toast-in { animation: none; } }
+
+/* Header, first moment after loading: "Log in" for visitors, the balance for people logged in
+   last time (layout.tsx's head script sets is-guest), so the header never jumps. */
+.guest-show { display: none !important; }
+html.is-guest .guest-show { display: inline-flex !important; }
+html.is-guest .guest-hide { display: none !important; }

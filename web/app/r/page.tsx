@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
 import { RaceChart } from "@/components/racechart";
+import { RaceBuyback } from "@/components/racebuyback";
 import { HoldersPnl } from "@/components/holderspnl";
 import { useChainSupply } from "@/lib/usesupply";
 import { RaceTradeBox } from "@/components/racetrade";
@@ -200,7 +201,7 @@ function RacePage() {
             </div>
           </div>
 
-          <RaceChart coinId={coin.id} chainId={chartChain} supply={supply} />
+          <RaceChart coinId={coin.id} chainId={chartChain} supply={supply} creator={coin.creator} since={coin.launchedAt} />
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-line rounded-2xl overflow-hidden border border-line">
             <Fact label="Market cap" value={compactUsd(mcap)} />
@@ -208,6 +209,8 @@ function RacePage() {
             <Fact label="Trades" value={trades.toLocaleString("en-US")} />
             <Fact label={solo ? "Raised" : "In the race"} value={compactUsd(coin.totalUsd ?? coin.lanes.reduce((s, l) => s + laneUsd(l), 0))} />
           </div>
+
+          {coin.feeMode === 1 && (coin.winner || solo) && <RaceBuyback chain={coin.winner ?? coin.lanes[0].chain} coin={coin.coin} />}
 
           {!solo && <RaceLanes coin={coin} phase={phase} now={now} />}
 

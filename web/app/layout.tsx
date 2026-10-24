@@ -1,16 +1,34 @@
 import type { Metadata, Viewport } from "next";
 // Two self-hosted fonts (no Google request): Sora for headings and numbers, Instrument Sans for text.
-import "@fontsource/sora/600.css";
-import "@fontsource/sora/700.css";
-import "@fontsource/sora/800.css";
-import "@fontsource/instrument-sans/400.css";
-import "@fontsource/instrument-sans/500.css";
-import "@fontsource/instrument-sans/600.css";
+// Loaded through next/font: the files are preloaded and the stand-in system font is sized to match,
+// so nothing jumps sideways when the real font arrives (on every load and pull-to-refresh).
+import localFont from "next/font/local";
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet";
 import { Header, BottomNav, Footer, TestnetBanner, PauseBanner } from "@/components/chrome";
 import { PullToRefresh } from "@/components/pulltorefresh";
 import { IS_TESTNET } from "@/lib/config";
+
+const sora = localFont({
+  src: [
+    { path: "../node_modules/@fontsource/sora/files/sora-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../node_modules/@fontsource/sora/files/sora-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "../node_modules/@fontsource/sora/files/sora-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
+  variable: "--font-sora",
+  display: "swap",
+  adjustFontFallback: "Arial",
+});
+const instrument = localFont({
+  src: [
+    { path: "../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-600-normal.woff2", weight: "600", style: "normal" },
+  ],
+  variable: "--font-inst",
+  display: "swap",
+  adjustFontFallback: "Arial",
+});
 
 const SITE = "https://sasapad.fun";
 
@@ -57,7 +75,7 @@ export const metadata: Metadata = {
  */
 const HOST_CHECK = (IS_TESTNET ? "" : "var NOLANDING=1;") + String.raw`try{var h=location.hostname,p=location.pathname,c=document.documentElement.classList;if(p.indexOf("/learn")===0){c.add("is-learn")}else if(typeof NOLANDING==="undefined"&&p==="/"&&(/(^|\.)sasapad\.(fun|com)$/.test(h)||/[?&]landing\b/.test(location.search))){c.add("is-landing")}}catch(e){}`;
 /** Runs before first paint: the saved theme, light by default. No flash. */
-const THEME_CHECK = String.raw`try{var t=localStorage.getItem("sasa-theme");if(t!=="light"&&t!=="dark"){t="light"}document.documentElement.setAttribute("data-theme",t)}catch(e){document.documentElement.setAttribute("data-theme","light")}`;
+const THEME_CHECK = String.raw`try{var t=localStorage.getItem("sasa-theme");if(t!=="light"&&t!=="dark"){t="light"}document.documentElement.setAttribute("data-theme",t);if(!localStorage.getItem("sasa.session"))document.documentElement.classList.add("is-guest")}catch(e){document.documentElement.setAttribute("data-theme","light")}`;
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -82,7 +100,7 @@ var s=document.createElement("script");s.async=true;s.src="https://www.googletag
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sora.variable} ${instrument.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: HOST_CHECK }} />
         <script dangerouslySetInnerHTML={{ __html: THEME_CHECK }} />
