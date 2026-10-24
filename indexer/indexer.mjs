@@ -24,6 +24,7 @@
 import pg from "pg";
 import { cardLoop, extCardLoop, raceCardLoop } from "./cards.mjs";
 import { marketCardLoop } from "./marketcards.mjs";
+import { xbotLoop } from "./xbot.mjs";
 import { alertLoop } from "./alerts.mjs";
 import { watchdogLoop } from "./watchdog.mjs";
 import { safetyLoop } from "./safety.mjs";
@@ -536,6 +537,7 @@ async function main() {
     keep("ext cards", () => extCardLoop(pool, log)),
     keep("race cards", () => raceCardLoop(pool, log)),
     keep("market cards", () => marketCardLoop(log)),
+    keep("x bot", () => xbotLoop(pool, log)),
     keep("alerts", () => alertLoop(pool, log)),
     keep("watchdog", () => watchdogLoop(pool, log)),
     keep("safety", () => safetyLoop(pool, chains, log)),
