@@ -3,6 +3,8 @@
 //   POST /api/ai/ideas  { idea }    → { ideas: [{ name, symbol, description, art }] }
 //   POST /api/ai/logo   { art }     → { image: "data:image/jpeg;base64,…" }
 //   POST /api/ai/coin   { idea }    → { name, symbol, description, image | null }
+//   POST /api/ai/reply  { url }     → { author, text, tweetId, replies: [3] }   admins only: reply ideas
+//        for a post on X, which the admin sends himself (X intent link)
 //        one coin in one go (the race launch page): one idea, one picture
 //
 // Signed-in users only, with a daily allowance per account (ai.sql). If the
@@ -222,6 +224,57 @@ async function drawLogo(env, art) {
   return { image };
 }
 
+/** A public post on X: { author, text, id } through X's free oEmbed (no API key). */
+async function readTweet(url) {
+  const m = /^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})/.exec(String(url || "").trim());
+  if (!m) return null;
+  const link = `https://twitter.com/${m[1]}/status/${m[2]}`;
+  const r = await fetch(`https://publish.twitter.com/oembed?omit_script=1&dnt=1&url=${encodeURIComponent(link)}`);
+  if (!r.ok) return { author: m[1], text: "", id: m[2] };
+  const j = await r.json();
+  const p = /<p[^>]*>([\s\S]*?)<\/p>/.exec(j.html || "");
+  const text = (p ? p[1] : "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/pic\.twitter\.com\/\S+/g, "")
+    .trim();
+  return { author: j.author_name || m[1], handle: m[1], text, id: m[2] };
+}
+
+const REPLY_STYLE =
+  "You write replies on X (Twitter) for a crypto trader account. Write exactly 3 different replies to the post. " +
+  "Rules: each under 200 characters; lowercase, casual, slightly loose like a real person typing fast; " +
+  "smart and specific to the post (point out a detail, a number, a contrarian angle, or ask a sharp question) so people reply or follow; " +
+  "at most one emoji, often none; no hashtags; no links; never mention any website, product or brand; " +
+  "no slogans, no 'great post', no flattery, no financial advice, nothing rude. " +
+  'Reply with ONLY a JSON array of 3 strings, no other text.';
+
+async function makeReplies(env, post, extra) {
+  let lastErr = null;
+  for (const model of TEXT_MODELS) {
+    try {
+      const res = await env.AI.run(model, {
+        messages: [
+          { role: "system", content: REPLY_STYLE },
+          { role: "user", content: `Post by @${post.handle || post.author}:\n${post.text || "(no text, only an image)"}${extra ? `\n\nWhat the image shows / extra context: ${extra}` : ""}` },
+        ],
+        max_tokens: 1200,
+        temperature: 0.95,
+      });
+      const list = parseIdeas(textOf(res))
+        .map((x) => clean(typeof x === "string" ? x : x && (x.text || x.reply), 270).replace(/#\w+/g, "").replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim())
+        .filter((x) => x.length >= 8)
+        .slice(0, 3);
+      if (list.length) return { list };
+      lastErr = new Error(`${model}: no replies in the answer`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  return { error: fail(503, adminView ? adminMsg(lastErr) : "The AI is busy. Try again in a minute.") };
+}
+
 export async function aiRoute(ctx, me, parts, method, body) {
   const env = ctx.env;
   adminView = String(env.FORUM_ADMINS || "")
@@ -231,6 +284,19 @@ export async function aiRoute(ctx, me, parts, method, body) {
     .includes(String(me).toLowerCase());
   if (method !== "POST" || parts.length !== 2) return fail(404, "Not found.");
   if (!env.AI || typeof env.AI.run !== "function") return fail(503, "AI ideas aren't switched on yet. Fill in the form below instead.");
+
+  if (parts[1] === "reply") {
+    // the admins, and the team's phone wallet (same list as the geo exemption in lib/perps.ts)
+    const helpers = ["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f"];
+    if (!adminView && !helpers.includes(String(me).toLowerCase())) return fail(403, "Admins only.");
+    const post = await readTweet(body.url);
+    if (!post) return fail(400, "Paste a link to a post on X (x.com/…/status/…).");
+    const extra = clean(body.extra, 400);
+    if (!post.text && !extra) return fail(400, "Couldn't read that post's text. Write in a few words what it says below and try again.");
+    const out = await makeReplies(env, post, extra);
+    if (out.error) return out.error;
+    return json({ author: post.author, handle: post.handle, text: post.text, tweetId: post.id, replies: out.list });
+  }
 
   if (parts[1] === "ideas") {
     const idea = clean(body.idea, 200);
