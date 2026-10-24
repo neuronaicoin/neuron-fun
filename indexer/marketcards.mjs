@@ -8,7 +8,7 @@
 //
 // Redrawn only when what it shows changes (price ±1%, chance ±2¢), looked at every 5 minutes.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (as cards.mjs); MARKET_CARD_EVERY_MS (default 300000);
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (as cards.mjs); MARKET_CARD_EVERY_MS (default 300000); MARKET_CARD_MIN_AGE_MS (default 3 h);
 //      MARKET_CARDS_OFF=1 switches this off.
 
 import { Resvg } from "@resvg/resvg-js";
@@ -160,15 +160,19 @@ const INDICES = new Set(["XYZ100", "SPX", "SP500", "US500", "NDX", "NAS100", "US
 const FX = new Set(["EUR", "JPY", "GBP", "CHF", "AUD", "CAD", "NZD", "CNH", "DXY"]);
 const groupOf = (l) => (COMMODITIES.has(l.toUpperCase()) ? "commodities" : INDICES.has(l.toUpperCase()) ? "indices" : FX.has(l.toUpperCase()) ? "fx" : "stocks");
 
-const drawn = new Map(); // card name → what it showed last time
+const drawn = new Map(); // card name → { sig, at }: what it showed last time and when
+// A card only shows in link previews, and each redraw is an upload: once drawn, a card is left
+// alone for MARKET_CARD_MIN_AGE_MS (default 3 h) even when its numbers move.
+const MIN_AGE = Number(process.env.MARKET_CARD_MIN_AGE_MS ?? String(3 * 3600e3));
 const utc = (t) => t.replace(/(\d{2}:\d{2})(\?)?$/, "$1 UTC$2");
 
 export async function marketCardRound({ url, key, log = () => {}, put = upload } = {}) {
   let n = 0;
   const send = async (name, sig, svg) => {
-    if (drawn.get(name) === sig) return;
+    const last = drawn.get(name);
+    if (last && (last.sig === sig || Date.now() - last.at < MIN_AGE)) return;
     await put(url, key, name, png(svg));
-    drawn.set(name, sig);
+    drawn.set(name, { sig, at: Date.now() });
     n++;
   };
   try {

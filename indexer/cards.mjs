@@ -337,11 +337,12 @@ export async function extCardLoop(pool, log) {
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return;
   const every = Number(process.env.EXT_CARD_EVERY_MS ?? "120000");
-  const perRound = Number(process.env.EXT_CARD_PER_ROUND ?? "120");
+  const perRound = Number(process.env.EXT_CARD_PER_ROUND ?? "40");
+  const minAge = Number(process.env.EXT_CARD_MIN_AGE_MS ?? String(12 * 3600e3));
   for (;;) {
     try {
       const { rows } = await pool.query(
-        `select e.network, e.address, e.name, e.symbol, e.image, e.mcap_usd, e.fdv_usd, e.vol_24h, e.liq_usd, e.change_24h, s.sig
+        `select e.network, e.address, e.name, e.symbol, e.image, e.mcap_usd, e.fdv_usd, e.vol_24h, e.liq_usd, e.change_24h, s.sig, s.drawn_at
          from ext_coins e left join card_state s on s.coin_id = 'x:' || e.network || ':' || e.address
          order by e.vol_24h desc nulls last
          limit 2000`
@@ -349,6 +350,8 @@ export async function extCardLoop(pool, log) {
       let drawn = 0;
       for (const row of rows) {
         if (drawn >= perRound) break;
+        // a card only shows in link previews: once drawn, leave it for minAge (each redraw is an upload)
+        if (row.sig && row.drawn_at && Date.now() - new Date(row.drawn_at).getTime() < minAge) continue;
         const pre = extCardFacts(row, null);
         // cheap check first (no picture download) — the signature only records whether a picture exists
         if (row.sig && row.sig === extCardSignature({ ...pre, logo: row.image ? "x" : null })) continue;
