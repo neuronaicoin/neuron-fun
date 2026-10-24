@@ -38,6 +38,8 @@ export type ExtCoin = {
   /** Highest market cap and 24h volume we ever saw (archive). */
   peakMcap?: number | null;
   peakVol?: number | null;
+  /** Launched on sasa (Solana): a fresh one is shown at the top until it has trading of its own. */
+  sasa?: boolean;
 };
 
 /** The chains All coins covers, in the order the filter shows them. */
@@ -145,13 +147,15 @@ export async function fetchExtCoins(
 }
 
 /** Solana coins launched on sasa (checked on chain by the keeper), newest first. */
-export async function fetchSasaSolCoins(limit = 50, search = ""): Promise<ExtCoin[]> {
+export async function fetchSasaSolCoins(limit = 50, search = "", owner?: string): Promise<ExtCoin[]> {
   let q = db.from("sol_sasa_coins").select("*");
+  // one sasa account's own launches (the "Coins you created" list)
+  if (owner) q = q.eq("owner", owner.toLowerCase());
   if (search) q = B58.test(search) ? q.eq("address", search) : q.or(`symbol.ilike.%${search}%,name.ilike.%${search}%`);
   const { data, error } = await q.order("created_at", { ascending: false }).limit(limit);
   // the view is made by the indexer: before it exists there's simply nothing to add
   if (error) return [];
-  return ((data ?? []) as Record<string, unknown>[]).map(toExt);
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ ...toExt(r), sasa: true }));
 }
 
 /**

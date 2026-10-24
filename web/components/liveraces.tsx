@@ -4,13 +4,17 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { CoinAvatar } from "@/components/coins";
 import { compactUsd } from "@/lib/format";
+import { useWallet } from "@/components/wallet";
+import { extHref, fetchSasaSolCoins, type ExtCoin } from "@/lib/extcoins";
+import { solanaFor } from "@/lib/solana";
 import { RACE_CHAINS, clock, fetchRaceCoins, laneUsd, leadLane, raceHref, racePhase, raceStuck, type RaceCoin } from "@/lib/race";
 
 /**
  * The race wall at the top of Explore: live races in big cards (every chain's money side by
  * side, the clock, who leads), then the races that just finished with their winner. Rows
  * scroll sideways, so the Explore list below keeps its layout. Shows `fallback` (the
- * "coming soon" banner) while there are no races.
+ * "coming soon" banner) while there are no races. Solana coins launched on sasa in the last
+ * day show with the finished ones (for people who see Solana yet).
  */
 // The last list seen, so coming back to Explore shows the races at once (no flash of the
 // "coming soon" banner while the list reloads).
@@ -19,6 +23,26 @@ let lastRaces: RaceCoin[] | null = null;
 export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   const [races, setRaces] = useState<RaceCoin[] | null>(lastRaces);
   const [now, setNow] = useState(() => Date.now());
+  const { address: me } = useWallet();
+  const solOn = solanaFor(me);
+  const [sol, setSol] = useState<ExtCoin[]>([]);
+  useEffect(() => {
+    if (!solOn) {
+      setSol([]);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      fetchSasaSolCoins(6)
+        .then((l) => alive && setSol(l.filter((c) => Date.now() - (Date.parse(c.poolCreated ?? "") || 0) < 86_400_000)))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [solOn]);
 
   useEffect(() => {
     if (!RACE_CHAINS.length) return;
@@ -43,13 +67,13 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
   if (!RACE_CHAINS.length) return <>{fallback}</>;
   // still loading: keep the section's usual room (the list below doesn't jump when it arrives)
   if (races === null) return <div className="h-[142px] sm:h-[171px]" aria-hidden="true" />;
-  if (races.length === 0) return <>{fallback}</>;
+  if (races.length === 0 && !sol.length) return <>{fallback}</>;
   // stuck races (no result an hour after the end) aren't live: their pages stay, the wall skips them
   // a coin launched on one chain doesn't race: it shows with the finished ones right away
   const solo = (r: RaceCoin) => r.lanes.length === 1;
   const live = races.filter((r) => !solo(r) && (racePhase(r, now) === "racing" || racePhase(r, now) === "deciding") && !raceStuck(r, now));
   const done = races.filter((r) => solo(r) || racePhase(r, now) === "decided").slice(0, 6);
-  if (!live.length && !done.length) return <>{fallback}</>;
+  if (!live.length && !done.length && !sol.length) return <>{fallback}</>;
   const liveUsd = live.reduce((s, r) => s + r.lanes.reduce((a, l) => a + laneUsd(l), 0), 0);
 
   return (
@@ -75,10 +99,13 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
         </div>
       )}
 
-      {done.length > 0 && (
+      {done.length + sol.length > 0 && (
         <>
           <h3 className="text-[0.8125rem] font-semibold text-ink-3 mt-1">Just finished</h3>
           <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 snap-x">
+            {sol.map((c) => (
+              <SolCard key={c.address} coin={c} />
+            ))}
             {done.map((r) => (
               <DoneCard key={r.id} race={r} />
             ))}
@@ -144,6 +171,25 @@ function LiveCard({ race, now }: { race: RaceCoin; now: number }) {
         </span>
         <span className="shrink-0 font-semibold text-emerald-dark">Trade →</span>
       </div>
+    </Link>
+  );
+}
+
+/** A Solana coin launched on sasa: its market cap and the Solana tag. */
+function SolCard({ coin }: { coin: ExtCoin }) {
+  return (
+    <Link
+      href={extHref(coin)}
+      className="snap-start shrink-0 w-[14rem] sm:w-[15rem] rounded-2xl border border-line bg-surface p-3 flex items-center gap-2.5 hover:border-ink-3 transition-colors min-w-0"
+    >
+      <CoinAvatar logo={coin.image ?? ""} symbol={coin.symbol} size={36} />
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-[0.875rem] truncate">{coin.name}</div>
+        <div className="text-[0.75rem] text-ink-3 truncate">{coin.mcapUsd ? `mcap ${compactUsd(coin.mcapUsd)}` : coin.symbol}</div>
+      </div>
+      <span className="shrink-0 text-[0.6875rem] font-bold text-white rounded-full px-2 py-0.5" style={{ background: "#9945ff" }}>
+        Solana
+      </span>
     </Link>
   );
 }

@@ -6,12 +6,13 @@
  * Solana wallet (Relay), then the coin is made on Solana (lib/sollaunch.ts). The user sees
  * dollars and their coin, nothing else.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { useWallet } from "./wallet";
 import { SolanaMark } from "./solanamoney";
 import { SolCashBack } from "./soltrade";
 import { CoinAvatar } from "./coins";
+import { Confetti } from "./confetti";
 import { postOnX } from "./share";
 import { toast } from "./alerts";
 import { draftToLinks, type LinkDraft } from "./coinlinks";
@@ -71,6 +72,9 @@ export function SolanaLaunchBox(p: {
   const [step, setStep] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState<Done | null>(null);
+  // the launch party: confetti once, when the coin is live
+  const [party, setParty] = useState(true);
+  const endParty = useCallback(() => setParty(false), []);
   const [pending, setPending] = useState<Pending | null>(null);
   const alive = useRef(true);
   // one launch at a time: locked before anything is awaited (a double tap can't launch twice)
@@ -237,6 +241,7 @@ export function SolanaLaunchBox(p: {
   if (done)
     return (
       <div className="flex flex-col gap-3 items-center text-center py-2">
+        {party && <Confetti onDone={endParty} />}
         <CoinAvatar logo={done.logo} symbol={done.symbol} size={56} />
         <div>
           <div className="font-bold text-[1.0625rem]">

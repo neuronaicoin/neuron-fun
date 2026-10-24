@@ -25,6 +25,8 @@ import { FollowListSheet } from "@/components/follows";
 import { coinHref, fetchPortfolio } from "@/lib/data";
 import { money, openMoney, pctText, refreshPortfolio, signed, useMoney, CASH_SYMBOL } from "@/lib/portfolio";
 import { displayName, fetchProfile, type Profile } from "@/lib/social";
+import { extHref, fetchSasaSolCoins, money as compactUsd, type ExtCoin } from "@/lib/extcoins";
+import { solanaFor } from "@/lib/solana";
 
 type Data = Awaited<ReturnType<typeof fetchPortfolio>>;
 
@@ -47,6 +49,14 @@ export default function MePage() {
   useEffect(() => {
     if (!address || !RACE_CHAINS.length) return;
     fetchRaceCoins(50, { creator: address }).then(setMyRaces).catch(() => setMyRaces([]));
+  }, [address]);
+
+  // Solana coins this account launched (for people who see Solana yet)
+  const [mySol, setMySol] = useState<ExtCoin[]>([]);
+  useEffect(() => {
+    setMySol([]);
+    if (!address || !solanaFor(address)) return;
+    fetchSasaSolCoins(50, "", address).then(setMySol).catch(() => {});
   }, [address]);
 
   const load = useCallback(async () => {
@@ -278,16 +288,27 @@ export default function MePage() {
               </span>
             </Link>
           ))}
-          {data?.created.slice(0, phone ? Math.max(0, madeShown - (myRaces?.length ?? 0)) : undefined).map((c) => (
+          {mySol.slice(0, phone ? Math.max(0, madeShown - (myRaces?.length ?? 0)) : undefined).map((c) => (
+            <Link key={c.address} href={extHref(c)} className="rounded-2xl border border-line bg-surface p-4 flex items-center gap-3 hover:border-emerald min-w-0">
+              <CoinAvatar logo={c.image ?? ""} symbol={c.symbol} size={44} />
+              <span className="min-w-0">
+                <b className="block truncate">{c.name}</b>
+                <span className="block text-[0.8125rem] text-ink-3 truncate">
+                  ${c.symbol} · on Solana{c.mcapUsd ? ` · ${compactUsd(c.mcapUsd)} mcap` : ""}
+                </span>
+              </span>
+            </Link>
+          ))}
+          {data?.created.slice(0, phone ? Math.max(0, madeShown - (myRaces?.length ?? 0) - mySol.length) : undefined).map((c) => (
             <CoinCard key={c.id} coin={c} />
           ))}
         </div>
-        {phone && (myRaces?.length ?? 0) + (data?.created.length ?? 0) > madeShown && (
+        {phone && (myRaces?.length ?? 0) + mySol.length + (data?.created.length ?? 0) > madeShown && (
           <div className="mt-3 rounded-2xl border border-line bg-surface px-4">
-            <LoadMore left={(myRaces?.length ?? 0) + (data?.created.length ?? 0) - madeShown} onClick={() => setMadeShown((n) => n + MORE)} />
+            <LoadMore left={(myRaces?.length ?? 0) + mySol.length + (data?.created.length ?? 0) - madeShown} onClick={() => setMadeShown((n) => n + MORE)} />
           </div>
         )}
-        {data && data.created.length === 0 && myRaces !== null && myRaces.length === 0 && (
+        {data && data.created.length === 0 && myRaces !== null && myRaces.length === 0 && mySol.length === 0 && (
           <div className="mt-1 text-center py-8 border border-dashed border-line rounded-2xl">
             <p className="text-ink-2">You haven&apos;t created a coin yet.</p>
             <Link href="/race/launch/" className="inline-flex mt-3 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>

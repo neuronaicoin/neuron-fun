@@ -83,7 +83,7 @@ export async function ensureSasaSolView(pool) {
                coalesce(t.mcap_usd, c.mcap_usd) as mcap_usd, t.liq_usd, t.vol_24h, t.change_1h, t.change_24h,
                t.buys_24h, t.sells_24h, coalesce(t.pool_created, c.created_at) as pool_created, null::integer as trending_rank,
                coalesce(t.seen_at, c.created_at) as seen_at, t.gp_checked_at, t.gp_buy_tax, t.gp_sell_tax, t.gp_mintable,
-               t.gp_top10, t.x_handle, c.created_at
+               t.gp_top10, t.x_handle, c.created_at, c.owner
         from sol_coins c left join sol_ext_tokens t on t.address = c.mint
         where c.status = 'live'
       $v$;
