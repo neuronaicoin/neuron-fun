@@ -189,7 +189,8 @@ function OtherDeposit() {
     const t = setTimeout(() => {
       getQuote(
         {
-          user: address,
+          // a non-EVM origin (Solana) wants a sender address of its own kind
+          user: from.evm ? address : refundFor(from, address),
           recipient: address,
           originChainId: from.id,
           originCurrency: token.address,

@@ -691,9 +691,9 @@ export default function RaceLaunchPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[0.8125rem] text-ink-3">Your chain</span>
             <div className="grid grid-cols-2 gap-2">
-              {CHAIN_ORDER.map((c) => {
+              {CHAIN_ORDER.flatMap((c) => {
                 const on = !onSolana && chains.includes(c.chainId);
-                return (
+                const tile = (
                   <button
                     key={c.chainId}
                     type="button"
@@ -704,27 +704,32 @@ export default function RaceLaunchPage() {
                         setChains([c.chainId]);
                       } else toggle(c.chainId);
                     }}
-                    className={"h-11 rounded-xl border px-3 flex items-center gap-2 text-[0.9375rem] min-w-0 " + (on ? "border-ink font-semibold" : "border-line text-ink-3")}
+                    className={"h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 " + (on ? "border-2 border-ink" : "border border-line")}
                     aria-pressed={on}
                   >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: on ? c.color : "var(--color-line)" }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} />
                     <span className="truncate">{c.short}</span>
+                    {on && <span className="ml-auto text-[0.8125rem]" aria-hidden="true">✓</span>}
                   </button>
                 );
+                // Solana sits right after Robinhood (for people who see it yet)
+                if (c.short !== "Robinhood" || !solOk) return [tile];
+                return [
+                  tile,
+                  <button
+                    key="solana"
+                    type="button"
+                    onClick={() => setSolo((v) => !v)}
+                    aria-pressed={onSolana}
+                    className={"h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 " + (onSolana ? "border-2 border-ink" : "border border-line")}
+                  >
+                    <SolanaMark size={16} />
+                    <span className="truncate">Solana</span>
+                    {onSolana && <span className="ml-auto text-[0.8125rem]" aria-hidden="true">✓</span>}
+                  </button>,
+                ];
               })}
             </div>
-            {solOk && (
-              <button
-                type="button"
-                onClick={() => setSolo((v) => !v)}
-                aria-pressed={onSolana}
-                className={"h-11 rounded-xl border px-3 flex items-center gap-2 text-[0.9375rem] min-w-0 " + (onSolana ? "border-ink font-semibold" : "border-line text-ink-3")}
-              >
-                <SolanaMark size={18} />
-                <span className="truncate">Solana</span>
-                <span className="ml-auto text-[0.6875rem] font-bold tracking-wide rounded-full px-2 py-0.5 bg-night text-ink-2">SOLO</span>
-              </button>
-            )}
             {onSolana ? (
               <p className="text-[0.8125rem] text-ink-2">Your coin goes live on Solana and shows up on DexScreener, GMGN and every Solana app at once.</p>
             ) : chains.length < CHAIN_ORDER.length ? (

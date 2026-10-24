@@ -126,7 +126,9 @@ export function SolanaDeposit() {
     const t = setTimeout(() => {
       getQuote(
         {
-          user: address,
+          // the sender is whoever pays into the one-time address: Relay wants a Solana address
+          // here (an EVM one is refused for a Solana origin), so the "anyone" address
+          user: "11111111111111111111111111111111",
           recipient: address,
           originChainId: SOLANA_ID,
           originCurrency: SOLANA_USDC,

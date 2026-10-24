@@ -263,18 +263,22 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
         <div className="px-4 sm:px-6 pt-2.5 flex items-center gap-2">
           <div className="ex-tabs flex-1 min-w-0 flex gap-1 overflow-x-auto" role="group" aria-label="Chain">
-            {[{ key: "all", short: "All chains", color: "" }, ...[...EXT_NETWORKS, ...(solChip ? [SOL_EXT_NETWORK] : [])].map((n) => ({ key: n.id, short: n.label, color: n.color }))].map((c) => (
+            {[
+              { key: "all", short: "All chains", color: "" },
+              // Solana right after Robinhood (for people who see it yet)
+              ...EXT_NETWORKS.flatMap((n) => (n.id === "robinhood" && solChip ? [n, SOL_EXT_NETWORK] : [n])).map((n) => ({ key: n.id, short: n.label, color: n.color })),
+            ].map((c) => (
               <button
                 key={c.key}
                 type="button"
                 aria-pressed={chain === c.key}
                 onClick={() => setChain(c.key)}
                 className={
-                  "shrink-0 h-8 px-3 rounded-lg text-[0.8125rem] whitespace-nowrap flex items-center gap-1.5 " +
-                  (chain === c.key ? "bg-night-2 text-ink font-semibold" : "text-ink-3 font-medium hover:text-ink")
+                  "shrink-0 h-8 px-3 rounded-lg text-[0.875rem] whitespace-nowrap flex items-center gap-1.5 " +
+                  (chain === c.key ? "bg-night-2 text-ink font-bold" : "text-ink font-semibold hover:bg-night-2")
                 }
               >
-                {c.color && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
+                {c.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
                 {c.short}
               </button>
             ))}
