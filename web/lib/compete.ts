@@ -8,7 +8,7 @@ import { db } from "./data";
  */
 export const COMP = {
   from: "2026-10-23T00:00:00Z",
-  to: "2026-11-22T00:00:00Z",
+  to: "2026-11-25T23:59:59Z",
   /** the prize is this share of the winner's volume ... */
   rate: 0.0025,
   /** ... up to this */

@@ -48,7 +48,7 @@ export default function CompetePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-10 pb-28 md:pb-12">
       <section className="rounded-3xl p-5 sm:p-8 text-[#1A130D]" style={{ background: "linear-gradient(120deg, #FF6B1A, #FFB020)" }}>
-        <p className="text-[0.875rem] font-semibold">🏆 Creator competition · 30 days</p>
+        <p className="text-[0.875rem] font-semibold">🏆 Creator competition · until Nov 25</p>
         <h1 className="font-display font-bold text-[2rem] sm:text-[3rem] leading-[1.05] tracking-tight mt-1">Win up to $100,000</h1>
         <p className="mt-2 max-w-[58ch] text-[0.9375rem] sm:text-[1rem]">
           Launch coins on sasa and bring your community. The creator whose coins get the most trading volume wins. You also earn 30% of your coins&apos; fees, and every trade counts for the airdrop.
