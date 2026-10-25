@@ -159,7 +159,7 @@ export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHei
   const started = Date.now();
   let lastSend = Date.now();
   for (let i = 0; ; i++) {
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 400));
     const st = (await c.getSignatureStatuses([sig]).catch(() => null))?.value?.[0] ?? null;
     if (st?.err) throw new Error(`Solana refused it: ${JSON.stringify(st.err).slice(0, 120)}`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return sig;

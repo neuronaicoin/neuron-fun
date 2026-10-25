@@ -23,24 +23,41 @@ const TX: Record<string, string> = {
   solana: "https://solscan.io/tx/",
 };
 
-/** The pool's latest trades (null while the first load runs, [] when there are none). */
-export function useExtTrades(coin: ExtCoin): ExtTrade[] | null {
+/**
+ * The pool's latest trades (null while the first load runs, [] when there are none). `curve`:
+ * a sasa coin's launch curve, read straight from Solana while the market lists don't have the
+ * coin yet (its first minutes).
+ */
+export function useExtTrades(coin: ExtCoin, curve?: string | null): ExtTrade[] | null {
   const [rows, setRows] = useState<ExtTrade[] | null>(null);
   const { network, pool, address } = coin;
   useEffect(() => {
-    if (!pool) return setRows([]);
+    if (!pool && !curve) return setRows([]);
     let alive = true;
-    const load = () =>
-      fetchExtTrades(network, pool, address)
-        .then((r) => alive && setRows(r))
-        .catch(() => alive && setRows((cur) => cur ?? []));
-    load();
-    const t = setInterval(() => document.visibilityState === "visible" && load(), 15_000);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      let r: ExtTrade[] | null = null;
+      if (pool) r = await fetchExtTrades(network, pool, address).catch(() => null);
+      let fromCurve = false;
+      if ((!r || !r.length) && curve) {
+        const { fetchCurveTrades } = await import("@/lib/solcurvetrades");
+        const c = await fetchCurveTrades(curve, address).catch(() => null);
+        if (c && c.length) {
+          r = c;
+          fromCurve = true;
+        }
+      }
+      if (!alive) return;
+      setRows((cur) => r ?? cur ?? []);
+      // a brand-new coin read from Solana: every 5 s; otherwise every 15 s
+      timer = setTimeout(() => (document.visibilityState === "visible" ? void load() : (timer = setTimeout(load, 5_000))), fromCurve ? 5_000 : 15_000);
+    };
+    void load();
     return () => {
       alive = false;
-      clearInterval(t);
+      if (timer) clearTimeout(timer);
     };
-  }, [network, pool, address]);
+  }, [network, pool, address, curve]);
   return rows;
 }
 

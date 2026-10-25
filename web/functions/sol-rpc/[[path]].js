@@ -6,7 +6,8 @@
  * the first one fails or is over its quota. Without either, Solana's public node is used
  * (slow and rate-limited: fine for testing, not for everyone).
  *
- * Only the JSON-RPC methods the site needs are passed on, one call per request (no batches),
+ * Only the JSON-RPC methods the site needs are passed on (getSignaturesForAddress and
+ * getTransaction: the first minutes of a new sasa coin's trades, before the market lists have them), one call per request (no batches),
  * only from sasa's own pages, at most DAILY_CALLS a day per network address (so nobody can use
  * up the node's quota; a launch takes about 30 calls).
  */
@@ -46,11 +47,13 @@ const ALLOWED = new Set([
   "getMinimumBalanceForRentExemption",
   "getMultipleAccounts",
   "getRecentPrioritizationFees",
+  "getSignaturesForAddress",
   "getSignatureStatuses",
   "getSlot",
   "getTokenAccountBalance",
   "getTokenAccountsByOwner",
   "getTokenSupply",
+  "getTransaction",
   "isBlockhashValid",
   "sendTransaction",
   "simulateTransaction",

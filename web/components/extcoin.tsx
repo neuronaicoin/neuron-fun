@@ -46,11 +46,11 @@ export type MarketInfo = { id: string; rank: number | null; via: string | null; 
 export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; backLink?: boolean; market?: MarketInfo }) {
   const net = extNetwork(coin.network)!;
   const [broken, setBroken] = useState(false);
-  // a coin launched on sasa that the market lists don't have yet: its launch curve is its pool
-  // (the chart and trades read it there from the first minute)
+  // a Solana coin launched on sasa: its launch curve. Until the market lists have the coin it is
+  // its pool, and its first trades are read straight from Solana (chart and list from the first second)
   const [curvePool, setCurvePool] = useState<string | null>(null);
   useEffect(() => {
-    if (coin.pool || !coin.sasa || !isSolExt(coin.network)) return setCurvePool(null);
+    if (!coin.sasa || !isSolExt(coin.network)) return setCurvePool(null);
     let alive = true;
     import("@solana/web3.js")
       .then(({ PublicKey }) => {
@@ -64,10 +64,10 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
     return () => {
       alive = false;
     };
-  }, [coin.pool, coin.sasa, coin.network, coin.address]);
+  }, [coin.sasa, coin.network, coin.address]);
   const pool = coin.pool ?? curvePool;
   // who bought and sold: the list under the chart, and the same trades on the chart
-  const tradeRows = useExtTrades(pool === coin.pool ? coin : { ...coin, pool });
+  const tradeRows = useExtTrades(pool === coin.pool ? coin : { ...coin, pool }, curvePool);
   const liveTrades = useExtLiveTrades(coin, tradeRows);
   const ch = coin.change24h;
   const kpis: [string, string, string?][] = [
@@ -149,8 +149,20 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
               <PriceChart
                 bleed
                 cacheKey={`ext:${coin.network}:${pool}`}
-                load={(frame) => fetchExtCandles(coin.network, pool, coin.address, frame)}
-                refreshMs={30_000}
+                load={(frame) =>
+                  fetchExtCandles(coin.network, pool, coin.address, frame)
+                    .catch((e) => {
+                      if (!curvePool) throw e;
+                      return [];
+                    })
+                    .then(async (rows) => {
+                      // a brand-new sasa coin: its first trades straight from Solana
+                      if (rows.length || !curvePool) return rows;
+                      const { fetchCurveCandles } = await import("@/lib/solcurvetrades");
+                      return fetchCurveCandles(curvePool, coin.address, frame);
+                    })
+                }
+                refreshMs={curvePool ? 10_000 : 30_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No chart data for this coin yet."
                 since={coin.poolCreated ? Date.parse(coin.poolCreated) || undefined : undefined}

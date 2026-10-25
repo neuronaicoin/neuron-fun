@@ -141,13 +141,13 @@ export function SolanaLaunchBox(p: {
     await w.send(BASE.chain, quoteCalls(q, BASE), (m) => setStep(m));
     afterTrade();
     setStep("Moving your dollars to Solana…");
-    for (let i = 0; i < 90 && alive.current; i++) {
+    for (let i = 0; i < 170 && alive.current; i++) {
       if ((await balance().catch(() => 0n)) >= need) return;
-      if (q.requestId && i % 3 === 2) {
+      if (q.requestId && i % 5 === 4) {
         const s = await requestStatus(q.requestId).catch(() => "waiting" as const);
         if (s === "failure" || s === "refund") throw new Error("The move to Solana didn't go through. Your dollars went back to your Cash.");
       }
-      await sleep(1500);
+      await sleep(800);
     }
     throw new Error("The dollars are still on their way. Press Create again in a minute (nothing is paid twice).");
   };
@@ -165,40 +165,47 @@ export function SolanaLaunchBox(p: {
       const s = await signer();
       const balance = () => L.solBalance(s.address);
 
-      setStep("Saving your coin's picture…");
-      const image = p.logoFile ? await fileToBigLogo(p.logoFile).catch(() => p.logo) : p.logo;
-      const l = draftToLinks(p.socials);
-      const info = await L.uploadCoinInfo({
-        name: p.name,
-        symbol: p.symbol,
-        description: p.description,
-        image,
-        twitter: l.x ?? undefined,
-        telegram: l.telegram ?? undefined,
-        website: l.website ?? undefined,
-      });
-
-      // what the first buy's dollars are in SOL right now
-      let buyLamports = 0n;
-      if (usdBuy > 0) {
-        setStep("Pricing your first buy…");
-        const probe = await getQuote({
-          user: w.address,
-          recipient: s.address,
-          originChainId: BASE.chain.id,
-          originCurrency: BASE.usdc,
-          destinationChainId: SOLANA_ID,
-          destinationCurrency: SOL_NATIVE,
-          amount: String(Math.floor(usdBuy * 1e6)),
+      // the picture upload and the first buy's price run side by side (a launch is a few seconds faster)
+      setStep("Getting your coin ready…");
+      const upload = (async () => {
+        const image = p.logoFile ? await fileToBigLogo(p.logoFile).catch(() => p.logo) : p.logo;
+        const l = draftToLinks(p.socials);
+        return L.uploadCoinInfo({
+          name: p.name,
+          symbol: p.symbol,
+          description: p.description,
+          image,
+          twitter: l.x ?? undefined,
+          telegram: l.telegram ?? undefined,
+          website: l.website ?? undefined,
         });
-        buyLamports = BigInt(probe.outRaw || "0");
-      }
-      const plan = await L.planLaunch(buyLamports);
-      await fund(s.address, L.lamportsNeeded(plan), balance);
+      })();
+      // what the first buy's dollars are in SOL right now
+      const planning = (async () => {
+        let buyLamports = 0n;
+        if (usdBuy > 0) {
+          const probe = await getQuote({
+            user: w.address!,
+            recipient: s.address,
+            originChainId: BASE.chain.id,
+            originCurrency: BASE.usdc,
+            destinationChainId: SOLANA_ID,
+            destinationCurrency: SOL_NATIVE,
+            amount: String(Math.floor(usdBuy * 1e6)),
+          });
+          buyLamports = BigInt(probe.outRaw || "0");
+        }
+        return { buyLamports, plan: await L.planLaunch(buyLamports) };
+      })();
+      const [info, { buyLamports, plan }] = await Promise.all([upload, planning]);
 
       // sasa hears about the coin before it's signed, so a closed tab can't leave it unknown
-      // (the keeper lists it only once it's on chain with the 50/50 split)
-      await L.recordCoin({ mint: plan.mint.publicKey.toBase58(), creator: s.address, uri: info.uri, sig: "", name: p.name, symbol: p.symbol, image: info.image }, sessionToken(w.address));
+      // (the keeper lists it only once it's on chain with the 50/50 split); done while the
+      // dollars move to Solana
+      await Promise.all([
+        fund(s.address, L.lamportsNeeded(plan), balance),
+        L.recordCoin({ mint: plan.mint.publicKey.toBase58(), creator: s.address, uri: info.uri, sig: "", name: p.name, symbol: p.symbol, image: info.image }, sessionToken(w.address)),
+      ]);
       const res = await L.sendLaunch({ plan, signer: s, config, name: p.name, symbol: p.symbol, uri: info.uri, onStep: setStep });
       const coin = { mint: res.mint, name: p.name, symbol: p.symbol, logo: p.logo };
       if (!res.finished) {

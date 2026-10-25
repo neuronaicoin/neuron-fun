@@ -213,11 +213,13 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (await L.onCurve(mint)) {
       // on its launch curve: sold on the curve for SOL, then the SOL goes to Cash as USDC
       await L.curveSell(s, mint, raw, (m) => setBusy(m));
-      setBusy("Moving the dollars to your Cash…");
-      const { solToCash } = await import("@/lib/solrelay");
-      const moved = await solToCash(s, w.address, (m) => setBusy(m)).catch(() => null);
-      toast(moved ? `Sold $${coin.symbol}: USDC arriving in your Cash in a few seconds ✓` : `Sold $${coin.symbol} ✓ The dollars move to your Cash in a moment.`);
-      for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
+      // sold: done for the user now; the dollars move to Cash in the background
+      toast(`Sold $${coin.symbol} ✓ Your dollars arrive in Cash in a few seconds.`);
+      const evm = w.address;
+      void import("@/lib/solrelay")
+        .then(({ solToCash }) => solToCash(s, evm))
+        .catch(() => null) // left in the Solana wallet: the Cash-back helper moves it later
+        .finally(() => [1000, 6000, 15000, 30000].forEach((ms) => setTimeout(() => afterTrade(), ms)));
       return;
     }
     const q = await getQuote({ user: s.address, recipient: w.address, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" });
