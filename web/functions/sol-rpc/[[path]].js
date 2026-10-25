@@ -14,7 +14,7 @@
 import { net64 } from "../../edge/ai-api.js";
 
 const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
-const DAILY_CALLS = 3000;
+const DAILY_CALLS = 8000; // a launch or trade takes about 30–80 calls; a page open for an hour a few hundred
 
 /** true while this network address is under today's limit (true too if the counter can't be reached). */
 async function underLimit(env, request) {

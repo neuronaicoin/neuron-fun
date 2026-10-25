@@ -181,6 +181,16 @@ async function checkSplit(S, row) {
   return { ok: true, creator: theirs.address.toBase58(), locked: !pump.isSharingConfigEditable({ sharingConfig: split }) };
 }
 
+/** A coin's name and symbol from its Token-2022 metadata (null when it has none). */
+async function chainMeta(S, mint) {
+  const r = await S.conn.getParsedAccountInfo(new S.web3.PublicKey(mint), "confirmed");
+  const ext = r?.value?.data?.parsed?.info?.extensions ?? [];
+  const m = ext.find((e) => e?.extension === "tokenMetadata")?.state;
+  if (!m || typeof m.name !== "string") return null;
+  const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, n) || null;
+  return { name: clean(m.name, 32), symbol: clean(m.symbol, 10) };
+}
+
 async function checkNew(pool, S, log) {
   const { rows } = await pool.query(
     `select mint, creator, created_at from sol_coins
@@ -190,8 +200,20 @@ async function checkNew(pool, S, log) {
   for (const r of rows) {
     try {
       const c = await checkSplit(S, r);
+      // listed only once the 50/50 split can't be changed any more (until then it stays pending)
+      if (c.ok && !c.locked) {
+        await pool.query(`update sol_coins set note = 'split not locked yet', checked_at = now() where mint = $1`, [r.mint]);
+        continue;
+      }
       if (c.ok) {
-        await pool.query(`update sol_coins set status = 'live', creator = $3, locked = $2, note = null, checked_at = now() where mint = $1`, [r.mint, c.locked, c.creator]);
+        // the name and symbol shown are the coin's own (from its on-chain metadata), never only
+        // what the launch page sent
+        const meta = await chainMeta(S, r.mint).catch(() => null);
+        await pool.query(
+          `update sol_coins set status = 'live', creator = $3, locked = $2, note = null, checked_at = now(),
+             name = coalesce($4, name), symbol = coalesce($5, symbol) where mint = $1`,
+          [r.mint, c.locked, c.creator, meta?.name ?? null, meta?.symbol ?? null]
+        );
         log(`sol: ${r.mint} is live (split ${c.locked ? "locked" : "set"})`);
       } else {
         // recorded just before signing: a coin that never showed up was not launched; a launch

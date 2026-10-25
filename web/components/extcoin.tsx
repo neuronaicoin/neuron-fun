@@ -39,6 +39,13 @@ const EXPLORER: Record<string, string> = {
 };
 const FEE = 0.007;
 
+/** An exchange's name for people: Solana's launch curve and its pools by what they are, not by brand. */
+function dexName(dex: string | null): string {
+  if (!dex) return "";
+  if (/^pump/i.test(dex)) return /swap|amm/i.test(dex) ? "a Solana pool" : "its Solana launch curve";
+  return dex.replace(/[-_]/g, " ");
+}
+
 /** Price, stats, chart, token check and trade box of a coin from any DEX. */
 /** A coin from the Market list: its page shows its rank, and what is bought for it (cbBTC for Bitcoin…). */
 export type MarketInfo = { id: string; rank: number | null; via: string | null; change7d: number | null };
@@ -191,10 +198,10 @@ function AboutCoin({ coin, chain, market }: { coin: ExtCoin; chain: string; mark
         coin.vol24h ? `About ${money(coin.vol24h)} of it traded in the last 24 hours across all markets.` : "",
         market.via
           ? `On sasa you buy it as ${market.via}: a token that follows its price one to one and trades on DEXs.`
-          : `On sasa it is bought on ${chain}${coin.dex ? `, mainly on ${coin.dex.replace(/[-_]/g, " ")}` : ""}${coin.liqUsd ? `, with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.`,
+          : `On sasa it is bought on ${chain}${dexName(coin.dex) ? `, mainly on ${dexName(coin.dex)}` : ""}${coin.liqUsd ? `, with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.`,
       ].filter(Boolean)
     : [
-    `${coin.name} (${sym}) is a coin on ${chain}${coin.dex ? `, traded mainly on ${coin.dex.replace(/[-_]/g, " ")}` : ""}${created ? `. Its main pool opened on ${created}` : ""}.`,
+    `${coin.name} (${sym}) is a coin on ${chain}${dexName(coin.dex) ? `, traded mainly on ${dexName(coin.dex)}` : ""}${created ? `. Its main pool opened on ${created}` : ""}.`,
     coin.mcapUsd ? `Its market cap is about ${money(coin.mcapUsd)}${coin.liqUsd ? ` with ${money(coin.liqUsd)} of liquidity in the pool` : ""}.` : "",
     coin.peakMcap && coin.mcapUsd && coin.peakMcap > coin.mcapUsd * 1.2 ? `The highest market cap we saw was ${money(coin.peakMcap)}.` : "",
     coin.sellTax !== null || coin.buyTax !== null

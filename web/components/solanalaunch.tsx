@@ -14,6 +14,7 @@ import { SolCashBack } from "./soltrade";
 import { CoinAvatar } from "./coins";
 import { Confetti } from "./confetti";
 import { justLaunched } from "@/lib/extcoins";
+import { solInflight } from "@/lib/solheld";
 import { postOnX } from "./share";
 import { toast } from "./alerts";
 import { draftToLinks, type LinkDraft } from "./coinlinks";
@@ -157,6 +158,11 @@ export function SolanaLaunchBox(p: {
     lock.current = true;
     setBusy(true);
     setError("");
+    // the coin about to go on chain: kept on this device before it's sent, so a closed tab or a
+    // failure half-way still offers "Finish" (the 50/50 split) afterwards
+    let sent: Pending | null = null;
+    // SOL is coming into the Solana wallet for this launch: the "back to Cash" helper waits
+    solInflight(true);
     try {
       setStep("Getting ready…");
       const L = await import("@/lib/sollaunch");
@@ -206,18 +212,28 @@ export function SolanaLaunchBox(p: {
         fund(s.address, L.lamportsNeeded(plan), balance),
         L.recordCoin({ mint: plan.mint.publicKey.toBase58(), creator: s.address, uri: info.uri, sig: "", name: p.name, symbol: p.symbol, image: info.image }, sessionToken(w.address)),
       ]);
+      sent = { mint: plan.mint.publicKey.toBase58(), name: p.name, symbol: p.symbol, logo: p.logo, creator: s.address };
+      savePending(sent);
       const res = await L.sendLaunch({ plan, signer: s, config, name: p.name, symbol: p.symbol, uri: info.uri, onStep: setStep });
       const coin = { mint: res.mint, name: p.name, symbol: p.symbol, logo: p.logo };
-      if (!res.finished) {
-        savePending({ ...coin, creator: s.address });
-        setPending({ ...coin, creator: s.address });
-      }
+      if (!res.finished) setPending({ ...coin, creator: s.address });
+      else savePending(null);
       setDone({ ...coin, finished: res.finished, bought: res.bought || buyLamports === 0n });
       if (res.finished) justLaunched({ address: res.mint, name: p.name, symbol: p.symbol, image: info.image });
       toast("Your coin is live on Solana ✓");
     } catch (e) {
       setError(friendlyError(e));
+      // did the coin make it on chain before the failure? then "Finish" stays; if not, nothing to finish
+      if (sent) {
+        const mint = sent.mint;
+        const exists = await Promise.all([import("@/lib/sollaunch"), import("@solana/web3.js")])
+          .then(async ([L, { PublicKey }]) => !!(await L.solConnection().getAccountInfo(new PublicKey(mint), "confirmed")))
+          .catch(() => true);
+        if (exists) setPending(sent);
+        else savePending(null);
+      }
     } finally {
+      solInflight(false);
       lock.current = false;
       setBusy(false);
       setStep("");

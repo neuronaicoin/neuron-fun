@@ -52,7 +52,11 @@ function ExtCoinPage() {
       if (c || !soon) setCoin((x) => c ?? (x === undefined ? null : x));
       // fast while it's new (going live, or its market numbers not in yet), then every minute
       const fast = soon || (c !== null && (!c.pool || c.mcapUsd === null));
-      timer = setTimeout(() => (document.visibilityState === "visible" ? void load() : (timer = setTimeout(load, 5_000))), fast ? 5_000 : 60_000);
+      timer = setTimeout(function next() {
+        // hidden tab: wait for it to be seen again (no calls while nobody looks)
+        if (document.visibilityState === "visible") void load();
+        else timer = setTimeout(next, 5_000);
+      }, fast ? 5_000 : 60_000);
     };
     void load();
     return () => {

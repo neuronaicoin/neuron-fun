@@ -26,6 +26,7 @@ import { SOLANA_ID, SOL_NATIVE } from "@/lib/solana";
 import type { ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { solanaFor } from "@/lib/solana";
+import { solInflight, solIsInflight } from "@/lib/solheld";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const FEE = 0.007;
@@ -122,6 +123,8 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       fee: "swap",
     });
     const solBefore = curve ? await L.solBalance(s.address).catch(() => 0n) : 0n;
+    // SOL is about to arrive for this buy: the "back to Cash" helper leaves it alone meanwhile
+    if (curve) solInflight(true);
     const calls = quoteCalls(q, BASE);
     const need = BigInt(q.inRaw || "0") > raw ? BigInt(q.inRaw || "0") : raw;
     const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
@@ -138,8 +141,14 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
         bal = await L.solBalance(s.address).catch(() => bal);
         if (bal >= solBefore + (want * 95n) / 100n) break;
       }
-      const spend = bal - 3_000_000n < want ? bal - 3_000_000n : want;
-      if (spend <= 0n) throw new Error("Your dollars are still on their way. They'll show in your Solana wallet in a moment; try the buy again then.");
+      // only the SOL that arrived for this buy is spent (never the wallet's own), and a little
+      // stays for the network fee and the coin's account
+      const arrived = bal - solBefore;
+      if (arrived < (want * 95n) / 100n)
+        throw new Error("Your dollars are still on their way. They'll show in your Solana wallet in a moment; try the buy again then.");
+      const room = bal - 3_000_000n;
+      const spend = [arrived, want, room].reduce((a, b) => (b < a ? b : a));
+      if (spend <= 0n) throw new Error("That amount is too small to buy.");
       await L.curveBuy(s, mint, spend, (m) => setBusy(m));
       afterTrade();
       toast(`Bought $${coin.symbol} ✓`);
@@ -198,12 +207,12 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     setBusy("Getting the price…");
     if (curve) {
       // on its launch curve: sold on the curve for SOL, then the SOL goes to Cash as USDC
-      await L.curveSell(s, mint, raw, (m) => setBusy(m));
+      const proceeds = await L.curveSell(s, mint, raw, (m) => setBusy(m));
       // sold: done for the user now; the dollars move to Cash in the background
       toast(`Sold $${coin.symbol} ✓ Your dollars arrive in Cash in a few seconds.`);
       const evm = w.address;
       void import("@/lib/solrelay")
-        .then(({ solToCash }) => solToCash(s, evm))
+        .then(({ solToCash }) => solToCash(s, evm, undefined, w.embedded ? undefined : proceeds))
         .catch(() => null) // left in the Solana wallet: the Cash-back helper moves it later
         .finally(() => [1000, 6000, 15000, 30000].forEach((ms) => setTimeout(() => afterTrade(), ms)));
       return;
@@ -228,6 +237,7 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     } catch (e) {
       setError(friendlyError(e));
     } finally {
+      solInflight(false);
       lock.current = false;
       setBusy("");
     }
@@ -329,10 +339,12 @@ export function SolCashBack() {
   const lock = useRef(false);
   const tried = useRef(false);
   const load = useCallback(async () => {
-    if (!sol.address || !w.address) return setQ(null);
+    // email accounts only (an outside wallet's SOL is the user's own), and never while a buy
+    // or launch is bringing SOL in for itself
+    if (!sol.address || !w.address || !w.embedded || solIsInflight()) return setQ(null);
     const { quoteSolToCash } = await import("@/lib/solrelay");
     setQ(await quoteSolToCash(sol.address, w.address).catch(() => null));
-  }, [sol.address, w.address]);
+  }, [sol.address, w.address, w.embedded]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -357,14 +369,14 @@ export function SolCashBack() {
     }
   }, [w.address, sol, load]);
   // email accounts: automatic, once per visit
-  const auto = w.embedded && !!q && q.outUsd >= 1;
+  const auto = w.embedded && !!q && q.outUsd >= 0.3;
   useEffect(() => {
     if (!auto || tried.current) return;
     tried.current = true;
     void move();
   }, [auto, move]);
 
-  if (!q || q.outUsd < 1) return null;
+  if (!q || q.outUsd < 0.3) return null;
   if (w.embedded && !err)
     return busy ? <p className="mt-3 text-[0.75rem] text-ink-3 text-center">Moving ${q.outUsd.toFixed(2)} back to your Cash…</p> : null;
   return (

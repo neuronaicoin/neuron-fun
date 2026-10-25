@@ -145,7 +145,8 @@ async function record(env, request, body, me, sb, underLimit) {
       sig: sig || null,
       name: clean(body.name, 32),
       symbol: clean(body.symbol, 10),
-      image: clean(body.image, 200),
+      // only a picture stored by sasa itself (/api/sol/meta), never any other address
+      image: String(body.image || "").startsWith(SHORT) ? clean(body.image, 200) : null,
     },
     prefer: "resolution=ignore-duplicates,return=minimal",
   });

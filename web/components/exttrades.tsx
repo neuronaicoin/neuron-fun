@@ -49,8 +49,12 @@ export function useExtTrades(coin: ExtCoin, curve?: string | null): ExtTrade[] |
       }
       if (!alive) return;
       setRows((cur) => r ?? cur ?? []);
-      // a brand-new coin read from Solana: every 5 s; otherwise every 15 s
-      timer = setTimeout(() => (document.visibilityState === "visible" ? void load() : (timer = setTimeout(load, 5_000))), fromCurve ? 5_000 : 15_000);
+      // a brand-new coin read from Solana: every 8 s; otherwise every 15 s
+      timer = setTimeout(function next() {
+        // hidden tab: wait for it to be seen again (no calls while nobody looks)
+        if (document.visibilityState === "visible") void load();
+        else timer = setTimeout(next, 5_000);
+      }, fromCurve ? 8_000 : 15_000);
     };
     void load();
     return () => {

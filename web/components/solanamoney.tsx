@@ -276,7 +276,28 @@ export function SolanaWithdraw({ onDone }: { onDone: () => void }) {
   const max = bal === null ? 0n : bal > reserve ? bal - reserve : 0n;
   const units = toUnits(amount, 6);
   const dest = to.trim();
-  const toOk = isSolanaAddress(dest);
+  // a wallet address only: a token account or a program address would swallow the USDC for good
+  const [notWallet, setNotWallet] = useState("");
+  useEffect(() => {
+    setNotWallet("");
+    if (!isSolanaAddress(dest)) return;
+    let on = true;
+    void Promise.all([import("@solana/web3.js"), import("@/lib/sollaunch")])
+      .then(async ([{ PublicKey }, L]) => {
+        const key = new PublicKey(dest);
+        if (!PublicKey.isOnCurve(key.toBytes())) return "That's not a wallet address. Paste the address of your Solana wallet.";
+        const info = await L.solConnection().getAccountInfo(key, "confirmed").catch(() => null);
+        const TOKEN = ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"];
+        if (info && TOKEN.includes(info.owner.toBase58())) return "That's a token account, not a wallet. Paste your Solana wallet's address.";
+        return "";
+      })
+      .then((m) => on && setNotWallet(m))
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, [dest]);
+  const toOk = isSolanaAddress(dest) && !notWallet;
   const tooMuch = units !== null && BigInt(units) > max;
 
   useEffect(() => {
@@ -388,7 +409,7 @@ export function SolanaWithdraw({ onDone }: { onDone: () => void }) {
             Scan
           </button>
         </div>
-        {dest && !toOk && <span className="text-[0.75rem] text-danger">That isn&apos;t a Solana address.</span>}
+        {dest && !toOk && <span className="text-[0.75rem] text-danger">{notWallet || "That isn't a Solana address."}</span>}
       </label>
       <label className="flex flex-col gap-1.5">
         <span className="text-[0.8125rem] text-ink-3 flex justify-between">
@@ -403,7 +424,7 @@ export function SolanaWithdraw({ onDone }: { onDone: () => void }) {
             placeholder="0.00"
             className="flex-1 min-w-0 h-12 rounded-xl border border-line bg-paper px-3 text-[1rem] tabular-nums outline-none focus:border-ink-3"
           />
-          <button type="button" onClick={() => setAmount((Number(max) / 1e6).toFixed(2))} disabled={max <= 0n} className="h-12 px-4 rounded-xl border border-line text-[0.8125rem] font-semibold shrink-0 disabled:opacity-40">
+          <button type="button" onClick={() => setAmount((Math.floor(Number(max) / 1e4) / 100).toFixed(2))} disabled={max <= 0n} className="h-12 px-4 rounded-xl border border-line text-[0.8125rem] font-semibold shrink-0 disabled:opacity-40">
             Max
           </button>
         </div>

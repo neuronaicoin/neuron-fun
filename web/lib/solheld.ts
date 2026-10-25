@@ -93,3 +93,23 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
   }
   return out;
 }
+
+/**
+ * A buy or launch that is moving SOL into the Solana wallet right now (on this device): the
+ * "back to Cash" helper leaves the wallet alone meanwhile, or it would send that SOL back
+ * before it's used. Expires by itself after 10 minutes.
+ */
+const INFLIGHT = "sasa.sol.inflight";
+export function solInflight(on: boolean) {
+  try {
+    if (on) localStorage.setItem(INFLIGHT, String(Date.now()));
+    else localStorage.removeItem(INFLIGHT);
+  } catch {}
+}
+export function solIsInflight(): boolean {
+  try {
+    return Date.now() - Number(localStorage.getItem(INFLIGHT) || 0) < 600_000;
+  } catch {
+    return false;
+  }
+}

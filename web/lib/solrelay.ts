@@ -75,12 +75,14 @@ export async function solTokenBalance(owner: string, mint: string): Promise<bigi
 /** Kept in the Solana wallet for network fees (sells pay theirs in SOL). */
 export const SOL_KEEP_LAMPORTS = 6_000_000n; // 0.006 SOL (a sale's fee and the token accounts it opens)
 /** Below this, moving SOL back isn't worth a route. */
-const MIN_BACK = 10_000_000n; // 0.01 SOL
+const MIN_BACK = 5_000_000n; // 0.005 SOL (about 50 cents: small sales come back too)
 
 /** What the SOL beyond the fee reserve would bring in Cash, or null when it's too little to move. */
-export async function quoteSolToCash(solAddress: string, evmAddress: string): Promise<Quote | null> {
+export async function quoteSolToCash(solAddress: string, evmAddress: string, max?: bigint): Promise<Quote | null> {
   const bal = await solBalance(solAddress);
-  const amount = bal - SOL_KEEP_LAMPORTS;
+  // never more than `max` (a sale's own proceeds: a wallet's other SOL stays where it is)
+  const spare = bal - SOL_KEEP_LAMPORTS;
+  const amount = max !== undefined && max < spare ? max : spare;
   if (amount < MIN_BACK) return null;
   return getQuote({
     user: solAddress,
@@ -94,8 +96,8 @@ export async function quoteSolToCash(solAddress: string, evmAddress: string): Pr
 }
 
 /** Moves the SOL beyond the fee reserve back to Cash (USDC on Base). */
-export async function solToCash(signer: SolSigner, evmAddress: string, onStep?: (m: string) => void): Promise<Quote | null> {
-  const q = await quoteSolToCash(signer.address, evmAddress);
+export async function solToCash(signer: SolSigner, evmAddress: string, onStep?: (m: string) => void, max?: bigint): Promise<Quote | null> {
+  const q = await quoteSolToCash(signer.address, evmAddress, max);
   if (!q) return null;
   await sendSolanaQuote(q, signer, onStep);
   return q;

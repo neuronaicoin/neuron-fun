@@ -36,6 +36,7 @@ import {
   feeSharingConfigPda,
   getBuyTokenAmountFromSolAmount,
   getSellSolAmountFromTokenAmount,
+  isLegacyQuoteMint,
   type Global,
 } from "@pump-fun/pump-sdk";
 import { SOL_RPC } from "./solana";
@@ -137,8 +138,8 @@ function refusedReason(e: unknown): string {
   const err = e as { message?: string; logs?: string[]; transactionLogs?: string[] };
   const logs = (err.logs ?? err.transactionLogs ?? []).join("\n");
   const all = `${err.message ?? ""}\n${logs}`;
-  if (/insufficient (lamports|funds)|InsufficientFunds|0x1\b|rent/i.test(all))
-    return "Your Solana wallet needs a little more SOL for the network fee. Try again: sasa adds it from your Cash.";
+  if (/insufficient (lamports|funds)|InsufficientFunds|0x1\b|\brent\b/i.test(all))
+    return "Your Solana wallet needs a little more SOL for the network fee. Try again in a moment.";
   if (/slippage|TooLittle|TooMuch|0x1771|0x1772|exceeds desired/i.test(all)) return "The price moved while sending. Try again.";
   if (/blockhash not found|BlockhashNotFound/i.test(all)) return "Solana was busy. Try again.";
   const last = logs.split("\n").reverse().find((l) => /failed|error/i.test(l));
@@ -153,13 +154,17 @@ export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHei
   try {
     await c.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 0 });
   } catch (e) {
-    throw new Error(refusedReason(e));
+    // refused by the network's check (it says why, with logs): nothing was sent. Any other
+    // failure (a dropped connection, a timeout) may still have reached the network: keep
+    // watching it rather than calling it failed (a retry then could buy twice)
+    const err = e as { logs?: unknown; transactionLogs?: unknown; message?: string };
+    if (err.logs || err.transactionLogs || /simulation failed|preflight/i.test(String(err.message ?? ""))) throw new Error(refusedReason(e));
   }
   onStep?.("Confirming…");
   const started = Date.now();
   let lastSend = Date.now();
   for (let i = 0; ; i++) {
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 1200));
     const st = (await c.getSignatureStatuses([sig]).catch(() => null))?.value?.[0] ?? null;
     if (st?.err) throw new Error(`Solana refused it: ${JSON.stringify(st.err).slice(0, 120)}`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return sig;
@@ -171,8 +176,11 @@ export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHei
       const h = await c.getBlockHeight("confirmed").catch(() => 0);
       if (h > lastValidBlockHeight) {
         // one last look: it may have landed just now
-        const late = (await c.getSignatureStatuses([sig], { searchTransactionHistory: true }).catch(() => null))?.value?.[0];
+        const look = await c.getSignatureStatuses([sig], { searchTransactionHistory: true }).catch(() => null);
+        const late = look?.value?.[0];
         if (late && !late.err) return sig;
+        // only a clear "not there" means nothing was spent; when Solana couldn't be asked, say so
+        if (!look) throw new Error("We couldn't confirm it. Check your coins and Cash before trying again.");
         throw new Error("Solana didn't take it in time. Nothing was spent on it: try again.");
       }
     }
@@ -430,18 +438,31 @@ export async function recordCoin(r: { mint: string; creator: string; uri: string
  * between, so nothing on the way can refuse it. sasa's trade box uses these first and falls
  * back to a Relay route once the curve is complete (or for other coins).
  */
-async function curveState(mint: PublicKey, user: PublicKey) {
-  const sdk = new OnlinePumpSdk(solConnection());
-  const [global, feeConfig, st] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBuyState(mint, user, TOKEN_2022)]);
-  return { global, feeConfig, st };
+/**
+ * The coin's curve, read straight from the chain: null when it isn't a SOL launch curve that
+ * still trades. `tokenProgram` is the coin's own (Token-2022 for newer coins, the classic
+ * token program for older ones).
+ */
+async function curveOf(mint: PublicKey): Promise<{ tokenProgram: PublicKey } | null> {
+  const [curveInfo, mintInfo] = await solConnection().getMultipleAccountsInfo([bondingCurvePda(mint), mint], "confirmed");
+  if (!curveInfo || !mintInfo || !curveInfo.owner.equals(PUMP_PROGRAM_ID)) return null;
+  const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
+  if (curve.complete || !isLegacyQuoteMint(curve.quoteMint ?? PublicKey.default)) return null;
+  return { tokenProgram: mintInfo.owner };
 }
 
-/** true while `mint` trades on its launch curve (false when it has moved on, or isn't a curve coin). */
+async function curveState(mint: PublicKey, user: PublicKey) {
+  const found = await curveOf(mint);
+  if (!found) throw new Error("This coin has moved to its pool. Try again.");
+  const sdk = new OnlinePumpSdk(solConnection());
+  const [global, feeConfig, st] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBuyState(mint, user, found.tokenProgram)]);
+  return { global, feeConfig, st, tokenProgram: found.tokenProgram };
+}
+
+/** true while `mint` trades on its SOL launch curve (false when it has moved on, or isn't a curve coin). */
 export async function onCurve(mint: string): Promise<boolean> {
   try {
-    const sdk = new OnlinePumpSdk(solConnection());
-    const st = await sdk.fetchSellState(new PublicKey(mint), PublicKey.default, TOKEN_2022);
-    return !st.bondingCurve.complete && st.bondingCurve.quoteMint !== undefined;
+    return (await curveOf(new PublicKey(mint))) !== null;
   } catch {
     return false;
   }
@@ -452,7 +473,7 @@ export async function curveSell(signer: SolSigner, mint: string, amount: bigint,
   const c = solConnection();
   const user = new PublicKey(signer.address);
   const m = new PublicKey(mint);
-  const { global, feeConfig, st } = await curveState(m, user);
+  const { global, feeConfig, st, tokenProgram } = await curveState(m, user);
   if (st.bondingCurve.complete) throw new Error("This coin has moved to its pool. Try again.");
   const tokens = new BN(amount.toString());
   const sol = getSellSolAmountFromTokenAmount({ global, feeConfig, mintSupply: st.bondingCurve.tokenTotalSupply, bondingCurve: st.bondingCurve, amount: tokens, quoteTransferFee: st.quoteTransferFee });
@@ -466,8 +487,9 @@ export async function curveSell(signer: SolSigner, mint: string, amount: bigint,
     amount: tokens,
     solAmount: sol,
     slippage: 3,
-    tokenProgram: TOKEN_2022,
+    tokenProgram,
     mayhemMode: st.bondingCurve.isMayhemMode,
+    cashback: st.bondingCurve.isCashbackCoin,
   });
   const [price, bh] = await Promise.all([priorityFee(), c.getLatestBlockhash("confirmed")]);
   const tx = compile(user, [...budget(200_000, price), ...ixs], bh.blockhash, null);
@@ -482,9 +504,10 @@ export async function curveBuy(signer: SolSigner, mint: string, lamports: bigint
   const c = solConnection();
   const user = new PublicKey(signer.address);
   const m = new PublicKey(mint);
-  const { global, feeConfig, st } = await curveState(m, user);
+  const { global, feeConfig, st, tokenProgram } = await curveState(m, user);
   if (st.bondingCurve.complete) throw new Error("This coin has moved to its pool. Try again.");
-  const solAmount = new BN(lamports.toString());
+  // priced for a little less than what's there: with the 3% price room on top it still fits
+  const solAmount = new BN(((lamports * 100n) / 103n).toString());
   const amount = getBuyTokenAmountFromSolAmount({
     global,
     feeConfig,
@@ -504,7 +527,7 @@ export async function curveBuy(signer: SolSigner, mint: string, lamports: bigint
     amount,
     solAmount,
     slippage: 3,
-    tokenProgram: TOKEN_2022,
+    tokenProgram,
   });
   const [price, bh] = await Promise.all([priorityFee(), c.getLatestBlockhash("confirmed")]);
   const tx = compile(user, [...budget(250_000, price), ...ixs], bh.blockhash, null);
