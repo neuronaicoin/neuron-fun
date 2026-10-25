@@ -49,7 +49,7 @@ export default function CompetePage() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-10 pb-28 md:pb-12">
       <section className="rounded-3xl p-5 sm:p-8 text-[#1A130D]" style={{ background: "linear-gradient(120deg, #FF6B1A, #FFB020)" }}>
         <p className="text-[0.875rem] font-semibold">🏆 Creator competition · 30 days</p>
-        <h1 className="font-display font-bold text-[2rem] sm:text-[3rem] leading-[1.05] tracking-tight mt-1">Win up to $10,000</h1>
+        <h1 className="font-display font-bold text-[2rem] sm:text-[3rem] leading-[1.05] tracking-tight mt-1">Win up to $100,000</h1>
         <p className="mt-2 max-w-[58ch] text-[0.9375rem] sm:text-[1rem]">
           Launch coins on sasa and bring your community. The creator whose coins get the most trading volume wins. You also earn 30% of your coins&apos; fees, and every trade counts for the airdrop.
         </p>
@@ -126,7 +126,7 @@ export default function CompetePage() {
             Runs from {new Date(start).toUTCString().slice(5, 16)} to {new Date(end).toUTCString().slice(5, 16)} (UTC).
           </li>
           <li>Anyone who launches a coin on sasa during the competition takes part. No sign-up, and no limit on how many coins you launch.</li>
-          <li>Your score is the trading volume of all the coins you launched, added together: buys and sells by other people, on every chain, through any app. Your own trades and launch buys don&apos;t count.</li>
+          <li>Your score is the trading volume of all the coins you launched, added together: buys and sells by other people, on every chain, through any app. Your own trades and launch buys don&apos;t count. Coins launched on Solana aren&apos;t part of this competition.</li>
           <li>Only first place wins. The prize is {(COMP.rate * 100).toFixed(2)}% of the winner&apos;s volume, up to {money(COMP.max)}. Below {money(COMP.min)} volume there is no prize.</li>
           <li>Paid in USDC on Base to the winning wallet within 7 days of the end.</li>
           <li>Team wallets can&apos;t win. Trades between linked wallets to fake volume, or any abuse, can be excluded. sasa&apos;s decision is final.</li>

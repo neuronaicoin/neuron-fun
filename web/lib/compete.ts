@@ -12,13 +12,13 @@ export const COMP = {
   /** the prize is this share of the winner's volume ... */
   rate: 0.0025,
   /** ... up to this */
-  max: 10_000,
+  max: 100_000,
   /** below this volume there is no prize */
   min: 100_000,
 } as const;
 
 /** Prize steps shown on the page. */
-export const STEPS = [100_000, 500_000, 1_000_000, 2_000_000, 4_000_000] as const;
+export const STEPS = [100_000, 1_000_000, 4_000_000, 10_000_000, 40_000_000] as const;
 
 export type CompRow = { creator: string; volume: number; coins: number; trades: number; rank: number };
 
