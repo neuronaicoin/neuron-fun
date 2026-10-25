@@ -242,11 +242,15 @@ export default function MePage() {
             </p>
           ) : (
             (() => {
+              // one list, most valuable first, whatever chain or kind (a coin worth $5 never hides
+              // behind "Load more" under one worth 2 cents)
               const rows = [
-                ...p.racePositions.map((pos) => <RacePositionRow key={pos.coin.id} pos={pos} big />),
-                ...p.positions.map((pos) => <PositionRow key={pos.coin.id} pos={pos} big />),
-                ...p.extPositions.map((h) => <ExtPositionRow key={`${h.network}:${h.address}`} h={h} big />),
-              ];
+                ...p.racePositions.map((pos) => ({ v: pos.valueUsd, el: <RacePositionRow key={pos.coin.id} pos={pos} big /> })),
+                ...p.positions.map((pos) => ({ v: pos.valueUsd, el: <PositionRow key={pos.coin.id} pos={pos} big /> })),
+                ...p.extPositions.map((h) => ({ v: h.valueUsd, el: <ExtPositionRow key={`${h.network}:${h.address}`} h={h} big /> })),
+              ]
+                .sort((a, b) => b.v - a.v)
+                .map((r) => r.el);
               const shown = phone ? rows.slice(0, heldShown) : rows;
               return (
                 <>

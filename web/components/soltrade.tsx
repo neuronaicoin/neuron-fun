@@ -155,6 +155,8 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
         if (st === "failure" || st === "refund") throw new Error("The buy didn't go through. Your USDC went back to your Cash.");
         await new Promise((r) => setTimeout(r, 2000));
       }
+    // the coin has landed (or is about to): the balance and "Your coins" pick it up now
+    afterTrade();
   }
 
   /** Tops the Solana wallet up from Cash when it has less than `floor` SOL, and waits for it. */
