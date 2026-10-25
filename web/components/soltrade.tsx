@@ -30,12 +30,15 @@ import { solanaFor } from "@/lib/solana";
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const FEE = 0.007;
 /**
- * A sale on Solana needs a little SOL in the wallet: the network fee, and the rent of the token
- * accounts the route opens (about 0.002 SOL each). Below SOL_FLOOR, a buy brings SOL_TOPUP along,
- * and a sale first tops the wallet up from Cash by itself (nothing for the user to do).
+ * A sale needs a little SOL in the Solana wallet for its network fee: very little on a coin's
+ * launch curve, more through a route (it opens token accounts, about 0.002 SOL each). A sale
+ * tops the wallet up from Cash by itself when it's short (nothing for the user to do); a buy
+ * never adds any (the user pays only what they asked to spend).
  */
-const SOL_FLOOR = 8_000_000n; // 0.008 SOL
-const SOL_TOPUP = 10_000_000n; // 0.01 SOL
+const SOL_FOR_CURVE_SALE = 2_000_000n; // 0.002 SOL
+const SOL_FOR_ROUTE_SALE = 6_000_000n; // 0.006 SOL
+/** Dollars shown in messages. */
+const usdText = (raw: bigint) => `$${(Number(raw) / 1e6).toFixed(2)}`;
 const fmt = (t: number) =>
   t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t >= 1 || t <= 0 ? t.toFixed(2) : String(Number(t.toPrecision(3)));
 
@@ -58,7 +61,6 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
   }, []);
   // one trade at a time: locked before anything is awaited (a double tap can't send two)
   const lock = useRef(false);
-  const [topup, setTopup] = useState(false);
   const amount = Number(usd.replace(",", ".")) || 0;
   const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
   const mint = coin.address;
@@ -120,30 +122,11 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       fee: "swap",
     });
     const solBefore = curve ? await L.solBalance(s.address).catch(() => 0n) : 0n;
-    let calls = quoteCalls(q, BASE);
-    let need = raw;
-    // almost no SOL in the Solana wallet: a little comes along for a later sale's network fee
-    const { solBalance } = await import("@/lib/sollaunch");
-    if ((await solBalance(s.address).catch(() => 0n)) < SOL_FLOOR) {
-      const gas = await getQuote({
-        user: w.address,
-        recipient: s.address,
-        originChainId: BASE.chain.id,
-        originCurrency: BASE.usdc,
-        destinationChainId: SOLANA_ID,
-        destinationCurrency: SOL_NATIVE,
-        amount: SOL_TOPUP.toString(),
-        tradeType: "EXACT_OUTPUT",
-        fee: "deposit",
-      }).catch(() => null);
-      if (gas) {
-        calls = [...calls, ...quoteCalls(gas, BASE)];
-        need += BigInt(gas.inRaw || "0");
-        setTopup(true);
-      }
-    }
+    const calls = quoteCalls(q, BASE);
+    const need = BigInt(q.inRaw || "0") > raw ? BigInt(q.inRaw || "0") : raw;
     const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
-    if (cash < need + (w.embedded ? 50_000n : 0n)) throw new Error("Not enough USDC in your Cash for this buy.");
+    const room = w.embedded ? 50_000n : 0n; // email accounts pay Base's network fee from the same dollars
+    if (cash < need + room) throw new Error(`This buy needs ${usdText(need + room)} in your Cash, fees included. Lower the amount or add money.`);
     setBusy("Buying…");
     await w.send(BASE.chain, calls, (m) => setBusy(m));
     if (curve) {
@@ -174,11 +157,11 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       }
   }
 
-  /** Tops the Solana wallet up to SOL_TOPUP from Cash when it's below SOL_FLOOR, and waits for it. */
-  async function ensureSol(solAddress: string) {
+  /** Tops the Solana wallet up from Cash when it has less than `floor` SOL, and waits for it. */
+  async function ensureSol(solAddress: string, floor: bigint) {
     const { solBalance } = await import("@/lib/sollaunch");
     const bal = await solBalance(solAddress).catch(() => 0n);
-    if (bal >= SOL_FLOOR) return;
+    if (bal >= floor) return;
     setBusy("Getting the network fee ready…");
     const gas = await getQuote({
       user: w.address!,
@@ -188,18 +171,18 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       destinationChainId: SOLANA_ID,
       destinationCurrency: SOL_NATIVE,
       // never a tiny amount (routes have a minimum)
-      amount: (SOL_TOPUP - bal > 5_000_000n ? SOL_TOPUP - bal : 5_000_000n).toString(),
+      amount: (floor + 2_000_000n - bal > 4_000_000n ? floor + 2_000_000n - bal : 4_000_000n).toString(),
       tradeType: "EXACT_OUTPUT",
       fee: "deposit",
     });
     const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
-    if (cash < BigInt(gas.inRaw || "0") + (w.embedded ? 50_000n : 0n))
-      throw new Error("Selling on Solana needs about $1 in your Cash for the network fee. Add a little and try again.");
+    const fee = BigInt(gas.inRaw || "0") + (w.embedded ? 50_000n : 0n);
+    if (cash < fee) throw new Error(`This sale needs ${usdText(fee)} in your Cash for Solana's network fee. Add a little and try again.`);
     await w.send(BASE.chain, quoteCalls(gas, BASE), (m) => setBusy(m));
     setBusy("Getting the network fee ready…");
     for (let i = 0; i < 45 && alive.current; i++) {
       await new Promise((r) => setTimeout(r, 2000));
-      if ((await solBalance(solAddress).catch(() => 0n)) >= SOL_FLOOR) return;
+      if ((await solBalance(solAddress).catch(() => 0n)) >= floor) return;
     }
     throw new Error("The network fee is still on its way. Try the sale again in a minute.");
   }
@@ -207,10 +190,11 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
   async function sell() {
     if (!w.address || raw <= 0n) return;
     const s = await sol.get();
-    await ensureSol(s.address);
-    setBusy("Getting the price…");
     const L = await import("@/lib/sollaunch");
-    if (await L.onCurve(mint)) {
+    const curve = await L.onCurve(mint);
+    await ensureSol(s.address, curve ? SOL_FOR_CURVE_SALE : SOL_FOR_ROUTE_SALE);
+    setBusy("Getting the price…");
+    if (curve) {
       // on its launch curve: sold on the curve for SOL, then the SOL goes to Cash as USDC
       await L.curveSell(s, mint, raw, (m) => setBusy(m));
       // sold: done for the user now; the dollars move to Cash in the background
@@ -320,7 +304,7 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       {error && <p className="mt-2 text-[0.8125rem] text-danger break-words">{error}</p>}
       <p className="text-[0.6875rem] text-ink-3 mt-2">
         {side === "buy"
-          ? `Paid with your USDC. The coin goes to your Solana wallet.${topup ? " Your first buy also brings about $1 of SOL for later network fees." : ""}`
+          ? "Paid with your USDC. The coin goes to your Solana wallet."
           : "Your USDC arrives in your Cash."}
         {sol.walletName && sol.address ? ` · ${sol.walletName} ${sol.address.slice(0, 4)}…${sol.address.slice(-4)}` : ""}
       </p>

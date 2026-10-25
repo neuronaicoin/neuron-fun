@@ -73,7 +73,7 @@ export async function solTokenBalance(owner: string, mint: string): Promise<bigi
 }
 
 /** Kept in the Solana wallet for network fees (sells pay theirs in SOL). */
-export const SOL_KEEP_LAMPORTS = 8_000_000n; // 0.008 SOL (a sale's fee and the token accounts it opens)
+export const SOL_KEEP_LAMPORTS = 6_000_000n; // 0.006 SOL (a sale's fee and the token accounts it opens)
 /** Below this, moving SOL back isn't worth a route. */
 const MIN_BACK = 10_000_000n; // 0.01 SOL
 
