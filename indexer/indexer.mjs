@@ -27,6 +27,7 @@ import { marketCardLoop } from "./marketcards.mjs";
 import { xbotLoop } from "./xbot.mjs";
 import { solKeeperLoop } from "./solkeeper.mjs";
 import { sniperLoop } from "./sniper.mjs";
+import { sniperOptLoop } from "./sniperopt.mjs";
 import { solMarketsLoop } from "./solmarkets.mjs";
 import { alertLoop } from "./alerts.mjs";
 import { watchdogLoop } from "./watchdog.mjs";
@@ -545,6 +546,8 @@ async function main() {
     keep("sol keeper", () => solKeeperLoop(pool, log)),
     // sasa Bot test mode (admins): scores every new pump.fun coin, writes what it would have done
     keep("bot test", () => sniperLoop(pool, log)),
+    // its rule optimizer: searches filter + trading rules on what the bot followed (every 3 hours)
+    keep("bot optimizer", () => sniperOptLoop(pool, log)),
     keep("alerts", () => alertLoop(pool, log)),
     keep("watchdog", () => watchdogLoop(pool, log)),
     keep("safety", () => safetyLoop(pool, chains, log)),

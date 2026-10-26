@@ -35,13 +35,15 @@ export async function botRoute(env, me, parts, method, url) {
   const hours = Math.max(1, Math.min(336, Math.floor(Number(url.searchParams.get("hours")) || 24)));
   const level = Math.max(0, Math.min(100, Math.floor(Number(url.searchParams.get("min")) || 50)));
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
-  const [stats, coins] = await Promise.all([
+  const [stats, coins, opt] = await Promise.all([
     db(env, "rpc/sniper_stats", { method: "POST", body: JSON.stringify({ p_hours: hours }) }),
     db(
       env,
       `sniper_signals?select=mint,created_at,name,symbol,x,telegram,website,score,passed,fail,checks,entry_mc,peak_mc,low_mc,peak_sec,result,done` +
         `&passed=eq.true&score=gte.${level}&created_at=gt.${encodeURIComponent(since)}&order=created_at.desc&limit=100`
     ),
+    // the optimizer's latest run (indexer/sniperopt.mjs)
+    db(env, "sniper_opt?select=run_at,result&order=run_at.desc&limit=1").catch(() => null),
   ]);
-  return json({ stats: stats ?? null, coins: coins ?? [] });
+  return json({ stats: stats ?? null, coins: coins ?? [], opt: opt?.[0] ?? null });
 }

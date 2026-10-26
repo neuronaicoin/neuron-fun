@@ -67,6 +67,34 @@ export const STRATEGIES = [
 ];
 
 /**
+ * The optimizer's grid (sniperopt.mjs): every entry time × every exit. Each coin's return under
+ * all of them is worked out once when its hour ends and stored as one array (same order).
+ */
+export const GRID_ENTRIES = [0, 30, 45, 60, 90, 120]; // 0 = at the decision (~15 s)
+export const GRID_EXITS = [
+  ...[1.3, 1.5, 2, 3, 5].flatMap((tp) => [0.6, 0.7, 0.8, 0.85].map((sl) => ({ tp, sl }))),
+  { trail: true, trailAt: 1.5, gap: 0.25, sl: 0.75 },
+  { trail: true, trailAt: 2, gap: 0.3, sl: 0.7 },
+  { trail: true, trailAt: 3, gap: 0.35, sl: 0.65 },
+];
+export const exitLabel = (x) => (x.trail ? `half at ${x.trailAt}×, rest trails ${Math.round(x.gap * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%` : `sell +${Math.round((x.tp - 1) * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%`);
+
+/** All grid returns of one coin, and its price at each entry time as a multiple of the launch price. */
+export function gridOf(path, decideIdx, entryMc, startMc) {
+  const r = [];
+  const em = [];
+  for (const at of GRID_ENTRIES) {
+    const atIdx = at ? Math.floor((at * 1000) / BUCKET_MS) : decideIdx;
+    let price = null;
+    if (!at || atIdx <= decideIdx) price = entryMc;
+    else for (let i = Math.min(atIdx, path.cl.length - 1); i >= 0 && price == null; i--) price = path.cl[i] ?? null;
+    em.push(price && startMc ? +(price / startMc).toFixed(3) : null);
+    for (const x of GRID_EXITS) r.push(simulate(path, decideIdx, at && atIdx > decideIdx ? { ...x, at } : x, entryMc));
+  }
+  return { r, em };
+}
+
+/**
  * One strategy on a price path (hi / lo / close per 5-second step, market caps, nulls where
  * nothing traded). From the decision step, or a later one (`at` seconds after launch). A step that
  * reaches both the target and the stop counts as the stop (the safe side). Returns r or null.
@@ -90,14 +118,15 @@ export function simulate(path, decideIdx, st, entryMc = null) {
       if (hi[i] == null) continue;
       if (!half) {
         if (lo[i] <= entry * st.sl) return +(st.sl - 1 - FEES).toFixed(3);
-        if (hi[i] >= entry * 2) {
+        if (hi[i] >= entry * (st.trailAt ?? 2)) {
           half = true;
-          banked = 0.5 * 2;
+          banked = 0.5 * (st.trailAt ?? 2);
           high = hi[i];
         }
       } else {
         high = Math.max(high, hi[i]);
-        if (lo[i] <= high * 0.7) return +(banked + (0.5 * high * 0.7) / entry - 1 - FEES).toFixed(3);
+        const keep = 1 - (st.gap ?? 0.3);
+        if (lo[i] <= high * keep) return +(banked + (0.5 * high * keep) / entry - 1 - FEES).toFixed(3);
       }
       last = cl[i] ?? last;
     }
@@ -138,6 +167,17 @@ export const SQL = `create table if not exists sniper_signals (
 -- each strategy's return on this coin, and its price path (5-second steps) for later study
 alter table sniper_signals add column if not exists sims jsonb;
 alter table sniper_signals add column if not exists path jsonb;
+alter table sniper_signals add column if not exists grid jsonb;
+create index if not exists sniper_signals_grid on sniper_signals (created_at) where grid is not null;
+create table if not exists sniper_opt (
+  id      bigserial primary key,
+  run_at  timestamptz not null default now(),
+  coins   int,
+  result  jsonb
+);
+alter table sniper_opt enable row level security;
+revoke all on sniper_opt from anon, authenticated;
+grant select on sniper_opt to service_role;
 create index if not exists sniper_signals_time on sniper_signals (created_at desc);
 create index if not exists sniper_signals_score on sniper_signals (score desc, created_at desc);
 alter table sniper_signals enable row level security;
@@ -516,6 +556,12 @@ export function judge(c, now, R = RULES) {
       if (c.xInfo.ageDays != null && c.xInfo.ageDays < 2) score -= 10;
     }
   }
+  // everything the rule optimizer (sniperopt.mjs) may want to filter on, kept even when it didn't decide
+  checks.siteOwn = !!c.site?.own;
+  if (c.reused) checks.reused = c.reused;
+  if (c.devSold) checks.devSold = true;
+  if (c.devRugs) checks.devRugs = c.devRugs;
+  checks.ratio = +(c.sells ? c.buys / c.sells : c.buys).toFixed(2);
   return { score: Math.max(0, Math.min(100, Math.round(score))), fail, checks };
 }
 
@@ -720,8 +766,10 @@ export async function sniperLoop(pool, log) {
     if (c.decideIdx < c.path.hi.length) c.path.hi[c.decideIdx] = c.path.lo[c.decideIdx] = c.path.cl[c.decideIdx] = m0;
     // coins nobody could pass are watched no further (keeps the work small); coins with links that
     // only missed on timing are followed too (a later entry might have worked)
-    const timing = ["few buyers", "too late", "falling"].includes(j.fail) && !!(c.x || c.telegram || c.site);
-    const follow = c.passed || j.score >= LEVELS.aggressive - 15 || timing;
+    // followed for an hour (price path kept): every coin with links, every pick, and 1 in 10 of the
+    // rest as a baseline — what the optimizer learns from
+    const follow = c.passed || j.score >= LEVELS.aggressive - 15 || !!(c.x || c.telegram || c.site) || Math.random() < 0.1;
+    j.checks.idx = c.decideIdx;
     if (!follow) coins.delete(c.mint);
     await pool
       .query(
@@ -753,12 +801,13 @@ export async function sniperLoop(pool, log) {
     coins.delete(c.mint);
     const sims = {};
     for (const st of STRATEGIES) sims[st.key] = simulate(c.path, c.decideIdx, st, c.entryMc);
+    const grid = gridOf(c.path, c.decideIdx, c.entryMc, c.startMc);
     // the path without the empty tail
     let end = c.path.hi.length;
     while (end > 0 && c.path.hi[end - 1] == null) end--;
     const path = { s: BUCKET_MS / 1000, hi: c.path.hi.slice(0, end), lo: c.path.lo.slice(0, end), cl: c.path.cl.slice(0, end) };
     await pool
-      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7 where mint = $1`, [
+      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7, grid = $8 where mint = $1`, [
         hexToB58(c.mint),
         c.peak,
         c.low,
@@ -766,6 +815,7 @@ export async function sniperLoop(pool, log) {
         c.result ?? "open",
         JSON.stringify(sims),
         JSON.stringify(path),
+        JSON.stringify(grid),
       ])
       .catch((e) => log(`bot test: update failed: ${e.message}`));
   }
@@ -844,6 +894,8 @@ export async function sniperLoop(pool, log) {
     if (n % 20 === 0) {
       log(`bot test: ${events} events, ${coins.size} coins watched`);
       await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
+      // price paths are the big part: kept 3 days (the optimizer uses the much smaller grid)
+      await pool.query(`update sniper_signals set path = null where path is not null and created_at < now() - interval '3 days'`).catch(() => {});
     }
   }
   // (never returns; the interval keeps deciding)

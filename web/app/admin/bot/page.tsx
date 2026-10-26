@@ -22,6 +22,41 @@ type Level = {
   avg_peak_x: number | null;
   strategies: Record<string, Strat> | null;
 };
+type OptResult = {
+  rule: Record<string, number>;
+  entry: string;
+  exit: string;
+  train: { n: number; wins: number; avg: number; perDay: number };
+  val: { n: number; wins: number; avg: number; perDay: number };
+};
+type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[] } };
+
+/** A rule's filters in words (only the ones that actually filter). */
+function ruleWords(r: Record<string, number>): string {
+  const w: string[] = [];
+  if (r.minScore > 0) w.push(`score ${r.minScore}+`);
+  if (r.needX === 2) w.push("own X account");
+  else if (r.needX === 1) w.push("an X link");
+  if (r.minXFollowers > 0) w.push(`X ${r.minXFollowers}+ followers`);
+  if (r.minTg === 1) w.push("a Telegram");
+  else if (r.minTg > 1) w.push(`Telegram ${r.minTg}+ members`);
+  if (r.needSite) w.push("live website");
+  if (r.minDomainDays > 0) w.push(`domain ${r.minDomainDays}+ days old`);
+  if (!r.allowReused) w.push("no reused links");
+  if (!r.allowSamePost) w.push("no copied X post");
+  if (r.maxDevPct < 100) w.push(`creator ≤${r.maxDevPct}%`);
+  if (!r.allowDevSold) w.push("creator not selling");
+  if (r.maxDevLaunches < 99) w.push(`creator ≤${r.maxDevLaunches} coins/day`);
+  if (!r.allowRugger) w.push("no past dumps");
+  if (r.maxBundle < 100) w.push(`bundles ≤${r.maxBundle}%`);
+  if (r.maxTop10 < 100) w.push(`top 10 ≤${r.maxTop10}%`);
+  if (r.minBuyers > 0) w.push(`${r.minBuyers}+ buyers`);
+  if (r.minNetSol > 0) w.push(`${r.minNetSol}+ SOL in`);
+  if (r.minRatio > 0) w.push(`buys ${r.minRatio}× sells`);
+  w.push(`bought at ${r.minMult}–${r.maxMult >= 99 ? "any" : r.maxMult}× launch price`);
+  return w.join(" · ");
+}
+
 const STRAT_NAMES: [string, string][] = [
   ["50/20", "Sell +50% · stop −20%"],
   ["50/30", "Sell +50% · stop −30%"],
@@ -68,12 +103,12 @@ export default function BotTestPage() {
   const { address, signMessage } = useWallet();
   const [hours, setHours] = useState<number>(24);
   const [min, setMin] = useState<number>(65);
-  const [data, setData] = useState<{ stats: Stats | null; coins: Coin[] } | null>(null);
+  const [data, setData] = useState<{ stats: Stats | null; coins: Coin[]; opt: Opt | null } | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      setData(await authedGet<{ stats: Stats | null; coins: Coin[] }>(signMessage, `bot/stats?hours=${hours}&min=${min}`));
+      setData(await authedGet<{ stats: Stats | null; coins: Coin[]; opt: Opt | null }>(signMessage, `bot/stats?hours=${hours}&min=${min}`));
       setError("");
     } catch (e) {
       setError(friendlyError(e));
@@ -179,6 +214,44 @@ export default function BotTestPage() {
               </div>
             );
           })()}
+
+          <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
+            <div className="font-semibold text-[0.9375rem]">Best rules found by the optimizer</div>
+            {!data?.opt ? (
+              <p className="text-[0.8125rem] text-ink-3 mt-1">
+                Runs every 3 hours once 300 followed coins are in. It tries 100,000+ rule sets on the older 70% of coins and keeps only the ones that also make money on the newest 30%.
+              </p>
+            ) : (
+              <>
+                <p className="text-[0.75rem] text-ink-3 mt-0.5">
+                  {ago(data.opt.run_at)} · {data.opt.result.tried.toLocaleString()} rule sets tried on {data.opt.result.coins.toLocaleString()} coins · checked on the newest{" "}
+                  {data.opt.result.val.toLocaleString()} (not used to find them) · average per trade after fees
+                </p>
+                {data.opt.result.top.length === 0 && <p className="mt-2 text-[0.8125rem] text-ink-2">No rule made money on both parts yet.</p>}
+                <div className="mt-3 grid gap-2">
+                  {data.opt.result.top.slice(0, 5).map((t, i) => (
+                    <div key={i} className="rounded-xl border border-line bg-paper p-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <div className="font-semibold text-[0.875rem]">
+                          #{i + 1} · buy {t.entry} · {t.exit}
+                        </div>
+                        <div className={"font-mono font-semibold " + (t.val.avg > 0 ? "text-up" : "text-danger")}>
+                          {t.val.avg > 0 ? "+" : ""}
+                          {(t.val.avg * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-[0.75rem] text-ink-2 mt-1">
+                        Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
+                        {t.train.avg > 0 ? "+" : ""}
+                        {(t.train.avg * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-[0.75rem] text-ink-3 mt-1">{ruleWords(t.rule)}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           {s.fails && (
             <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
