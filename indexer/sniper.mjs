@@ -48,6 +48,69 @@ export const RULES = {
 // the outcome
 const TAKE_PROFIT = 1.5;
 const STOP_LOSS = 0.8;
+const BUCKET_MS = 5000; // the price path is kept in 5-second steps
+const FEES = 0.03; // trading fees of a buy and a sale together (pump.fun + sasa)
+
+/**
+ * Ways to buy and sell, all tried on the same coins (each coin's price path after the decision):
+ * take profit / stop loss pairs, a trailing exit, and later entries. r = return per trade after fees.
+ */
+export const STRATEGIES = [
+  { key: "50/20", tp: 1.5, sl: 0.8 },
+  { key: "50/30", tp: 1.5, sl: 0.7 },
+  { key: "100/30", tp: 2, sl: 0.7 },
+  { key: "200/40", tp: 3, sl: 0.6 },
+  { key: "trail", trail: true, sl: 0.7 }, // half sold at 2×, the rest follows the price and sells 30% below its high
+  { key: "50/30 @45s", tp: 1.5, sl: 0.7, at: 45 },
+  { key: "100/30 @45s", tp: 2, sl: 0.7, at: 45 },
+  { key: "50/30 @90s", tp: 1.5, sl: 0.7, at: 90 },
+];
+
+/**
+ * One strategy on a price path (hi / lo / close per 5-second step, market caps, nulls where
+ * nothing traded). From the decision step, or a later one (`at` seconds after launch). A step that
+ * reaches both the target and the stop counts as the stop (the safe side). Returns r or null.
+ */
+export function simulate(path, decideIdx, st, entryMc = null) {
+  const { hi, lo, cl } = path;
+  let start = decideIdx;
+  if (st.at) start = Math.max(decideIdx, Math.floor((st.at * 1000) / BUCKET_MS));
+  // the price at the entry: the decision's own price, or for a later entry the last trade at or before that step
+  let entry = start === decideIdx && entryMc ? entryMc : null;
+  for (let i = start; i >= 0 && entry == null; i--) entry = cl[i] ?? null;
+  if (!entry) return null;
+  let last = entry;
+  // the decision step was restarted at the entry (only trades after it), a later entry's step wasn't
+  const from = st.at && start > decideIdx ? start + 1 : start;
+  if (st.trail) {
+    let half = false;
+    let banked = 0;
+    let high = entry;
+    for (let i = from; i < hi.length; i++) {
+      if (hi[i] == null) continue;
+      if (!half) {
+        if (lo[i] <= entry * st.sl) return +(st.sl - 1 - FEES).toFixed(3);
+        if (hi[i] >= entry * 2) {
+          half = true;
+          banked = 0.5 * 2;
+          high = hi[i];
+        }
+      } else {
+        high = Math.max(high, hi[i]);
+        if (lo[i] <= high * 0.7) return +(banked + (0.5 * high * 0.7) / entry - 1 - FEES).toFixed(3);
+      }
+      last = cl[i] ?? last;
+    }
+    return +((half ? banked + (0.5 * last) / entry : last / entry) - 1 - FEES).toFixed(3);
+  }
+  for (let i = from; i < hi.length; i++) {
+    if (hi[i] == null) continue;
+    if (lo[i] <= entry * st.sl) return +(st.sl - 1 - FEES).toFixed(3);
+    if (hi[i] >= entry * st.tp) return +(st.tp - 1 - FEES).toFixed(3);
+    last = cl[i] ?? last;
+  }
+  return +(last / entry - 1 - FEES).toFixed(3);
+}
 export const LEVELS = { safe: 80, balanced: 65, aggressive: 50 };
 
 export const SQL = `create table if not exists sniper_signals (
@@ -72,6 +135,9 @@ export const SQL = `create table if not exists sniper_signals (
   result      text,
   done        boolean not null default false
 );
+-- each strategy's return on this coin, and its price path (5-second steps) for later study
+alter table sniper_signals add column if not exists sims jsonb;
+alter table sniper_signals add column if not exists path jsonb;
 create index if not exists sniper_signals_time on sniper_signals (created_at desc);
 create index if not exists sniper_signals_score on sniper_signals (score desc, created_at desc);
 alter table sniper_signals enable row level security;
@@ -89,7 +155,10 @@ create or replace function sniper_stats(p_hours int) returns jsonb language sql 
         'losses', (select count(*) from s where passed and score >= l.min and result = 'loss'),
         'open', (select count(*) from s where passed and score >= l.min and (result is null or result = 'open')),
         'hit_25k', (select count(*) from s where passed and score >= l.min and peak_mc >= 25000),
-        'avg_peak_x', (select round(avg(peak_mc / nullif(entry_mc, 0))::numeric, 2) from s where passed and score >= l.min and done and coalesce(result, '') <> 'restart')
+        'avg_peak_x', (select round(avg(peak_mc / nullif(entry_mc, 0))::numeric, 2) from s where passed and score >= l.min and done and coalesce(result, '') <> 'restart'),
+        'strategies', (select jsonb_object_agg(k, jsonb_build_object('n', n, 'wins', w, 'avg', a)) from (
+            select e.key as k, count(*) as n, sum(case when e.value::float > 0 then 1 else 0 end) as w, round(avg(e.value::float)::numeric, 3) as a
+            from s, jsonb_each_text(s.sims) e where s.passed and s.score >= l.min and s.sims is not null and e.value <> 'null' group by e.key) q)
       ) order by l.min desc)
       from (values ('safe', ${LEVELS.safe}), ('balanced', ${LEVELS.balanced}), ('aggressive', ${LEVELS.aggressive})) as l(name, min)),
     'fails', (select jsonb_object_agg(f, n) from (select coalesce(fail, 'low score') as f, count(*) as n from s where entry_mc is not null and not passed group by 1 order by 2 desc limit 12) x)
@@ -566,7 +635,11 @@ export async function sniperLoop(pool, log) {
       solIn: 0,
       solOut: 0,
       decided: false,
+      path: null,
     };
+    const steps = Math.ceil((RULES.followMin * 60_000) / BUCKET_MS) + 2;
+    c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null) };
+    c.path.cl[0] = c.path.hi[0] = c.path.lo[0] = Math.round(startMc);
     coins.set(e.mint, c);
     launched.set(e.mint, { creator: e.creator, t0: now });
     if (/^https?:\/\//i.test(e.uri)) void enrich(c);
@@ -586,6 +659,14 @@ export async function sniperLoop(pool, log) {
     const c = coins.get(e.mint);
     if (!c) return;
     c.mc = mcOf(e.vSol, e.vTok, solUsd);
+    // the price path in 5-second steps (high, low, last)
+    const step = Math.floor((Date.now() - c.t0) / BUCKET_MS);
+    if (step < c.path.hi.length) {
+      const m = Math.round(c.mc);
+      c.path.hi[step] = Math.max(c.path.hi[step] ?? 0, m);
+      c.path.lo[step] = Math.min(c.path.lo[step] ?? Infinity, m);
+      c.path.cl[step] = m;
+    }
     if (!c.decided) {
       const delta = e.buy ? e.tokens : -e.tokens;
       c.holders.set(e.user, (c.holders.get(e.user) ?? 0) + delta);
@@ -633,8 +714,14 @@ export async function sniperLoop(pool, log) {
     // only the price path is needed from here on
     c.holders = null;
     c.buyers = null;
-    // coins nobody could pass are watched no further (keeps the work small)
-    const follow = c.passed || j.score >= LEVELS.aggressive - 15;
+    c.decideIdx = Math.floor((Date.now() - c.t0) / BUCKET_MS);
+    // the decision's step starts again at the entry price: only what happens after the buy counts
+    const m0 = Math.round(c.entryMc);
+    if (c.decideIdx < c.path.hi.length) c.path.hi[c.decideIdx] = c.path.lo[c.decideIdx] = c.path.cl[c.decideIdx] = m0;
+    // coins nobody could pass are watched no further (keeps the work small); coins with links that
+    // only missed on timing are followed too (a later entry might have worked)
+    const timing = ["few buyers", "too late", "falling"].includes(j.fail) && !!(c.x || c.telegram || c.site);
+    const follow = c.passed || j.score >= LEVELS.aggressive - 15 || timing;
     if (!follow) coins.delete(c.mint);
     await pool
       .query(
@@ -664,13 +751,21 @@ export async function sniperLoop(pool, log) {
 
   async function finish(c) {
     coins.delete(c.mint);
+    const sims = {};
+    for (const st of STRATEGIES) sims[st.key] = simulate(c.path, c.decideIdx, st, c.entryMc);
+    // the path without the empty tail
+    let end = c.path.hi.length;
+    while (end > 0 && c.path.hi[end - 1] == null) end--;
+    const path = { s: BUCKET_MS / 1000, hi: c.path.hi.slice(0, end), lo: c.path.lo.slice(0, end), cl: c.path.cl.slice(0, end) };
     await pool
-      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true where mint = $1`, [
+      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7 where mint = $1`, [
         hexToB58(c.mint),
         c.peak,
         c.low,
         Math.round((c.peakAt - c.t0) / 1000),
         c.result ?? "open",
+        JSON.stringify(sims),
+        JSON.stringify(path),
       ])
       .catch((e) => log(`bot test: update failed: ${e.message}`));
   }

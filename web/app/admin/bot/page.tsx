@@ -10,7 +10,28 @@ import { ConnectButton } from "@/components/chrome";
 import { authedGet } from "@/lib/alerts";
 import { compactUsd, friendlyError } from "@/lib/format";
 
-type Level = { level: string; min: number; picked: number; wins: number; losses: number; open: number; hit_25k: number; avg_peak_x: number | null };
+type Strat = { n: number; wins: number; avg: number };
+type Level = {
+  level: string;
+  min: number;
+  picked: number;
+  wins: number;
+  losses: number;
+  open: number;
+  hit_25k: number;
+  avg_peak_x: number | null;
+  strategies: Record<string, Strat> | null;
+};
+const STRAT_NAMES: [string, string][] = [
+  ["50/20", "Sell +50% · stop −20%"],
+  ["50/30", "Sell +50% · stop −30%"],
+  ["100/30", "Sell +100% · stop −30%"],
+  ["200/40", "Sell +200% · stop −40%"],
+  ["trail", "Half at 2×, rest trails 30% · stop −30%"],
+  ["50/30 @45s", "Buy at 45 s · +50% / −30%"],
+  ["100/30 @45s", "Buy at 45 s · +100% / −30%"],
+  ["50/30 @90s", "Buy at 90 s · +50% / −30%"],
+];
 type Stats = { coins: number; decided: number; with_links: number; levels: Level[] | null; fails: Record<string, number> | null };
 type Coin = {
   mint: string;
@@ -126,6 +147,38 @@ export default function BotTestPage() {
               </button>
             ))}
           </div>
+
+          {(() => {
+            const lv = (s.levels ?? []).find((l) => l.min === min);
+            const st = lv?.strategies;
+            if (!st) return null;
+            const best = Math.max(...STRAT_NAMES.map(([k]) => st[k]?.avg ?? -Infinity));
+            return (
+              <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
+                <div className="font-semibold text-[0.9375rem]">
+                  Ways to trade the {LEVEL_NAMES[lv!.level] ?? lv!.level} picks
+                </div>
+                <p className="text-[0.75rem] text-ink-3 mt-0.5">Same coins, different buy and sell rules. Average per trade is after fees; above 0% the rule makes money.</p>
+                <div className="mt-3 grid gap-1.5">
+                  {STRAT_NAMES.map(([k, label]) => {
+                    const x = st[k];
+                    if (!x) return null;
+                    return (
+                      <div key={k} className={"flex items-center gap-3 text-[0.8125rem] rounded-xl px-2.5 py-1.5 " + (x.avg === best ? "bg-paper border border-line" : "")}>
+                        <div className="flex-1 min-w-0 truncate">{label}</div>
+                        <div className="w-20 text-right text-ink-2">{x.n} trades</div>
+                        <div className="w-16 text-right text-ink-2">{pct(x.wins, x.n)} won</div>
+                        <div className={"w-20 text-right font-mono font-semibold " + (x.avg > 0 ? "text-up" : "text-danger")}>
+                          {x.avg > 0 ? "+" : ""}
+                          {(x.avg * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {s.fails && (
             <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
