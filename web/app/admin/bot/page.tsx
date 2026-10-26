@@ -29,7 +29,34 @@ type OptResult = {
   train: { n: number; wins: number; avg: number; perDay: number };
   val: { n: number; wins: number; avg: number; perDay: number };
 };
-type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[] } };
+type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[]; steady?: OptResult[] } };
+
+function RuleList({ list, empty }: { list: OptResult[]; empty: string }) {
+  if (!list.length) return <p className="mt-2 text-[0.8125rem] text-ink-2">{empty}</p>;
+  return (
+    <div className="mt-2 grid gap-2">
+      {list.slice(0, 5).map((t, i) => (
+        <div key={i} className="rounded-xl border border-line bg-paper p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="font-semibold text-[0.875rem]">
+              #{i + 1} · buy {t.entry} · {t.exit}
+            </div>
+            <div className={"font-mono font-semibold whitespace-nowrap " + (t.val.avg > 0 ? "text-up" : "text-danger")}>
+              {t.val.avg > 0 ? "+" : ""}
+              {(t.val.avg * 100).toFixed(1)}% · {pct(t.val.wins, t.val.n)} won
+            </div>
+          </div>
+          <div className="text-[0.75rem] text-ink-2 mt-1">
+            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
+            {t.train.avg > 0 ? "+" : ""}
+            {(t.train.avg * 100).toFixed(1)}%
+          </div>
+          <div className="text-[0.75rem] text-ink-3 mt-1">{ruleWords(t.rule)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** A rule's filters in words (only the ones that actually filter). */
 function ruleWords(r: Record<string, number>): string {
@@ -222,7 +249,7 @@ export default function BotTestPage() {
             <div className="font-semibold text-[0.9375rem]">Best rules found by the optimizer</div>
             {!data?.opt ? (
               <p className="text-[0.8125rem] text-ink-3 mt-1">
-                Runs every 3 hours once 300 followed coins are in. It tries 300,000+ rule sets on the older 70% of coins and keeps only the ones that also make money on the newest 30%.
+                Runs every 3 hours once 300 followed coins are in. It tries 600,000+ rule sets on the older 70% of coins and keeps only the ones that also make money on the newest 30%.
               </p>
             ) : (
               <>
@@ -230,28 +257,10 @@ export default function BotTestPage() {
                   {ago(data.opt.run_at)} · {data.opt.result.tried.toLocaleString()} rule sets tried on {data.opt.result.coins.toLocaleString()} coins · checked on the newest{" "}
                   {data.opt.result.val.toLocaleString()} (not used to find them) · average per trade after fees
                 </p>
-                {data.opt.result.top.length === 0 && <p className="mt-2 text-[0.8125rem] text-ink-2">No rule made money on both parts yet.</p>}
-                <div className="mt-3 grid gap-2">
-                  {data.opt.result.top.slice(0, 5).map((t, i) => (
-                    <div key={i} className="rounded-xl border border-line bg-paper p-3">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <div className="font-semibold text-[0.875rem]">
-                          #{i + 1} · buy {t.entry} · {t.exit}
-                        </div>
-                        <div className={"font-mono font-semibold " + (t.val.avg > 0 ? "text-up" : "text-danger")}>
-                          {t.val.avg > 0 ? "+" : ""}
-                          {(t.val.avg * 100).toFixed(1)}%
-                        </div>
-                      </div>
-                      <div className="text-[0.75rem] text-ink-2 mt-1">
-                        Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
-                        {t.train.avg > 0 ? "+" : ""}
-                        {(t.train.avg * 100).toFixed(1)}%
-                      </div>
-                      <div className="text-[0.75rem] text-ink-3 mt-1">{ruleWords(t.rule)}</div>
-                    </div>
-                  ))}
-                </div>
+                <div className="mt-3 text-[0.8125rem] font-semibold">Most profit per trade</div>
+                <RuleList list={data.opt.result.top} empty="No rule made money on both parts yet." />
+                <div className="mt-4 text-[0.8125rem] font-semibold">Steady: wins 60%+ of trades and still makes money</div>
+                <RuleList list={data.opt.result.steady ?? []} empty="No rule won 60%+ and made money on both parts yet." />
               </>
             )}
           </div>

@@ -162,19 +162,31 @@ function tally(T, idx, p) {
   return { n, w, sum };
 }
 
-/** The best grid cell of a tally with at least `min` trades (by average return). */
-function best(t, min) {
+/** Lower bound of a win rate (Wilson, ~90%): 9 of 10 counts for less than 90 of 100. */
+export const winLow = (w, n) => {
+  if (!n) return 0;
+  const z = 1.645;
+  const p = w / n;
+  return (p + (z * z) / (2 * n) - z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n)) / (1 + (z * z) / n);
+};
+
+/**
+ * The best grid cell of a tally with at least `min` trades: by average return ("profit"), or by
+ * how surely it wins among the cells that also make money ("steady").
+ */
+function best(t, min, mode) {
   let k = -1;
-  let avg = -Infinity;
+  let top = -Infinity;
   for (let j = 0; j < t.n.length; j++) {
     if (t.n[j] < min) continue;
     const a = t.sum[j] / t.n[j];
-    if (a > avg) {
-      avg = a;
+    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : a;
+    if (v > top) {
+      top = v;
       k = j;
     }
   }
-  return k < 0 ? null : { k, n: t.n[k], wins: t.w[k], avg };
+  return k < 0 || top === -Infinity ? null : { k, n: t.n[k], wins: t.w[k], avg: t.sum[k] / t.n[k] };
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -200,54 +212,64 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
   const trainDays = days(train);
   const valDays = days(val);
 
-  // score on train: average return, a little lower when it rests on few trades
-  const fit = (b) => (b ? b.avg - 0.25 / Math.sqrt(b.n) : -Infinity);
-  const seen = new Map();
-  const evalRule = (p) => {
-    const key = ruleKey(p);
-    if (seen.has(key)) return seen.get(key);
-    const b = best(tally(T, train, p), MIN_TRAIN);
-    const out = { p, b, fit: fit(b) };
-    seen.set(key, out);
-    return out;
-  };
-  let pool = [];
-  for (let i = 0; i < tries; i++) {
-    const e = evalRule(randomRule());
-    if (e.b) pool.push(e);
-  }
-  // the baseline: the bot's current rules (any pick, score 50+), for comparison
-  pool.sort((a, b) => b.fit - a.fit);
-  pool = pool.slice(0, 40);
-  for (let r = 0; r < rounds && pool.length; r++) {
-    const base = pool[Math.floor(Math.random() * Math.min(10, pool.length))];
-    const e = evalRule(nudge(base.p));
-    if (e.b && e.fit > pool[pool.length - 1].fit) {
-      pool.push(e);
-      pool.sort((a, b) => b.fit - a.fit);
-      pool = pool.filter((x, i, arr) => arr.findIndex((y) => ruleKey(y.p) === ruleKey(x.p)) === i).slice(0, 40);
+  const results = {};
+  let tried = 0;
+  for (const mode of ["profit", "steady"]) {
+    // score on train — profit: average return, a little lower when it rests on few trades;
+    // steady: how surely it wins (and it must make money too)
+    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.avg - 0.25 / Math.sqrt(b.n));
+    const seen = new Map();
+    const evalRule = (p) => {
+      const key = ruleKey(p);
+      if (seen.has(key)) return seen.get(key);
+      const b = best(tally(T, train, p), MIN_TRAIN, mode);
+      const out = { p, b, fit: fit(b) };
+      seen.set(key, out);
+      return out;
+    };
+    let pool = [];
+    for (let i = 0; i < tries; i++) {
+      const e = evalRule(randomRule());
+      if (e.b) pool.push(e);
     }
+    pool.sort((a, b) => b.fit - a.fit);
+    pool = pool.slice(0, 40);
+    for (let r = 0; r < rounds && pool.length; r++) {
+      const base = pool[Math.floor(Math.random() * Math.min(10, pool.length))];
+      const e = evalRule(nudge(base.p));
+      if (e.b && e.fit > pool[pool.length - 1].fit) {
+        pool.push(e);
+        pool.sort((a, b) => b.fit - a.fit);
+        pool = pool.filter((x, i, arr) => arr.findIndex((y) => ruleKey(y.p) === ruleKey(x.p)) === i).slice(0, 40);
+      }
+    }
+    tried += seen.size;
+    // checked on the newest coins, with the entry/exit chosen on train
+    const out = [];
+    for (const e of pool) {
+      const t = tally(T, val, e.p);
+      const k = e.b.k;
+      const vn = t.n[k];
+      if (vn < MIN_VAL) continue;
+      const entry = GRID_ENTRIES[Math.floor(k / NX)];
+      const exit = GRID_EXITS[k % NX];
+      const vAvg = t.sum[k] / vn;
+      // steady rules must win at least 60% and make money on the newest coins too
+      if (mode === "steady" && (t.w[k] / vn < 0.6 || vAvg <= 0)) continue;
+      out.push({
+        rule: e.p,
+        entry: entryLabel(entry),
+        exit: exitLabel(exit),
+        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
+        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
+      });
+    }
+    // a rule losing (or, for steady, winning less) on either part never leads
+    if (mode === "steady") out.sort((a, b) => Math.min(winLow(b.val.wins, b.val.n), winLow(b.train.wins, b.train.n)) - Math.min(winLow(a.val.wins, a.val.n), winLow(a.train.wins, a.train.n)));
+    else out.sort((a, b) => Math.min(b.val.avg, b.train.avg) - Math.min(a.val.avg, a.train.avg));
+    results[mode] = out.slice(0, 10);
   }
-  // checked on the newest coins, with the entry/exit chosen on train
-  const results = [];
-  for (const e of pool) {
-    const t = tally(T, val, e.p);
-    const k = e.b.k;
-    const vn = t.n[k];
-    if (vn < MIN_VAL) continue;
-    const entry = GRID_ENTRIES[Math.floor(k / NX)];
-    const exit = GRID_EXITS[k % NX];
-    results.push({
-      rule: e.p,
-      entry: entryLabel(entry),
-      exit: exitLabel(exit),
-      train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
-      val: { n: vn, wins: t.w[k], avg: +(t.sum[k] / vn).toFixed(3), perDay: +(vn / valDays).toFixed(1) },
-    });
-  }
-  // best on validation first, but a rule losing on either part never leads
-  results.sort((a, b) => Math.min(b.val.avg, b.train.avg) - Math.min(a.val.avg, a.train.avg));
-  return { coins: T.n, train: train.length, val: val.length, tried: seen.size, top: results.slice(0, 10) };
+  return { coins: T.n, train: train.length, val: val.length, tried, top: results.profit, steady: results.steady };
 }
 
 // ------------------------------------------------------------------ running it
