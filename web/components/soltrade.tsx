@@ -63,8 +63,41 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
   // one trade at a time: locked before anything is awaited (a double tap can't send two)
   const lock = useRef(false);
   const amount = Number(usd.replace(",", ".")) || 0;
-  const estimate = coin.priceUsd ? (amount * (1 - FEE)) / coin.priceUsd : null;
   const mint = coin.address;
+  // sasa's own-fee coins (lib/soldbc.ts): the trading fee right now, shown before anyone trades
+  // (it's read from the coin's own on-chain settings; counted down here every second)
+  const [ownPool, setOwnPool] = useState<import("@/lib/soldbc").DbcPool | null>(null);
+  const [ownFee, setOwnFee] = useState<{ bps: number; nextBps: number | null; inSec: number | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setOwnPool(null);
+    // only Meteora coins can be one (sasa's own-fee coins are listed as "meteora"): every other
+    // coin page skips the extra libraries and lookups
+    if (coin.dex && !/meteora/i.test(coin.dex)) return;
+    void import("@/lib/soldbc").then(async (D) => {
+      const pool = await D.dbcActive(mint);
+      if (alive) setOwnPool(pool);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [mint, coin.dex]);
+  useEffect(() => {
+    if (!ownPool) return setOwnFee(null);
+    let alive = true;
+    const tick = () =>
+      void import("@/lib/soldbc").then((D) => {
+        if (alive) setOwnFee(D.dbcFeeAt(ownPool, Math.floor(Date.now() / 1000)));
+      });
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [ownPool]);
+  const feeShare = ownFee ? ownFee.bps / 10_000 : FEE;
+  const estimate = coin.priceUsd ? (amount * (1 - feeShare)) / coin.priceUsd : null;
 
   const loadHeld = useCallback(async () => {
     if (!sol.address) return setHeld(null);
@@ -111,7 +144,11 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     const L = await import("@/lib/sollaunch");
     // still on its launch curve (every coin launched on sasa at first): the dollars arrive as
     // SOL, then the coin is bought on the curve itself (no route in between that could refuse it)
-    const curve = await L.onCurve(mint);
+    const D = await import("@/lib/soldbc");
+    // the standard launch curve, or one of sasa's own-fee coins: both bought straight with SOL
+    const pump = await L.onCurve(mint);
+    const own = !pump && !!(await D.dbcActive(mint));
+    const curve = pump || own;
     const q = await getQuote({
       user: w.address,
       recipient: s.address,
@@ -149,7 +186,8 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       const room = bal - 3_000_000n;
       const spend = [arrived, want, room].reduce((a, b) => (b < a ? b : a));
       if (spend <= 0n) throw new Error("That amount is too small to buy.");
-      await L.curveBuy(s, mint, spend, (m) => setBusy(m));
+      if (own) await D.dbcBuy(s, mint, spend, (m) => setBusy(m));
+      else await L.curveBuy(s, mint, spend, (m) => setBusy(m));
       afterTrade();
       toast(`Bought $${coin.symbol} ✓`);
       return;
@@ -202,12 +240,16 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (!w.address || raw <= 0n) return;
     const s = await sol.get();
     const L = await import("@/lib/sollaunch");
-    const curve = await L.onCurve(mint);
-    await ensureSol(s.address, curve ? SOL_FOR_CURVE_SALE : SOL_FOR_ROUTE_SALE);
+    const D = await import("@/lib/soldbc");
+    const pump = await L.onCurve(mint);
+    const own = !pump && !!(await D.dbcActive(mint));
+    const curve = pump || own;
+    // an own-fee sale opens a SOL account for the proceeds: a little more room than the standard curve
+    await ensureSol(s.address, own ? SOL_FOR_ROUTE_SALE : curve ? SOL_FOR_CURVE_SALE : SOL_FOR_ROUTE_SALE);
     setBusy("Getting the price…");
     if (curve) {
       // on its launch curve: sold on the curve for SOL, then the SOL goes to Cash as USDC
-      const proceeds = await L.curveSell(s, mint, raw, (m) => setBusy(m));
+      const proceeds = own ? await D.dbcSell(s, mint, raw, (m) => setBusy(m)) : await L.curveSell(s, mint, raw, (m) => setBusy(m));
       // sold: done for the user now; the dollars move to Cash in the background
       toast(`Sold $${coin.symbol} ✓ Your dollars arrive in Cash in a few seconds.`);
       const evm = w.address;
@@ -300,10 +342,16 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
             : side === "buy" && estimate !== null
               ? `${fmt(estimate)} $${coin.symbol}`
               : side === "sell" && coin.priceUsd && raw > 0n
-                ? `about $${((Number(raw) / 1e6) * coin.priceUsd * (1 - FEE)).toFixed(2)}`
+                ? `about $${((Number(raw) / 1e6) * coin.priceUsd * (1 - feeShare)).toFixed(2)}`
                 : "—"}
         </b>
       </div>
+      {ownFee && (
+        <p className={"mt-2 text-[0.75rem] " + (ownFee.bps > 100 ? "text-warn-ink font-semibold" : "text-ink-3")}>
+          Trading fee now: {ownFee.bps / 100}%
+          {ownFee.nextBps !== null && ownFee.inSec !== null ? ` · ${ownFee.nextBps / 100}% in ${ownFee.inSec}s` : ""}
+        </p>
+      )}
       {side === "sell" && held !== null && <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>}
       <button
         type="button"

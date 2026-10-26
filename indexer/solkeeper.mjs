@@ -9,6 +9,8 @@
  *     Paying out is open to anyone on chain; the keeper only pays the network fee (a fraction of
  *     a cent). Before every payout the split is checked again.
  *  4. Makes and keeps sasa's address lookup table (lets a whole launch fit in one transaction).
+ *  5. sasa's own-fee launches (soldbc.mjs, admin test): makes sasa's config once, lists those
+ *     coins once they're on chain, and claims sasa's part of their trading fees into the treasury.
  *
  * Env (Railway):
  *   SOLANA_TREASURY      sasa's Solana wallet that receives its half (public address)
@@ -20,6 +22,7 @@
  *   SOLKEEPER_OFF=1      switches all of this off
  */
 import { createRequire } from "node:module";
+import { checkDbc, claimDbc, dbcPool, dbcPriceSol, dbcSdk, ensureDbcConfig } from "./soldbc.mjs";
 
 const require = createRequire(import.meta.url);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,6 +67,8 @@ alter table sol_coins add column if not exists price_usd double precision;
 alter table sol_coins add column if not exists mcap_usd double precision;
 alter table sol_coins add column if not exists curve_done boolean;
 alter table sol_coins add column if not exists priced_at timestamptz;
+-- pump: the standard launch curve (50/50 creator-fee split); dbc: sasa's own-fee launch (soldbc.mjs)
+alter table sol_coins add column if not exists kind text not null default 'pump';
 notify pgrst, 'reload schema';`;
 
 /**
@@ -78,7 +83,7 @@ export async function ensureSasaSolView(pool) {
       execute $v$
         create or replace view sol_sasa_coins as
         select 'solana'::text as network, 792703809::bigint as chain_id, c.mint as address, t.pool,
-               coalesce(t.dex, 'pumpfun') as dex, coalesce(c.name, t.name) as name, coalesce(c.symbol, t.symbol) as symbol,
+               coalesce(t.dex, case when c.kind = 'dbc' then 'meteora' else 'pumpfun' end) as dex, coalesce(c.name, t.name) as name, coalesce(c.symbol, t.symbol) as symbol,
                coalesce(t.image, c.image) as image, coalesce(t.price_usd, c.price_usd) as price_usd, t.fdv_usd,
                coalesce(t.mcap_usd, c.mcap_usd) as mcap_usd, t.liq_usd, t.vol_24h, t.change_1h, t.change_24h,
                t.buys_24h, t.sells_24h, coalesce(t.pool_created, c.created_at) as pool_created, null::integer as trending_rank,
@@ -143,7 +148,7 @@ async function sendConfirmed(conn, tx, lastValidBlockHeight) {
   throw new Error("not confirmed");
 }
 
-async function sendIxs(S, ixs, alt = null) {
+async function sendIxs(S, ixs, alt = null, extra = []) {
   const { web3, conn, keeper } = S;
   const bh = await conn.getLatestBlockhash("confirmed");
   const msg = new web3.TransactionMessage({
@@ -152,7 +157,7 @@ async function sendIxs(S, ixs, alt = null) {
     instructions: [web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }), ...ixs],
   }).compileToV0Message(alt ? [alt] : []);
   const tx = new web3.VersionedTransaction(msg);
-  tx.sign([keeper]);
+  tx.sign([keeper, ...extra]);
   return sendConfirmed(conn, tx, bh.lastValidBlockHeight);
 }
 
@@ -193,13 +198,19 @@ async function chainMeta(S, mint) {
 
 async function checkNew(pool, S, log) {
   const { rows } = await pool.query(
-    `select mint, creator, created_at from sol_coins
+    `select mint, creator, created_at, kind from sol_coins
      where status = 'pending' and (checked_at is null or checked_at < now() - interval '15 seconds')
      order by created_at desc limit 50`
   );
   for (const r of rows) {
     try {
-      const c = await checkSplit(S, r);
+      // sasa's own-fee coins: on chain under sasa's config is all there is to check
+      const c = r.kind === "dbc" ? (S.dbcConfig ? await checkDbc(S, r) : null) : await checkSplit(S, r);
+      // the keeper hasn't loaded sasa's own-fee config yet: the coin waits (never counted as missing)
+      if (!c) {
+        await pool.query(`update sol_coins set note = 'waiting for the own-fee config', checked_at = now() where mint = $1`, [r.mint]);
+        continue;
+      }
       // listed only once the 50/50 split can't be changed any more (until then it stays pending)
       if (c.ok && !c.locked) {
         await pool.query(`update sol_coins set note = 'split not locked yet', checked_at = now() where mint = $1`, [r.mint]);
@@ -237,7 +248,7 @@ async function payouts(pool, S, log) {
   if (!keeper) return;
   const { rows } = await pool.query(
     `select mint, creator, full_at from sol_coins
-     where status = 'live' and (paid_at is null or paid_at < now() - interval '30 minutes')
+     where status = 'live' and kind = 'pump' and (paid_at is null or paid_at < now() - interval '30 minutes')
        and (checked_at is null or checked_at < now() - interval '30 minutes')
      order by checked_at nulls first limit 100`
   );
@@ -328,7 +339,7 @@ async function curvePrices(pool, S) {
   const usd = await solPrice();
   if (!usd) return;
   const { rows } = await pool.query(
-    `select mint from sol_coins where status = 'live' and coalesce(curve_done, false) = false
+    `select mint from sol_coins where status = 'live' and kind = 'pump' and coalesce(curve_done, false) = false
      order by created_at desc limit 300`
   );
   for (let i = 0; i < rows.length; i += 100) {
@@ -349,6 +360,58 @@ async function curvePrices(pool, S) {
         await pool.query(`update sol_coins set price_usd = $2, mcap_usd = $3, priced_at = now() where mint = $1`, [chunk[j].mint, price, price * supply]);
       } catch {}
     }
+  }
+}
+
+// ------------------------------------------------------------------ sasa's own-fee coins (soldbc.mjs)
+
+/** Claims sasa's part of every own-fee coin's trading fees into the treasury, each coin every half hour at most. */
+async function dbcPayouts(pool, S, log) {
+  if (!S.keeper || !S.dbcConfig) return;
+  const { rows } = await pool.query(
+    `select mint from sol_coins
+     where status = 'live' and kind = 'dbc'
+       and (paid_at is null or paid_at < now() - interval '30 minutes')
+       and (checked_at is null or checked_at < now() - interval '10 minutes')
+     order by checked_at nulls first limit 50`
+  );
+  for (const r of rows) {
+    try {
+      const amount = await claimDbc(S, r, sendIxs);
+      if (amount > 0) {
+        await pool.query(
+          `update sol_coins set paid_at = now(), checked_at = now(), paid_lamports = paid_lamports + $2, payouts = payouts + 1 where mint = $1`,
+          [r.mint, amount]
+        );
+        log(`sol: claimed ${(amount / 1e9).toFixed(4)} SOL of own-fee coin ${r.mint} to the treasury`);
+      } else await pool.query(`update sol_coins set checked_at = now() where mint = $1`, [r.mint]);
+    } catch (e) {
+      await pool.query(`update sol_coins set checked_at = now() where mint = $1`, [r.mint]).catch(() => {});
+      log(`sol: own-fee claim ${r.mint} failed (${e?.message ?? e})`);
+    }
+  }
+}
+
+/** Price and market cap of the own-fee coins from their curve (before DexScreener has them). */
+async function dbcPrices(pool, S) {
+  if (!S.dbcConfig) return;
+  const usd = await solPrice();
+  if (!usd) return;
+  const { rows } = await pool.query(
+    `select mint from sol_coins where status = 'live' and kind = 'dbc' and coalesce(curve_done, false) = false
+     order by created_at desc limit 100`
+  );
+  for (const r of rows) {
+    try {
+      const p = await dbcPool(S, r.mint);
+      if (!p) continue;
+      if (p.state.isMigrated) {
+        await pool.query(`update sol_coins set curve_done = true where mint = $1`, [r.mint]);
+        continue;
+      }
+      const price = dbcPriceSol(p.state) * usd;
+      await pool.query(`update sol_coins set price_usd = $2, mcap_usd = $3, priced_at = now() where mint = $1`, [r.mint, price, price * 1e9]);
+    } catch {}
   }
 }
 
@@ -460,6 +523,10 @@ export async function solKeeperLoop(pool, log) {
     keeper: keeperKeypair(web3, process.env.SOLANA_KEEPER_KEY),
     minPayout: Math.round(Number(process.env.SOL_MIN_PAYOUT || 0.005) * 1e9),
     alt: null,
+    // sasa's own-fee launches (soldbc.mjs): the SDK and the config, once made
+    D: dbcSdk(),
+    dbc: null,
+    dbcConfig: null,
   };
   // the site reads the treasury from here: one setting (Railway) for both
   await pool.query(`insert into sol_config (key, value) values ('treasury', $1) on conflict (key) do update set value = excluded.value, updated_at = now()`, [S.treasury.toBase58()]);
@@ -469,7 +536,14 @@ export async function solKeeperLoop(pool, log) {
   let lastTable = 0;
   let lastLow = 0;
   let lastNote = 0;
+  let lastDbc = 0;
   for (;;) {
+    // sasa's own-fee config: made once (the keeper pays ~0.01 SOL), then only read
+    // (tried again every 2 minutes until it's loaded)
+    if (S.keeper && !S.dbcConfig && Date.now() - lastDbc > 120_000) {
+      lastDbc = Date.now();
+      await ensureDbcConfig(pool, S, log, sendIxs).catch((e) => log(`sol: own-fee config failed (${e?.message ?? e})`));
+    }
     try {
       await checkNew(pool, S, log);
     } catch (e) {
@@ -478,6 +552,7 @@ export async function solKeeperLoop(pool, log) {
     if (Date.now() - lastPrices > 60_000) {
       lastPrices = Date.now();
       await curvePrices(pool, S).catch((e) => log(`sol: prices failed (${e?.message ?? e})`));
+      await dbcPrices(pool, S).catch((e) => log(`sol: own-fee prices failed (${e?.message ?? e})`));
     }
     if (S.keeper && Date.now() - lastTable > 12 * 3600_000) {
       try {
@@ -495,6 +570,7 @@ export async function solKeeperLoop(pool, log) {
       } catch (e) {
         log(`sol: payouts failed (${e?.message ?? e})`);
       }
+      await dbcPayouts(pool, S, log).catch((e) => log(`sol: own-fee claims failed (${e?.message ?? e})`));
       // the keeper's own SOL pays the network fees: say so when it runs low
       if (Date.now() - lastLow > 6 * 3600_000) {
         const bal = await conn.getBalance(S.keeper.publicKey).catch(() => null);

@@ -57,12 +57,13 @@ export function solConnection(): Connection {
   return conn;
 }
 
-export type SolConfig = { treasury: string | null; alt: string | null };
+/** dbc: sasa's own-fee launch config (lib/soldbc.ts), made by the keeper; null until then. */
+export type SolConfig = { treasury: string | null; alt: string | null; dbc: string | null };
 export async function solConfig(): Promise<SolConfig> {
   const r = await fetch("/api/sol/config");
   const j = (await r.json().catch(() => ({}))) as Partial<SolConfig> & { error?: string };
   if (!r.ok) throw new Error(j.error ?? "Couldn't reach sasa. Try again in a moment.");
-  return { treasury: j.treasury ?? null, alt: j.alt ?? null };
+  return { treasury: j.treasury ?? null, alt: j.alt ?? null, dbc: j.dbc ?? null };
 }
 
 export type CoinInfo = { name: string; symbol: string; description: string; image: string; twitter?: string; telegram?: string; website?: string };
@@ -90,7 +91,7 @@ export async function priorityFee(): Promise<number> {
   }
 }
 
-function compile(payer: PublicKey, ixs: TransactionInstruction[], blockhash: string, alt: AddressLookupTableAccount | null): VersionedTransaction | null {
+export function compile(payer: PublicKey, ixs: TransactionInstruction[], blockhash: string, alt: AddressLookupTableAccount | null): VersionedTransaction | null {
   try {
     const msg = new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message(alt ? [alt] : []);
     const tx = new VersionedTransaction(msg);
@@ -102,7 +103,7 @@ function compile(payer: PublicKey, ixs: TransactionInstruction[], blockhash: str
   }
 }
 
-const budget = (units: number, price: number) => [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price })];
+export const budget = (units: number, price: number) => [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price })];
 
 /** Signs with the wallet, then with the coin's own key (kept last, so a wallet that rewrites the transaction can't drop it). */
 export async function signAll(tx: VersionedTransaction, signer: SolSigner, extra: Keypair[]): Promise<VersionedTransaction> {
@@ -414,7 +415,7 @@ function simError(err: unknown, logs: string[] | null): string {
 }
 
 /** Tells sasa about the coin (before it's signed; the keeper checks it on chain before listing it). */
-export async function recordCoin(r: { mint: string; creator: string; uri: string; sig: string; name: string; symbol: string; image: string }, token?: string | null): Promise<void> {
+export async function recordCoin(r: { mint: string; creator: string; uri: string; sig: string; name: string; symbol: string; image: string; kind?: "dbc" }, token?: string | null): Promise<void> {
   for (let i = 0; ; i++) {
     const res = await fetch("/api/sol/coin", {
       method: "POST",

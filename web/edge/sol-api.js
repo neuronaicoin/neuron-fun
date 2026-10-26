@@ -2,7 +2,7 @@
  * Solana launches (/api/sol/*). See lib/sollaunch.ts for the launch itself and
  * indexer/solkeeper.mjs for what happens after it (checking each coin, paying out fees).
  *
- *   GET  /api/sol/config        { treasury, alt }: sasa's Solana wallet that gets its half of every
+ *   GET  /api/sol/config        { treasury, alt, dbc }: (dbc: sasa's own-fee launch config, lib/soldbc.ts) sasa's Solana wallet that gets its half of every
  *                               coin's creator fees (Railway's SOLANA_TREASURY, via sol_config), and the
  *                               address lookup table that keeps a launch in one transaction
  *                               (made by the keeper, kept in sol_config)
@@ -74,17 +74,19 @@ function newId() {
 async function config(env, sb) {
   let treasury = null;
   let alt = null;
+  let dbc = null;
   try {
-    const { data } = await sb(env, "sol_config?key=in.(alt,treasury)&select=key,value");
+    const { data } = await sb(env, "sol_config?key=in.(alt,treasury,dbc_config)&select=key,value");
     for (const r of data || []) {
       if (typeof r.value !== "string" || !B58.test(r.value)) continue;
       if (r.key === "alt") alt = r.value;
       if (r.key === "treasury") treasury = r.value;
+      if (r.key === "dbc_config") dbc = r.value;
     }
   } catch {
     // table not made yet (the keeper makes it): no launches until it has run
   }
-  return json({ treasury, alt }, 200, "public, max-age=60");
+  return json({ treasury, alt, dbc }, 200, "public, max-age=60");
 }
 
 async function meta(env, request, body, underLimit) {
@@ -143,6 +145,9 @@ async function record(env, request, body, me, sb, underLimit) {
       owner: me ? String(me).toLowerCase() : null,
       uri,
       sig: sig || null,
+      // sasa's own-fee launch (lib/soldbc.ts); left out otherwise (the column's default is the
+      // standard launch curve), so standard launches never depend on the keeper's newer table
+      ...(body.kind === "dbc" ? { kind: "dbc" } : {}),
       name: clean(body.name, 32),
       symbol: clean(body.symbol, 10),
       // only a picture stored by sasa itself (/api/sol/meta), never any other address
@@ -161,11 +166,18 @@ async function status(env, mint, sb) {
 
 /** The latest Solana launches and what the keeper found (public facts, all on chain anyway). */
 async function recent(env, sb) {
-  const { data } = await sb(env, "sol_coins?select=mint,name,symbol,status,note,locked,created_at,checked_at,price_usd,paid_lamports,payouts,paid_at&order=created_at.desc&limit=50");
+  const cols = "mint,name,symbol,status,note,locked,created_at,checked_at,price_usd,paid_lamports,payouts,paid_at";
+  // `kind` arrives with the keeper's update (until then every coin is a standard one)
+  const { data } = await sb(env, `sol_coins?select=${cols},kind&order=created_at.desc&limit=50`).catch(() =>
+    sb(env, `sol_coins?select=${cols}&order=created_at.desc&limit=50`)
+  );
   const coins = data || [];
-  // creator fees paid out so far (each payout splits 50/50: half to sasa's treasury)
-  const paid = coins.reduce((n, c) => n + Number(c.paid_lamports || 0), 0) / 1e9;
-  return json({ paid_sol: Number(paid.toFixed(6)), sasa_sol: Number((paid / 2).toFixed(6)), coins });
+  // standard coins: creator fees paid out so far (each payout splits 50/50: half to sasa's
+  // treasury); own-fee coins: what the keeper claimed is sasa's part alone
+  const sum = (kind) => coins.filter((c) => (c.kind || "pump") === kind).reduce((n, c) => n + Number(c.paid_lamports || 0), 0) / 1e9;
+  const paid = sum("pump");
+  const own = sum("dbc");
+  return json({ paid_sol: Number(paid.toFixed(6)), sasa_sol: Number((paid / 2 + own).toFixed(6)), own_fee_sol: Number(own.toFixed(6)), coins });
 }
 
 export async function solRoute(env, request, me, parts, method, body, { sb, underLimit }) {

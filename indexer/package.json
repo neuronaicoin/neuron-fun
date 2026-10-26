@@ -8,6 +8,7 @@
     "start": "node indexer.mjs"
   },
   "dependencies": {
+    "@meteora-ag/dynamic-bonding-curve-sdk": "2.0.0",
     "@nktkas/hyperliquid": "0.33.3",
     "@pump-fun/pump-sdk": "4.3.1",
     "@resvg/resvg-js": "^2.6.2",

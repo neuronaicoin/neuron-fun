@@ -28,6 +28,7 @@ import { afterTrade } from "@/lib/portfolio";
 import { getQuote, requestStatus } from "@/lib/relay";
 import { SOLANA_ID, SOL_NATIVE, dexscreenerSol, gmgnSol, solscanToken } from "@/lib/solana";
 import type { SolSigner } from "@/lib/sollaunch";
+import { geoExempt } from "@/lib/perps";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const PENDING = "sasa-sol-pending";
@@ -78,6 +79,9 @@ export function SolanaLaunchBox(p: {
   const [party, setParty] = useState(true);
   const endParty = useCallback(() => setParty(false), []);
   const [pending, setPending] = useState<Pending | null>(null);
+  // admin test only (sasa's own wallets): launch with sasa's own fee settings (lib/soldbc.ts)
+  const admin = geoExempt(w.address);
+  const [ownFee, setOwnFee] = useState(false);
   const alive = useRef(true);
   // one launch at a time: locked before anything is awaited (a double tap can't launch twice)
   const lock = useRef(false);
@@ -168,6 +172,8 @@ export function SolanaLaunchBox(p: {
       const L = await import("@/lib/sollaunch");
       const config = await L.solConfig();
       if (!config.treasury) throw new Error("Solana launches open soon.");
+      const own = ownFee && admin;
+      if (own && !config.dbc) throw new Error("Own-fee launches are still being set up by sasa's keeper. Try again in a few minutes.");
       const s = await signer();
       const balance = () => L.solBalance(s.address);
 
@@ -201,9 +207,28 @@ export function SolanaLaunchBox(p: {
           });
           buyLamports = BigInt(probe.outRaw || "0");
         }
-        return { buyLamports, plan: await L.planLaunch(buyLamports) };
+        return { buyLamports, plan: own ? null : await L.planLaunch(buyLamports) };
       })();
       const [info, { buyLamports, plan }] = await Promise.all([upload, planning]);
+
+      if (own) {
+        // sasa's own fee settings: the coin, its pool and the first buy in one transaction
+        const [D, { Keypair }] = await Promise.all([import("@/lib/soldbc"), import("@solana/web3.js")]);
+        const mint = Keypair.generate();
+        await Promise.all([
+          fund(s.address, buyLamports + D.DBC_RESERVE_LAMPORTS, balance),
+          L.recordCoin(
+            { mint: mint.publicKey.toBase58(), creator: s.address, uri: info.uri, sig: "", name: p.name, symbol: p.symbol, image: info.image, kind: "dbc" },
+            sessionToken(w.address)
+          ),
+        ]);
+        const res = await D.dbcLaunch({ signer: s, mint, name: p.name, symbol: p.symbol, uri: info.uri, buyLamports, onStep: setStep });
+        setDone({ mint: res.mint, name: p.name, symbol: p.symbol, logo: p.logo, finished: true, bought: true });
+        justLaunched({ address: res.mint, name: p.name, symbol: p.symbol, image: info.image });
+        toast("Your coin is live on Solana ✓");
+        return;
+      }
+      if (!plan) throw new Error("Couldn't plan the launch. Try again.");
 
       // sasa hears about the coin before it's signed, so a closed tab can't leave it unknown
       // (the keeper lists it only once it's on chain with the 50/50 split); done while the
@@ -332,6 +357,16 @@ export function SolanaLaunchBox(p: {
             Finish
           </button>
         </div>
+      )}
+
+      {admin && (
+        <label className="rounded-2xl border border-dashed border-line p-3 flex items-start gap-2.5 text-[0.8125rem] cursor-pointer">
+          <input type="checkbox" checked={ownFee} onChange={(e) => setOwnFee(e.target.checked)} disabled={busy} className="mt-0.5" />
+          <span>
+            <b>Admin test: sasa&apos;s own fees</b>
+            <span className="block text-ink-2">Trading fee 30% for the first 30 s, 15.5% until 60 s, then 1%. Not on pump.fun. Only admins see this.</span>
+          </span>
+        </label>
       )}
 
       <button

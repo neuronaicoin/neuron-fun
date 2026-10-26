@@ -13,6 +13,7 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/instrument-sans": "^5.3.0",
     "@fontsource/sora": "^5.3.0",
+    "@meteora-ag/dynamic-bonding-curve-sdk": "2.0.0",
     "@nktkas/hyperliquid": "0.33.3",
     "@privy-io/react-auth": "^3.45.0",
     "@pump-fun/pump-sdk": "4.3.1",
