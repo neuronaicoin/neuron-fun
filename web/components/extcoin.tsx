@@ -17,6 +17,7 @@ import { rememberExtBuy } from "@/lib/extheld";
 import { AutoPanel } from "./autopanel";
 import { SolanaTradeBox } from "./soltrade";
 import { isSolExt } from "@/lib/extcoins";
+import { SOL_RPC } from "@/lib/solana";
 
 import { ContractAddress } from "./contract";
 import Link from "next/link";
@@ -47,6 +48,34 @@ function dexName(dex: string | null): string {
   return dex.replace(/[-_]/g, " ");
 }
 
+/**
+ * The coin's pool on Meteora's launch curve under sasa's own-fee config, when it has one (null
+ * otherwise): the pool's address is fixed by the config and the coin, and it's there on chain.
+ */
+async function dbcPoolFor(PublicKey: typeof import("@solana/web3.js").PublicKey, mint: import("@solana/web3.js").PublicKey): Promise<string | null> {
+  const cfg = (await (await fetch("/api/sol/config")).json().catch(() => ({}))) as { dbc?: string | null };
+  if (!cfg.dbc) return null;
+  const config = new PublicKey(cfg.dbc);
+  const wsol = new PublicKey("So11111111111111111111111111111111111111112");
+  // the two mints, larger first (byte order), as Meteora's program does
+  const x = wsol.toBytes();
+  const y = mint.toBytes();
+  const i = x.findIndex((v, k) => v !== y[k]);
+  const [a, b] = i >= 0 && x[i] > y[i] ? [wsol, mint] : [mint, wsol];
+  const [pool] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("pool"), config.toBytes(), a.toBytes(), b.toBytes()],
+    new PublicKey("dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN")
+  );
+  const address = pool.toBase58();
+  const r = await fetch(SOL_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getAccountInfo", params: [address, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }] }),
+  });
+  const j = (await r.json().catch(() => ({}))) as { result?: { value: unknown } };
+  return j.result?.value ? address : null;
+}
+
 /** Price, stats, chart, token check and trade box of a coin from any DEX. */
 /** A coin from the Market list: its page shows its rank, and what is bought for it (cbBTC for Bitcoin…). */
 export type MarketInfo = { id: string; rank: number | null; via: string | null; change7d: number | null };
@@ -61,12 +90,15 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
     if (!coin.sasa || !isSolExt(coin.network)) return setCurvePool(null);
     let alive = true;
     import("@solana/web3.js")
-      .then(({ PublicKey }) => {
+      .then(async ({ PublicKey }) => {
+        const mint = new PublicKey(coin.address);
         const [pda] = PublicKey.findProgramAddressSync(
-          [new TextEncoder().encode("bonding-curve"), new PublicKey(coin.address).toBytes()],
+          [new TextEncoder().encode("bonding-curve"), mint.toBytes()],
           new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
         );
-        if (alive) setCurvePool(pda.toBase58());
+        // sasa's own-fee coins (Meteora's launch curve under sasa's config): their pool instead
+        const dbc = await dbcPoolFor(PublicKey, mint).catch(() => null);
+        if (alive) setCurvePool(dbc ?? pda.toBase58());
       })
       .catch(() => {});
     return () => {

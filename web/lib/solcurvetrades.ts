@@ -42,6 +42,10 @@ const INFLIGHT = new Map<string, Promise<CurveTrade[]>>();
 
 /** Rent of a launch curve account (166 bytes): in the SOL of the coin's very first transaction. */
 const CURVE_RENT = (128 + 166) * 6960;
+const DBC_PROGRAM = "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN";
+/** Meteora launch curve's vault owner (one for every pool). */
+const DBC_AUTHORITY = "FhVo3mqL8PW5pH5U2CN4XE33DokiyZnUwuGpH2hmHLuM";
+const WSOL = "So11111111111111111111111111111111111111112";
 
 function parse(sig: string, tx: Tx | null, mint: string, curve: string): CurveTrade | null {
   if (!tx || !tx.meta || tx.meta.err || !tx.blockTime) return null;
@@ -60,8 +64,16 @@ function parse(sig: string, tx: Tx | null, mint: string, curve: string): CurveTr
   // without network fees, trading fees or the rent of accounts the transaction opened
   const ci = keys.indexOf(curve);
   if (ci < 0) return null;
-  const pre = tx.meta.preBalances[ci];
-  const dSol = (tx.meta.postBalances[ci] - pre - (pre === 0 ? CURVE_RENT : 0)) / 1e9;
+  let dSol: number;
+  if (keys.includes(DBC_PROGRAM)) {
+    // sasa's own-fee coins (Meteora's launch curve): the SOL sits in the pool's SOL vault
+    const vault = (list: Bal[] | undefined) =>
+      (list ?? []).filter((b) => b.mint === WSOL && b.owner === DBC_AUTHORITY).reduce((n, b) => n + Number(b.uiTokenAmount.uiAmountString ?? b.uiTokenAmount.uiAmount ?? 0), 0);
+    dSol = vault(tx.meta.postTokenBalances) - vault(tx.meta.preTokenBalances);
+  } else {
+    const pre = tx.meta.preBalances[ci];
+    dSol = (tx.meta.postBalances[ci] - pre - (pre === 0 ? CURVE_RENT : 0)) / 1e9;
+  }
   const buy = dTokens > 0;
   const sol = Math.abs(dSol);
   if (!sol) return null;
