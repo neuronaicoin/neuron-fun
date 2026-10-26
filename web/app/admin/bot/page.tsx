@@ -176,7 +176,7 @@ export default function BotTestPage() {
                       (c.result === "win" ? "bg-up/15 text-up" : c.result === "loss" ? "bg-danger/15 text-danger" : "bg-paper text-ink-3 border border-line")
                     }
                   >
-                    {c.result === "win" ? "+50%" : c.result === "loss" ? "−20%" : c.done ? "flat" : "watching"}
+                    {c.result === "win" ? "+50%" : c.result === "loss" ? "−20%" : c.result === "restart" ? "restarted" : c.done ? "flat" : "watching"}
                   </span>
                 </a>
               );

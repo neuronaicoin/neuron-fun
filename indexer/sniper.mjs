@@ -89,7 +89,7 @@ create or replace function sniper_stats(p_hours int) returns jsonb language sql 
         'losses', (select count(*) from s where passed and score >= l.min and result = 'loss'),
         'open', (select count(*) from s where passed and score >= l.min and (result is null or result = 'open')),
         'hit_25k', (select count(*) from s where passed and score >= l.min and peak_mc >= 25000),
-        'avg_peak_x', (select round(avg(peak_mc / nullif(entry_mc, 0))::numeric, 2) from s where passed and score >= l.min and done)
+        'avg_peak_x', (select round(avg(peak_mc / nullif(entry_mc, 0))::numeric, 2) from s where passed and score >= l.min and done and coalesce(result, '') <> 'restart')
       ) order by l.min desc)
       from (values ('safe', ${LEVELS.safe}), ('balanced', ${LEVELS.balanced}), ('aggressive', ${LEVELS.aggressive})) as l(name, min)),
     'fails', (select jsonb_object_agg(f, n) from (select coalesce(fail, 'low score') as f, count(*) as n from s where entry_mc is not null and not passed group by 1 order by 2 desc limit 12) x)
@@ -455,6 +455,9 @@ export async function sniperLoop(pool, log) {
   const rpc = process.env.SOLANA_RPC_URL;
   if (!rpc) return log("bot test waiting: set SOLANA_RPC_URL (Helius) to turn it on");
   await pool.query(SQL);
+  // coins being followed when the indexer stopped can't be followed on (their trades were missed):
+  // closed as "restart", left out of the win rate
+  await pool.query(`update sniper_signals set done = true, result = coalesce(result, 'restart') where not done`);
   const web3 = require("@solana/web3.js");
   const hexToB58 = (h) => new web3.PublicKey(Buffer.from(h, "hex")).toBase58();
 
