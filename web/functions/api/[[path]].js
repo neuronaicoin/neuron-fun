@@ -39,6 +39,7 @@ import { raceChatRoute } from "../../edge/racechat-api.js";
 import { autoRoute } from "../../edge/auto-api.js";
 import { extTradeRoute } from "../../edge/exttrade-api.js";
 import { perpsRoute } from "../../edge/perps-api.js";
+import { botRoute } from "../../edge/bot-api.js";
 import { whalesRoute } from "../../edge/whales-api.js";
 import { copyRoute } from "../../edge/copy-api.js";
 import { adminHelp, submitHelp } from "../../edge/help-api.js";
@@ -436,6 +437,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "racechat") return await raceChatRoute(ctx, me, parts, method, body);
     if (parts[0] === "auto") return await autoRoute(env, me, parts, method, body);
     if (parts[0] === "perps") return await perpsRoute(env, me, parts, method);
+    if (parts[0] === "bot") return await botRoute(env, me, parts, method, url);
     if (parts[0] === "whales") return await whalesRoute(env, me, parts, method, body);
     if (parts[0] === "copy") return await copyRoute(env, me, parts, method, body);
     if (parts[0] === "push" && parts.length === 1) {
