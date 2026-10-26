@@ -15,6 +15,10 @@ import { MAINNET_NEW_ARTICLES } from "./articles-mainnet-new";
 import { MAINNET_SEO_ARTICLES } from "./articles-mainnet-seo";
 import { DATA_ARTICLES_A } from "./articles-data-a";
 import { DATA_ARTICLES_B } from "./articles-data-b";
+import { W1_ARTICLES_A } from "./articles-w1a";
+import { W1_ARTICLES_B } from "./articles-w1b";
+import { W1_ARTICLES_C } from "./articles-w1c";
+import { W1_ARTICLES_D } from "./articles-w1d";
 
 export type Block =
   | { h2: string }
@@ -192,6 +196,11 @@ export const ARTICLES: Article[] = IS_TESTNET
       // the Data tab's guides (whales, Fear & Greed, funding): on both networks
       ...DATA_ARTICLES_A,
       ...DATA_ARTICLES_B,
+      // week 1 of the weekly guides (Oct 26): Solana and every chain
+      ...W1_ARTICLES_A,
+      ...W1_ARTICLES_B,
+      ...W1_ARTICLES_C,
+      ...W1_ARTICLES_D,
       ...V7_ARTICLES_A,
       ...V7_ARTICLES_B,
       ...V7_ARTICLES_C,
