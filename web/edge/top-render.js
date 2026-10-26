@@ -7,7 +7,8 @@ export const SITE = "https://sasapad.fun";
 
 /** Every list: its path, what it shows and how it is filtered and sorted. */
 export const LISTS = [
-  { slug: "trending-meme-coins", short: "Trending", h1: "Trending meme coins today", what: "the most traded meme coins across Robinhood Chain, Base, BNB Chain, Ethereum and Arc", network: null, sort: "volume" },
+  { slug: "trending-meme-coins", short: "Trending", h1: "Trending meme coins today", what: "the most traded meme coins across Solana, Robinhood Chain, Base, BNB Chain, Ethereum and Arc", network: null, sort: "volume" },
+  { slug: "solana-meme-coins", short: "Solana", h1: "Top Solana meme coins today", what: "the most traded meme coins on Solana", network: "solana", chain: "Solana", sort: "volume" },
   { slug: "robinhood-chain-meme-coins", short: "Robinhood Chain", h1: "Top Robinhood Chain meme coins today", what: "the most traded meme coins on Robinhood Chain", network: "robinhood", chain: "Robinhood Chain", sort: "volume" },
   { slug: "base-meme-coins", short: "Base", h1: "Top Base meme coins today", what: "the most traded meme coins on Base", network: "base", chain: "Base", sort: "volume" },
   { slug: "bnb-chain-meme-coins", short: "BNB Chain", h1: "Top BNB Chain meme coins today", what: "the most traded meme coins on BNB Chain", network: "bsc", chain: "BNB Chain", sort: "volume" },
@@ -19,6 +20,7 @@ export const LISTS = [
 
 // The same two views for every chain: biggest gainers and new pools.
 const CHAIN_PAGES = [
+  ["solana", "solana", "Solana"],
   ["robinhood-chain", "robinhood", "Robinhood Chain"],
   ["base", "base", "Base"],
   ["bnb-chain", "bsc", "BNB Chain"],
@@ -34,7 +36,7 @@ for (const [slug, network, chain] of CHAIN_PAGES) {
 /** The list for a chain's network id and kind (used for links from coin pages). */
 export const listFor = (network, sort = "volume") => LISTS.find((l) => l.network === network && l.sort === sort) || LISTS[0];
 
-export const NETS = { base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
+export const NETS = { solana: "Solana", base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
 export const MIN_GAINER_VOLUME = 10_000;
 
 // These lists promise meme coins: leave out tokenized stocks, majors, big brand
@@ -48,6 +50,8 @@ export function isMemeForList(c) {
   const sym = String(c.symbol ?? "").trim().toUpperCase();
   if (!name || !sym) return false;
   if (MAJORS.has(name.toLowerCase())) return false;
+  // a launchpad's own token is not a meme coin (and its brand never shows on sasa)
+  if (/pump/i.test(sym) && /^pump/i.test(name)) return false;
   if (BRANDS.test(name) || COMPANY.test(name) || PLUMBING.test(name)) return false;
   if (/USD/.test(sym) || /^W(ETH|BTC|BNB|SOL|AVAX|POL|MATIC|S)$/.test(sym) || /^(ST|WST|WE|EZ|R|CB|S|M|OS)?ETH$/.test(sym) || /^(C?BTC|BTCB|TBTC|WBTC)$/.test(sym)) return false;
   // Tokenized stocks: AAPLx, METAx, GOOGLx...
@@ -97,12 +101,13 @@ const pct = (v) => {
   const a = Math.abs(n);
   return { text: `${n > 0 ? "+" : n < 0 ? "−" : ""}${a >= 1000 ? `${(a / 1000).toFixed(1)}K` : a >= 100 ? a.toFixed(0) : a.toFixed(1)}%`, cls: n > 0.05 ? "up" : n < -0.05 ? "down" : "" };
 };
-const coinUrl = (c) => `${SITE}/x/${encodeURIComponent(c.network)}/${encodeURIComponent(String(c.address).toLowerCase())}/`;
+// Solana addresses keep their case; the others are lowercase
+const coinUrl = (c) => (c.network === "solana" ? `${SITE}/x/solana/${encodeURIComponent(String(c.address))}/` : `${SITE}/x/${encodeURIComponent(c.network)}/${encodeURIComponent(String(c.address).toLowerCase())}/`);
 const mcapOf = (c) => (num(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
 export const dateLabel = (d) => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 /** The PostgREST query for a list (on the ext_coins view: active coins that can be sold). */
-export function queryFor(list, now = new Date()) {
+export function queryFor(list, now = new Date(), view = list.network === "solana" ? "sol_ext_coins" : "ext_coins") {
   const cols = "network,address,name,symbol,image,price_usd,mcap_usd,fdv_usd,liq_usd,vol_24h,change_24h,buys_24h,sells_24h,pool_created";
   const q = [`select=${cols}`, "vol_24h=gt.0"];
   if (list.network) q.push(`network=eq.${list.network}`);
@@ -111,7 +116,7 @@ export function queryFor(list, now = new Date()) {
   else q.push("order=vol_24h.desc.nullslast");
   q.push("limit=120"); // more than shown: some are left out by cleanCoins
   // "vol_24h" appears twice for gainers: PostgREST combines them with AND, which is what we want.
-  return `ext_coins?${q.join("&")}`;
+  return `${view}?${q.join("&")}`;
 }
 
 function summary(list, coins, today) {
@@ -186,7 +191,7 @@ export function shell({ title, description, canonical, ld, body, robots }) {
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@sasapadfun"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(description)}"><meta name="twitter:image" content="${SITE}/og-plain.png">
 <link rel="icon" href="/sasa-icon.svg" type="image/svg+xml"><meta name="theme-color" content="#ffffff">
 <style>${CSS}</style>${ld.map((o) => `<script type="application/ld+json">${jsonLd(o)}</script>`).join("")}</head><body>
-<header class="top"><div class="bar"><a class="brand" href="/">${LOGO}${WORDMARK}</a><nav><a href="/top/">Top coins</a><a href="/races/">Races</a><a href="/learn/">Learn</a><a class="cta" href="/explore/">Open app</a></nav></div></header>
+<header class="top"><div class="bar"><a class="brand" href="/">${LOGO}${WORDMARK}</a><nav><a href="/top/">Top coins</a><a href="/day/">Daily</a><a href="/races/">Races</a><a href="/learn/">Learn</a><a class="cta" href="/explore/">Open app</a></nav></div></header>
 ${body}
 <footer><div>Meme coins are risky and can lose all their value. Nothing here is financial advice. Data refreshes every 30 minutes from on-chain DEX pools. © ${new Date().getUTCFullYear()} sasa</div></footer>
 </body></html>`;
@@ -200,7 +205,7 @@ function row(c, i) {
 }
 
 function faqFor(list) {
-  const where = list.chain || "Robinhood Chain, Base and other chains";
+  const where = list.chain || "Solana, Base and other chains";
   return [
     { q: `What are the top ${list.chain ? `${list.chain} ` : ""}meme coins today?`, a: `This page lists ${list.what}, ranked ${list.sort === "gainers" ? "by 24-hour price change" : "by 24-hour trading volume"}. It refreshes every 30 minutes from live DEX pool data.` },
     { q: "How are the coins ranked?", a: list.sort === "gainers" ? `By price change over the last 24 hours. Only coins with at least ${money(MIN_GAINER_VOLUME)} of 24-hour volume are included, so a tiny trade can't top the list.` : list.sort === "new" ? "Coins whose main pool opened in the last 24 hours, ordered by how much they traded." : "By how much each coin traded in the last 24 hours, across its pools." },
@@ -237,7 +242,7 @@ export function renderList(list, coins, now = new Date()) {
 <nav class="tabs" aria-label="Lists">${tabs}</nav>
 ${table}
 <h2>How this list works</h2>
-<p>sasa tracks meme coin pools on Robinhood Chain, Base, BNB Chain, Ethereum and Arc and refreshes these numbers every 30 minutes. Coins that can't be sold, stablecoins and wrapped coins are left out. Market cap uses the circulating supply when it is known, otherwise the fully diluted value. Every coin links to its own page with a live chart, trades and holders, where you can buy or sell it with USDC.</p>
+<p>sasa tracks meme coin pools on Solana, Robinhood Chain, Base, BNB Chain, Ethereum and Arc and refreshes these numbers every 30 minutes. Coins that can't be sold, stablecoins and wrapped coins are left out. Market cap uses the circulating supply when it is known, otherwise the fully diluted value. Every coin links to its own page with a live chart, trades and holders, where you can buy or sell it with USDC.</p>
 <h2>Questions</h2>
 <dl class="faq">${faq.map((f) => `<dt>${esc(f.q)}</dt><dd>${esc(f.a)}</dd>`).join("")}</dl>
 <h2>More lists</h2>
@@ -252,7 +257,7 @@ export function renderHub(firsts, now = new Date()) {
   const today = dateLabel(now);
   const canonical = `${SITE}/top/`;
   const title = `Top meme coins today (${today}) by chain · sasa`;
-  const description = `Daily lists of the most traded meme coins on Robinhood Chain, Base, BNB Chain, Ethereum and Arc, plus today's biggest gainers and new launches. Updated every 30 minutes.`;
+  const description = `Daily lists of the most traded meme coins on Solana, Robinhood Chain, Base, BNB Chain, Ethereum and Arc, plus today's biggest gainers and new launches. Updated every 30 minutes.`;
   const ld = [
     { "@context": "https://schema.org", "@type": "CollectionPage", name: `Top meme coins today (${today})`, url: canonical, description, dateModified: now.toISOString(),
       hasPart: LISTS.map((l) => ({ "@type": "CollectionPage", name: l.h1, url: `${SITE}/top/${l.slug}/` })) },

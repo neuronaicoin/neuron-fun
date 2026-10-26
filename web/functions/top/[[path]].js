@@ -9,15 +9,24 @@ const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 const CACHE_SECONDS = 1800;
 
-async function fetchList(env, list) {
+async function fetchView(env, query) {
   const base = (env && env.SUPABASE_URL) || SUPABASE_URL;
   const key = (env && env.SUPABASE_KEY) || SUPABASE_KEY;
-  const r = await fetch(`${base}/rest/v1/${queryFor(list)}`, {
+  const r = await fetch(`${base}/rest/v1/${query}`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
     cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true },
   });
   if (!r.ok) throw new Error(`data ${r.status}`);
-  return cleanCoins(await r.json(), list);
+  return r.json();
+}
+
+/** A list's coins. Lists across every chain take Solana's coins (their own view) too. */
+async function fetchList(env, list) {
+  if (list.network) return cleanCoins(await fetchView(env, queryFor(list)), list);
+  const [evm, sol] = await Promise.all([fetchView(env, queryFor(list)), fetchView(env, queryFor(list, new Date(), "sol_ext_coins")).catch(() => [])]);
+  const key = list.sort === "gainers" ? "change_24h" : "vol_24h";
+  const rows = [...evm, ...sol].sort((a, b) => (Number(b[key]) || 0) - (Number(a[key]) || 0));
+  return cleanCoins(rows, list);
 }
 
 const page = (body, status = 200) =>

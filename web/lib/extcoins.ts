@@ -184,7 +184,10 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
       return own ? { ...c, image: c.image ?? own.image, name: own.name || c.name, sasa: true } : c;
     }
     // just launched (not on DexScreener yet)
-    return own;
+    if (own) return own;
+    // quiet for a while: the archive (every real coin we ever saw)
+    const arch = await db.from("ext_archive_pages").select("*").eq("network", "solana").eq("address", address).maybeSingle();
+    return arch.error || !arch.data ? null : fromArchive(arch.data as Record<string, unknown>);
   }
   const a = address.toLowerCase();
   const [live, arch] = await Promise.all([
@@ -196,6 +199,12 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
   if (live.data) return { ...toExt(live.data as Record<string, unknown>), ...peaks };
   if (live.error && !archRow) throw live.error;
   if (!archRow) return null;
+  return fromArchive(archRow);
+}
+
+/** A coin from the archive only (not traded lately): its last numbers, no 24h changes. */
+function fromArchive(archRow: Record<string, unknown>): ExtCoin {
+  const peaks = { peakMcap: pos(archRow.peak_mcap), peakVol: pos(archRow.peak_vol) };
   return {
     ...toExt({
       ...archRow,

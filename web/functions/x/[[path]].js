@@ -1,4 +1,5 @@
-import { isMemeForList, listFor } from "../../edge/top-render.js";
+import { isMemeForList } from "../../edge/top-render.js";
+import { coinLd, coinStory, renderCoinSeo } from "../../edge/coin-seo.js";
 /**
  * Cloudflare Pages Function for coin pages from any DEX:
  *   /x/<network>/<address>     the page's own address (search engines, shares)
@@ -46,6 +47,60 @@ async function one(view, network, address, cacheTtl) {
   }
 }
 
+/** Rows from a public table or view; [] when the database didn't answer. */
+async function list(query, cacheTtl) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${query}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      cf: { cacheTtl, cacheEverything: true },
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j) ? j : j && typeof j === "object" ? [j] : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Two significant digits: fewer distinct queries, so the edge cache works for similar coins. */
+const round2 = (n) => {
+  const p = Math.pow(10, Math.max(0, Math.floor(Math.log10(n)) - 1));
+  return Math.round(n / p) * p;
+};
+
+/**
+ * The search section of a coin page: its summary, facts, price history, biggest trades, daily
+ * lists, similar coins and questions (edge/coin-seo.js), plus the matching structured data.
+ */
+async function coinSeo({ network, address, c, arch, quiet, sasaCoin }) {
+  const a = encodeURIComponent(address);
+  const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+  const mc = Number(c.mcap_usd) > 0 ? Number(c.mcap_usd) : Number(c.fdv_usd) > 0 ? Number(c.fdv_usd) : 0;
+  const view = network === "solana" ? "sol_ext_coins" : "ext_coins";
+  const band = mc > 0 ? `&mcap_usd=gte.${round2(mc / 4)}&mcap_usd=lte.${round2(mc * 4)}` : "";
+  const [days, big, sasa, firstDay, similar] = await Promise.all([
+    list(`coin_days?network=eq.${network}&address=eq.${a}&select=day,price,price_hi,price_lo,mcap,vol,chg,gain_rank,vol_rank&order=day.desc&limit=60`, 1800),
+    list(`big_trades?network=eq.${network}&address=eq.${a}&t=gte.${weekAgo}&select=t,side,usd,wallet,tx&order=usd.desc&limit=10`, 1800),
+    list(`rpc/coin_sasa_stats?p_coin=${a}`, 1800),
+    list("day_pages?chain=eq.all&select=day&order=day.asc&limit=1", 86400),
+    list(`${view}?network=eq.${network}${band}&select=network,address,name,symbol,image,mcap_usd,fdv_usd,change_24h,vol_24h&order=vol_24h.desc.nullslast&limit=16`, 1800).then(async (rows) =>
+      // nothing in its size band: the chain's busiest coins instead
+      rows.length >= 4 || !band ? rows : list(`${view}?network=eq.${network}&select=network,address,name,symbol,image,mcap_usd,fdv_usd,change_24h,vol_24h&order=vol_24h.desc.nullslast&limit=16`, 1800)
+    ),
+  ]);
+  const s = sasa[0] && Number(sasa[0].trades) > 0 ? { trades: Number(sasa[0].trades), usd: Number(sasa[0].usd), traders: Number(sasa[0].traders) } : null;
+  const input = { network, address, c, arch, days, big, sasa: s, sasaCoin, quiet };
+  return {
+    html: renderCoinSeo(input, { similar: similar.filter(isMemeForList), firstDay: firstDay[0]?.day ?? null }),
+    ld: coinLd(input, network === "solana" ? `${SITE}/x/solana/${address}/` : coinUrl(network, address)),
+    story: coinStory(input),
+  };
+}
+
+/** Only the search section (the app fetches it when it opens a coin without a full page load). */
+const seoPart = (html) =>
+  new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=600", "x-robots-tag": "noindex", "x-content-type-options": "nosniff" } });
+
 /** The address bar's other parameters (ref, utm…) kept when a page moves. */
 function keepQuery(url) {
   const q = new URLSearchParams(url.search);
@@ -89,13 +144,15 @@ export async function onRequestGet(ctx) {
   // one address per coin: lowercase, with the closing slash
   if (Object.prototype.hasOwnProperty.call(NETS, network) && (m[2] !== address || !url.pathname.endsWith("/")))
     return Response.redirect(`${url.origin}/x/${network}/${address}/${keepQuery(url)}`, 301);
-  const shell = await appShell(ctx, url);
-  if (!Object.prototype.hasOwnProperty.call(NETS, network)) return notFound(shell);
+  const part = url.searchParams.get("part") === "seo";
+  if (!Object.prototype.hasOwnProperty.call(NETS, network)) return part ? new Response("", { status: 404 }) : notFound(await appShell(ctx, url));
 
   const [live, arch] = await Promise.all([one("ext_coins_all", network, address, 120), one("ext_archive_pages", network, address, 600)]);
   // the database didn't answer: "try again soon" (a 404 now could drop the page from search)
   // (the archive alone failing, e.g. before archive.sql has run, isn't fatal: the live list decides)
   if (live === "error" || (arch === "error" && !live)) {
+    if (part) return new Response("", { status: 503, headers: { "cache-control": "no-store" } });
+    const shell = await appShell(ctx, url);
     const headers = new Headers(shell.headers);
     headers.set("retry-after", "120");
     headers.set("cache-control", "no-store");
@@ -103,20 +160,23 @@ export async function onRequestGet(ctx) {
   }
   const archRow = arch === "error" ? null : arch;
   const c = live ? { ...live, peak_mcap: archRow ? archRow.peak_mcap : null } : archRow;
-  if (!c) return notFound(shell);
+  if (!c) return part ? new Response("", { status: 404 }) : notFound(await appShell(ctx, url));
   const indexed = !!archRow && archRow.indexed === true;
   const quiet = !live && archRow ? archRow.last_seen : null;
+  const [shell, seo] = await Promise.all([part ? null : appShell(ctx, url), coinSeo({ network, address, c, arch: archRow, quiet, sasaCoin: false }).catch(() => null)]);
+  if (part) return seo ? seoPart(seo.html) : new Response("", { status: 404 });
   const res = new Response(shell.body, { status: 200, headers: shell.headers });
 
   const chain = NETS[network];
   const mc = money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
   const ch = Number(c.change_24h);
   const title = `${c.name} ($${c.symbol}) price, chart and market cap on ${chain} · sasa`;
+  // the coin's own numbers first: every page's description is different
   const description = [
-    `Buy and sell ${c.name} ($${c.symbol}) on ${chain} with USDC in one tap on sasa.`,
-    mc ? `Market cap ${mc}.` : "",
-    money(c.vol_24h) ? `24h volume ${money(c.vol_24h)}.` : "",
-    Number.isFinite(ch) ? `24h change ${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%.` : "",
+    mc ? `${c.name} ($${c.symbol}) market cap ${mc}.` : `${c.name} ($${c.symbol}) on ${chain}.`,
+    !quiet && money(c.vol_24h) ? `24h volume ${money(c.vol_24h)}.` : "",
+    !quiet && Number.isFinite(ch) && c.change_24h !== null ? `24h change ${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%.` : "",
+    `Live chart, price history, biggest trades and token check. Buy it with USDC on sasa.`,
   ]
     .filter(Boolean)
     .join(" ")
@@ -129,6 +189,7 @@ export async function onRequestGet(ctx) {
     name: title,
     description,
     url: pageUrl,
+    dateModified: new Date().toISOString(),
     about: { "@type": "Thing", name: `${c.name} (${c.symbol})`, identifier: address },
     isPartOf: { "@type": "WebSite", name: "sasa", url: SITE },
   };
@@ -141,7 +202,10 @@ export async function onRequestGet(ctx) {
     .on('meta[name="twitter:description"]', set(description))
     .on('meta[property="og:url"]', set(pageUrl))
     .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
-    .on("head", { element: (e) => e.append(`<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>${indexed ? "" : '<meta name="robots" content="noindex">'}`, { html: true }) });
+    .on("head", {
+      element: (e) =>
+        e.append(`${[ld, ...(seo ? seo.ld : [])].map((o) => `<script type="application/ld+json">${esc(JSON.stringify(o))}</script>`).join("")}${indexed ? "" : '<meta name="robots" content="noindex">'}`, { html: true }),
+    });
   // Share image: the coin's own card (drawn by the indexer for busy coins), else the plain sasa card.
   // Never the homepage's sample coin.
   const card = `${SUPABASE_URL}/storage/v1/object/public/cards/x-${network}-${address}.png`;
@@ -156,45 +220,8 @@ export async function onRequestGet(ctx) {
     .on('meta[property="og:image:width"]', set("1200"))
     .on('meta[property="og:image:height"]', set("630"))
     .on('meta[property="og:image:alt"]', set(title));
-  // Other busy coins on the same chain: links that help crawlers find more pages.
-  let related = "";
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/ext_coins?network=eq.${network}&select=network,address,name,symbol,vol_24h&order=vol_24h.desc.nullslast&limit=24`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      cf: { cacheTtl: 1800, cacheEverything: true },
-    });
-    if (r.ok) {
-      const esc2 = (x) => String(x ?? "").replace(/[&<>"]/g, (k) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[k]);
-      const list = (await r.json()).filter((o) => o.address !== address && isMemeForList(o)).slice(0, 12);
-      if (list.length)
-        related = `<h2>More meme coins on ${esc2(NETS[network])}</h2><ul>${list.map((o) => `<li><a href="${coinUrl(o.network, o.address)}">${esc2(o.name)} ($${esc2(o.symbol)})</a></li>`).join("")}</ul>`;
-    }
-  } catch {}
-
-  // A plain-text summary for crawlers and AI engines that don't run JavaScript.
-  const html = (x) => String(x ?? "").replace(/[&<>"]/g, (k) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[k]);
-  const price = Number(c.price_usd);
-  const facts = [
-    `Chain: ${chain}`,
-    Number.isFinite(price) && price > 0 ? `Price: $${price < 0.01 ? price.toPrecision(3) : price.toFixed(4)}` : "",
-    mc ? `Market cap: ${mc}` : "",
-    money(c.liq_usd) ? `Liquidity: ${money(c.liq_usd)}` : "",
-    money(c.vol_24h) ? `24h volume: ${money(c.vol_24h)}` : "",
-    Number.isFinite(ch) ? `24h change: ${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%` : "",
-    Number(c.buys_24h) + Number(c.sells_24h) > 0 ? `Trades in the last 24 hours: ${Number(c.buys_24h) || 0} buys, ${Number(c.sells_24h) || 0} sells` : "",
-    c.dex ? `Main pool: ${c.dex}` : "",
-    c.pool_created ? `Pool created: ${new Date(c.pool_created).toISOString().slice(0, 10)}` : "",
-    quiet ? `Last actively traded: ${new Date(quiet).toISOString().slice(0, 10)}` : "",
-    Number(c.peak_mcap) > 0 ? `Highest market cap seen: ${money(c.peak_mcap)}` : "",
-    `Contract: ${address}`,
-  ].filter(Boolean);
-  const summary =
-    `<noscript><article><h1>${html(c.name)} ($${html(c.symbol)}) on ${html(chain)}</h1><p>${html(description)}</p>` +
-    `<ul>${facts.map((f) => `<li>${html(f)}</li>`).join("")}</ul>` +
-    `<p>On sasa you can buy and sell ${html(c.name)} with USDC in one tap, with no bridging and no gas token, and follow its live chart and trades.</p>` +
-    related +
-    `<p><a href="${SITE}/top/${listFor(network).slug}/">Top ${html(chain)} meme coins today</a> · <a href="${SITE}/top/${listFor(network, "gainers").slug}/">Biggest ${html(chain)} gainers</a> · <a href="${SITE}/top/${listFor(network, "new").slug}/">New ${html(chain)} meme coins</a> · <a href="${SITE}/explore/">Explore</a> · <a href="${SITE}/learn/">Guides</a></p></article></noscript>`;
-  rw = rw.on("body", { element: (e) => e.append(summary, { html: true }) });
+  // The search section, readable without JavaScript; the app moves it under the coin's trades.
+  if (seo) rw = rw.on("body", { element: (e) => e.append(seo.html, { html: true }) });
   return rw.transform(res);
 }
 
@@ -220,21 +247,40 @@ async function solRow(view, address, cacheTtl) {
 }
 
 /**
- * A Solana coin's page: its title, description and share card (drawn by the indexer). Kept out
- * of search results. A coin we don't know yet (launched a moment ago) still gets the app page,
- * which waits for it.
+ * A Solana coin's page: its title, description, share card (drawn by the indexer) and search
+ * section. In search results when the coin is in the archive (a real coin, same bar as the other
+ * chains); otherwise kept out. A coin we don't know yet (launched a moment ago) still gets the
+ * app page, which waits for it.
  */
 async function solanaPage(ctx, url, address) {
   if (!url.pathname.endsWith("/")) return Response.redirect(`${url.origin}/x/solana/${address}/${keepQuery(url)}`, 301);
+  const part = url.searchParams.get("part") === "seo";
+  const [market, ours, arch] = await Promise.all([solRow("sol_ext_coins_all", address, 120), solRow("sol_sasa_coins", address, 60), one("ext_archive_pages", "solana", address, 600)]);
+  const archRow = arch && arch !== "error" ? arch : null;
+  const own = ours && ours !== "error" ? ours : null;
+  const live = (market && market !== "error" ? market : null) || own;
+  const c = live ? { ...live, name: (own && own.name) || live.name, peak_mcap: archRow ? archRow.peak_mcap : null } : archRow;
+  const quiet = !live && archRow ? archRow.last_seen : null;
+  const indexed = !!archRow && archRow.indexed === true;
+  const seo = c ? await coinSeo({ network: "solana", address, c, arch: archRow, quiet, sasaCoin: !!own }).catch(() => null) : null;
+  if (part) return seo ? seoPart(seo.html) : new Response("", { status: 404 });
   const shell = await appShell(ctx, url);
-  const [market, ours] = await Promise.all([solRow("sol_ext_coins_all", address, 120), solRow("sol_sasa_coins", address, 60)]);
-  const c = (market && market !== "error" ? market : null) || (ours && ours !== "error" ? ours : null);
-  let rw = new HTMLRewriter().on("head", { element: (e) => e.append('<meta name="robots" content="noindex">', { html: true }) });
+  let rw = new HTMLRewriter();
+  if (!indexed) rw = rw.on("head", { element: (e) => e.append('<meta name="robots" content="noindex">', { html: true }) });
   if (c) {
     const set = (value) => ({ element: (e) => e.setAttribute("content", value) });
     const mc = money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
     const title = `${c.name} ($${c.symbol}) price, chart and market cap on Solana · sasa`;
-    const description = [`Buy and sell ${c.name} ($${c.symbol}) on Solana with USDC on sasa. No SOL needed.`, mc ? `Market cap ${mc}.` : ""].filter(Boolean).join(" ");
+    const ch = Number(c.change_24h);
+    const description = [
+      mc ? `${c.name} ($${c.symbol}) market cap ${mc}.` : `${c.name} ($${c.symbol}) on Solana.`,
+      !quiet && money(c.vol_24h) ? `24h volume ${money(c.vol_24h)}.` : "",
+      !quiet && c.change_24h !== null && c.change_24h !== undefined && Number.isFinite(ch) ? `24h change ${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%.` : "",
+      "Live chart, price history and biggest trades. Buy it with USDC on sasa, no SOL needed.",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 300);
     const pageUrl = `${SITE}/x/solana/${address}/`;
     const card = `${SUPABASE_URL}/storage/v1/object/public/cards/x-solana-${address}.png`;
     let img = `${SITE}/og-plain.png`;
@@ -242,6 +288,16 @@ async function solanaPage(ctx, url, address) {
       const h = await fetch(card, { method: "HEAD", cf: { cacheTtl: 120 } });
       if (h.ok) img = card;
     } catch {}
+    const ld = {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      name: title,
+      description,
+      url: pageUrl,
+      dateModified: new Date().toISOString(),
+      about: { "@type": "Thing", name: `${c.name} (${c.symbol})`, identifier: address },
+      isPartOf: { "@type": "WebSite", name: "sasa", url: SITE },
+    };
     rw = rw
       .on("title", { element: (e) => e.setInnerContent(title) })
       .on('meta[name="description"]', set(description))
@@ -255,7 +311,9 @@ async function solanaPage(ctx, url, address) {
       .on('meta[name="twitter:image"]', set(img))
       .on('meta[property="og:image:width"]', set("1200"))
       .on('meta[property="og:image:height"]', set("630"))
-      .on('meta[property="og:image:alt"]', set(title));
+      .on('meta[property="og:image:alt"]', set(title))
+      .on("head", { element: (e) => e.append([ld, ...(seo ? seo.ld : [])].map((o) => `<script type="application/ld+json">${esc(JSON.stringify(o))}</script>`).join(""), { html: true }) });
+    if (seo) rw = rw.on("body", { element: (e) => e.append(seo.html, { html: true }) });
   }
   return rw.transform(new Response(shell.body, { status: 200, headers: shell.headers }));
 }

@@ -570,6 +570,7 @@ export function Footer() {
           <a href="/forum/" className="text-emerald">Forum</a>
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <a href="/top/" className="text-emerald">Top coins</a>
+          <a href="/day/" className="text-emerald">Daily archive</a>
           <Link href="/learn/" className="text-emerald">Learn</Link>
           <Link href="/help/" className="text-emerald">Help</Link>
           <Link href="/terms/" className="text-emerald">Terms</Link>

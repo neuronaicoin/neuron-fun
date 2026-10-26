@@ -21,7 +21,8 @@ const xml = (urls) =>
 /** One archive line "network/address/YYYY-MM-DD" → [url, lastmod], or null if it isn't one. */
 export function lineToUrl(line) {
   const [n, a, d] = String(line).split("/");
-  if (!NETS.has(n) || !/^0x[0-9a-f]{40}$/.test(a || "")) return null;
+  // Solana addresses are base58 and keep their case
+  if (n === "solana" ? !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a || "") : !NETS.has(n) || !/^0x[0-9a-f]{40}$/.test(a || "")) return null;
   return [`${SITE}/x/${n}/${a}/`, /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? d : null];
 }
 

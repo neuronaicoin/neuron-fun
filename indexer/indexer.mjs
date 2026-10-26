@@ -36,6 +36,7 @@ import { pointsLoop } from "./points.mjs";
 import { badgesLoop } from "./badges.mjs";
 import { marketsLoop } from "./markets.mjs";
 import { seoLoop } from "./seo.mjs";
+import { seoPagesLoop } from "./seopages.mjs";
 import { topLoop } from "./topcoins.mjs";
 import { perpsLoop } from "./perps.mjs";
 import { whalesLoop } from "./whales.mjs";
@@ -551,6 +552,8 @@ async function main() {
     keep("markets", () => marketsLoop(pool, log)),
     keep("markets solana", () => solMarketsLoop(pool, log)),
     keep("seo", () => seoLoop(pool, log)),
+    // search pages: Solana coin archive, daily price history, big trades, daily pages (/day/)
+    keep("seo pages", () => seoPagesLoop(pool, log)),
     // Market: the 300 biggest coins (topcoins.sql), from CoinGecko + DexScreener
     keep("top coins", () => topLoop(pool, log)),
     // Perps: 🔔 + push when a take profit, stop loss or liquidation closes a position (perps.sql)

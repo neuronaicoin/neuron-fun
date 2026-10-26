@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { extAddressOk, extNetwork, fetchExtCoin, isSolExt, type ExtCoin } from "@/lib/extcoins";
 import { ExtCoinView } from "@/components/extcoin";
+import { dropStrayCoinSeo } from "@/components/coinseo";
 
 export default function Page() {
   return (
@@ -27,6 +28,8 @@ function ExtCoinPage() {
   const valid = !!extNetwork(network) && extAddressOk(network, address);
   const [coin, setCoin] = useState<ExtCoin | null | undefined>(undefined);
   const [goingLive, setGoingLive] = useState(false);
+  // leaving the coin page: the server's search section goes too if no coin view took it
+  useEffect(() => () => dropStrayCoinSeo(), []);
 
   useEffect(() => {
     if (!valid) return;

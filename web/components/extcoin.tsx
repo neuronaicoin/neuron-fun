@@ -28,6 +28,7 @@ import { topPageUrl } from "@/lib/topcoins";
 import { PriceChart } from "@/components/racechart";
 import { fetchExtCandles } from "@/lib/extchart";
 import { ExtTradesList, useExtLiveTrades, useExtTrades } from "@/components/exttrades";
+import { CoinSeoSlot } from "@/components/coinseo";
 
 const EXPLORER: Record<string, string> = {
   base: "https://basescan.org/token/",
@@ -182,7 +183,8 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
 
           {pool && <ExtTradesList coin={coin} rows={tradeRows} />}
           {!market && <TokenCheck coin={coin} />}
-          <AboutCoin coin={coin} chain={net.label} market={market} />
+          {/* other DEXs' coins: the server's search section says all this and more (components/coinseo.tsx) */}
+          {market ? <AboutCoin coin={coin} chain={net.label} market={market} /> : <CoinSeoSlot network={coin.network} address={coin.address} />}
         </div>
         {isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}
       </div>

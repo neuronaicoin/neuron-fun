@@ -86,6 +86,9 @@ create or replace view sol_ext_coins_all as
 grant select on sol_ext_coins, sol_ext_coins_all to anon, authenticated;
 notify pgrst, 'reload schema';`;
 
+/** The tables and views above (safe to run again); seopages.mjs reads them too. */
+export const SOL_SQL = SQL;
+
 async function gt(path, retry = true) {
   const r = await fetch(`${GT}${path}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
   if (r.status === 429) {
