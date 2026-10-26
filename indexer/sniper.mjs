@@ -237,6 +237,8 @@ export const SQL = `create table if not exists sniper_signals (
 alter table sniper_signals add column if not exists sims jsonb;
 alter table sniper_signals add column if not exists path jsonb;
 alter table sniper_signals add column if not exists grid jsonb;
+-- the coin's first 40 buyers and the 5-second step they bought in (smart-wallet study)
+alter table sniper_signals add column if not exists buyers jsonb;
 create index if not exists sniper_signals_grid on sniper_signals (created_at) where grid is not null;
 create table if not exists sniper_opt (
   id      bigserial primary key,
@@ -756,6 +758,7 @@ export async function sniperLoop(pool, log) {
     const zeros = () => new Array(steps).fill(0);
     c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null), b: zeros(), s: zeros(), nb: zeros(), ns: zeros() };
     c.everBought = new Set(); // every wallet that bought (new buyers per step)
+    c.firstBuyers = []; // [wallet hex, step] of the first 40 buyers (not the creator)
     c.path.cl[0] = c.path.hi[0] = c.path.lo[0] = Math.round(startMc);
     coins.set(e.mint, c);
     launched.set(e.mint, { creator: e.creator, t0: now });
@@ -789,6 +792,8 @@ export async function sniperLoop(pool, log) {
         if (!c.everBought.has(e.user)) {
           c.everBought.add(e.user);
           c.path.nb[step]++;
+          // the first buyers and when they bought: who keeps getting in early on winners (smart wallets)
+          if (c.firstBuyers.length < 40 && e.user !== c.creator) c.firstBuyers.push([e.user, step]);
         }
       } else {
         c.path.s[step]++;
@@ -899,8 +904,10 @@ export async function sniperLoop(pool, log) {
       ns: cut(c.path.ns).map((v) => +v.toFixed(2)),
     };
     c.everBought = null;
+    const buyers = c.firstBuyers.map(([w, st]) => [hexToB58(w), st]);
+    c.firstBuyers = null;
     await pool
-      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7, grid = $8 where mint = $1`, [
+      .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7, grid = $8, buyers = $9 where mint = $1`, [
         hexToB58(c.mint),
         c.peak,
         c.low,
@@ -909,6 +916,7 @@ export async function sniperLoop(pool, log) {
         JSON.stringify(sims),
         JSON.stringify(path),
         JSON.stringify(grid),
+        JSON.stringify(buyers),
       ])
       .catch((e) => log(`bot test: update failed: ${e.message}`));
   }
