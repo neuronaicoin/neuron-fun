@@ -549,7 +549,7 @@ function NavIcon({ name }: { name: string }) {
 export function Footer() {
   return (
     <footer className="border-t border-line bg-paper mt-16 pb-24 md:pb-0">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 grid gap-6 md:grid-cols-[1fr_auto] md:items-start">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 grid gap-6 md:gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] md:items-start">
         <div className="max-w-2xl">
           <div className="flex items-center gap-2.5">
             <LogoMark size={26} />
@@ -566,7 +566,7 @@ export function Footer() {
             <a href="https://t.me/sasapadfun" target="_blank" rel="noreferrer" className="text-emerald">t.me/sasapadfun</a> on Telegram.
           </p>
         </div>
-        <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] font-medium">
+        <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2 text-[0.875rem] font-medium md:pt-1">
           <a href="/forum/" className="text-emerald">Forum</a>
           <Link href="/how-it-works/" className="text-emerald">How it works</Link>
           <a href="/top/" className="text-emerald">Top coins</a>
