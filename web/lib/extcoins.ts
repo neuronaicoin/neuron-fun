@@ -217,7 +217,7 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
 
 /** A coin page's address for links outside the app (search engines, shares, notifications). */
 export const extPageUrl = (site: string, c: { network: string; address: string }) =>
-  isSolExt(c.network) ? `${site}/x/?n=solana&a=${c.address}` : `${site}/x/${encodeURIComponent(c.network)}/${c.address.toLowerCase()}/`;
+  isSolExt(c.network) ? `${site}/x/solana/${c.address}/` : `${site}/x/${encodeURIComponent(c.network)}/${c.address.toLowerCase()}/`;
 
 export const extHref = (c: { network: string; address: string }) => `/x/?n=${encodeURIComponent(c.network)}&a=${c.address}`;
 

@@ -15,6 +15,8 @@ const SUPABASE_KEY = "sb_publishable_200jvFq0EQhdLdVToTzI7w_eWGtE1Ol";
 const SITE = "https://sasapad.fun";
 const NETS = { base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
 const PATH = /^\/x\/([a-z]+)\/(0x[0-9a-fA-F]{40})\/?$/;
+/** Solana coins: /x/solana/<address>/ (base58, case-sensitive). */
+const SOL_PATH = /^\/x\/solana\/([1-9A-HJ-NP-Za-km-z]{32,44})\/?$/;
 
 const money = (v) => {
   const n = Number(v);
@@ -64,8 +66,15 @@ async function appShell(ctx, url) {
 
 export async function onRequestGet(ctx) {
   const url = new URL(ctx.request.url);
+  const sol = SOL_PATH.exec(url.pathname);
+  if (sol) return solanaPage(ctx, url, sol[1]);
   const m = PATH.exec(url.pathname);
   if (!m) {
+    // /x/?n=solana&a=…: a Solana coin's own address
+    if ((url.pathname === "/x/" || url.pathname === "/x") && url.searchParams.get("n") === "solana") {
+      const sa = (url.searchParams.get("a") || "").trim();
+      if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(sa)) return Response.redirect(`${url.origin}/x/solana/${sa}/${keepQuery(url)}`, 301);
+    }
     // /x/?n=…&a=…: the page lives at its own address
     const n = url.searchParams.get("n") || "";
     const a = (url.searchParams.get("a") || "").toLowerCase();
@@ -193,4 +202,60 @@ export async function onRequestGet(ctx) {
 function notFound(shell) {
   const res = new Response(shell.body, { status: 404, headers: shell.headers });
   return new HTMLRewriter().on("head", { element: (e) => e.append('<meta name="robots" content="noindex">', { html: true }) }).transform(res);
+}
+
+/** A row from a Solana view by address; null when none; "error" when the database didn't answer. */
+async function solRow(view, address, cacheTtl) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${view}?address=eq.${address}&select=*`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      cf: { cacheTtl, cacheEverything: true },
+    });
+    if (!r.ok) return "error";
+    const rows = await r.json();
+    return Array.isArray(rows) ? rows[0] || null : "error";
+  } catch {
+    return "error";
+  }
+}
+
+/**
+ * A Solana coin's page: its title, description and share card (drawn by the indexer). Kept out
+ * of search results. A coin we don't know yet (launched a moment ago) still gets the app page,
+ * which waits for it.
+ */
+async function solanaPage(ctx, url, address) {
+  if (!url.pathname.endsWith("/")) return Response.redirect(`${url.origin}/x/solana/${address}/${keepQuery(url)}`, 301);
+  const shell = await appShell(ctx, url);
+  const [market, ours] = await Promise.all([solRow("sol_ext_coins_all", address, 120), solRow("sol_sasa_coins", address, 60)]);
+  const c = (market && market !== "error" ? market : null) || (ours && ours !== "error" ? ours : null);
+  let rw = new HTMLRewriter().on("head", { element: (e) => e.append('<meta name="robots" content="noindex">', { html: true }) });
+  if (c) {
+    const set = (value) => ({ element: (e) => e.setAttribute("content", value) });
+    const mc = money(Number(c.mcap_usd) > 0 ? c.mcap_usd : c.fdv_usd);
+    const title = `${c.name} ($${c.symbol}) price, chart and market cap on Solana · sasa`;
+    const description = [`Buy and sell ${c.name} ($${c.symbol}) on Solana with USDC on sasa. No SOL needed.`, mc ? `Market cap ${mc}.` : ""].filter(Boolean).join(" ");
+    const pageUrl = `${SITE}/x/solana/${address}/`;
+    const card = `${SUPABASE_URL}/storage/v1/object/public/cards/x-solana-${address}.png`;
+    let img = `${SITE}/og-plain.png`;
+    try {
+      const h = await fetch(card, { method: "HEAD", cf: { cacheTtl: 120 } });
+      if (h.ok) img = card;
+    } catch {}
+    rw = rw
+      .on("title", { element: (e) => e.setInnerContent(title) })
+      .on('meta[name="description"]', set(description))
+      .on('meta[property="og:title"]', set(title))
+      .on('meta[name="twitter:title"]', set(title))
+      .on('meta[property="og:description"]', set(description))
+      .on('meta[name="twitter:description"]', set(description))
+      .on('meta[property="og:url"]', set(pageUrl))
+      .on('link[rel="canonical"]', { element: (e) => e.setAttribute("href", pageUrl) })
+      .on('meta[property="og:image"]', set(img))
+      .on('meta[name="twitter:image"]', set(img))
+      .on('meta[property="og:image:width"]', set("1200"))
+      .on('meta[property="og:image:height"]', set("630"))
+      .on('meta[property="og:image:alt"]', set(title));
+  }
+  return rw.transform(new Response(shell.body, { status: 200, headers: shell.headers }));
 }

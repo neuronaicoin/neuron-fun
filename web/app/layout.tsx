@@ -56,8 +56,8 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       IS_TESTNET
-        ? { url: "/og-sasa.png", width: 1200, height: 630, alt: "sasa — Trade any coin. Launch your own." }
-        : { url: "/og-sasa.png", width: 1200, height: 630, alt: "sasa — Launch once. Live on every chain." },
+        ? { url: "/og-sasa-2.png", width: 1200, height: 630, alt: "sasa — Trade any coin. Launch your own." }
+        : { url: "/og-sasa-2.png", width: 1200, height: 630, alt: "sasa — Trade any coin. Launch your own." },
     ],
   },
   twitter: {
@@ -65,7 +65,7 @@ export const metadata: Metadata = {
     site: "@sasapadfun",
     title: "sasa — Launch once. Live on every chain.",
     description: IS_TESTNET ? "The multi-chain launchpad. Testnet live, mainnet coming soon." : "The multi-chain launchpad. Launch once, live on every chain.",
-    images: [IS_TESTNET ? "/og-sasa.png" : "/og-sasa.png"],
+    images: [IS_TESTNET ? "/og-sasa-2.png" : "/og-sasa-2.png"],
   },
 };
 

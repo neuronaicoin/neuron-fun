@@ -24,7 +24,7 @@ export type ShareCoinTags = { symbol: string; chains?: string[]; handle?: string
 
 const CHAIN_TAG: Record<string, string> = {
   robinhood: "RobinhoodChain", "robinhood chain": "RobinhoodChain", base: "Base", bnb: "BNBChain", "bnb chain": "BNBChain", bsc: "BNBChain",
-  arc: "Arc", ethereum: "Ethereum", eth: "Ethereum",
+  arc: "Arc", ethereum: "Ethereum", eth: "Ethereum", solana: "Solana",
 };
 const cleanHandle = (h?: string | null) => {
   const v = (h ?? "").trim().replace(/^https?:\/\/(www\.)?(x|twitter)\.com\//i, "").replace(/^@/, "").split(/[/?#]/)[0];

@@ -19,8 +19,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${a.title} | sasa`,
     description: a.description,
     alternates: { canonical: url },
-    openGraph: { title: a.title, description: a.description, url, type: "article", publishedTime: a.date, modifiedTime: a.updated, images: ["/og-sasa.png"] },
-    twitter: { card: "summary_large_image", title: a.title, description: a.description, images: ["/og-sasa.png"] },
+    openGraph: { title: a.title, description: a.description, url, type: "article", publishedTime: a.date, modifiedTime: a.updated, images: ["/og-sasa-2.png"] },
+    twitter: { card: "summary_large_image", title: a.title, description: a.description, images: ["/og-sasa-2.png"] },
   };
 }
 
@@ -106,7 +106,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
               datePublished: a.date,
               dateModified: a.updated,
               mainEntityOfPage: url,
-              image: `${SITE_URL}/og-sasa.png`,
+              image: `${SITE_URL}/og-sasa-2.png`,
               keywords: (a.tags ?? []).join(", "),
               inLanguage: "en",
               author: { "@type": "Organization", name: "sasa", url: SITE_URL },

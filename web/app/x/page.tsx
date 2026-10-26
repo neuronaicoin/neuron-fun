@@ -18,7 +18,8 @@ export default function Page() {
 function ExtCoinPage() {
   const q = useSearchParams();
   // /x/<network>/<address> (search engines, shares) or /x/?n=<network>&a=<address> (in-app links)
-  const fromPath = typeof window !== "undefined" ? /^\/x\/([a-z]+)\/(0x[0-9a-fA-F]{40})\/?$/.exec(window.location.pathname) : null;
+  const fromPath =
+    typeof window !== "undefined" ? /^\/x\/([a-z]+)\/(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\/?$/.exec(window.location.pathname) : null;
   const network = fromPath?.[1] ?? q.get("n") ?? "";
   const rawAddress = fromPath?.[2] ?? q.get("a") ?? "";
   // Solana addresses are case-sensitive; EVM ones are kept lowercase

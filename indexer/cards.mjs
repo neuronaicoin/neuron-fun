@@ -237,9 +237,11 @@ const EXT_NET = {
   bsc: { name: "BNB Chain", color: "#F3BA2F" },
   eth: { name: "Ethereum", color: "#8A92B2" },
   arc: { name: "Arc", color: "#9B8CFF" },
+  solana: { name: "Solana", color: "#9945FF" },
 };
 
-export const extCardName = (network, address) => `x-${network}-${String(address).toLowerCase()}.png`;
+// EVM addresses in lower case; Solana addresses are case-sensitive and kept as they are
+export const extCardName = (network, address) => `x-${network}-${network === "solana" ? String(address) : String(address).toLowerCase()}.png`;
 
 /** Coin picture as a data: URL resvg can draw (remote images can't be fetched while drawing). */
 const picCache = new Map();
@@ -341,12 +343,30 @@ export async function extCardLoop(pool, log) {
   const minAge = Number(process.env.EXT_CARD_MIN_AGE_MS ?? String(12 * 3600e3));
   for (;;) {
     try {
-      const { rows } = await pool.query(
+      const { rows: evm } = await pool.query(
         `select e.network, e.address, e.name, e.symbol, e.image, e.mcap_usd, e.fdv_usd, e.vol_24h, e.liq_usd, e.change_24h, s.sig, s.drawn_at
          from ext_coins e left join card_state s on s.coin_id = 'x:' || e.network || ':' || e.address
          order by e.vol_24h desc nulls last
          limit 2000`
       );
+      // Solana: every coin launched on sasa first (a new one gets its card within minutes), then
+      // the busiest others. Skipped quietly until the Solana tables exist.
+      const sol = await pool
+        .query(
+          `select 'solana' as network, e.address, e.name, e.symbol, e.image, e.mcap_usd, e.fdv_usd, e.vol_24h, e.liq_usd, e.change_24h, s.sig, s.drawn_at
+           from (
+             (select address, name, symbol, image, mcap_usd, fdv_usd, vol_24h, liq_usd, change_24h, 0 as k, created_at as t from sol_sasa_coins
+              order by created_at desc limit 100)
+             union all
+             (select address, name, symbol, image, mcap_usd, fdv_usd, vol_24h, liq_usd, change_24h, 1 as k, null as t from sol_ext_coins_all
+              order by vol_24h desc nulls last limit 300)
+           ) e left join card_state s on s.coin_id = 'x:solana:' || e.address
+           order by e.k, e.t desc nulls last, e.vol_24h desc nulls last`
+        )
+        .then((r) => r.rows)
+        .catch(() => []);
+      const seen = new Set();
+      const rows = [...sol.filter((r) => !seen.has(r.address) && seen.add(r.address)), ...evm];
       let drawn = 0;
       for (const row of rows) {
         if (drawn >= perRound) break;

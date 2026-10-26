@@ -108,14 +108,16 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <span className="font-mono text-[0.8125rem] text-ink-3">${coin.symbol}</span>
                   <span className="h-6 px-2 rounded-full text-[0.6875rem] font-bold text-white flex items-center" style={{ background: net.color }}>{net.label}</span>
-                  {!isSolExt(coin.network) && (
+                  {(
                   <button
                     type="button"
                     onClick={() =>
                       postOnX(
                         IS_TESTNET
                           ? `$${coin.symbol} is listed on sasa 👀\n\nSoon: buy it in USDC in one tap, no bridging, no gas token.`
-                          : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas token.`,
+                          : isSolExt(coin.network)
+                            ? `$${coin.symbol} on Solana 🔥${coin.mcapUsd ? ` ${money(coin.mcapUsd)} market cap` : ""}\n\nbuying it with plain USDC on sasa. no SOL, no wallet popups 👀`
+                            : `$${coin.symbol} is trading on sasa 🔥\n\nBuy it in USDC in one tap: no bridging, no gas token.`,
                         market ? topPageUrl("https://sasapad.fun", market.id) : extPageUrl("https://sasapad.fun", coin),
                         { symbol: coin.symbol, chains: [net.label], handle: coin.xHandle }
                       )
