@@ -226,6 +226,8 @@ export function parseX(raw) {
   if (!p.length) return null;
   if (p[0] === "i" && p[1] === "communities" && p[2]) return { kind: "community", id: p[2], key: `xc:${p[2]}` };
   if (p[0] === "i") return null;
+  // X's own pages (a search for the ticker, a hashtag…) aren't anyone's account
+  if (/^(search|hashtag|home|explore|intent|share|messages|notifications|settings|login|signup|tos|privacy|compose)$/i.test(p[0])) return null;
   const handle = p[0].replace(/^@/, "");
   if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
   if (p[1] === "status" && p[2]) return { kind: "post", handle, id: p[2], key: `xp:${p[2]}` };
@@ -376,6 +378,10 @@ export function judge(c, now, R = RULES) {
     if (c.siteUp === false) score -= 5;
   }
   if (c.reused) no(`reused ${c.reused}`);
+  if (c.samePost) {
+    checks.samePost = true;
+    score -= 10;
+  }
   if (c.copyTicker) {
     checks.copyTicker = c.copyTicker;
     score -= 5;
@@ -490,11 +496,14 @@ export async function sniperLoop(pool, log) {
       c.links = { x: m.twitter || null, telegram: m.telegram || null, website: m.website || null };
       // the same link or picture on another coin (24 h): a copy, or a recycled scam
       const reused =
-        (c.x && remember(c.x.key, c.mint) && "X") ||
+        (c.x && c.x.kind !== "post" && remember(c.x.key, c.mint) && "X") ||
         (tg && remember(`tg:${tg.toLowerCase()}`, c.mint) && "Telegram") ||
         (c.site?.own && remember(`w:${c.site.host}`, c.mint) && "website") ||
         (m.image && remember(`img:${String(m.image).replace(/^.*\/ipfs\//, "")}`, c.mint) && "picture");
       if (reused) c.reused = reused;
+      // many coins point at the same viral post (the story they're about): not a scam on its own,
+      // but every coin after the first is a copy of the same idea
+      if (c.x?.kind === "post" && remember(c.x.key, c.mint)) c.samePost = true;
       const jobs = [];
       if (tg)
         jobs.push(
