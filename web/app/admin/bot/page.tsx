@@ -29,7 +29,59 @@ type OptResult = {
   train: { n: number; wins: number; avg: number; perDay: number };
   val: { n: number; wins: number; avg: number; perDay: number };
 };
-type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[]; steady?: OptResult[] } };
+type LateResult = Omit<OptResult, "entry">;
+type LateOpt = { signals: number; train: number; val: number; tried: number; top: LateResult[]; steady: LateResult[] };
+type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[]; steady?: OptResult[]; late?: LateOpt } };
+
+const k$ = (v: number) => (v >= 1000 ? `$${v / 1000}K` : `$${v}`);
+/** A proven-coin rule in words. */
+function lateWords(r: Record<string, number>): string {
+  const w: string[] = [];
+  w.push(r.stage === 1 ? "still on its launch curve" : r.stage === 2 ? "graduated to its pool" : "curve or pool");
+  w.push(r.minLevel === r.maxLevel ? `crossing ${k$(r.minLevel)}` : `crossing ${k$(r.minLevel)}–${k$(r.maxLevel)}`);
+  if (r.minAge > 0) w.push(`${r.minAge}+ min old`);
+  if (r.maxAge < 99999) w.push(`under ${r.maxAge} min old`);
+  if (r.minBuyers > 0) w.push(`${r.minBuyers}+ buyers in all`);
+  if (r.minBuys5 > 0) w.push(`${r.minBuys5}+ buys in 5 min`);
+  if (r.minNewBuyers5 > 0) w.push(`${r.minNewBuyers5}+ new buyers in 5 min`);
+  if (r.minNetSol5 > -99) w.push(`${r.minNetSol5}+ SOL in over 5 min`);
+  if (r.minRatio5 > 0) w.push(`buys ${r.minRatio5}× sells`);
+  if (r.minMove5 > 0) w.push(`up ${Math.round((r.minMove5 - 1) * 100)}%+ in 5 min`);
+  if (r.maxMove5 < 99) w.push(`not up more than ${Math.round((r.maxMove5 - 1) * 100)}% in 5 min`);
+  if (r.needX === 2) w.push("own X account");
+  else if (r.needX === 1) w.push("an X link");
+  if (r.minTg === 1) w.push("a Telegram");
+  else if (r.minTg > 1) w.push(`Telegram ${r.minTg}+`);
+  if (r.devNotSold) w.push("creator never sold");
+  return w.join(" · ");
+}
+
+function LateRuleList({ list, empty }: { list: LateResult[]; empty: string }) {
+  if (!list.length) return <p className="mt-2 text-[0.8125rem] text-ink-2">{empty}</p>;
+  return (
+    <div className="mt-2 grid gap-2">
+      {list.slice(0, 5).map((t, i) => (
+        <div key={i} className="rounded-xl border border-line bg-paper p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="font-semibold text-[0.875rem]">
+              #{i + 1} · {t.exit}
+            </div>
+            <div className={"font-mono font-semibold whitespace-nowrap " + (t.val.avg > 0 ? "text-up" : "text-danger")}>
+              {t.val.avg > 0 ? "+" : ""}
+              {(t.val.avg * 100).toFixed(1)}% · {pct(t.val.wins, t.val.n)} won
+            </div>
+          </div>
+          <div className="text-[0.75rem] text-ink-2 mt-1">
+            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
+            {t.train.avg > 0 ? "+" : ""}
+            {(t.train.avg * 100).toFixed(1)}%
+          </div>
+          <div className="text-[0.75rem] text-ink-3 mt-1">{lateWords(t.rule)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function RuleList({ list, empty }: { list: OptResult[]; empty: string }) {
   if (!list.length) return <p className="mt-2 text-[0.8125rem] text-ink-2">{empty}</p>;
@@ -261,6 +313,20 @@ export default function BotTestPage() {
                 <RuleList list={data.opt.result.top} empty="No rule made money on both parts yet." />
                 <div className="mt-4 text-[0.8125rem] font-semibold">Steady: wins 60%+ of trades and still makes money</div>
                 <RuleList list={data.opt.result.steady ?? []} empty="No rule won 60%+ and made money on both parts yet." />
+                {data.opt.result.late && (
+                  <>
+                    <div className="mt-5 pt-4 border-t border-line font-semibold text-[0.9375rem]">Proven coins</div>
+                    <p className="text-[0.75rem] text-ink-3 mt-0.5">
+                      Coins of any age, bought the first time they cross $15K, $25K or $40K on their curve, or $100K, $250K or $500K after they graduate. Followed 6 hours.{" "}
+                      {data.opt.result.late.signals.toLocaleString()} signals · {data.opt.result.late.tried.toLocaleString()} rule sets tried
+                      {data.opt.result.late.signals < 150 ? " · search starts at 150 signals" : ""}
+                    </p>
+                    <div className="mt-3 text-[0.8125rem] font-semibold">Most profit per trade</div>
+                    <LateRuleList list={data.opt.result.late.top} empty="No rule made money on both parts yet." />
+                    <div className="mt-4 text-[0.8125rem] font-semibold">Steady: wins 60%+ and still makes money</div>
+                    <LateRuleList list={data.opt.result.late.steady} empty="No rule won 60%+ and made money on both parts yet." />
+                  </>
+                )}
               </>
             )}
           </div>

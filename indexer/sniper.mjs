@@ -23,11 +23,13 @@
  */
 import { createRequire } from "node:module";
 import { oauthHeader } from "./xbot.mjs";
+import { makeLate } from "./sniperlate.mjs";
 
 const require = createRequire(import.meta.url);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export const PUMP = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
+export const PUMP_AMM = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"; // PumpSwap: where pump.fun coins trade after they graduate
 const WSOL = "So11111111111111111111111111111111111111112";
 const SUPPLY_RAW = 1e15; // 1,000,000,000 coins × 10^6
 
@@ -44,6 +46,7 @@ export const RULES = {
   xMinFollowers: 20,
   xLookupFrom: 45, // only coins scoring at least this get their X account checked
   followMin: 60, // minutes the price is followed after the decision
+  lateTickSec: 60, // how often the proven-coin signals are checked for their end
 };
 // the outcome
 const TAKE_PROFIT = 1.5;
@@ -285,6 +288,36 @@ notify pgrst, 'reload schema';`;
 const CREATE = Buffer.from([27, 114, 169, 77, 222, 235, 99, 118]);
 const TRADE = Buffer.from([189, 219, 127, 211, 78, 230, 97, 238]);
 const COMPLETE = Buffer.from([95, 114, 97, 156, 212, 46, 152, 8]);
+const MIGRATED = Buffer.from([189, 233, 93, 185, 92, 148, 234, 148]); // CompletePumpAmmMigrationEvent
+const AMM_BUY = Buffer.from([103, 244, 82, 31, 44, 245, 119, 119]);
+const AMM_SELL = Buffer.from([62, 47, 55, 10, 165, 3, 220, 42]);
+const WSOL_HEX = "069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001";
+
+/** A PumpSwap buy or sale (pool, SOL moved, the pool's reserves after it), or null. */
+export function decodeAmm(b64) {
+  let b;
+  try {
+    b = Buffer.from(b64, "base64");
+  } catch {
+    return null;
+  }
+  if (b.length < 184) return null;
+  const head = b.subarray(0, 8);
+  const buy = head.equals(AMM_BUY);
+  if (!buy && !head.equals(AMM_SELL)) return null;
+  const u = (i) => Number(b.readBigUInt64LE(16 + 8 * i));
+  return {
+    kind: "amm",
+    buy,
+    base: u(4), // the pool's coins (raw, 6 decimals)
+    quote: u(5), // the pool's SOL (lamports)
+    sol: u(6),
+    pool: b.subarray(120, 152).toString("hex"),
+    user: b.subarray(152, 184).toString("hex"),
+  };
+}
+/** Market cap in dollars of a PumpSwap pool (1,000,000,000 coins). */
+export const ammMc = (base, quote, solUsd) => (base > 0 ? (quote / base) * 1e6 * solUsd : 0);
 
 function reader(b, at = 8) {
   let o = at;
@@ -373,6 +406,19 @@ export function decodeEvent(b64) {
         quote = r.key();
       }
       return { kind: "create", name, symbol, uri, mint: mint.toString("hex"), user: user.toString("hex"), creator: creator.toString("hex"), vSol, vTok, quote };
+    }
+    if (head.equals(MIGRATED)) {
+      const r = reader(b);
+      r.key(); // user
+      const mint = r.key();
+      r.u64();
+      r.u64();
+      r.u64();
+      r.key(); // bonding curve
+      r.i64();
+      const pool = r.key();
+      const quote = r.left() >= 32 ? r.key().toString("hex") : null;
+      return { kind: "migrated", mint: mint.toString("hex"), pool: pool.toString("hex"), quote };
     }
     if (head.equals(COMPLETE)) {
       const r = reader(b);
@@ -669,6 +715,10 @@ export async function sniperLoop(pool, log) {
   await pool.query(`update sniper_signals set done = true, result = coalesce(result, 'restart') where not done`);
   const web3 = require("@solana/web3.js");
   const hexToB58 = (h) => new web3.PublicKey(Buffer.from(h, "hex")).toBase58();
+  // what's known about each coin seen launching (24 h): for the proven-coins signals
+  const metas = new Map();
+  const late = makeLate({ pool, log, hexToB58, info: (m) => metas.get(m) ?? null });
+  await pool.query(late.sql);
 
   let solUsd = 0;
   const price = async () => {
@@ -736,6 +786,12 @@ export async function sniperLoop(pool, log) {
       // no info file or a broken one: judged without links
     } finally {
       c.enriched = true;
+      const meta = metas.get(c.mint);
+      if (meta) {
+        meta.x = c.x?.kind ?? null;
+        meta.tg = c.telegram ? Math.max(1, c.tgMembers ?? 1) : 0;
+        meta.site = c.site?.own ? (c.siteUp ? 1 : 0) : null;
+      }
     }
   }
 
@@ -784,12 +840,42 @@ export async function sniperLoop(pool, log) {
     c.firstBuyers = []; // [wallet hex, step] of the first 40 buyers (not the creator)
     c.path.cl[0] = c.path.hi[0] = c.path.lo[0] = Math.round(startMc);
     coins.set(e.mint, c);
+    metas.set(e.mint, { t0: now, name: c.name, symbol: c.symbol, creator: e.creator, x: null, tg: 0, site: null, devSold: false });
     launched.set(e.mint, { creator: e.creator, t0: now });
     if (/^https?:\/\//i.test(e.uri)) void enrich(c);
     else c.enriched = true;
   }
 
+  /** A price for a followed coin from its PumpSwap pool (after it graduates within its hour). */
+  function poolPrice(c, mc) {
+    c.mc = mc;
+    const step = Math.floor((Date.now() - c.t0) / BUCKET_MS);
+    if (step < c.path.hi.length) {
+      const m = Math.round(mc);
+      c.path.hi[step] = Math.max(c.path.hi[step] ?? 0, m);
+      c.path.lo[step] = Math.min(c.path.lo[step] ?? Infinity, m);
+      c.path.cl[step] = m;
+    }
+    if (c.entryMc) {
+      if (mc > c.peak) {
+        c.peak = mc;
+        c.peakAt = Date.now();
+      }
+      if (mc < c.low) c.low = mc;
+      if (!c.result) {
+        if (mc >= c.entryMc * TAKE_PROFIT) c.result = "win";
+        else if (mc <= c.entryMc * STOP_LOSS) c.result = "loss";
+      }
+    }
+  }
+
   function onTrade(e, slot) {
+    // every coin's trades feed the proven-coins signals
+    late.curveTrade(e, mcOf(e.vSol, e.vTok, solUsd));
+    if (!e.buy) {
+      const meta = metas.get(e.mint);
+      if (meta && meta.creator === e.user) meta.devSold = true;
+    }
     // the creator selling in the first 10 minutes marks them for their next coins
     if (!e.buy) {
       const l = launched.get(e.mint);
@@ -945,6 +1031,7 @@ export async function sniperLoop(pool, log) {
   }
 
   // the clock: decisions and endings
+  let lateTick = Date.now();
   const tick = setInterval(() => {
     const now = Date.now();
     for (const c of coins.values()) {
@@ -973,6 +1060,12 @@ export async function sniperLoop(pool, log) {
     if (seen.size > 200_000) for (const [k, v] of seen) if (now - v.at > 86400_000) seen.delete(k);
     if (devs.size > 200_000) for (const [k, v] of devs) if (!v.launches.some((t) => now - t < 86400_000)) devs.delete(k);
     if (tickers.size > 50_000) tickers.clear();
+    if (now - lateTick >= RULES.lateTickSec * 1000) {
+      lateTick = now;
+      late.tick();
+      for (const [k, v] of metas) if (now - v.t0 > 86400_000) metas.delete(k);
+      else break; // oldest first
+    }
     for (const [k, v] of launched) if (now - v.t0 > 10 * 60_000) launched.delete(k);
     else break; // oldest first
   }, 1000);
@@ -980,8 +1073,10 @@ export async function sniperLoop(pool, log) {
   // the feed: every pump.fun transaction, over the node's websocket
   let conn = null;
   let sub = null;
+  let subAmm = null;
   const connect = async () => {
     if (conn && sub !== null) await conn.removeOnLogsListener(sub).catch(() => {});
+    if (conn && subAmm !== null) await conn.removeOnLogsListener(subAmm).catch(() => {});
     conn = new web3.Connection(rpc, { commitment: "confirmed", wsEndpoint: rpc.replace(/^http/, "ws") });
     sub = conn.onLogs(
       new web3.PublicKey(PUMP),
@@ -995,6 +1090,10 @@ export async function sniperLoop(pool, log) {
           events++;
           if (e.kind === "create") onCreate(e, ctx.slot);
           else if (e.kind === "trade") onTrade(e, ctx.slot);
+          else if (e.kind === "migrated") {
+            // its PumpSwap pool, when priced in SOL: its trades are followed from now on
+            if (!e.quote || e.quote === WSOL_HEX || /^0+$/.test(e.quote)) late.migrated(e.mint, e.pool);
+          }
           else if (e.kind === "complete") {
             const c = coins.get(e.mint);
             if (c?.entryMc && !c.result) c.result = "win"; // moved to its pool: well above any take profit
@@ -1003,6 +1102,26 @@ export async function sniperLoop(pool, log) {
       },
       "confirmed"
     );
+    // PumpSwap: prices of coins that graduated while watched (SNIPER_AMM=0 switches it off)
+    subAmm =
+      process.env.SNIPER_AMM === "0"
+        ? null
+        : conn.onLogs(
+            new web3.PublicKey(PUMP_AMM),
+            (l) => {
+              if (l.err) return;
+              for (const line of l.logs) {
+                if (!line.startsWith("Program data: ")) continue;
+                const e = decodeAmm(line.slice(14));
+                if (!e) continue;
+                const mc = ammMc(e.base, e.quote, solUsd);
+                const mint = late.poolTrade(e, mc);
+                const c = mint ? coins.get(mint) : null;
+                if (c) poolPrice(c, mc);
+              }
+            },
+            "confirmed"
+          );
   };
   await connect();
   log("bot test: watching pump.fun live");
@@ -1016,7 +1135,8 @@ export async function sniperLoop(pool, log) {
       lastEvent = Date.now();
     }
     if (n % 20 === 0) {
-      log(`bot test: ${events} events, ${coins.size} coins watched`);
+      const ls = late.size();
+      log(`bot test: ${events} events, ${coins.size} new coins watched, ${ls.coins} trading coins, ${ls.follows} proven-coin signals followed, ${ls.pools} pools`);
       await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
       // price paths are the big part: kept 3 days (the optimizer uses the much smaller grid)
       await pool.query(`update sniper_signals set path = null where path is not null and created_at < now() - interval '3 days'`).catch(() => {});

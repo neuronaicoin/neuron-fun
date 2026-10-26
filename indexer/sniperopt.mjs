@@ -17,9 +17,12 @@
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import { GRID_ENTRIES, GRID_EXITS, GRID_VERSION, entryLabel, exitLabel } from "./sniper.mjs";
+import { LATE_VERSION } from "./sniperlate.mjs";
+import { optimizeLate } from "./sniperoptlate.mjs";
 
 const EVERY_MS = 3 * 3600_000;
 const MIN_COINS = 300;
+const MIN_LATE = 150; // proven-coin signals needed before their search runs
 const TRIES = 300_000;
 const CLIMB_ROUNDS = 10_000;
 const MIN_TRAIN = 25;
@@ -276,7 +279,11 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
 
 if (!isMainThread && workerData?.sniperOpt) {
   try {
-    parentPort.postMessage({ ok: true, out: optimize(workerData.rows) });
+    const { rows = [], lateRows = [] } = workerData;
+    const out = rows.length >= MIN_COINS ? optimize(rows) : { coins: rows.length, train: 0, val: 0, tried: 0, top: [], steady: [] };
+    // proven-coin signals (sniperlate.mjs)
+    out.late = lateRows.length >= MIN_LATE ? optimizeLate(lateRows) : { signals: lateRows.length, train: 0, val: 0, tried: 0, top: [], steady: [] };
+    parentPort.postMessage({ ok: true, out });
   } catch (e) {
     parentPort.postMessage({ ok: false, error: String(e?.message ?? e) });
   }
@@ -296,17 +303,26 @@ export async function sniperOptLoop(pool, log) {
           [GRID_VERSION]
         )
       ).rows;
-      if (rows.length >= MIN_COINS) {
+      const lateRows = (
+        await pool
+          .query(
+            `select at, level, features, grid from sniper_late
+             where grid is not null and (grid->>'v')::int = $1 and at > now() - interval '7 days' and coalesce(result, '') <> 'restart'`,
+            [LATE_VERSION]
+          )
+          .catch(() => ({ rows: [] }))
+      ).rows;
+      if (rows.length >= MIN_COINS || lateRows.length >= MIN_LATE) {
         const started = Date.now();
         const out = await new Promise((resolve, reject) => {
-          const w = new Worker(fileURLToPath(import.meta.url), { workerData: { sniperOpt: true, rows } });
+          const w = new Worker(fileURLToPath(import.meta.url), { workerData: { sniperOpt: true, rows, lateRows } });
           w.once("message", (m) => (m.ok ? resolve(m.out) : reject(new Error(m.error))));
           w.once("error", reject);
         });
         await pool.query(`insert into sniper_opt (coins, result) values ($1, $2)`, [out.coins, JSON.stringify(out)]);
         await pool.query(`delete from sniper_opt where run_at < now() - interval '14 days'`);
-        log(`bot optimizer: ${out.tried} rules on ${out.coins} coins in ${Math.round((Date.now() - started) / 1000)} s, ${out.top.length} kept`);
-      } else log(`bot optimizer: ${rows.length} coins so far, starts at ${MIN_COINS}`);
+        log(`bot optimizer: ${out.tried + out.late.tried} rules on ${out.coins} new coins + ${out.late.signals} proven-coin signals in ${Math.round((Date.now() - started) / 1000)} s`);
+      } else log(`bot optimizer: ${rows.length} new coins and ${lateRows.length} proven-coin signals so far, starts at ${MIN_COINS} / ${MIN_LATE}`);
     } catch (e) {
       log(`bot optimizer failed: ${e.message}`);
     }
