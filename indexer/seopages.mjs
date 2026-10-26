@@ -40,7 +40,9 @@ export const DAY_CHAINS = [
 /** Race chain ids → network ids (mainnet only; test races never count). */
 const RACE_NETWORK = { 8453: "base", 56: "bsc", 4663: "robinhood", 5042: "arc" };
 const NOT_MEME_SOL = new Set(["SOL", "WSOL", "JITOSOL", "MSOL", "BSOL", "JUPSOL", "INF", "HSOL", "BNSOL", "USDC", "USDT", "PYUSD", "USDS", "EURC", "JLP", "CBBTC", "WBTC", "ZBTC", "WETH", "PUMP"]);
-const isMeme = (r) => !!r.name && !!r.symbol && !NOT_MEME_SOL.has(String(r.symbol).toUpperCase()) && !notMeme(r.symbol, r.name);
+// money tokens pegged to other currencies or gold (KRW1, EURC, XSGD, XAUT…)
+const PEGGED = /^X?(KRW|EUR|JPY|TRY|GBP|CNH|CNY|BRL|MXN|CHF|SGD|IDR|AUD|CAD|XAU)[A-Z]?\d*$/;
+const isMeme = (r) => !!r.name && !!r.symbol && !NOT_MEME_SOL.has(String(r.symbol).toUpperCase()) && !PEGGED.test(String(r.symbol).toUpperCase()) && !notMeme(r.symbol, r.name);
 
 const SQL = `
 -- Solana coins in the archive: the same bar as the other chains (archive.sql's ext_is_real)

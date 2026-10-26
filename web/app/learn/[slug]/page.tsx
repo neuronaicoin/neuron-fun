@@ -27,12 +27,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const a = articleBySlug((await params).slug);
   if (!a) notFound();
-  // Related reading: most shared topics first, then newest. Four is plenty.
+  // Related reading: most shared topics first, then newest.
   const tags = new Set(a.tags ?? []);
   const others = ARTICLES.filter((x) => x.slug !== a.slug)
     .map((x) => ({ x, score: (x.tags ?? []).filter((t) => tags.has(t)).length }))
     .sort((p, q) => q.score - p.score || q.x.date.localeCompare(p.x.date))
-    .slice(0, 4)
+    .slice(0, 6)
     .map((p) => p.x);
   const url = `${SITE_URL}/learn/${a.slug}/`;
   return (
@@ -72,9 +72,24 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
           </section>
         </article>
 
+        {/* today's live meme coin record, put in by the edge (functions/learn/[slug].js); empty in the static page */}
+        <div id="learn-live" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: "" }} />
+
         <section className="mt-12 rounded-3xl border border-line bg-surface p-6 sm:p-8">
-          <p className="font-display font-bold text-[1.375rem]">Launch once. Live on every chain.</p>
-          <p className="text-ink-2 mt-2">{IS_TESTNET ? "sasa is live on testnet and coming to mainnet soon." : "sasa is live on Robinhood Chain and Base."}</p>
+          <p className="font-display font-bold text-[1.375rem]">Trade any coin. Launch your own.</p>
+          <p className="text-ink-2 mt-2">
+            {IS_TESTNET
+              ? "sasa is live on testnet and coming to mainnet soon."
+              : "One USDC balance for Solana, Base, BNB Chain, Robinhood Chain, Arc and Ethereum: buy any meme coin, launch your own, trade futures and predictions."}
+          </p>
+          {!IS_TESTNET && (
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[0.875rem] font-semibold">
+              <Link href="/create/" className="text-emerald">Launch a coin</Link>
+              <Link href="/explore/" className="text-emerald">Explore coins</Link>
+              <a href="/top/" className="text-emerald">Top meme coins today</a>
+              <a href="/day/" className="text-emerald">Daily archive</a>
+            </div>
+          )}
           <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="inline-flex mt-5 h-12 px-6 rounded-full bg-ink text-on-accent font-bold items-center">
             Follow @sasapadfun
           </a>

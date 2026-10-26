@@ -50,6 +50,8 @@ export function isMemeForList(c) {
   const sym = String(c.symbol ?? "").trim().toUpperCase();
   if (!name || !sym) return false;
   if (MAJORS.has(name.toLowerCase())) return false;
+  // money tokens pegged to other currencies or gold (KRW1, EURC, XSGD, XAUT…)
+  if (/^X?(KRW|EUR|JPY|TRY|GBP|CNH|CNY|BRL|MXN|CHF|SGD|IDR|AUD|CAD|XAU)[A-Z]?\d*$/.test(sym)) return false;
   // a launchpad's own token is not a meme coin (and its brand never shows on sasa)
   if (/pump/i.test(sym) && /^pump/i.test(name)) return false;
   if (BRANDS.test(name) || COMPANY.test(name) || PLUMBING.test(name)) return false;

@@ -190,7 +190,7 @@ const BASE_ARTICLES: Article[] = [
  * 5-minute race plus the original guides rewritten for it (articles-mainnet-*.ts, same
  * slugs). The switch happens by itself on the mainnet build.
  */
-export const ARTICLES: Article[] = IS_TESTNET
+const LIST: Article[] = IS_TESTNET
   ? [...DATA_ARTICLES_A, ...DATA_ARTICLES_B, ...SEO_ARTICLES, ...NEW_ARTICLES, ...MORE_ARTICLES, ...BASE_ARTICLES]
   : [
       // the Data tab's guides (whales, Fear & Greed, funding): on both networks
@@ -209,6 +209,13 @@ export const ARTICLES: Article[] = IS_TESTNET
       ...MAINNET_MORE_ARTICLES,
       ...MAINNET_BASE_ARTICLES,
     ];
+
+/**
+ * Every guide was refreshed on this day (live "On sasa today" data, more links, every chain in the
+ * closing section): their "updated" date says so, which also tells search engines to look again.
+ */
+const REFRESHED = "2026-10-26";
+export const ARTICLES: Article[] = LIST.map((a) => (IS_TESTNET || a.updated >= REFRESHED ? a : { ...a, updated: REFRESHED }));
 
 export const articleBySlug = (slug: string) => ARTICLES.find((a) => a.slug === slug);
 export const SITE_URL = "https://sasapad.fun";
