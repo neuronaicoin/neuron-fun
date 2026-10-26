@@ -54,6 +54,9 @@ function ruleWords(r: Record<string, number>): string {
   if (r.minNetSol > 0) w.push(`${r.minNetSol}+ SOL in`);
   if (r.minRatio > 0) w.push(`buys ${r.minRatio}× sells`);
   w.push(`bought at ${r.minMult}–${r.maxMult >= 99 ? "any" : r.maxMult}× launch price`);
+  if (r.minNewBuyers60 > 0) w.push(`${r.minNewBuyers60}+ new buyers in the minute before`);
+  if (r.minNetSol60 > -99) w.push(`${r.minNetSol60}+ SOL in during the minute before`);
+  if (r.minRatio60 > 0) w.push(`buys ${r.minRatio60}× sells in the minute before`);
   return w.join(" · ");
 }
 
@@ -219,7 +222,7 @@ export default function BotTestPage() {
             <div className="font-semibold text-[0.9375rem]">Best rules found by the optimizer</div>
             {!data?.opt ? (
               <p className="text-[0.8125rem] text-ink-3 mt-1">
-                Runs every 3 hours once 300 followed coins are in. It tries 100,000+ rule sets on the older 70% of coins and keeps only the ones that also make money on the newest 30%.
+                Runs every 3 hours once 300 followed coins are in. It tries 300,000+ rule sets on the older 70% of coins and keeps only the ones that also make money on the newest 30%.
               </p>
             ) : (
               <>

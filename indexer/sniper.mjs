@@ -67,10 +67,27 @@ export const STRATEGIES = [
 ];
 
 /**
- * The optimizer's grid (sniperopt.mjs): every entry time × every exit. Each coin's return under
+ * The optimizer's grid (sniperopt.mjs): every entry point × every exit. Each coin's return under
  * all of them is worked out once when its hour ends and stored as one array (same order).
+ * Entry points: at the decision (~15 s), at fixed times, or the first time the coin's market cap
+ * crosses a level (it has proven itself) — later entries miss some of the rise but far fewer die.
  */
-export const GRID_ENTRIES = [0, 30, 45, 60, 90, 120]; // 0 = at the decision (~15 s)
+export const GRID_VERSION = 2;
+export const GRID_ENTRIES = [
+  { at: 0 },
+  { at: 30 },
+  { at: 45 },
+  { at: 60 },
+  { at: 90 },
+  { at: 120 },
+  { at: 180 },
+  { at: 300 },
+  { at: 600 },
+  { mc: 8000 },
+  { mc: 12000 },
+  { mc: 20000 },
+];
+export const entryLabel = (e) => (e.mc ? `when it first crosses $${e.mc / 1000}K` : e.at ? `at ${e.at >= 120 ? `${e.at / 60} min` : `${e.at} s`}` : "at the decision (~15 s)");
 export const GRID_EXITS = [
   ...[1.3, 1.5, 2, 3, 5].flatMap((tp) => [0.6, 0.7, 0.8, 0.85].map((sl) => ({ tp, sl }))),
   { trail: true, trailAt: 1.5, gap: 0.25, sl: 0.75 },
@@ -79,37 +96,10 @@ export const GRID_EXITS = [
 ];
 export const exitLabel = (x) => (x.trail ? `half at ${x.trailAt}×, rest trails ${Math.round(x.gap * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%` : `sell +${Math.round((x.tp - 1) * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%`);
 
-/** All grid returns of one coin, and its price at each entry time as a multiple of the launch price. */
-export function gridOf(path, decideIdx, entryMc, startMc) {
-  const r = [];
-  const em = [];
-  for (const at of GRID_ENTRIES) {
-    const atIdx = at ? Math.floor((at * 1000) / BUCKET_MS) : decideIdx;
-    let price = null;
-    if (!at || atIdx <= decideIdx) price = entryMc;
-    else for (let i = Math.min(atIdx, path.cl.length - 1); i >= 0 && price == null; i--) price = path.cl[i] ?? null;
-    em.push(price && startMc ? +(price / startMc).toFixed(3) : null);
-    for (const x of GRID_EXITS) r.push(simulate(path, decideIdx, at && atIdx > decideIdx ? { ...x, at } : x, entryMc));
-  }
-  return { r, em };
-}
-
-/**
- * One strategy on a price path (hi / lo / close per 5-second step, market caps, nulls where
- * nothing traded). From the decision step, or a later one (`at` seconds after launch). A step that
- * reaches both the target and the stop counts as the stop (the safe side). Returns r or null.
- */
-export function simulate(path, decideIdx, st, entryMc = null) {
+/** One exit rule from step `from` on, bought at `entry` (market cap). A step reaching both the target and the stop counts as the stop. */
+export function exitFrom(path, from, entry, st) {
   const { hi, lo, cl } = path;
-  let start = decideIdx;
-  if (st.at) start = Math.max(decideIdx, Math.floor((st.at * 1000) / BUCKET_MS));
-  // the price at the entry: the decision's own price, or for a later entry the last trade at or before that step
-  let entry = start === decideIdx && entryMc ? entryMc : null;
-  for (let i = start; i >= 0 && entry == null; i--) entry = cl[i] ?? null;
-  if (!entry) return null;
   let last = entry;
-  // the decision step was restarted at the entry (only trades after it), a later entry's step wasn't
-  const from = st.at && start > decideIdx ? start + 1 : start;
   if (st.trail) {
     let half = false;
     let banked = 0;
@@ -139,6 +129,85 @@ export function simulate(path, decideIdx, st, entryMc = null) {
     last = cl[i] ?? last;
   }
   return +(last / entry - 1 - FEES).toFixed(3);
+}
+
+const MOMENTUM_STEPS = Math.round(60_000 / BUCKET_MS); // the last minute
+
+/**
+ * All grid returns of one coin; for each entry point the price as a multiple of the launch price
+ * (em) and the last minute's momentum (mo: [new buyers, net SOL in, buys per sell]).
+ */
+export function gridOf(path, decideIdx, entryMc, startMc) {
+  const r = [];
+  const em = [];
+  const mo = [];
+  const steps = path.hi.length;
+  for (const e of GRID_ENTRIES) {
+    // where and at what price it buys (null: this entry never happens for this coin)
+    let idx = null;
+    let price = null;
+    let from = null;
+    if (e.mc) {
+      if (entryMc < e.mc) {
+        for (let i = decideIdx; i < steps; i++) {
+          if (path.hi[i] != null && path.hi[i] >= e.mc) {
+            idx = i;
+            price = Math.max(e.mc, path.cl[i] ?? e.mc);
+            from = i + 1;
+            break;
+          }
+        }
+      }
+    } else {
+      const atIdx = e.at ? Math.floor((e.at * 1000) / BUCKET_MS) : decideIdx;
+      if (atIdx <= decideIdx) {
+        idx = decideIdx;
+        price = entryMc;
+        from = decideIdx; // the decision's step only holds what came after the buy
+      } else if (atIdx < steps) {
+        idx = atIdx;
+        for (let i = atIdx; i >= 0 && price == null; i--) price = path.cl[i] ?? null;
+        from = atIdx + 1;
+      }
+    }
+    if (idx == null || !price) {
+      em.push(null);
+      mo.push(null);
+      for (let x = 0; x < GRID_EXITS.length; x++) r.push(null);
+      continue;
+    }
+    em.push(startMc ? +(price / startMc).toFixed(3) : null);
+    let nb = 0;
+    let ns = 0;
+    let b = 0;
+    let s = 0;
+    for (let i = Math.max(0, idx - MOMENTUM_STEPS + 1); i <= idx; i++) {
+      nb += path.nb?.[i] ?? 0;
+      ns += path.ns?.[i] ?? 0;
+      b += path.b?.[i] ?? 0;
+      s += path.s?.[i] ?? 0;
+    }
+    mo.push([nb, +ns.toFixed(2), +(s ? b / s : b).toFixed(2)]);
+    for (const x of GRID_EXITS) r.push(exitFrom(path, from, price, x));
+  }
+  return { v: GRID_VERSION, r, em, mo };
+}
+
+/**
+ * One named strategy (the admin page's table) on a price path: from the decision, or a later
+ * entry (`at` seconds after launch). Returns r or null.
+ */
+export function simulate(path, decideIdx, st, entryMc = null) {
+  const { cl } = path;
+  let start = decideIdx;
+  if (st.at) start = Math.max(decideIdx, Math.floor((st.at * 1000) / BUCKET_MS));
+  // the price at the entry: the decision's own price, or for a later entry the last trade at or before that step
+  let entry = start === decideIdx && entryMc ? entryMc : null;
+  for (let i = start; i >= 0 && entry == null; i--) entry = cl[i] ?? null;
+  if (!entry) return null;
+  // the decision step was restarted at the entry (only trades after it), a later entry's step wasn't
+  const from = st.at && start > decideIdx ? start + 1 : start;
+  return exitFrom(path, from, entry, st);
 }
 export const LEVELS = { safe: 80, balanced: 65, aggressive: 50 };
 
@@ -684,7 +753,9 @@ export async function sniperLoop(pool, log) {
       path: null,
     };
     const steps = Math.ceil((RULES.followMin * 60_000) / BUCKET_MS) + 2;
-    c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null) };
+    const zeros = () => new Array(steps).fill(0);
+    c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null), b: zeros(), s: zeros(), nb: zeros(), ns: zeros() };
+    c.everBought = new Set(); // every wallet that bought (new buyers per step)
     c.path.cl[0] = c.path.hi[0] = c.path.lo[0] = Math.round(startMc);
     coins.set(e.mint, c);
     launched.set(e.mint, { creator: e.creator, t0: now });
@@ -712,6 +783,17 @@ export async function sniperLoop(pool, log) {
       c.path.hi[step] = Math.max(c.path.hi[step] ?? 0, m);
       c.path.lo[step] = Math.min(c.path.lo[step] ?? Infinity, m);
       c.path.cl[step] = m;
+      if (e.buy) {
+        c.path.b[step]++;
+        c.path.ns[step] += e.sol / 1e9;
+        if (!c.everBought.has(e.user)) {
+          c.everBought.add(e.user);
+          c.path.nb[step]++;
+        }
+      } else {
+        c.path.s[step]++;
+        c.path.ns[step] -= e.sol / 1e9;
+      }
     }
     if (!c.decided) {
       const delta = e.buy ? e.tokens : -e.tokens;
@@ -805,7 +887,18 @@ export async function sniperLoop(pool, log) {
     // the path without the empty tail
     let end = c.path.hi.length;
     while (end > 0 && c.path.hi[end - 1] == null) end--;
-    const path = { s: BUCKET_MS / 1000, hi: c.path.hi.slice(0, end), lo: c.path.lo.slice(0, end), cl: c.path.cl.slice(0, end) };
+    const cut = (a) => a.slice(0, end);
+    const path = {
+      step: BUCKET_MS / 1000,
+      hi: cut(c.path.hi),
+      lo: cut(c.path.lo),
+      cl: cut(c.path.cl),
+      b: cut(c.path.b),
+      s: cut(c.path.s),
+      nb: cut(c.path.nb),
+      ns: cut(c.path.ns).map((v) => +v.toFixed(2)),
+    };
+    c.everBought = null;
     await pool
       .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5, done = true, sims = $6, path = $7, grid = $8 where mint = $1`, [
         hexToB58(c.mint),

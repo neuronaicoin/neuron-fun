@@ -16,12 +16,12 @@
  */
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
-import { GRID_ENTRIES, GRID_EXITS, exitLabel } from "./sniper.mjs";
+import { GRID_ENTRIES, GRID_EXITS, GRID_VERSION, entryLabel, exitLabel } from "./sniper.mjs";
 
 const EVERY_MS = 3 * 3600_000;
 const MIN_COINS = 300;
-const TRIES = 100_000;
-const CLIMB_ROUNDS = 3000;
+const TRIES = 300_000;
+const CLIMB_ROUNDS = 10_000;
 const MIN_TRAIN = 25;
 const MIN_VAL = 8;
 
@@ -44,8 +44,12 @@ export const SPACE = {
   minBuyers: [0, 5, 10, 15, 20, 30],
   minNetSol: [0, 1, 2, 3, 5, 8],
   minRatio: [0, 1.5, 2, 3, 5],
-  minMult: [0.9, 1, 1.2, 1.5],
-  maxMult: [1.5, 2, 2.5, 3, 5, 99],
+  minMult: [0.9, 1, 1.2, 1.5, 2, 3],
+  maxMult: [1.5, 2, 2.5, 3, 5, 8, 99],
+  // the last minute before the entry
+  minNewBuyers60: [0, 5, 10, 20, 40],
+  minNetSol60: [-99, 0, 1, 3, 5, 10],
+  minRatio60: [0, 1, 1.5, 2, 3],
 };
 const KEYS = Object.keys(SPACE);
 
@@ -72,7 +76,8 @@ function table(rows) {
     buyers: f(),
     netSol: f(),
     ratio: f(),
-    em: [], // per coin: price multiple at each entry time
+    em: [], // per coin: price multiple at each entry point
+    mo: [], // per coin: [new buyers, net SOL, buys per sell] in the minute before each entry point
     r: [], // per coin: grid returns
     t: new Float64Array(n),
   };
@@ -96,6 +101,7 @@ function table(rows) {
     T.netSol[i] = c.netSol ?? 0;
     T.ratio[i] = c.ratio ?? (c.sells ? (c.buys ?? 0) / c.sells : c.buys ?? 0);
     T.em.push(row.grid.em);
+    T.mo.push(row.grid.mo);
     T.r.push(row.grid.r);
     T.t[i] = Date.parse(row.created_at);
   });
@@ -134,11 +140,15 @@ function tally(T, idx, p) {
   for (const i of idx) {
     if (!passes(T, i, p)) continue;
     const em = T.em[i];
+    const mo = T.mo[i];
     const r = T.r[i];
     for (let e = 0; e < GRID_ENTRIES.length; e++) {
       const m = em[e];
       // the price at that entry must still be in the rule's range (not too late, not falling)
       if (m == null || m < p.minMult || m > p.maxMult) continue;
+      // and the minute before it must show buyers still coming
+      const q = mo[e];
+      if (!q || q[0] < p.minNewBuyers60 || q[1] < p.minNetSol60 || q[2] < p.minRatio60) continue;
       for (let x = 0; x < NX; x++) {
         const k = e * NX + x;
         const v = r[k];
@@ -229,7 +239,7 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
     const exit = GRID_EXITS[k % NX];
     results.push({
       rule: e.p,
-      entry: entry ? `${entry} s` : "at decision",
+      entry: entryLabel(entry),
       exit: exitLabel(exit),
       train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
       val: { n: vn, wins: t.w[k], avg: +(t.sum[k] / vn).toFixed(3), perDay: +(vn / valDays).toFixed(1) },
@@ -260,7 +270,8 @@ export async function sniperOptLoop(pool, log) {
       const rows = (
         await pool.query(
           `select created_at, score, telegram, checks, grid from sniper_signals
-           where grid is not null and created_at > now() - interval '7 days' and coalesce(result, '') <> 'restart'`
+           where grid is not null and (grid->>'v')::int = $1 and created_at > now() - interval '7 days' and coalesce(result, '') <> 'restart'`,
+          [GRID_VERSION]
         )
       ).rows;
       if (rows.length >= MIN_COINS) {
