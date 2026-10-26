@@ -422,6 +422,29 @@ export function parseTelegram(raw) {
   return m[1];
 }
 
+const THIRD_PARTY = new RegExp(
+  "(^|\\.)(" +
+    [
+      // social and video
+      "x.com", "twitter.com", "t.me", "telegram.me", "telegra.ph", "youtube.com", "youtu.be", "tiktok.com", "instagram.com", "facebook.com", "fb.com",
+      "threads.net", "bsky.app", "truthsocial.com", "reddit.com", "redd.it", "discord.gg", "discord.com", "twitch.tv", "kick.com", "rumble.com",
+      "linkedin.com", "snapchat.com", "pinterest.com", "tumblr.com", "imgur.com", "giphy.com", "knowyourmeme.com", "9gag.com",
+      // link pages, blogs, code
+      "linktr.ee", "linktree.com", "beacons.ai", "bio.link", "medium.com", "substack.com", "github.com", "gitbook.io", "notion.so", "docs.google.com",
+      "google.com", "apple.com", "amazon.com", "spotify.com", "soundcloud.com", "imdb.com", "wikipedia.org", "wikimedia.org", "fandom.com",
+      // crypto sites and tools
+      "pump.fun", "dexscreener.com", "dextools.io", "birdeye.so", "solscan.io", "gmgn.ai", "coingecko.com", "coinmarketcap.com", "jup.ag", "raydium.io",
+      "bonk.fun", "letsbonk.fun", "meteora.ag", "photon-sol.tinyastro.io", "axiom.trade", "coindesk.com", "cointelegraph.com", "decrypt.co", "theblock.co",
+      // news
+      "cnn.com", "bbc.com", "bbc.co.uk", "nytimes.com", "foxnews.com", "reuters.com", "bloomberg.com", "apnews.com", "theguardian.com", "washingtonpost.com",
+      "wsj.com", "forbes.com", "cnbc.com", "nbcnews.com", "abcnews.go.com", "cbsnews.com", "dailymail.co.uk", "nypost.com", "usatoday.com", "politico.com",
+      "axios.com", "theverge.com", "techcrunch.com", "businessinsider.com", "yahoo.com", "msn.com", "tmz.com", "espn.com", "skysports.com", "independent.co.uk",
+    ]
+      .map((d) => d.replace(/\./g, "\\."))
+      .join("|") +
+    ")$"
+);
+
 export function parseWebsite(raw) {
   const s = String(raw || "").trim();
   if (!s) return null;
@@ -429,9 +452,9 @@ export function parseWebsite(raw) {
     const u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
     if (!host.includes(".")) return null;
-    // social sites and link pages aren't a website of the coin's own
-    if (/(^|\.)(x\.com|twitter\.com|t\.me|telegram\.me|pump\.fun|dexscreener\.com|linktr\.ee|youtube\.com|tiktok\.com|instagram\.com|facebook\.com|google\.com)$/.test(host))
-      return { url: u.toString(), host, own: false };
+    // social sites, link pages, news and other big sites (the story a coin is about) aren't a
+    // website of the coin's own: many coins pointing at the same article is normal, not a scam
+    if (THIRD_PARTY.test(host)) return { url: u.toString(), host, own: false };
     return { url: u.toString(), host, own: true };
   } catch {
     return null;
