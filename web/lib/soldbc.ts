@@ -14,6 +14,7 @@
 import "./bufferpoly";
 import { ComputeBudgetProgram, Keypair, PublicKey, type Connection, type Transaction, type TransactionInstruction } from "@solana/web3.js";
 import BN from "bn.js";
+import { Buffer } from "buffer";
 import { DynamicBondingCurveClient, SwapMode, deriveDbcPoolAddress } from "@meteora-ag/dynamic-bonding-curve-sdk";
 import { budget, compile, priorityFee, sendAndConfirm, signAll, solConfig, solConnection, type SolSigner } from "./sollaunch";
 
@@ -30,6 +31,28 @@ const clientFor = (c: Connection) => {
 /** A transaction's instructions without the SDK's own compute-budget ones (sasa sets its own). */
 const ixsOf = (tx: Transaction): TransactionInstruction[] => tx.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId));
 
+const DBC_PROGRAM = new PublicKey("dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN");
+const SWAP = [248, 198, 158, 145, 225, 117, 135, 200];
+const SWAP2 = [65, 75, 63, 76, 235, 91, 91, 136];
+
+/**
+ * Writes a trade's amounts into its swap instruction ourselves. In the browser the SDK's encoder
+ * can leave them as zero (the chain then refuses with AmountIsZero), so the two numbers are set
+ * byte by byte (little-endian u64s right after the 8-byte instruction name) and checked.
+ */
+function setSwapAmounts(ixs: TransactionInstruction[], disc: number[], a: bigint, b: bigint): void {
+  const found = ixs.filter((ix) => ix.programId.equals(DBC_PROGRAM) && ix.data.length >= 24 && disc.every((v, i) => ix.data[i] === v));
+  if (found.length !== 1) throw new Error("Couldn't build the trade. Try again.");
+  const ix = found[0];
+  const data = new Uint8Array(ix.data.length);
+  data.set(ix.data);
+  const view = new DataView(data.buffer);
+  view.setBigUint64(8, a, true);
+  view.setBigUint64(16, b, true);
+  if (view.getBigUint64(8, true) !== a || view.getBigUint64(16, true) !== b) throw new Error("Couldn't build the trade. Try again.");
+  ix.data = Buffer.from(data);
+}
+
 /** The instructions of a launch: the coin, its pool under sasa's config and the creator's first buy (all or nothing). */
 export async function dbcLaunchIxs(
   c: Connection,
@@ -41,7 +64,9 @@ export async function dbcLaunchIxs(
     firstBuyParam:
       o.buyLamports > 0n ? { buyer: o.creator, buyAmount: new BN(o.buyLamports.toString()), minimumAmountOut: new BN(1), referralTokenAccount: null } : undefined,
   });
-  return ixsOf(tx);
+  const ixs = ixsOf(tx);
+  if (o.buyLamports > 0n) setSwapAmounts(ixs, SWAP, o.buyLamports, 1n);
+  return ixs;
 }
 
 export type DbcPool = { address: PublicKey; pool: NonNullable<Awaited<ReturnType<DynamicBondingCurveClient["state"]["getPool"]>>>; config: NonNullable<Awaited<ReturnType<DynamicBondingCurveClient["state"]["getPoolConfig"]>>> };
@@ -103,7 +128,9 @@ export async function dbcSwapIxs(
     amountIn,
     minimumAmountOut,
   });
-  return { ixs: ixsOf(tx), out: BigInt(q.outputAmount.toString()), min: BigInt(minimumAmountOut.toString()) };
+  const ixs = ixsOf(tx);
+  setSwapAmounts(ixs, SWAP2, o.amountIn, BigInt(minimumAmountOut.toString()));
+  return { ixs, out: BigInt(q.outputAmount.toString()), min: BigInt(minimumAmountOut.toString()) };
 }
 
 // ------------------------------------------------------------------ the site's wrappers
