@@ -25,6 +25,13 @@ export function GET() {
       else if ("ul" in b) out.push(...b.ul.map((x) => `- ${links(x)}`), "");
       else if ("ol" in b) out.push(...b.ol.map((x, i) => `${i + 1}. ${links(x)}`), "");
       else if ("tip" in b) out.push(`Tip: ${links(b.tip)}`, "");
+      else if ("table" in b)
+        out.push(
+          `| ${b.table.head.join(" | ")} |`,
+          `| ${b.table.head.map(() => "---").join(" | ")} |`,
+          ...b.table.rows.map((r) => `| ${r.map((c) => links(c)).join(" | ")} |`),
+          ""
+        );
     }
     if (a.faq.length) {
       out.push("### Questions", "");

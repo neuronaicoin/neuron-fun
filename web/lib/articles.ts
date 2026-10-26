@@ -19,6 +19,10 @@ import { W1_ARTICLES_A } from "./articles-w1a";
 import { W1_ARTICLES_B } from "./articles-w1b";
 import { W1_ARTICLES_C } from "./articles-w1c";
 import { W1_ARTICLES_D } from "./articles-w1d";
+import { W2_ARTICLES_A } from "./articles-w2a";
+import { W2_ARTICLES_B } from "./articles-w2b";
+import { W2_ARTICLES_C } from "./articles-w2c";
+import { W2_ARTICLES_D } from "./articles-w2d";
 
 export type Block =
   | { h2: string }
@@ -26,6 +30,8 @@ export type Block =
   | { ul: string[] }
   | { ol: string[] }
   | { tip: string }
+  /** A comparison table: header row, then rows of cells (cells may hold [text](/links/)). */
+  | { table: { head: string[]; rows: string[][]; caption?: string } }
   /** An interactive tool placed in the article. */
   | { widget: "curve-sim" };
 
@@ -196,6 +202,11 @@ const LIST: Article[] = IS_TESTNET
       // the Data tab's guides (whales, Fear & Greed, funding): on both networks
       ...DATA_ARTICLES_A,
       ...DATA_ARTICLES_B,
+      // week 2 (Oct 26): alternatives to and comparisons of other launchpads and trading apps
+      ...W2_ARTICLES_A,
+      ...W2_ARTICLES_B,
+      ...W2_ARTICLES_C,
+      ...W2_ARTICLES_D,
       // week 1 of the weekly guides (Oct 26): Solana and every chain
       ...W1_ARTICLES_A,
       ...W1_ARTICLES_B,

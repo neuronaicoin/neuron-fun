@@ -98,6 +98,28 @@ export function ArticleBody({ blocks }: { blocks: Block[] }) {
               {b.ol.map((x, j) => <li key={j}><Rich text={x} /></li>)}
             </ol>
           );
+        if ("table" in b)
+          return (
+            <div key={i} className="overflow-x-auto rounded-2xl border border-line bg-surface">
+              <table className="w-full text-[0.9375rem] leading-snug border-collapse">
+                {b.table.caption && <caption className="text-left px-4 pt-3 text-[0.8125rem] text-ink-3">{b.table.caption}</caption>}
+                <thead>
+                  <tr>
+                    {b.table.head.map((h, j) => (
+                      <th key={j} scope="col" className="text-left font-semibold text-ink px-4 py-3 border-b border-line whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.table.rows.map((r, j) => (
+                    <tr key={j} className="border-t border-line align-top">
+                      {r.map((c, k) => (k === 0 ? <th key={k} scope="row" className="text-left font-semibold text-ink px-4 py-3"><Rich text={c} /></th> : <td key={k} className="px-4 py-3"><Rich text={c} /></td>))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
         if ("widget" in b) return <div key={i} className="text-[1rem] leading-normal"><CurveSim /></div>;
         return (
           <aside key={i} className="rounded-2xl border border-emerald/40 bg-emerald-soft px-5 py-4 text-ink">
