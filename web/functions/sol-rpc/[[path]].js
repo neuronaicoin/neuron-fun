@@ -42,6 +42,8 @@ const ALLOWED = new Set([
   "getAccountInfo",
   "getBalance",
   "getBlockHeight",
+  // the current epoch: Meteora launches check token transfer fees with it (lib/soldbc.ts)
+  "getEpochInfo",
   "getFeeForMessage",
   "getLatestBlockhash",
   "getMinimumBalanceForRentExemption",
