@@ -680,6 +680,22 @@ export async function sniperLoop(pool, log) {
         const age = (now - c.t0) / 1000;
         if (age >= RULES.decideSec && (c.enriched || age >= RULES.maxWaitSec)) void decide(c);
       } else if (c.entryMc && now - c.t0 >= RULES.followMin * 60_000) void finish(c);
+      else if (c.entryMc && now - (c.savedAt ?? 0) >= 60_000 && (c.peak !== c.savedPeak || c.low !== c.savedLow || c.result !== c.savedResult)) {
+        // the admin page sees the path while it's followed (every minute at most)
+        c.savedAt = now;
+        c.savedPeak = c.peak;
+        c.savedLow = c.low;
+        c.savedResult = c.result;
+        pool
+          .query(`update sniper_signals set peak_mc = $2, low_mc = $3, peak_sec = $4, result = $5 where mint = $1 and not done`, [
+            hexToB58(c.mint),
+            c.peak,
+            c.low,
+            Math.round((c.peakAt - c.t0) / 1000),
+            c.result ?? null,
+          ])
+          .catch(() => {});
+      }
     }
     // keep the memory small
     if (seen.size > 200_000) for (const [k, v] of seen) if (now - v.at > 86400_000) seen.delete(k);
