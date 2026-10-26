@@ -133,6 +133,19 @@ export async function dbcLaunch(o: {
   const [price, bh] = await Promise.all([priorityFee(), c.getLatestBlockhash("confirmed")]);
   const tx = compile(creator, [...budget(400_000, price), ...ixs], bh.blockhash, null);
   if (!tx) throw new Error("The launch got too big. Use a shorter name.");
+  // checked before signing (nothing is spent on a launch the chain would refuse); an admin test,
+  // so the chain's own reason is shown in full
+  o.onStep?.("Checking…");
+  tx.sign([o.mint]);
+  const sim = await c.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true, commitment: "confirmed" });
+  if (sim.value.err) {
+    const all = sim.value.logs ?? [];
+    // the program's own reason (Anchor names the file and line), then the instruction it was in
+    const why = all.find((l) => /AnchorError/.test(l)) ?? all.filter((l) => /error|failed|insufficient/i.test(l)).slice(-1)[0] ?? JSON.stringify(sim.value.err);
+    const ix = all.filter((l) => /Instruction:/.test(l)).slice(-1)[0] ?? "";
+    console.warn("sasa: own-fee launch check failed", o.buyLamports.toString(), sim.value.err, all);
+    throw new Error(`${why.replace(/^Program log: /, "").slice(0, 150)} [${ix.replace(/^Program log: Instruction: /, "")}, buy ${o.buyLamports}]`);
+  }
   o.onStep?.("Creating your coin…");
   const sig = await sendAndConfirm(await signAll(tx, o.signer, [o.mint]), bh.lastValidBlockHeight, o.onStep);
   return { mint: o.mint.publicKey.toBase58(), sig };
