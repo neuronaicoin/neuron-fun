@@ -1,0 +1,115 @@
+name: Deploy sasa launcher on Elysium
+
+# Runs only when started by hand. Testnet first; mainnet once Elysium is live (Nov 9, 2026) and the
+# DEX's position manager + WHYPE addresses are known (pass them as inputs).
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "elysium-testnet or elysium"
+        required: true
+        default: elysium-testnet
+      broadcast:
+        description: "Send the transactions (false = dry run)"
+        type: boolean
+        default: false
+      npm:
+        description: "Position manager (Uniswap v3 style). Empty on testnet = the known testnet v3."
+        required: false
+        default: ""
+      whype:
+        description: "Wrapped HYPE. Empty on testnet = the known testnet WHYPE."
+        required: false
+        default: ""
+      rpc:
+        description: "RPC URL (empty = Kinetiq's public RPC for that network)"
+        required: false
+        default: ""
+      start_mc:
+        description: "Start market cap in HYPE wei for the whole supply (default 50 HYPE)"
+        required: false
+        default: "50000000000000000000"
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts-elysium
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.5
+
+      - name: Get libraries
+        run: |
+          rm -rf lib && mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+
+      - name: Tests (local Uniswap v3, both token orders, fuzz)
+        run: forge test -vv
+
+      - name: Network
+        env:
+          NET: ${{ inputs.network }}
+          IN_RPC: ${{ inputs.rpc }}
+          IN_NPM: ${{ inputs.npm }}
+          IN_WHYPE: ${{ inputs.whype }}
+        run: |
+          case "$NET" in
+            elysium-testnet)
+              CHAIN_ID=99801; RPC="${IN_RPC:-https://testnet-rpc.elysium.kinetiq.xyz}"
+              NPM="${IN_NPM:-0x6F21F91D7459C3Bf57c649f1c3E79aAB33634e81}"
+              WHYPE="${IN_WHYPE:-0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234}"
+              SMOKE=1000000000000000 ;;
+            elysium)
+              CHAIN_ID=""; RPC="$IN_RPC"; NPM="$IN_NPM"; WHYPE="$IN_WHYPE"; SMOKE=10000000000000000
+              if [ -z "$RPC" ] || [ -z "$NPM" ] || [ -z "$WHYPE" ]; then echo "mainnet needs rpc, npm and whype inputs"; exit 1; fi ;;
+            *) echo "unknown network $NET"; exit 1 ;;
+          esac
+          GOT=$(cast chain-id --rpc-url "$RPC")
+          if [ -n "$CHAIN_ID" ] && [ "$GOT" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT, expected $CHAIN_ID"; exit 1; fi
+          echo "chain $GOT"
+          for a in "$NPM" "$WHYPE"; do
+            if [ "$(cast code "$a" --rpc-url "$RPC")" = "0x" ]; then echo "no contract at $a on this chain"; exit 1; fi
+          done
+          { echo "RPC=$RPC"; echo "NPM=$NPM"; echo "WHYPE=$WHYPE"; echo "SMOKE_BUY=$SMOKE"; } >> "$GITHUB_ENV"
+
+      - name: Deploy (+ smoke-test coin)
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BROADCAST: ${{ inputs.broadcast }}
+          START_MC: ${{ inputs.start_mc }}
+        run: |
+          k="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+          echo "::add-mask::$k"
+          if [ "$k" = "0x" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
+          export PRIVATE_KEY="$k"
+          ME=$(cast wallet address "$k"); BAL=$(cast balance "$ME" --rpc-url "$RPC")
+          echo "deployer $ME has $BAL wei HYPE"
+          if [ "$BAL" = "0" ]; then echo "Send a little HYPE on this network to $ME first"; exit 1; fi
+          # sasa admin owns it; fees go to the sasa treasury; creators get 30%
+          export OWNER=0xe0ba5905940D748b23Dc01266AA884E2391CcA2F
+          export TREASURY=0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F
+          export CREATOR_BPS=3000 FEE=10000 SPACING=200
+          FLAGS="--rpc-url $RPC -vv"
+          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          forge script script/Deploy.s.sol $FLAGS
+
+      - name: Save addresses to the repo
+        if: inputs.broadcast
+        working-directory: .
+        run: |
+          git config user.name "sasa-deploy"
+          git config user.email "deploy@sasapad.fun"
+          git add -A contracts-elysium/deployments
+          git commit -m "sasa launcher deployed on ${{ inputs.network }}" || echo "nothing to commit"
+          git pull --rebase
+          git push
