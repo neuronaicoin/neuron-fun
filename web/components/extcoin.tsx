@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
 import { toast } from "./alerts";
@@ -328,6 +328,8 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
   const [held, setHeld] = useState<bigint | null>(null);
   const [decimals, setDecimals] = useState<number | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  // when the shown price was fetched: a fresh one is used as is (no second wait on Buy)
+  const quoteAt = useRef(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const amount = Number(usd.replace(",", ".")) || 0;
@@ -375,7 +377,10 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
           ? quoteCrossBuy({ user: address, home: cross.home, there: cross.there, token, amountHome: raw, signal: ctrl.signal })
           : quoteCrossSell({ user: address, home: cross.home, there: cross.there, token, amount: raw, signal: ctrl.signal })
         : quoteSwap({ chain: chain!, account: address, side, token, amount: raw, signal: ctrl.signal });
-      q.then(setQuote).catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
+      q.then((v) => {
+        quoteAt.current = Date.now();
+        setQuote(v);
+      }).catch((e) => !ctrl.signal.aborted && setError(friendlyError(e)));
     }, 400);
     return () => {
       clearTimeout(t);
@@ -410,8 +415,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
         toast(side === "buy" ? `Buying $${coin.symbol}: arriving on ${cross.there.short} in a few seconds ✓` : `Sold $${coin.symbol}: USDC arriving on Base in a few seconds ✓`);
       } else {
         // a fresh price for exactly what's on screen now (the shown one can be minutes old)
-        setBusy("Getting the price…");
-        const fresh = await quoteSwap({ chain: chain!, account: address, side, token, amount: raw });
+        const fresh = Date.now() - quoteAt.current < 12_000 ? quote : (setBusy("Getting the price…"), await quoteSwap({ chain: chain!, account: address, side, token, amount: raw }));
         setBusy(side === "buy" ? "Buying…" : "Selling…");
         tx = await w.send(chain!.chain, quoteCalls(fresh, chain!), step);
         chainId = chain!.chain.id;

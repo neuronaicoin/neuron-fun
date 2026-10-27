@@ -69,6 +69,22 @@ alter table sol_coins add column if not exists curve_done boolean;
 alter table sol_coins add column if not exists priced_at timestamptz;
 -- pump: the standard launch curve (50/50 creator-fee split); dbc: sasa's own-fee launch (soldbc.mjs)
 alter table sol_coins add column if not exists kind text not null default 'pump';
+-- launches that failed in someone's browser, with the step and Solana's own words (/api/sol/error)
+create table if not exists sol_launch_errors (
+  id       bigserial   primary key,
+  at       timestamptz not null default now(),
+  owner    text,
+  creator  text,
+  mint     text,
+  kind     text,
+  step     text,
+  error    text,
+  ua       text
+);
+create index if not exists sol_launch_errors_at on sol_launch_errors (at desc);
+alter table sol_launch_errors enable row level security;
+revoke all on sol_launch_errors from anon, authenticated;
+delete from sol_launch_errors where at < now() - interval '30 days';
 notify pgrst, 'reload schema';`;
 
 /**

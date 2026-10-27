@@ -165,7 +165,8 @@ export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHei
   const started = Date.now();
   let lastSend = Date.now();
   for (let i = 0; ; i++) {
-    await new Promise((r) => setTimeout(r, 1200));
+    // Solana confirms in about a second: ask often at first, then calmer
+    await new Promise((r) => setTimeout(r, i < 12 ? 400 : 1000));
     const st = (await c.getSignatureStatuses([sig]).catch(() => null))?.value?.[0] ?? null;
     if (st?.err) throw new Error(`Solana refused it: ${JSON.stringify(st.err).slice(0, 120)}`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return sig;
@@ -173,7 +174,7 @@ export async function sendAndConfirm(tx: VersionedTransaction, lastValidBlockHei
       lastSend = Date.now();
       c.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }).catch(() => {});
     }
-    if (i % 5 === 4) {
+    if (i % 10 === 9) {
       const h = await c.getBlockHeight("confirmed").catch(() => 0);
       if (h > lastValidBlockHeight) {
         // one last look: it may have landed just now

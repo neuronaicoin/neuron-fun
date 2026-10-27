@@ -189,11 +189,15 @@ export default function BotTestPage() {
   const [min, setMin] = useState<number>(65);
   const [data, setData] = useState<{ stats: Stats | null; coins: Coin[]; opt: Opt | null } | null>(null);
   const [error, setError] = useState("");
+  const [launchErrors, setLaunchErrors] = useState<LaunchError[] | null>(null);
 
   const load = useCallback(async () => {
     try {
       setData(await authedGet<{ stats: Stats | null; coins: Coin[]; opt: Opt | null }>(signMessage, `bot/stats?hours=${hours}&min=${min}`));
       setError("");
+      authedGet<{ errors: LaunchError[] }>(signMessage, "bot/launchlog")
+        .then((r) => setLaunchErrors(r.errors ?? []))
+        .catch(() => {});
     } catch (e) {
       setError(friendlyError(e));
     }
@@ -391,6 +395,35 @@ export default function BotTestPage() {
           </div>
         </div>
       )}
+
+      {launchErrors && (
+        <div className="mt-8">
+          <div className="font-semibold text-[0.9375rem]">Solana launches that failed</div>
+          <p className="text-[0.75rem] text-ink-3">The last 50, with the step they were on and Solana&apos;s own words.</p>
+          {launchErrors.length === 0 && <p className="mt-2 text-ink-3 text-[0.875rem]">None yet.</p>}
+          <div className="mt-2 grid gap-2">
+            {launchErrors.map((e, i) => (
+              <div key={i} className="rounded-2xl border border-line bg-surface p-3 min-w-0 text-[0.8125rem]">
+                <div className="text-[0.75rem] text-ink-3">
+                  {ago(e.at)} · {e.kind ?? "pump"} · {e.step || "?"}
+                  {e.ua ? ` · ${/iPhone|Android|Mobile/i.test(e.ua) ? "phone" : "computer"}` : ""}
+                  {e.mint ? (
+                    <>
+                      {" · "}
+                      <a href={`https://solscan.io/token/${e.mint}`} target="_blank" rel="noreferrer" className="text-emerald">
+                        coin
+                      </a>
+                    </>
+                  ) : null}
+                </div>
+                <div className="mt-1 font-mono text-[0.75rem] break-words">{e.error}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+type LaunchError = { at: string; owner: string | null; creator: string | null; mint: string | null; kind: string | null; step: string | null; error: string | null; ua: string | null };

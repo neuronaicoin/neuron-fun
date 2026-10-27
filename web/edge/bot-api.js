@@ -1,6 +1,7 @@
 // sasa Bot test mode, admins only (FORUM_ADMINS), called from functions/api/[[path]].js:
 //
 //   GET /api/bot/stats?hours=24   → { stats, coins }   what the bot would have picked and how it ended
+//   GET /api/bot/launchlog        → { errors }         the last 50 Solana launches that failed, and why
 //
 // The indexer (indexer/sniper.mjs) watches every new pump.fun coin and fills sniper_signals.
 
@@ -19,7 +20,7 @@ async function db(env, path, init = {}) {
   const text = await r.text();
   if (!r.ok) {
     // the indexer hasn't made the table yet: nothing to show
-    if (/sniper_/.test(text)) return null;
+    if (/sniper_|sol_launch_errors/.test(text)) return null;
     throw new Error(`db ${r.status}: ${text.slice(0, 200)}`);
   }
   return text ? JSON.parse(text) : null;
@@ -31,6 +32,11 @@ const SASA_ADMINS = ["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba590594
 export async function botRoute(env, me, parts, method, url) {
   const who = String(me || "").toLowerCase();
   if (!SASA_ADMINS.includes(who) && !admins(env).includes(who)) return json({ error: "Not found." }, 404);
+  // Solana launches that failed in someone's browser (edge/sol-api.js keeps them)
+  if (parts.length === 2 && parts[1] === "launchlog" && method === "GET") {
+    const rows = await db(env, "sol_launch_errors?select=at,owner,creator,mint,kind,step,error,ua&order=at.desc&limit=50").catch(() => null);
+    return json({ errors: rows ?? [] });
+  }
   if (!(parts.length === 2 && parts[1] === "stats" && method === "GET")) return json({ error: "Not found." }, 404);
   const hours = Math.max(1, Math.min(336, Math.floor(Number(url.searchParams.get("hours")) || 24)));
   const level = Math.max(0, Math.min(100, Math.floor(Number(url.searchParams.get("min")) || 50)));

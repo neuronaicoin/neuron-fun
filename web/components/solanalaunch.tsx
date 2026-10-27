@@ -73,6 +73,11 @@ export function SolanaLaunchBox(p: {
   const [ext, setExt] = useState<{ name: string; address: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState("");
+  // the step a launch was on when it failed (sent with the error report)
+  const stepRef = useRef("");
+  useEffect(() => {
+    if (step) stepRef.current = step;
+  }, [step]);
   const [error, setError] = useState("");
   const [done, setDone] = useState<Done | null>(null);
   // the launch party: confetti once, when the coin is live
@@ -248,6 +253,18 @@ export function SolanaLaunchBox(p: {
       toast("Your coin is live on Solana ✓");
     } catch (e) {
       setError(friendlyError(e));
+      // the admins see every failed launch, with the step and Solana's own words (bot page)
+      try {
+        const err = e as { message?: string; logs?: string[]; transactionLogs?: string[] };
+        const logs = (err.logs ?? err.transactionLogs ?? []).slice(-6).join(" | ");
+        void fetch("/api/sol/error", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ step: stepRef.current, error: `${String(err?.message ?? e)}${logs ? ` || ${logs}` : ""}`.slice(0, 800), mint: sent?.mint, kind: ownFee && admin ? "dbc" : "pump" }),
+        }).catch(() => {});
+      } catch {
+        /* never stands in the way */
+      }
       // did the coin make it on chain before the failure? then "Finish" stays; if not, nothing to finish
       if (sent) {
         const mint = sent.mint;

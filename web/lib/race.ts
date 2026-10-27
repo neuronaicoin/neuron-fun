@@ -1,5 +1,5 @@
 import { createPublicClient, defineChain, fallback, http, parseAbi, type Address, type Chain, type PublicClient } from "viem";
-import { IS_TESTNET } from "./config";
+import { ALCHEMY_KEY, CHAINS, IS_TESTNET } from "./config";
 import { db } from "./data";
 import V8 from "./race-v8.json";
 
@@ -421,7 +421,11 @@ export const raceErc20Abi = parseAbi([
 /** Every RPC the chain lists, the next one taking over when one fails or is slow (public nodes come and go). */
 export function chainTransport(chain: Chain) {
   const urls = chain.rpcUrls.default.http;
-  return fallback(urls.length ? urls.map((u) => http(u, { timeout: 10_000, retryCount: 1 })) : [http()]);
+  const pub = urls.length ? urls.map((u) => http(u, { timeout: 10_000, retryCount: 1 })) : [http()];
+  // sasa's Alchemy node first where it runs (fast, never a block behind like public nodes),
+  // the chain's public nodes only if it can't be reached
+  const net = ALCHEMY_KEY ? CHAINS.find((c) => c.chain.id === chain.id)?.alchemyNetwork : undefined;
+  return fallback(net ? [http(`https://${net}.g.alchemy.com/v2/${ALCHEMY_KEY}`, { timeout: 8_000, retryCount: 0 }), ...pub] : pub);
 }
 
 const clients = new Map<number, PublicClient>();

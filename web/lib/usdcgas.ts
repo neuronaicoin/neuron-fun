@@ -3,6 +3,7 @@ import {
   createPublicClient,
   encodePacked,
   erc20Abi,
+  fallback,
   hexToBigInt,
   http,
   maxUint256,
@@ -65,10 +66,31 @@ const clients = new Map<number, PublicClient>();
 function pub(chain: Chain): PublicClient {
   let c = clients.get(chain.id);
   if (!c) {
-    c = createPublicClient({ chain, transport: http() }) as PublicClient;
+    // Alchemy first (fast), the chain's public RPC only if Alchemy can't be reached
+    const net = chain.id === 8453 ? "base-mainnet" : chain.id === 84532 ? "base-sepolia" : null;
+    c = createPublicClient({
+      chain,
+      transport: net && ALCHEMY_KEY ? fallback([http(`https://${net}.g.alchemy.com/v2/${ALCHEMY_KEY}`), http()]) : http(),
+      pollingInterval: 500,
+    }) as PublicClient;
     clients.set(chain.id, c);
   }
   return c;
+}
+
+/** USDC's name and version never change: read once per chain (they sign the fee permit). */
+const metas = new Map<number, Promise<[string, string]>>();
+function usdcMeta(client: PublicClient, chainId: number, usdc: Address): Promise<[string, string]> {
+  let m = metas.get(chainId);
+  if (!m) {
+    m = Promise.all([
+      client.readContract({ address: usdc, abi: usdcExtra, functionName: "name" }),
+      client.readContract({ address: usdc, abi: usdcExtra, functionName: "version" }),
+    ]);
+    m.catch(() => metas.delete(chainId));
+    metas.set(chainId, m);
+  }
+  return m;
 }
 
 export class GasUsdcMissing extends Error {
@@ -94,15 +116,17 @@ export async function sendWithUsdcGas(
   // the account only asks its owner for signMessage / signTypedData (Privy's embedded wallet has both)
   const account = await toSimple7702SmartAccount({ client, owner: owner as never });
 
-  const gasBal = await client.readContract({ address: setup.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
+  // everything the send needs, read at once (each read waited for in turn cost seconds)
+  const [gasBal, [name, version], nonce, code, txCount] = await Promise.all([
+    client.readContract({ address: setup.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }),
+    usdcMeta(client, chain.id, setup.usdc),
+    client.readContract({ address: setup.usdc, abi: usdcExtra, functionName: "nonces", args: [account.address] }),
+    client.getCode({ address: account.address }),
+    client.getTransactionCount({ address: account.address }),
+  ]);
   if (gasBal < MIN_GAS_USDC) throw new GasUsdcMissing();
 
   // the permit lets Circle's paymaster take this operation's fee (at most PERMIT_AMOUNT) in USDC
-  const [name, version, nonce] = await Promise.all([
-    client.readContract({ address: setup.usdc, abi: usdcExtra, functionName: "name" }),
-    client.readContract({ address: setup.usdc, abi: usdcExtra, functionName: "version" }),
-    client.readContract({ address: setup.usdc, abi: usdcExtra, functionName: "nonces", args: [account.address] }),
-  ]);
   const typed = {
     domain: { name, version, chainId: chain.id, verifyingContract: setup.usdc },
     types: {
@@ -158,11 +182,8 @@ export async function sendWithUsdcGas(
 
   // The address must point at the smart-account code (EIP-7702). Only signed when it doesn't yet.
   const impl = account.authorization.address;
-  const code = await client.getCode({ address: account.address });
   const delegated = !!code && code.toLowerCase() === concat(["0xef0100", impl]).toLowerCase();
-  const authorization = delegated
-    ? undefined
-    : await signAuthorization({ contractAddress: impl, chainId: chain.id, nonce: await client.getTransactionCount({ address: account.address }) });
+  const authorization = delegated ? undefined : await signAuthorization({ contractAddress: impl, chainId: chain.id, nonce: txCount });
 
   onStep?.("Sending…");
   // Try each bundler in turn. Every try uses the account's same nonce, so even if a bundler took an
@@ -194,7 +215,7 @@ export async function sendWithUsdcGas(
   onStep?.("Almost done…");
   let receipt: Awaited<ReturnType<typeof bundler.waitForUserOperationReceipt>>;
   try {
-    receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 180_000, pollingInterval: 1_500 });
+    receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 180_000, pollingInterval: 500 });
   } catch {
     // sent, but the bundler never confirmed it back: say so instead of "failed"
     throw new Error("SENT_UNCONFIRMED");

@@ -337,7 +337,7 @@ const MORE = MORE_ALL.filter((m) => V6 || !V6_ONLY.has(m.href)).map((m) =>
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname() || "/";
-  const { address, disconnect } = useWallet();
+  const { address, disconnect, solana } = useWallet();
   const airdrop = useMyAirdrop(address);
   return (
     <Sheet title="More" onClose={onClose}>
@@ -377,11 +377,21 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         <div className="pt-4 pb-1">
           {address ? (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[0.8125rem] text-ink-3 min-w-0 flex items-center gap-2">
-                <span className="truncate">
-                  Logged in as <span className="font-mono text-ink-2">{shortAddr(address)}</span>
+              <span className="text-[0.8125rem] text-ink-3 min-w-0 grid gap-1.5">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="truncate">
+                    Base / BNB <span className="font-mono text-ink-2">{shortAddr(address)}</span>
+                  </span>
+                  <CopyAddress address={address} />
                 </span>
-                <CopyAddress address={address} />
+                {solana?.address && (
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="truncate">
+                      Solana <span className="font-mono text-ink-2">{solana.address.slice(0, 4)}…{solana.address.slice(-4)}</span>
+                    </span>
+                    <CopyAddress address={solana.address} />
+                  </span>
+                )}
               </span>
               <button
                 type="button"

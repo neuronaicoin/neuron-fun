@@ -13,6 +13,8 @@
  *                               (sent before signing); the keeper checks it on chain (and takes
  *                               its creator from there) before sasa lists it
  *   GET  /api/sol/coin/<mint>   { status }: pending / live / bad
+ *   POST /api/sol/error         { step, error, creator?, mint?, kind? }: a launch that failed in the
+ *                               browser, kept for the admins (GET /api/bot/launchlog)
  *   GET  /api/sol/recent        the last 50 launches with what the keeper found and paid out (to check
  *                               on them); paid_sol / sasa_sol: creator fees paid so far, and sasa's half
  *
@@ -158,6 +160,26 @@ async function record(env, request, body, me, sb, underLimit) {
   return json({ ok: true });
 }
 
+/** A launch that failed in the browser: kept for sasa's admins (the bot page) to see why. */
+async function launchError(env, request, body, me, sb, underLimit) {
+  if (!(await underLimit(env, request, "solerror", 40))) return json({ ok: false });
+  const b58 = (v) => (B58.test(String(v || "")) ? String(v) : null);
+  await sb(env, "sol_launch_errors", {
+    method: "POST",
+    body: {
+      owner: me ? String(me).toLowerCase() : null,
+      creator: b58(body.creator),
+      mint: b58(body.mint),
+      kind: clean(body.kind, 10) || null,
+      step: clean(body.step, 80) || null,
+      error: clean(body.error, 800) || null,
+      ua: clean(request.headers.get("user-agent"), 160) || null,
+    },
+    prefer: "return=minimal",
+  }).catch(() => null);
+  return json({ ok: true });
+}
+
 async function status(env, mint, sb) {
   if (!B58.test(mint)) return fail(400, "Bad coin.");
   const { data } = await sb(env, `sol_coins?mint=eq.${mint}&select=status`);
@@ -186,5 +208,6 @@ export async function solRoute(env, request, me, parts, method, body, { sb, unde
   if (parts[1] === "meta" && parts.length === 2 && method === "POST") return await meta(env, request, body, underLimit);
   if (parts[1] === "coin" && parts.length === 2 && method === "POST") return await record(env, request, body, me, sb, underLimit);
   if (parts[1] === "coin" && parts.length === 3 && method === "GET") return await status(env, parts[2], sb);
+  if (parts[1] === "error" && parts.length === 2 && method === "POST") return await launchError(env, request, body, me, sb, underLimit);
   return fail(404, "Not found.");
 }

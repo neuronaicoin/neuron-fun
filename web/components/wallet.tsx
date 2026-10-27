@@ -473,7 +473,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
         for (let attempt = 0; attempt < 3 && !r; attempt++) {
           try {
-            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 1_000 });
+            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 500 });
           } catch (e) {
             if (isTimeout(e)) break;
             const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "");
@@ -526,7 +526,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         let r: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>> | null = null;
         for (let attempt = 0; attempt < 3 && !r; attempt++) {
           try {
-            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 1_000 });
+            r = await pub.waitForTransactionReceipt({ hash: last, timeout: 90_000, pollingInterval: 500 });
           } catch (e) {
             if (isTimeout(e)) break;
             const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "");
