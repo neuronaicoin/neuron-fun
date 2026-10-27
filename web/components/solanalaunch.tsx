@@ -133,6 +133,9 @@ export function SolanaLaunchBox(p: {
     // a little extra, so prices moving on the way don't leave it short
     const missing = need - have + 2_000_000n;
     setStep("Getting the best route…");
+    // Relay refuses a route bigger than the Cash with a vague "Could not process request":
+    // when that happens and the Cash is short, say so plainly instead
+    const cashNow = () => clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] }) as Promise<bigint>;
     const q = await getQuote({
       user: w.address,
       recipient: to,
@@ -143,8 +146,14 @@ export function SolanaLaunchBox(p: {
       amount: missing.toString(),
       tradeType: "EXACT_OUTPUT",
       fee: "deposit",
+    }).catch(async (e) => {
+      const cash = await cashNow().catch(() => null);
+      const need = (usdBuy > 0 ? usdBuy : 0) + 5;
+      if (cash !== null && Number(cash) / 1e6 < need)
+        throw new Error(`Not enough Cash: this launch needs about $${need.toFixed(0)} and you have $${(Number(cash) / 1e6).toFixed(2)}. Add money or lower the first buy.`);
+      throw e;
     });
-    const cash = (await clientFor(BASE).readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })) as bigint;
+    const cash = await cashNow();
     // email accounts pay Base's network fee from the same dollars: a few cents of room
     if (cash < BigInt(q.inRaw || "0") + (w.embedded ? 50_000n : 0n))
       throw new Error(`This needs about $${(q.inUsd + 0.05).toFixed(2)} in your Cash. Add money or lower the first buy.`);
