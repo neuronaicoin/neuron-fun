@@ -370,7 +370,7 @@ if (!isMainThread && workerData?.sniperOpt) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function sniperOptLoop(pool, log) {
-  if (process.env.SNIPER_OFF === "1" || !process.env.SOLANA_RPC_URL) return;
+  if (process.env.SNIPER_OFF === "1") return;
   await sleep(5 * 60_000); // after the bot's own table is set up
   for (;;) {
     try {

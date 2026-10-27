@@ -15,7 +15,9 @@
  *           −20% (stop loss) came first
  *
  * Env (Railway, indexer service):
- *   SOLANA_RPC_URL     the Helius URL (also used for the live feed, over its websocket)
+ *   SNIPER_RPC_URL     the node for the live feed (default: Solana's free public node). Never the
+ *                      site's paid/limited node: the feed is every pump.fun trade, and a provider
+ *                      that counts each message (Helius) runs out of credits in a day
  *   SNIPER_OFF=1       switches this off
  *   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET   X lookups (same keys as the X bot);
  *                      without them X accounts aren't checked
@@ -707,8 +709,7 @@ export function judge(c, now, R = RULES) {
 
 export async function sniperLoop(pool, log) {
   if (process.env.SNIPER_OFF === "1") return log("bot test off (SNIPER_OFF=1)");
-  const rpc = process.env.SOLANA_RPC_URL;
-  if (!rpc) return log("bot test waiting: set SOLANA_RPC_URL (Helius) to turn it on");
+  const rpc = process.env.SNIPER_RPC_URL || "https://api.mainnet-beta.solana.com";
   await pool.query(SQL);
   // coins being followed when the indexer stopped can't be followed on (their trades were missed):
   // closed as "restart", left out of the win rate
