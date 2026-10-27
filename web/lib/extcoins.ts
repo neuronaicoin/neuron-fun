@@ -154,6 +154,43 @@ export async function fetchExtCoins(
   return [...out, ...ours.filter((c) => !have.has(c.address))].sort((a, b) => t(b) - t(a)).slice(0, limit);
 }
 
+/**
+ * AI-agent coins (Explore's "AI agents" tab): a whole word in the name, or a ticker that starts or
+ * ends with one, from the AI / agent family. Same patterns on the server (regex) and here.
+ */
+const AI_WORDS = "ai|agent|agents|agentic|gpt|llm|agi|grok|neural|robot|bot|claude|openai|deepseek|gemini|sentient|cyborg|android|virtuals";
+const AI_NAME = `(^|[^a-z])(${AI_WORDS})([^a-z]|$)`;
+const AI_SYMBOL = "^(ai|gpt|agi|llm|grok|agent|bot)|(ai|gpt|agi|bot|agent)$";
+const AI_NAME_RE = new RegExp(AI_NAME, "i");
+const AI_SYMBOL_RE = new RegExp(AI_SYMBOL, "i");
+export const isAiCoin = (name: string, symbol: string) => AI_NAME_RE.test(name || "") || AI_SYMBOL_RE.test(symbol || "");
+
+/** AI-agent coins by 24h volume: one chain, or every chain (Solana too when `withSol`). */
+export async function fetchAiCoins(
+  network: string | null,
+  search = "",
+  limit = 48,
+  filters: { minVol?: number; minLiq?: number } = {},
+  withSol = false
+): Promise<ExtCoin[]> {
+  const s = search.replace(/[%,()"]/g, "").trim();
+  const one = async (view: string, net: string | null) => {
+    let q = db.from(view).select("*").or(`name.imatch."${AI_NAME}",symbol.imatch."${AI_SYMBOL}"`);
+    if (net) q = q.eq("network", net);
+    if (filters.minVol && filters.minVol > 0) q = q.gte("vol_24h", filters.minVol);
+    if (filters.minLiq && filters.minLiq > 0) q = q.gte("liq_usd", filters.minLiq);
+    if (s) q = q.or(`symbol.ilike.%${s}%,name.ilike.%${s}%`);
+    const { data, error } = await q.order("vol_24h", { ascending: false, nullsFirst: false }).limit(Math.min(Math.max(1, limit), 500));
+    if (error) throw error;
+    // the server's regex and ours agree; this also drops anything a view returns loosely
+    return ((data ?? []) as Record<string, unknown>[]).map(toExt).filter((c) => isAiCoin(c.name, c.symbol));
+  };
+  if (network && isSolExt(network)) return one("sol_ext_coins", null);
+  if (network) return one("ext_coins", network);
+  const [evm, sol] = await Promise.all([one("ext_coins", null), withSol ? one("sol_ext_coins", null).catch(() => []) : Promise.resolve([] as ExtCoin[])]);
+  return [...evm, ...sol].sort((a, b) => (b.vol24h ?? 0) - (a.vol24h ?? 0)).slice(0, limit);
+}
+
 /** Solana coins launched on sasa (checked on chain by the keeper), newest first. */
 export async function fetchSasaSolCoins(limit = 50, search = "", owner?: string): Promise<ExtCoin[]> {
   let q = db.from("sol_sasa_coins").select("*");

@@ -12,7 +12,7 @@ import { coinHref, isImageUrl, type Coin, type SortKey } from "@/lib/data";
 import { fetchPrices } from "@/lib/price";
 import { Landing } from "@/components/landing";
 import { compactUsd } from "@/lib/format";
-import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchExtCoins, fetchSasaSolCoins, type ExtCoin, type ExtSort } from "@/lib/extcoins";
+import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchAiCoins, fetchExtCoins, fetchSasaSolCoins, isAiCoin, type ExtCoin, type ExtSort } from "@/lib/extcoins";
 import { useWallet } from "@/components/wallet";
 import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
@@ -26,10 +26,11 @@ import { TopWins } from "@/components/topwins";
 const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
 
 /** Explore tabs: v6 sorts on testnet; on mainnet the race tabs replace the bonding-curve ones. */
-type Tab = SortKey | "racing" | "winners";
+type Tab = SortKey | "racing" | "winners" | "ai";
 const SORTS: { id: Tab; label: string }[] = V6
   ? [
       { id: "trending", label: "Trending" },
+      { id: "ai", label: "AI agents" },
       { id: "new", label: "New" },
       { id: "hot", label: "Almost graduating" },
       { id: "bonding", label: "Bonding" },
@@ -39,6 +40,7 @@ const SORTS: { id: Tab; label: string }[] = V6
     ]
   : [
       { id: "trending", label: "Trending" },
+      { id: "ai", label: "AI agents" },
       { id: "new", label: "New" },
       { id: "racing", label: "Racing now" },
       { id: "winners", label: "Winners" },
@@ -60,7 +62,9 @@ const STEP = 24;
 export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const [tab, setTab] = useState<Tab>("trending");
   // the v6 list only knows its own sorts (and is empty on mainnet anyway)
-  const sort: SortKey = tab === "racing" || tab === "winners" ? "new" : tab;
+  // AI agents: the AI-agent coins of every list, ranked like Trending (by real volume)
+  const ai = tab === "ai";
+  const sort: SortKey = tab === "racing" || tab === "winners" ? "new" : tab === "ai" ? "trending" : tab;
   const [chain, setChain] = useState<string>("all");
   // Solana's coins: a chip of their own, for people who see Solana yet
   const { address: me } = useWallet();
@@ -122,7 +126,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const firstExt = useRef(true);
   useEffect(() => {
     firstExt.current = true;
-  }, [extSort, chain, search, minVol, minLiq]);
+  }, [extSort, chain, search, minVol, minLiq, ai]);
   useEffect(() => {
     if (!extSort) {
       setExt([]);
@@ -138,7 +142,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       for (let i = 0; i < tries; i++) {
         try {
           const [l, sol] = await Promise.all([
-            fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }),
+            ai
+              ? fetchAiCoins(chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }, solChip)
+              : fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }),
             // All chains, New: Solana coins launched on sasa too (for people who see Solana yet;
             // the other lists rank them on their own numbers, under the Solana chip)
             solChip && chain === "all" && extSort === "new" ? fetchSasaSolCoins(20, search).catch(() => []) : Promise.resolve([] as ExtCoin[]),
@@ -160,7 +166,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       alive = false;
       clearInterval(t);
     };
-  }, [extSort, chain, search, extLimit, minVol, minLiq, solChip]);
+  }, [extSort, chain, search, extLimit, minVol, minLiq, solChip, ai]);
 
   useEffect(() => {
     fetchPrices().then((p) => setEthUsd(p?.ETH ?? null));
@@ -172,11 +178,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
   const list = useMemo(() => {
     let l = coins ?? [];
+    if (ai) l = l.filter((c) => isAiCoin(c.name, c.symbol));
     if (chain !== "all") l = l.filter((c) => c.curves.some((k) => k.chain.key === chain));
     if (minVol > 0) l = l.filter((c) => (ethUsd ? c.volumeNative24h * ethUsd : 0) >= minVol);
     if (minLiq > 0) l = l.filter((c) => (c.totalUsd ?? 0) >= minLiq);
     return l;
-  }, [coins, chain, minVol, minLiq, ethUsd]);
+  }, [coins, chain, minVol, minLiq, ethUsd, ai]);
 
   // One fair list: our coins and other DEXs' ranked by the same measure.
   const ranked = useMemo(
