@@ -20,7 +20,7 @@ import { SOLANA_ID } from "./relay";
 export const SOLANA_OPEN = true;
 
 /** The team's wallets: they see Solana before everyone (same as the futures geo exemption in lib/perps.ts). */
-const SOLANA_TEAM = new Set(["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f", "0xf4bc1b22e117a621e1118d09f7bb015c685a9617"]);
+export const SOLANA_TEAM = new Set(["0x5a5506fce4c9d9c2989a2988cb2b63988207bd1b", "0xe0ba5905940d748b23dc01266aa884e2391cca2f", "0xf4bc1b22e117a621e1118d09f7bb015c685a9617"]);
 
 export const solanaFor = (address?: string | null) => SOLANA_OPEN || (!!address && SOLANA_TEAM.has(address.toLowerCase()));
 

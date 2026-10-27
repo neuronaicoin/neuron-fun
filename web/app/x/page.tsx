@@ -7,13 +7,27 @@ import { Suspense, useEffect, useState } from "react";
 import { extAddressOk, extNetwork, fetchExtCoin, isSolExt, type ExtCoin } from "@/lib/extcoins";
 import { ExtCoinView } from "@/components/extcoin";
 import { dropStrayCoinSeo } from "@/components/coinseo";
+import { ElysiumCoinPage } from "@/components/elysium";
 
 export default function Page() {
   return (
     <Suspense fallback={<div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>}>
-      <ExtCoinPage />
+      <CoinRouter />
     </Suspense>
   );
+}
+
+/** Elysium coins (sasa's own launches there) have their own page; every other network the usual one. */
+function CoinRouter() {
+  const q = useSearchParams();
+  const fromPath = typeof window !== "undefined" ? /^\/x\/([a-z]+)\/(0x[0-9a-fA-F]{40})\/?$/.exec(window.location.pathname) : null;
+  const network = fromPath?.[1] ?? q.get("n") ?? "";
+  const address = (fromPath?.[2] ?? q.get("a") ?? "").toLowerCase();
+  if (network === "elysium") {
+    if (!/^0x[0-9a-f]{40}$/.test(address)) return <ExtCoinPage />;
+    return <ElysiumCoinPage address={address} />;
+  }
+  return <ExtCoinPage />;
 }
 
 function ExtCoinPage() {
