@@ -27,7 +27,7 @@ type OptResult = {
   entry: string;
   exit: string;
   train: { n: number; wins: number; avg: number; perDay: number };
-  val: { n: number; wins: number; avg: number; perDay: number };
+  val: { n: number; wins: number; avg: number; robust?: number; perDay: number };
 };
 type LateResult = Omit<OptResult, "entry">;
 type LateOpt = { signals: number; train: number; val: number; tried: number; top: LateResult[]; steady: LateResult[] };
@@ -72,7 +72,7 @@ function LateRuleList({ list, empty }: { list: LateResult[]; empty: string }) {
             </div>
           </div>
           <div className="text-[0.75rem] text-ink-2 mt-1">
-            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
+            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day{t.val.robust != null ? ` · without its best trade ${t.val.robust > 0 ? "+" : ""}${(t.val.robust * 100).toFixed(1)}%` : ""} · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
             {t.train.avg > 0 ? "+" : ""}
             {(t.train.avg * 100).toFixed(1)}%
           </div>
@@ -99,7 +99,7 @@ function RuleList({ list, empty }: { list: OptResult[]; empty: string }) {
             </div>
           </div>
           <div className="text-[0.75rem] text-ink-2 mt-1">
-            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
+            Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day{t.val.robust != null ? ` · without its best trade ${t.val.robust > 0 ? "+" : ""}${(t.val.robust * 100).toFixed(1)}%` : ""} · Search part: {t.train.n} trades, {pct(t.train.wins, t.train.n)} won,{" "}
             {t.train.avg > 0 ? "+" : ""}
             {(t.train.avg * 100).toFixed(1)}%
           </div>
@@ -191,13 +191,17 @@ export default function BotTestPage() {
   const [error, setError] = useState("");
   const [launchErrors, setLaunchErrors] = useState<LaunchError[] | null>(null);
   const [trends, setTrends] = useState<Trend[] | null>(null);
+  const [trendsError, setTrendsError] = useState("");
 
   const load = useCallback(async () => {
     try {
       setData(await authedGet<{ stats: Stats | null; coins: Coin[]; opt: Opt | null }>(signMessage, `bot/stats?hours=${hours}&min=${min}`));
       setError("");
-      authedGet<{ themes: Trend[] }>(signMessage, "bot/trends")
-        .then((r) => setTrends(r.themes ?? []))
+      authedGet<{ themes: Trend[]; error?: string }>(signMessage, "bot/trends")
+        .then((r) => {
+          setTrends(r.themes ?? []);
+          setTrendsError(r.error ?? "");
+        })
         .catch(() => {});
       authedGet<{ errors: LaunchError[] }>(signMessage, "bot/launchlog")
         .then((r) => setLaunchErrors(r.errors ?? []))
@@ -234,6 +238,7 @@ export default function BotTestPage() {
       </p>
 
       {trends && <TrendRadarBox list={trends} />}
+      {trendsError && <p className="mt-1 text-[0.75rem] text-danger font-mono break-words">Trend Radar: {trendsError}</p>}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {HOURS.map(([h, label]) => (

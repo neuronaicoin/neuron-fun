@@ -33,6 +33,8 @@ const OPEN = {
 const NX = GRID_EXITS.length;
 const MIN_TRAIN = 20;
 const MIN_VAL = 8;
+/** Profit rules need this many trades on the newest coins (8 lets one lucky coin carry a rule). */
+const MIN_VAL_PROFIT = 20;
 
 function passes(f, level, p) {
   if (p.stage === 1 && f.stage !== "curve") return false;
@@ -57,6 +59,8 @@ function tally(rows, idx, p) {
   const n = new Int32Array(NX);
   const w = new Int32Array(NX);
   const sum = new Float64Array(NX);
+  // each cell's single best trade: a rule must still make money without it (one lucky coin is not an edge)
+  const mx = new Float64Array(NX).fill(-Infinity);
   for (const i of idx) {
     const row = rows[i];
     if (!passes(row.features, row.level, p)) continue;
@@ -66,11 +70,15 @@ function tally(rows, idx, p) {
       if (v == null) continue;
       n[x]++;
       sum[x] += v;
+      if (v > mx[x]) mx[x] = v;
       if (v > 0) w[x]++;
     }
   }
-  return { n, w, sum };
+  return { n, w, sum, mx };
 }
+
+/** Average per trade without the cell's single best trade. */
+const robust = (t, j) => (t.n[j] > 1 ? (t.sum[j] - t.mx[j]) / (t.n[j] - 1) : -Infinity);
 
 function best(t, min, mode) {
   let k = -1;
@@ -78,13 +86,13 @@ function best(t, min, mode) {
   for (let j = 0; j < NX; j++) {
     if (t.n[j] < min) continue;
     const a = t.sum[j] / t.n[j];
-    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : a;
+    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : robust(t, j);
     if (v > top) {
       top = v;
       k = j;
     }
   }
-  return k < 0 || top === -Infinity ? null : { k, n: t.n[k], wins: t.w[k], avg: t.sum[k] / t.n[k] };
+  return k < 0 || top === -Infinity ? null : { k, n: t.n[k], wins: t.w[k], avg: t.sum[k] / t.n[k], robust: robust(t, k) };
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -125,7 +133,7 @@ export function optimizeLate(rows, tries = 200_000, rounds = 8000) {
   const out = {};
   let tried = 0;
   for (const mode of ["profit", "steady"]) {
-    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.avg - 0.25 / Math.sqrt(b.n));
+    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.robust - 0.25 / Math.sqrt(b.n));
     const seen = new Map();
     const evalRule = (p) => {
       const key = ruleKey(p);
@@ -157,18 +165,21 @@ export function optimizeLate(rows, tries = 200_000, rounds = 8000) {
       const t = tally(rows, val, e.p);
       const k = e.b.k;
       const vn = t.n[k];
-      if (vn < MIN_VAL) continue;
+      if (vn < (mode === "profit" ? MIN_VAL_PROFIT : MIN_VAL)) continue;
       const vAvg = t.sum[k] / vn;
+      const vRobust = vn > 1 ? (t.sum[k] - t.mx[k]) / (vn - 1) : 0;
+      // profit rules must make money on the newest coins even without their best trade
+      if (mode === "profit" && vRobust <= 0) continue;
       if (mode === "steady" && (t.w[k] / vn < 0.6 || vAvg <= 0)) continue;
       list.push({
         rule: e.p,
         exit: exitLabel(GRID_EXITS[k]),
-        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
-        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
+        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), robust: +e.b.robust.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
+        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), robust: +vRobust.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
       });
     }
     if (mode === "steady") list.sort((a, b) => Math.min(winLow(b.val.wins, b.val.n), winLow(b.train.wins, b.train.n)) - Math.min(winLow(a.val.wins, a.val.n), winLow(a.train.wins, a.train.n)));
-    else list.sort((a, b) => Math.min(b.val.avg, b.train.avg) - Math.min(a.val.avg, a.train.avg));
+    else list.sort((a, b) => Math.min(b.val.robust, b.train.robust) - Math.min(a.val.robust, a.train.robust));
     out[mode] = list.slice(0, 10);
   }
   return { signals: rows.length, train: train.length, val: val.length, tried, top: out.profit, steady: out.steady };

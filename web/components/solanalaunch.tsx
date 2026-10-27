@@ -218,6 +218,15 @@ export function SolanaLaunchBox(p: {
             destinationChainId: SOLANA_ID,
             destinationCurrency: SOL_NATIVE,
             amount: String(Math.floor(usdBuy * 1e6)),
+          }).catch(async (e) => {
+            // Relay answers "Could not process request" when the Cash can't cover the route
+            const cash = await clientFor(BASE)
+              .readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })
+              .then((v) => Number(v as bigint) / 1e6)
+              .catch(() => null);
+            if (cash !== null && cash < usdBuy + 5)
+              throw new Error(`Not enough Cash: this launch needs about $${(usdBuy + 5).toFixed(0)} and you have $${cash.toFixed(2)}. Add money or lower the first buy.`);
+            throw e;
           });
           buyLamports = BigInt(probe.outRaw || "0");
         }

@@ -27,6 +27,8 @@ const TRIES = 300_000;
 const CLIMB_ROUNDS = 10_000;
 const MIN_TRAIN = 25;
 const MIN_VAL = 8;
+/** Profit rules need this many trades on the newest coins (8 lets one lucky coin carry a rule). */
+const MIN_VAL_PROFIT = 20;
 
 // what a rule can ask of a coin (value lists the search picks from)
 export const SPACE = {
@@ -203,6 +205,8 @@ function tally(T, idx, p) {
   const n = new Int32Array(GRID_ENTRIES.length * NX);
   const w = new Int32Array(n.length);
   const sum = new Float64Array(n.length);
+  // each cell's single best trade: a rule must still make money without it (one lucky coin is not an edge)
+  const mx = new Float64Array(n.length).fill(-Infinity);
   for (const i of idx) {
     if (!passes(T, i, p)) continue;
     const em = T.em[i];
@@ -224,11 +228,12 @@ function tally(T, idx, p) {
         if (v == null) continue;
         n[k]++;
         sum[k] += v;
+        if (v > mx[k]) mx[k] = v;
         if (v > 0) w[k]++;
       }
     }
   }
-  return { n, w, sum };
+  return { n, w, sum, mx };
 }
 
 /** Lower bound of a win rate (Wilson, ~90%): 9 of 10 counts for less than 90 of 100. */
@@ -243,19 +248,22 @@ export const winLow = (w, n) => {
  * The best grid cell of a tally with at least `min` trades: by average return ("profit"), or by
  * how surely it wins among the cells that also make money ("steady").
  */
+/** Average per trade without the cell's single best trade. */
+const robust = (t, j) => (t.n[j] > 1 ? (t.sum[j] - t.mx[j]) / (t.n[j] - 1) : -Infinity);
+
 function best(t, min, mode) {
   let k = -1;
   let top = -Infinity;
   for (let j = 0; j < t.n.length; j++) {
     if (t.n[j] < min) continue;
     const a = t.sum[j] / t.n[j];
-    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : a;
+    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : robust(t, j);
     if (v > top) {
       top = v;
       k = j;
     }
   }
-  return k < 0 || top === -Infinity ? null : { k, n: t.n[k], wins: t.w[k], avg: t.sum[k] / t.n[k] };
+  return k < 0 || top === -Infinity ? null : { k, n: t.n[k], wins: t.w[k], avg: t.sum[k] / t.n[k], robust: robust(t, k) };
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -300,7 +308,7 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
   for (const mode of ["profit", "steady"]) {
     // score on train — profit: average return, a little lower when it rests on few trades;
     // steady: how surely it wins (and it must make money too)
-    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.avg - 0.25 / Math.sqrt(b.n));
+    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.robust - 0.25 / Math.sqrt(b.n));
     const seen = new Map();
     const evalRule = (p) => {
       const key = ruleKey(p);
@@ -333,23 +341,26 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
       const t = tally(T, val, e.p);
       const k = e.b.k;
       const vn = t.n[k];
-      if (vn < MIN_VAL) continue;
+      if (vn < (mode === "profit" ? MIN_VAL_PROFIT : MIN_VAL)) continue;
       const entry = GRID_ENTRIES[Math.floor(k / NX)];
       const exit = GRID_EXITS[k % NX];
       const vAvg = t.sum[k] / vn;
+      const vRobust = vn > 1 ? (t.sum[k] - t.mx[k]) / (vn - 1) : 0;
+      // profit rules must make money on the newest coins even without their best trade
+      if (mode === "profit" && vRobust <= 0) continue;
       // steady rules must win at least 60% and make money on the newest coins too
       if (mode === "steady" && (t.w[k] / vn < 0.6 || vAvg <= 0)) continue;
       out.push({
         rule: e.p,
         entry: entryLabel(entry),
         exit: exitLabel(exit),
-        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
-        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
+        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), robust: +e.b.robust.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
+        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), robust: +vRobust.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
       });
     }
     // a rule losing (or, for steady, winning less) on either part never leads
     if (mode === "steady") out.sort((a, b) => Math.min(winLow(b.val.wins, b.val.n), winLow(b.train.wins, b.train.n)) - Math.min(winLow(a.val.wins, a.val.n), winLow(a.train.wins, a.train.n)));
-    else out.sort((a, b) => Math.min(b.val.avg, b.train.avg) - Math.min(a.val.avg, a.train.avg));
+    else out.sort((a, b) => Math.min(b.val.robust, b.train.robust) - Math.min(a.val.robust, a.train.robust));
     results[mode] = out.slice(0, 10);
   }
   return { coins: T.n, train: train.length, val: val.length, tried, smartWallets, top: results.profit, steady: results.steady };

@@ -40,8 +40,14 @@ export async function botRoute(env, me, parts, method, url) {
   }
   // Trend Radar: the themes new pump.fun coins launch on right now (indexer/sniper.mjs, sniper_trends)
   if (parts.length === 2 && parts[1] === "trends" && method === "GET") {
-    const themes = await db(env, "rpc/sniper_trends", { method: "POST", body: "{}" }).catch(() => null);
-    return json({ themes: themes ?? [] });
+    // read directly (not through db(), which hides sniper_ errors) so a broken query shows its reason
+    const key = env.SUPABASE_SERVICE_KEY;
+    const headers = { apikey: key, "content-type": "application/json" };
+    if (key && key.startsWith("eyJ")) headers.authorization = `Bearer ${key}`;
+    const r = await fetch(`${env.SUPABASE_URL || SUPABASE_URL}/rest/v1/rpc/sniper_trends`, { method: "POST", headers, body: "{}" }).catch((e) => ({ ok: false, text: async () => String(e) }));
+    const text = await r.text();
+    if (!r.ok) return json({ themes: [], error: text.slice(0, 300) });
+    return json({ themes: text ? JSON.parse(text) ?? [] : [] });
   }
   if (!(parts.length === 2 && parts[1] === "stats" && method === "GET")) return json({ error: "Not found." }, 404);
   const hours = Math.max(1, Math.min(336, Math.floor(Number(url.searchParams.get("hours")) || 24)));
