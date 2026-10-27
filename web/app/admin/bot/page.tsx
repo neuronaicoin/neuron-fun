@@ -31,7 +31,7 @@ type OptResult = {
 };
 type LateResult = Omit<OptResult, "entry">;
 type LateOpt = { signals: number; train: number; val: number; tried: number; top: LateResult[]; steady: LateResult[] };
-type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; top: OptResult[]; steady?: OptResult[]; late?: LateOpt } };
+type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; smartWallets?: number; top: OptResult[]; steady?: OptResult[]; late?: LateOpt } };
 
 const k$ = (v: number) => (v >= 1000 ? `$${v / 1000}K` : `$${v}`);
 /** A proven-coin rule in words. */
@@ -130,12 +130,14 @@ function ruleWords(r: Record<string, number>): string {
   if (r.maxBundle < 100) w.push(`bundles ≤${r.maxBundle}%`);
   if (r.maxTop10 < 100) w.push(`top 10 ≤${r.maxTop10}%`);
   if (r.minBuyers > 0) w.push(`${r.minBuyers}+ buyers`);
-  if (r.minNetSol > 0) w.push(`${r.minNetSol}+ SOL in`);
+  if (r.minNetSol > -99) w.push(`${r.minNetSol}+ SOL in`);
   if (r.minRatio > 0) w.push(`buys ${r.minRatio}× sells`);
-  w.push(`bought at ${r.minMult}–${r.maxMult >= 99 ? "any" : r.maxMult}× launch price`);
+  if (r.minMult > 0 || r.maxMult < 99) w.push(`bought at ${r.minMult}–${r.maxMult >= 99 ? "any" : r.maxMult}× launch price`);
   if (r.minNewBuyers60 > 0) w.push(`${r.minNewBuyers60}+ new buyers in the minute before`);
   if (r.minNetSol60 > -99) w.push(`${r.minNetSol60}+ SOL in during the minute before`);
   if (r.minRatio60 > 0) w.push(`buys ${r.minRatio60}× sells in the minute before`);
+  if (r.minSmart > 0) w.push(`${r.minSmart}+ smart wallets bought before`);
+  if (!w.length) w.push("no filter: every coin");
   return w.join(" · ");
 }
 
@@ -308,6 +310,7 @@ export default function BotTestPage() {
                 <p className="text-[0.75rem] text-ink-3 mt-0.5">
                   {ago(data.opt.run_at)} · {data.opt.result.tried.toLocaleString()} rule sets tried on {data.opt.result.coins.toLocaleString()} coins · checked on the newest{" "}
                   {data.opt.result.val.toLocaleString()} (not used to find them) · average per trade after fees
+                  {data.opt.result.smartWallets != null ? ` · ${data.opt.result.smartWallets.toLocaleString()} smart wallets found` : ""}
                 </p>
                 <div className="mt-3 text-[0.8125rem] font-semibold">Most profit per trade</div>
                 <RuleList list={data.opt.result.top} empty="No rule made money on both parts yet." />

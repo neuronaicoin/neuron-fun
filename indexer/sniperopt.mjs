@@ -45,16 +45,25 @@ export const SPACE = {
   maxBundle: [5, 10, 20, 30, 100],
   maxTop10: [20, 30, 40, 60, 100],
   minBuyers: [0, 5, 10, 15, 20, 30],
-  minNetSol: [0, 1, 2, 3, 5, 8],
+  minNetSol: [-99, 0, 1, 2, 3, 5, 8],
   minRatio: [0, 1.5, 2, 3, 5],
-  minMult: [0.9, 1, 1.2, 1.5, 2, 3],
+  minMult: [0, 0.9, 1, 1.2, 1.5, 2, 3],
   maxMult: [1.5, 2, 2.5, 3, 5, 8, 99],
   // the last minute before the entry
   minNewBuyers60: [0, 5, 10, 20, 40],
   minNetSol60: [-99, 0, 1, 3, 5, 10],
   minRatio60: [0, 1, 1.5, 2, 3],
+  // smart wallets among the coin's first buyers before the entry (wallets that keep getting in
+  // early on coins that run 3×+; learned from the search part only)
+  minSmart: [0, 1, 2, 3, 5],
 };
 const KEYS = Object.keys(SPACE);
+/** Every filter switched off (lets every coin through): a rule starts here and turns on a few. */
+export const OPEN = {
+  minScore: 0, needX: 0, minXFollowers: 0, minTg: 0, needSite: 0, minDomainDays: 0, allowReused: 1, allowSamePost: 1,
+  maxDevPct: 100, allowDevSold: 1, maxDevLaunches: 99, allowRugger: 1, maxBundle: 100, maxTop10: 100, minBuyers: 0,
+  minNetSol: -99, minRatio: 0, minMult: 0, maxMult: 99, minNewBuyers60: 0, minNetSol60: -99, minRatio60: 0, minSmart: 0,
+};
 
 /** Columns of numbers (fast to scan) from the coins' rows. */
 function table(rows) {
@@ -111,6 +120,60 @@ function table(rows) {
   return T;
 }
 
+export const SMART_MIN_COINS = 3; // a wallet needs this many early buys on the search part…
+export const SMART_MIN_RATE = 0.4; // …and this share of them running 3×+ to count as smart
+const RUNNER = 3;
+
+/**
+ * Smart wallets, learned only from the search part (train): wallets among coins' first 40 buyers
+ * whose coins ran 3×+ from launch often. Fills T.smart[i][entry] = smart wallets that had bought
+ * coin i before that entry point. On the search part a coin's own result never counts for its
+ * own buyers (left out), so the search can't learn from the answer.
+ */
+function learnSmart(rows, T, train, val) {
+  const stat = new Map(); // wallet → [coins, runners]
+  const runner = (i) => (rows[i].start_mc > 0 && rows[i].peak_mc >= rows[i].start_mc * RUNNER ? 1 : 0);
+  for (const i of train) {
+    const run = runner(i);
+    const seenHere = new Set();
+    for (const [w] of rows[i].buyers ?? []) {
+      if (seenHere.has(w)) continue;
+      seenHere.add(w);
+      const s = stat.get(w) ?? [0, 0];
+      s[0]++;
+      s[1] += run;
+      stat.set(w, s);
+    }
+  }
+  let smartWallets = 0;
+  for (const [, [n, r]] of stat) if (n >= SMART_MIN_COINS && r / n >= SMART_MIN_RATE) smartWallets++;
+  const isTrain = new Uint8Array(T.n);
+  for (const i of train) isTrain[i] = 1;
+  T.smart = rows.map((row, i) => {
+    const run = runner(i);
+    const idx = row.checks?.idx ?? 3;
+    // the 5-second step each entry point buys at (a market-cap entry: only what was known at the decision)
+    const steps = GRID_ENTRIES.map((e) => (e.mc ? idx : Math.max(idx, Math.floor((e.at * 1000) / 5000))));
+    const counts = new Array(GRID_ENTRIES.length).fill(0);
+    const seenHere = new Set();
+    for (const [w, st] of row.buyers ?? []) {
+      if (seenHere.has(w)) continue;
+      seenHere.add(w);
+      const s = stat.get(w);
+      if (!s) continue;
+      let [n, r] = s;
+      if (isTrain[i]) {
+        n -= 1;
+        r -= run;
+      }
+      if (n < SMART_MIN_COINS || r / n < SMART_MIN_RATE) continue;
+      for (let e = 0; e < steps.length; e++) if (st <= steps[e]) counts[e]++;
+    }
+    return counts;
+  });
+  return smartWallets;
+}
+
 /** Does coin i pass the rule's filters (everything known at the decision)? */
 function passes(T, i, p) {
   if (T.score[i] < p.minScore) return false;
@@ -152,6 +215,7 @@ function tally(T, idx, p) {
       // and the minute before it must show buyers still coming
       const q = mo[e];
       if (!q || q[0] < p.minNewBuyers60 || q[1] < p.minNetSol60 || q[2] < p.minRatio60) continue;
+      if (p.minSmart > 0 && T.smart[i][e] < p.minSmart) continue;
       for (let x = 0; x < NX; x++) {
         const k = e * NX + x;
         const v = r[k];
@@ -193,7 +257,20 @@ function best(t, min, mode) {
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const randomRule = () => Object.fromEntries(KEYS.map((k) => [k, pick(SPACE[k])]));
+/**
+ * A random rule: most are a few filters on top of "everything open" (a rule with all 23 filters
+ * set at random almost never lets enough coins through to judge it); some are fully random.
+ */
+const randomRule = () => {
+  if (Math.random() < 0.15) return Object.fromEntries(KEYS.map((k) => [k, pick(SPACE[k])]));
+  const p = { ...OPEN };
+  const n = 1 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n; i++) {
+    const k = pick(KEYS);
+    p[k] = pick(SPACE[k]);
+  }
+  return p;
+};
 function nudge(p) {
   const q = { ...p };
   const k = pick(KEYS);
@@ -214,6 +291,7 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
   const days = (ids) => (ids.length > 1 ? Math.max(1 / 24, (T.t[ids[ids.length - 1]] - T.t[ids[0]]) / 86400_000) : 1);
   const trainDays = days(train);
   const valDays = days(val);
+  const smartWallets = learnSmart(rows, T, train, val);
 
   const results = {};
   let tried = 0;
@@ -272,7 +350,7 @@ export function optimize(rows, tries = TRIES, rounds = CLIMB_ROUNDS) {
     else out.sort((a, b) => Math.min(b.val.avg, b.train.avg) - Math.min(a.val.avg, a.train.avg));
     results[mode] = out.slice(0, 10);
   }
-  return { coins: T.n, train: train.length, val: val.length, tried, top: results.profit, steady: results.steady };
+  return { coins: T.n, train: train.length, val: val.length, tried, smartWallets, top: results.profit, steady: results.steady };
 }
 
 // ------------------------------------------------------------------ running it
@@ -298,7 +376,7 @@ export async function sniperOptLoop(pool, log) {
     try {
       const rows = (
         await pool.query(
-          `select created_at, score, telegram, checks, grid from sniper_signals
+          `select created_at, score, telegram, checks, grid, buyers, start_mc, peak_mc from sniper_signals
            where grid is not null and (grid->>'v')::int = $1 and created_at > now() - interval '7 days' and coalesce(result, '') <> 'restart'`,
           [GRID_VERSION]
         )

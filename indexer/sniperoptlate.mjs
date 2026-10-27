@@ -26,6 +26,10 @@ export const LATE_SPACE = {
   devNotSold: [0, 1],
 };
 const KEYS = Object.keys(LATE_SPACE);
+const OPEN = {
+  stage: 0, minLevel: LEVELS[0], maxLevel: LEVELS[LEVELS.length - 1], minAge: 0, maxAge: 99999, minBuyers: 0, minBuys5: 0,
+  minNewBuyers5: 0, minNetSol5: -99, minRatio5: 0, minMove5: 0, maxMove5: 99, needX: 0, minTg: 0, devNotSold: 0,
+};
 const NX = GRID_EXITS.length;
 const MIN_TRAIN = 20;
 const MIN_VAL = 8;
@@ -85,7 +89,17 @@ function best(t, min, mode) {
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomRule = () => {
-  const p = Object.fromEntries(KEYS.map((k) => [k, pick(LATE_SPACE[k])]));
+  let p;
+  if (Math.random() < 0.15) p = Object.fromEntries(KEYS.map((k) => [k, pick(LATE_SPACE[k])]));
+  else {
+    // a few filters on top of "everything open"
+    p = { ...OPEN };
+    const n = 1 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < n; i++) {
+      const k = pick(KEYS);
+      p[k] = pick(LATE_SPACE[k]);
+    }
+  }
   if (p.maxLevel < p.minLevel) [p.minLevel, p.maxLevel] = [p.maxLevel, p.minLevel];
   return p;
 };
