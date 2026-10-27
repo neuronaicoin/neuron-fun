@@ -26,12 +26,12 @@ type OptResult = {
   rule: Record<string, number>;
   entry: string;
   exit: string;
-  train: { n: number; wins: number; avg: number; perDay: number };
-  val: { n: number; wins: number; avg: number; robust?: number; perDay: number };
+  train: { n: number; wins: number; avg: number; perDay: number; daily?: number };
+  val: { n: number; wins: number; avg: number; robust?: number; perDay: number; daily?: number };
 };
 type LateResult = Omit<OptResult, "entry">;
-type LateOpt = { signals: number; train: number; val: number; tried: number; top: LateResult[]; steady: LateResult[] };
-type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; smartWallets?: number; top: OptResult[]; steady?: OptResult[]; late?: LateOpt } };
+type LateOpt = { signals: number; train: number; val: number; tried: number; top: LateResult[]; steady: LateResult[]; daily?: LateResult[] };
+type Opt = { run_at: string; result: { coins: number; train: number; val: number; tried: number; smartWallets?: number; top: OptResult[]; steady?: OptResult[]; daily?: OptResult[]; late?: LateOpt } };
 
 const k$ = (v: number) => (v >= 1000 ? `$${v / 1000}K` : `$${v}`);
 /** A proven-coin rule in words. */
@@ -54,6 +54,45 @@ function lateWords(r: Record<string, number>): string {
   else if (r.minTg > 1) w.push(`Telegram ${r.minTg}+`);
   if (r.devNotSold) w.push("creator never sold");
   return w.join(" · ");
+}
+
+/** The bot goes live only with a rule that makes 10%+ a day, net, on coins it was not tuned on. */
+const DAILY_TARGET = 0.1;
+
+function DailyList({ list, late }: { list: (OptResult | LateResult)[]; late?: boolean }) {
+  if (!list.length) return <p className="mt-2 text-[0.8125rem] text-ink-2">No rule made money a day on both parts yet.</p>;
+  return (
+    <div className="mt-2 grid gap-2">
+      {list.slice(0, 5).map((t, i) => {
+        const d = t.val.daily ?? 0;
+        const dt = t.train.daily ?? 0;
+        const ready = d >= DAILY_TARGET && dt >= DAILY_TARGET;
+        return (
+          <div key={i} className={"rounded-xl border bg-paper p-3 " + (ready ? "border-up" : "border-line")}>
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="font-semibold text-[0.875rem]">
+                #{i + 1} · {"entry" in t ? `buy ${t.entry} · ` : ""}
+                {t.exit}
+              </div>
+              <div className={"font-mono font-semibold whitespace-nowrap " + (d > 0 ? "text-up" : "text-danger")}>
+                {d > 0 ? "+" : ""}
+                {(d * 100).toFixed(1)}% a day
+              </div>
+            </div>
+            <div className="mt-1">
+              <span className={"inline-block px-2 py-0.5 rounded-full text-[0.6875rem] font-bold " + (ready ? "bg-up text-white" : "bg-paper border border-line text-ink-3")}>
+                {ready ? "READY ≥10%/day" : `not yet: needs 10%/day on both parts (search part ${(dt * 100).toFixed(1)}%)`}
+              </span>
+            </div>
+            <div className="text-[0.75rem] text-ink-2 mt-1">
+              Check: {t.val.n} trades, {pct(t.val.wins, t.val.n)} won, {t.val.perDay}/day, {t.val.robust != null ? `${t.val.robust > 0 ? "+" : ""}${(t.val.robust * 100).toFixed(1)}% a trade without its best one` : ""} · 10% of the balance per trade
+            </div>
+            <div className="text-[0.75rem] text-ink-3 mt-1">{late ? lateWords(t.rule) : ruleWords(t.rule)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function LateRuleList({ list, empty }: { list: LateResult[]; empty: string }) {
@@ -327,7 +366,9 @@ export default function BotTestPage() {
                   {data.opt.result.val.toLocaleString()} (not used to find them) · average per trade after fees
                   {data.opt.result.smartWallets != null ? ` · ${data.opt.result.smartWallets.toLocaleString()} smart wallets found` : ""}
                 </p>
-                <div className="mt-3 text-[0.8125rem] font-semibold">Most profit per trade</div>
+                <div className="mt-3 text-[0.8125rem] font-semibold">Most profit a day (goes live at 10%+ a day)</div>
+                <DailyList list={data.opt.result.daily ?? []} />
+                <div className="mt-4 text-[0.8125rem] font-semibold">Most profit per trade</div>
                 <RuleList list={data.opt.result.top} empty="No rule made money on both parts yet." />
                 <div className="mt-4 text-[0.8125rem] font-semibold">Steady: wins 60%+ of trades and still makes money</div>
                 <RuleList list={data.opt.result.steady ?? []} empty="No rule won 60%+ and made money on both parts yet." />
@@ -339,7 +380,9 @@ export default function BotTestPage() {
                       {data.opt.result.late.signals.toLocaleString()} signals · {data.opt.result.late.tried.toLocaleString()} rule sets tried
                       {data.opt.result.late.signals < 150 ? " · search starts at 150 signals" : ""}
                     </p>
-                    <div className="mt-3 text-[0.8125rem] font-semibold">Most profit per trade</div>
+                    <div className="mt-3 text-[0.8125rem] font-semibold">Most profit a day (goes live at 10%+ a day)</div>
+                    <DailyList list={data.opt.result.late.daily ?? []} late />
+                    <div className="mt-4 text-[0.8125rem] font-semibold">Most profit per trade</div>
                     <LateRuleList list={data.opt.result.late.top} empty="No rule made money on both parts yet." />
                     <div className="mt-4 text-[0.8125rem] font-semibold">Steady: wins 60%+ and still makes money</div>
                     <LateRuleList list={data.opt.result.late.steady} empty="No rule won 60%+ and made money on both parts yet." />

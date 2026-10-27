@@ -35,6 +35,13 @@ const MIN_TRAIN = 20;
 const MIN_VAL = 8;
 /** Profit rules need this many trades on the newest coins (8 lets one lucky coin carry a rule). */
 const MIN_VAL_PROFIT = 20;
+/** Share of the balance put into each trade when a rule's daily return is worked out (10%). */
+const STAKE = 0.1;
+/** A rule is ready for real money only at 10%+ a day, net, on coins it was not tuned on. */
+export const DAILY_TARGET = 0.1;
+/** At 10% a trade only ~10 can be open at once: count at most this many trades a day. */
+const MAX_PER_DAY = 50;
+const dailyOf = (robustAvg, n, days) => STAKE * robustAvg * Math.min(n / Math.max(days, 1e-9), MAX_PER_DAY);
 
 function passes(f, level, p) {
   if (p.stage === 1 && f.stage !== "curve") return false;
@@ -86,7 +93,7 @@ function best(t, min, mode) {
   for (let j = 0; j < NX; j++) {
     if (t.n[j] < min) continue;
     const a = t.sum[j] / t.n[j];
-    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : robust(t, j);
+    const v = mode === "steady" ? (a > 0 ? winLow(t.w[j], t.n[j]) : -Infinity) : mode === "daily" ? (robust(t, j) > 0 ? robust(t, j) * t.n[j] : -Infinity) : robust(t, j);
     if (v > top) {
       top = v;
       k = j;
@@ -132,8 +139,8 @@ export function optimizeLate(rows, tries = 200_000, rounds = 8000) {
   const valDays = days(val);
   const out = {};
   let tried = 0;
-  for (const mode of ["profit", "steady"]) {
-    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : b.robust - 0.25 / Math.sqrt(b.n));
+  for (const mode of ["profit", "steady", "daily"]) {
+    const fit = (b) => (!b ? -Infinity : mode === "steady" ? winLow(b.wins, b.n) : mode === "daily" ? dailyOf(b.robust, b.n, trainDays) : b.robust - 0.25 / Math.sqrt(b.n));
     const seen = new Map();
     const evalRule = (p) => {
       const key = ruleKey(p);
@@ -165,22 +172,23 @@ export function optimizeLate(rows, tries = 200_000, rounds = 8000) {
       const t = tally(rows, val, e.p);
       const k = e.b.k;
       const vn = t.n[k];
-      if (vn < (mode === "profit" ? MIN_VAL_PROFIT : MIN_VAL)) continue;
+      if (vn < (mode === "steady" ? MIN_VAL : MIN_VAL_PROFIT)) continue;
       const vAvg = t.sum[k] / vn;
       const vRobust = vn > 1 ? (t.sum[k] - t.mx[k]) / (vn - 1) : 0;
       // profit rules must make money on the newest coins even without their best trade
-      if (mode === "profit" && vRobust <= 0) continue;
+      if (mode !== "steady" && vRobust <= 0) continue;
       if (mode === "steady" && (t.w[k] / vn < 0.6 || vAvg <= 0)) continue;
       list.push({
         rule: e.p,
         exit: exitLabel(GRID_EXITS[k]),
-        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), robust: +e.b.robust.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1) },
-        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), robust: +vRobust.toFixed(3), perDay: +(vn / valDays).toFixed(1) },
+        train: { n: e.b.n, wins: e.b.wins, avg: +e.b.avg.toFixed(3), robust: +e.b.robust.toFixed(3), perDay: +(e.b.n / trainDays).toFixed(1), daily: +dailyOf(e.b.robust, e.b.n, trainDays).toFixed(4) },
+        val: { n: vn, wins: t.w[k], avg: +vAvg.toFixed(3), robust: +vRobust.toFixed(3), perDay: +(vn / valDays).toFixed(1), daily: +dailyOf(vRobust, vn, valDays).toFixed(4) },
       });
     }
-    if (mode === "steady") list.sort((a, b) => Math.min(winLow(b.val.wins, b.val.n), winLow(b.train.wins, b.train.n)) - Math.min(winLow(a.val.wins, a.val.n), winLow(a.train.wins, a.train.n)));
+    if (mode === "daily") list.sort((a, b) => Math.min(b.val.daily, b.train.daily) - Math.min(a.val.daily, a.train.daily));
+    else if (mode === "steady") list.sort((a, b) => Math.min(winLow(b.val.wins, b.val.n), winLow(b.train.wins, b.train.n)) - Math.min(winLow(a.val.wins, a.val.n), winLow(a.train.wins, a.train.n)));
     else list.sort((a, b) => Math.min(b.val.robust, b.train.robust) - Math.min(a.val.robust, a.train.robust));
     out[mode] = list.slice(0, 10);
   }
-  return { signals: rows.length, train: train.length, val: val.length, tried, top: out.profit, steady: out.steady };
+  return { signals: rows.length, train: train.length, val: val.length, tried, top: out.profit, steady: out.steady, daily: out.daily };
 }
