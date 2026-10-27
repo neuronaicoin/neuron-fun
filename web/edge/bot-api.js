@@ -1,6 +1,7 @@
 // sasa Bot test mode, admins only (FORUM_ADMINS), called from functions/api/[[path]].js:
 //
 //   GET /api/bot/stats?hours=24   → { stats, coins }   what the bot would have picked and how it ended
+//   GET /api/bot/trends           → { themes }         Trend Radar: themes new coins launch on, last hour
 //   GET /api/bot/launchlog        → { errors }         the last 50 Solana launches that failed, and why
 //
 // The indexer (indexer/sniper.mjs) watches every new pump.fun coin and fills sniper_signals.
@@ -36,6 +37,11 @@ export async function botRoute(env, me, parts, method, url) {
   if (parts.length === 2 && parts[1] === "launchlog" && method === "GET") {
     const rows = await db(env, "sol_launch_errors?select=at,owner,creator,mint,kind,step,error,ua&order=at.desc&limit=50").catch(() => null);
     return json({ errors: rows ?? [] });
+  }
+  // Trend Radar: the themes new pump.fun coins launch on right now (indexer/sniper.mjs, sniper_trends)
+  if (parts.length === 2 && parts[1] === "trends" && method === "GET") {
+    const themes = await db(env, "rpc/sniper_trends", { method: "POST", body: "{}" }).catch(() => null);
+    return json({ themes: themes ?? [] });
   }
   if (!(parts.length === 2 && parts[1] === "stats" && method === "GET")) return json({ error: "Not found." }, 404);
   const hours = Math.max(1, Math.min(336, Math.floor(Number(url.searchParams.get("hours")) || 24)));

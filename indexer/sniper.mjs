@@ -329,6 +329,56 @@ $$;
 revoke all on function sniper_stats(int) from public, anon, authenticated;
 grant execute on function sniper_stats(int) to service_role;
 grant select on sniper_signals to service_role;
+-- Trend Radar (admin bot page): which themes new pump.fun coins are launching on right now and how
+-- they do. Words of each coin's name and ticker, grouped into themes; last hour vs the 3 before it;
+-- "hot" = 15+ buyers in its first seconds; 2x = a followed coin that doubled from its start.
+create or replace function sniper_trends() returns jsonb language sql stable as $$
+  with s as (
+    select mint, name, symbol, created_at, start_mc, peak_mc,
+      (x is not null or telegram is not null or website is not null or passed) as followed,
+      coalesce((checks->>'buyers')::int, 0) as buyers
+    from sniper_signals where created_at > now() - interval '4 hours'
+  ), w as (
+    select s.*, lower(m[1]) as word
+    from s, regexp_matches(coalesce(s.name, '') || ' ' || coalesce(s.symbol, ''), '([A-Za-z]{2,})', 'g') as m
+  ), t as (
+    select w.*, case
+      when word in ('ai','agent','agents','gpt','agi','bot','bots','robot','neural','llm','claude','grok','openai','chatgpt','aixbt') then 'AI agents'
+      when word in ('cat','cats','kitty','kitten','meow','neko','popcat','mew') then 'Cats'
+      when word in ('dog','dogs','doge','inu','shib','shiba','puppy','pup','wif','bonk','woof') then 'Dogs'
+      when word in ('pepe','frog','frogs','toad','kek') then 'Frogs'
+      when word in ('trump','maga','donald','melania','barron','vance','potus') then 'Trump'
+      when word in ('elon','musk','tesla','spacex','xai','doge') then 'Elon'
+      when word in ('cz','binance','bnb','heyi') then 'CZ / Binance'
+      when word in ('penguin','pengu','pudgy') then 'Penguins'
+      when word in ('monkey','ape','apes','chimp','punch') then 'Apes'
+      else word end as theme
+    from w
+    where (length(word) >= 3 or word in ('ai','cz'))
+      and word not in ('the','and','for','you','your','are','was','not','but','with','this','that','from','all','one','get','just','new',
+        'coin','token','tokens','sol','solana','pump','fun','meme','memecoin','official','real','first','ceo','dev','inc','club',
+        'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl')
+  ), d as (select distinct on (theme, mint) * from t), g as (
+    select theme,
+      count(*) filter (where created_at > now() - interval '1 hour') as n1,
+      round((count(*) filter (where created_at <= now() - interval '1 hour'))::numeric / 3, 1) as prev,
+      count(*) filter (where created_at > now() - interval '1 hour' and buyers >= 15) as hot1,
+      count(*) filter (where followed and start_mc > 0) as tracked,
+      count(*) filter (where followed and start_mc > 0 and peak_mc >= 2 * start_mc) as x2,
+      round(avg(buyers) filter (where created_at > now() - interval '1 hour'))::int as buyers1
+    from d group by theme
+  )
+  select coalesce(jsonb_agg(to_jsonb(r) order by r.score desc), '[]'::jsonb) from (
+    select g.*, (g.n1 + 3 * g.hot1 + 2 * g.x2) as score,
+      (select jsonb_agg(c) from (
+        select d.name, d.symbol, d.mint, round((d.peak_mc / nullif(d.start_mc, 0))::numeric, 1) as x
+        from d where d.theme = g.theme and d.followed and d.start_mc > 0
+        order by d.peak_mc / nullif(d.start_mc, 0) desc nulls last limit 3) c) as best
+    from g where g.n1 >= 3 order by score desc limit 15
+  ) r;
+$$;
+revoke all on function sniper_trends() from public, anon, authenticated;
+grant execute on function sniper_trends() to service_role;
 notify pgrst, 'reload schema';`;
 
 // ------------------------------------------------------------------ reading pump.fun's events

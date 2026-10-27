@@ -120,6 +120,17 @@ export default function RaceLaunchPage() {
   const [aiOpen, setAiOpen] = useState(false);
   // Trend Radar: a tapped theme becomes the AI's topic.
   const [aiSeed, setAiSeed] = useState<{ text: string; n: number } | null>(null);
+  // opened from the bot's Trend Radar (/race/launch/?theme=…): the AI starts on that theme
+  useEffect(() => {
+    try {
+      const theme = new URLSearchParams(window.location.search).get("theme")?.trim().slice(0, 40);
+      if (!theme) return;
+      setAiOpen(true);
+      setAiSeed({ text: trendIdea(theme), n: 1 });
+    } catch {
+      /* no theme */
+    }
+  }, []);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [status, setStatus] = useState<Record<number, ChainStatus>>({});
   const [funds, setFunds] = useState<Record<number, Funds | null>>({});

@@ -190,11 +190,15 @@ export default function BotTestPage() {
   const [data, setData] = useState<{ stats: Stats | null; coins: Coin[]; opt: Opt | null } | null>(null);
   const [error, setError] = useState("");
   const [launchErrors, setLaunchErrors] = useState<LaunchError[] | null>(null);
+  const [trends, setTrends] = useState<Trend[] | null>(null);
 
   const load = useCallback(async () => {
     try {
       setData(await authedGet<{ stats: Stats | null; coins: Coin[]; opt: Opt | null }>(signMessage, `bot/stats?hours=${hours}&min=${min}`));
       setError("");
+      authedGet<{ themes: Trend[] }>(signMessage, "bot/trends")
+        .then((r) => setTrends(r.themes ?? []))
+        .catch(() => {});
       authedGet<{ errors: LaunchError[] }>(signMessage, "bot/launchlog")
         .then((r) => setLaunchErrors(r.errors ?? []))
         .catch(() => {});
@@ -228,6 +232,8 @@ export default function BotTestPage() {
       <p className="text-ink-2 text-[0.875rem] mt-1">
         Watches every new pump.fun coin and writes down what the bot would have bought. Nothing is bought. A pick wins when it rises 50% before it falls 20%.
       </p>
+
+      {trends && <TrendRadarBox list={trends} />}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {HOURS.map(([h, label]) => (
@@ -427,3 +433,53 @@ export default function BotTestPage() {
 }
 
 type LaunchError = { at: string; owner: string | null; creator: string | null; mint: string | null; kind: string | null; step: string | null; error: string | null; ua: string | null };
+
+type Trend = { theme: string; n1: number; prev: number; hot1: number; tracked: number; x2: number; buyers1: number | null; score: number; best: { name: string; symbol: string; mint: string; x: number | null }[] | null };
+
+/** Which themes new pump.fun coins launch on in the last hour, and how they do (indexer sniper_trends). */
+function TrendRadarBox({ list }: { list: Trend[] }) {
+  const title = (t: string) => (/[A-Z]/.test(t) ? t : t.charAt(0).toUpperCase() + t.slice(1));
+  return (
+    <div className="mt-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
+      <div className="flex items-center gap-2">
+        <span className="relative flex w-2 h-2" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-[#ff6b1a] opacity-60 animate-ping" />
+          <span className="relative inline-flex rounded-full w-2 h-2 bg-[#ff6b1a]" />
+        </span>
+        <span className="font-semibold text-[0.9375rem]">Trend Radar</span>
+        <span className="ml-auto text-[0.75rem] text-ink-3">new pump.fun coins · last hour</span>
+      </div>
+      {list.length === 0 && <p className="mt-2 text-ink-3 text-[0.875rem]">Not enough new coins yet. Check back in a few minutes.</p>}
+      <div className="mt-2 grid gap-2">
+        {list.map((t) => {
+          const up = t.n1 > t.prev * 1.3 ? "up" : t.n1 < t.prev * 0.7 ? "down" : "flat";
+          return (
+            <div key={t.theme} className="rounded-xl border border-line p-2.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold truncate">{title(t.theme)}</span>
+                <span className={"text-[0.75rem] font-semibold shrink-0 " + (up === "up" ? "text-up" : up === "down" ? "text-danger" : "text-ink-3")}>
+                  {up === "up" ? "↑ rising" : up === "down" ? "↓ cooling" : "→ steady"}
+                </span>
+                <a href={`/race/launch/?theme=${encodeURIComponent(title(t.theme))}`} className="ml-auto shrink-0 h-7 px-2.5 rounded-lg bg-ink text-paper text-[0.75rem] font-semibold flex items-center">
+                  Create on this
+                </a>
+              </div>
+              <div className="text-[0.75rem] text-ink-3 mt-0.5">
+                {t.n1} coins/h (was {t.prev}) · {t.hot1} hot starts · {t.x2}/{t.tracked} hit 2x · avg {t.buyers1 ?? 0} buyers
+              </div>
+              {t.best && t.best.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {t.best.map((c) => (
+                    <a key={c.mint} href={`https://dexscreener.com/solana/${c.mint}`} target="_blank" rel="noreferrer" className="text-[0.75rem] px-2 py-0.5 rounded-full border border-line truncate max-w-[12rem]">
+                      ${c.symbol} {c.x ? `${c.x}×` : ""}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
