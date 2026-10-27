@@ -208,6 +208,8 @@ function tally(T, idx, p) {
     const em = T.em[i];
     const mo = T.mo[i];
     const r = T.r[i];
+    // coins followed before the newest exit rules have fewer exits per entry (those count as missing)
+    const rowNX = Math.round(r.length / GRID_ENTRIES.length);
     for (let e = 0; e < GRID_ENTRIES.length; e++) {
       const m = em[e];
       // the price at that entry must still be in the rule's range (not too late, not falling)
@@ -216,9 +218,9 @@ function tally(T, idx, p) {
       const q = mo[e];
       if (!q || q[0] < p.minNewBuyers60 || q[1] < p.minNetSol60 || q[2] < p.minRatio60) continue;
       if (p.minSmart > 0 && T.smart[i][e] < p.minSmart) continue;
-      for (let x = 0; x < NX; x++) {
+      for (let x = 0; x < Math.min(NX, rowNX); x++) {
         const k = e * NX + x;
-        const v = r[k];
+        const v = r[e * rowNX + x];
         if (v == null) continue;
         n[k]++;
         sum[k] += v;

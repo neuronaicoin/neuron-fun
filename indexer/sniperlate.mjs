@@ -189,7 +189,8 @@ export function makeLate({ pool, log, hexToB58, info }) {
     const k = coins.get(f.mint);
     if (k?.follows) k.follows = k.follows.filter((x) => x !== f);
     const path = { hi: f.hi, lo: f.lo, cl: f.cl };
-    const r = GRID_EXITS.map((x) => exitFrom(path, 0, f.entry, x));
+    // the exits that watch the creator or the volume need per-trade data this follow doesn't keep
+    const r = GRID_EXITS.map((x) => (x.devExit || x.fade ? null : exitFrom(path, 0, f.entry, x)));
     let end = f.hi.length;
     while (end > 0 && f.hi[end - 1] == null) end--;
     if (!f.id) return; // its save never finished

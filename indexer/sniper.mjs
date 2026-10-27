@@ -98,8 +98,41 @@ export const GRID_EXITS = [
   { trail: true, trailAt: 1.5, gap: 0.25, sl: 0.75 },
   { trail: true, trailAt: 2, gap: 0.3, sl: 0.7 },
   { trail: true, trailAt: 3, gap: 0.35, sl: 0.65 },
+  // added Oct 27 (kept at the end: older coins' grids are the first 23 and still count)
+  // out at once if the creator sells, or when trading dies down (the last minute's volume 60%
+  // under its best minute since the buy)
+  ...[
+    [2, 0.7],
+    [3, 0.6],
+    [5, 0.6],
+  ].flatMap(([tp, sl]) => [
+    { tp, sl, devExit: true },
+    { tp, sl, fade: 0.6 },
+  ]),
+  { trail: true, trailAt: 2, gap: 0.3, sl: 0.7, devExit: true, fade: 0.6 },
 ];
-export const exitLabel = (x) => (x.trail ? `half at ${x.trailAt}×, rest trails ${Math.round(x.gap * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%` : `sell +${Math.round((x.tp - 1) * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%`);
+export const exitLabel = (x) =>
+  (x.trail ? `half at ${x.trailAt}×, rest trails ${Math.round(x.gap * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%` : `sell +${Math.round((x.tp - 1) * 100)}% · stop −${Math.round((1 - x.sl) * 100)}%`) +
+  (x.devExit ? " · out if the creator sells" : "") +
+  (x.fade ? ` · out when volume fades ${Math.round(x.fade * 100)}%` : "");
+
+const FADE_STEPS = 12; // a minute of 5-second steps
+const FADE_MIN_SOL = 1; // a quiet coin's tiny volume never counts as fading
+
+/** Does an extra exit fire in step i (the creator sold, or the volume faded)? Keeps its rolling state in `f`. */
+function extraExit(path, i, st, f) {
+  if (st.devExit && path.ds?.[i]) return true;
+  if (st.fade && path.v) {
+    f.sum += path.v[i] ?? 0;
+    f.win.push(path.v[i] ?? 0);
+    if (f.win.length > FADE_STEPS) f.sum -= f.win.shift();
+    if (f.win.length === FADE_STEPS) {
+      if (f.sum > f.best) f.best = f.sum;
+      if (f.best >= FADE_MIN_SOL && f.sum < f.best * (1 - st.fade)) return true;
+    }
+  }
+  return false;
+}
 
 /** One exit rule from step `from` on, bought at `entry` (market cap). A step reaching both the target and the stop counts as the stop. */
 export function exitFrom(path, from, entry, st) {
@@ -109,8 +142,13 @@ export function exitFrom(path, from, entry, st) {
     let half = false;
     let banked = 0;
     let high = entry;
+    const f = { sum: 0, win: [], best: 0 };
     for (let i = from; i < hi.length; i++) {
-      if (hi[i] == null) continue;
+      const extra = extraExit(path, i, st, f);
+      if (hi[i] == null) {
+        if (extra) return +((half ? banked + (0.5 * last) / entry : last / entry) - 1 - FEES).toFixed(3);
+        continue;
+      }
       if (!half) {
         if (lo[i] <= entry * st.sl) return +(st.sl - 1 - FEES).toFixed(3);
         if (hi[i] >= entry * (st.trailAt ?? 2)) {
@@ -124,14 +162,22 @@ export function exitFrom(path, from, entry, st) {
         if (lo[i] <= high * keep) return +(banked + (0.5 * high * keep) / entry - 1 - FEES).toFixed(3);
       }
       last = cl[i] ?? last;
+      if (extra) return +((half ? banked + (0.5 * last) / entry : last / entry) - 1 - FEES).toFixed(3);
     }
     return +((half ? banked + (0.5 * last) / entry : last / entry) - 1 - FEES).toFixed(3);
   }
+  const f = { sum: 0, win: [], best: 0 };
   for (let i = from; i < hi.length; i++) {
-    if (hi[i] == null) continue;
+    const extra = extraExit(path, i, st, f);
+    if (hi[i] == null) {
+      if (extra) return +(last / entry - 1 - FEES).toFixed(3);
+      continue;
+    }
     if (lo[i] <= entry * st.sl) return +(st.sl - 1 - FEES).toFixed(3);
     if (hi[i] >= entry * st.tp) return +(st.tp - 1 - FEES).toFixed(3);
     last = cl[i] ?? last;
+    // sold at the step's last price when the creator sells or the volume fades
+    if (extra) return +(last / entry - 1 - FEES).toFixed(3);
   }
   return +(last / entry - 1 - FEES).toFixed(3);
 }
@@ -836,7 +882,7 @@ export async function sniperLoop(pool, log) {
     };
     const steps = Math.ceil((RULES.followMin * 60_000) / BUCKET_MS) + 2;
     const zeros = () => new Array(steps).fill(0);
-    c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null), b: zeros(), s: zeros(), nb: zeros(), ns: zeros() };
+    c.path = { hi: new Array(steps).fill(null), lo: new Array(steps).fill(null), cl: new Array(steps).fill(null), b: zeros(), s: zeros(), nb: zeros(), ns: zeros(), v: zeros(), ds: zeros() };
     c.everBought = new Set(); // every wallet that bought (new buyers per step)
     c.firstBuyers = []; // [wallet hex, step] of the first 40 buyers (not the creator)
     c.path.cl[0] = c.path.hi[0] = c.path.lo[0] = Math.round(startMc);
@@ -896,6 +942,8 @@ export async function sniperLoop(pool, log) {
       c.path.hi[step] = Math.max(c.path.hi[step] ?? 0, m);
       c.path.lo[step] = Math.min(c.path.lo[step] ?? Infinity, m);
       c.path.cl[step] = m;
+      c.path.v[step] += e.sol / 1e9; // SOL traded
+      if (!e.buy && e.user === c.creator) c.path.ds[step] = 1; // the creator sold
       if (e.buy) {
         c.path.b[step]++;
         c.path.ns[step] += e.sol / 1e9;
@@ -1012,6 +1060,8 @@ export async function sniperLoop(pool, log) {
       s: cut(c.path.s),
       nb: cut(c.path.nb),
       ns: cut(c.path.ns).map((v) => +v.toFixed(2)),
+      v: cut(c.path.v).map((v) => +v.toFixed(2)),
+      ds: cut(c.path.ds),
     };
     c.everBought = null;
     const buyers = c.firstBuyers.map(([w, st]) => [hexToB58(w), st]);
