@@ -25,7 +25,7 @@ export const HL_BUILDER = "0xe0ba5905940d748b23dc01266aa884e2391cca2f" as const;
  */
 export const RELAY_FEE_TO = "0x4670db0a98Ac28D4093969E3Dfbf16045E321073" as const;
 /** Fees taken on mainnet through Relay, in basis points (paid to RELAY_FEE_TO). */
-export const FEE_BPS = { deposit: 25, swap: 70 } as const;
+export const FEE_BPS = { deposit: 25, swap: 100 } as const;
 
 /** Public, read-only database (Supabase). The key is the public "publishable" key. */
 export const SUPABASE_URL = "https://rkoassatqhdkdptekvdt.supabase.co";

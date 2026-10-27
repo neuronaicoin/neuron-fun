@@ -12,7 +12,7 @@ import type { Call } from "./tx";
  * email accounts the network fee is paid in USDC). If the user has almost no gas there, a few
  * cents of the same USDC also become that chain's gas coin, so they can sell later. Selling:
  * the coin on its chain → USDC on Base, sent from the user's own address there (gas from that
- * top-up). sasa pays no one's gas; its 0.7% fee is in Relay's quote.
+ * top-up). sasa pays no one's gas; its 1% fee is in Relay's quote.
  */
 
 /** Other DEXs' networks → chain ids. */

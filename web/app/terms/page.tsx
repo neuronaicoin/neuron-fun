@@ -65,7 +65,7 @@ export default function Terms() {
         <li>Trading in a race coin&apos;s pool: 2% of each trade. 30% of it goes to the coin&apos;s creator (or buys back and burns the coin, if the creator chose that); 70% goes to sasa.</li>
         <li>Opening fee: right after launch the pool fee is higher and falls to 2% within the first few minutes.</li>
         <li>End of a race: 2% of the money moved from the losing pools into the winning pool.</li>
-        <li>Coins from other exchanges: 0.7% per trade.</li>
+        <li>Coins from other exchanges: 1% per trade.</li>
         <li>Creating a coin: no sasa fee; the creator makes a first buy on each chain, which pays the trading fee.</li>
         <li>Deposits and withdrawals: no sasa fee.</li>
         <li>Network fees: paid by you, as described in section 3.</li>

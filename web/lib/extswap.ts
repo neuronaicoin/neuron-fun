@@ -7,7 +7,7 @@ import type { Call } from "./tx";
 
 /**
  * Buying and selling other DEXs' coins (mainnet): Relay finds the best price on the chain
- * the coin lives on and returns the transactions (approve + swap). sasa's 0.7% fee is part
+ * the coin lives on and returns the transactions (approve + swap). sasa's 1% fee is part
  * of the quote and goes to the treasury. Only coins on our own chains for now, where the
  * user's cash is and gas is paid for them.
  */

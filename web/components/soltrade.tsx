@@ -29,7 +29,7 @@ import { solanaFor } from "@/lib/solana";
 import { solInflight, solIsInflight } from "@/lib/solheld";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
-const FEE = 0.007;
+const FEE = 0.01;
 /**
  * A sale needs a little SOL in the Solana wallet for its network fee: very little on a coin's
  * launch curve, more through a route (it opens token accounts, about 0.002 SOL each). A sale

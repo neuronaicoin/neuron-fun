@@ -39,7 +39,7 @@ const EXPLORER: Record<string, string> = {
   arc: "https://arcscan.app/token/",
   solana: "https://solscan.io/token/",
 };
-const FEE = 0.007;
+const FEE = 0.01;
 
 /** An exchange's name for people: Solana's launch curve and its pools by what they are, not by brand. */
 function dexName(dex: string | null): string {
