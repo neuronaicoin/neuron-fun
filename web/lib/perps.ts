@@ -188,7 +188,26 @@ export async function fetchBuilderMarkets(skip: Set<string>, signal?: AbortSigna
     const cur = best.get(k);
     if (!cur || m.volume24h > cur.volume24h) best.set(k, m);
   }
-  return [...best.values()].sort((a, b) => b.volume24h - a.volume24h);
+  const list = [...best.values()];
+  // a crypto or meme coin on a builder exchange (not on the main one yet) goes under Crypto, not Stocks
+  const unsure = list.filter((m) => m.group === "stocks" && !NAMES[m.label.toUpperCase()]);
+  if (unsure.length) {
+    const known = await cryptoSymbols(unsure.map((m) => m.label));
+    for (const m of unsure) if (known.has(m.label.toUpperCase()) || /^k[A-Z0-9]{2,}$/.test(m.label)) m.group = "crypto";
+  }
+  return list.sort((a, b) => b.volume24h - a.volume24h);
+}
+
+/** Which of these symbols are crypto coins (CoinGecko's top coins list, kept by the indexer). */
+async function cryptoSymbols(labels: string[]): Promise<Set<string>> {
+  try {
+    const { db } = await import("./data");
+    const want = [...new Set(labels.flatMap((l) => [l.toUpperCase(), l.toLowerCase()]))];
+    const { data } = await db.from("top_coins_pub").select("symbol").in("symbol", want);
+    return new Set(((data ?? []) as { symbol: string }[]).map((r) => String(r.symbol).toUpperCase()));
+  } catch {
+    return new Set();
+  }
 }
 
 /** Every live market on Hyperliquid's main exchange (crypto), busiest first. */
