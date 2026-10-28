@@ -133,7 +133,12 @@ export async function routeToBase({ relayApi, apiKey, chainId, who, token, amoun
   }
   const moves = txs.filter((t) => !t.approve);
   if (moves.length !== 1) throw new Error("relay: expected one transfer step");
-  if (!native && !spender) throw new Error("relay: route has no approval step");
+  // Relay leaves the approval out when the contract may already spend enough (a leftover allowance):
+  // add our own for exactly this amount, so only ever the exact amount is approved
+  if (!native && !spender) {
+    spender = String(moves[0].to).toLowerCase();
+    txs.unshift({ to: token, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [moves[0].to, amount] }), value: 0n, approve: true });
+  }
   if (spender && spender !== String(moves[0].to).toLowerCase()) throw new Error("relay: the transfer isn't sent to the approved contract");
   txs.sort((a, b) => Number(b.approve) - Number(a.approve));
   // what the quote says arrives must be USDC on Base, for this wallet

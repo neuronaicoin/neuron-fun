@@ -13,7 +13,7 @@
 //      REFILL_EVERY_MIN (default 2, after a failure), REFILL_WARN_USD (default 3), RELAY_API,
 //      RELAY_API_KEY, GAS_REFILL=false switches it off.
 
-import { decodeFunctionData, parseAbi, zeroAddress } from "viem";
+import { decodeFunctionData, encodeFunctionData, parseAbi, zeroAddress } from "viem";
 
 const erc20Abi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -92,9 +92,15 @@ export async function relayToNative({ relayApi, chainId, who, token, amount, den
   }
   if (swaps !== 1) throw new Error("relay: no trade step");
   const swap = txs.find((t) => !t.approve);
-  // the dollars always need a fresh approval (only ever the exact amount is approved): a route
-  // without one, or a swap sent anywhere but the approved contract, is refused
-  if (!spender) throw new Error("relay: route has no approval step");
+  // Relay leaves the approval out when the swap contract may already spend enough (a leftover
+  // allowance from an earlier try): add our own, for exactly this amount, to that contract, so
+  // only ever the exact amount is approved (a swap to a contract it must not call is refused below)
+  if (!spender) {
+    const target = String(swap.to).toLowerCase();
+    if (target === PERMIT2 || deny.has(target) || target === String(token).toLowerCase()) throw new Error("relay: swap step calls a contract it must not");
+    spender = target;
+    txs.unshift({ to: token, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [swap.to, amount] }), approve: true });
+  }
   if (spender !== String(swap.to).toLowerCase()) throw new Error("relay: the swap isn't sent to the approved contract");
   if (spender && (spender === PERMIT2 || deny.has(spender))) throw new Error("relay: approval for a contract it must not be");
   // approval first, then the swap
