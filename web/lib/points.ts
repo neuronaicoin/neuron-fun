@@ -34,6 +34,7 @@ const ALL_QUESTS: readonly Quest[] = [
   { id: "follow_x", icon: "𝕏", title: "Follow @sasapadfun on X", note: "News, launches and giveaways", pts: 50, action: "follow" },
   { id: "share_x", icon: "📣", title: "Share sasa on X", note: "Post your invite link or a coin", pts: 100, action: "share" },
   { id: "launch", icon: "🚀", title: "Launch your first coin", note: "Any chain, any idea", pts: 200, href: V6 ? "/create/" : "/race/launch/" },
+  { id: "elysium", icon: "🧪", title: "Launch on Elysium testnet", note: "Free with test HYPE. Then 50 a launch (3 a day), 10 a trade (10 a day)", pts: 100, href: "/elysium/" },
   { id: "ai", icon: "✨", title: "Create a coin with AI", note: "Try the AI designer once", pts: 100, href: V6 ? "/create/?ai=1" : "/race/launch/" },
   { id: "buy", icon: "🛒", title: "Make your first buy", note: "Any coin", pts: 50, href: "/explore/" },
   { id: "follow3", icon: "👥", title: "Follow 3 traders", note: "From Traders or a profile", pts: 50, href: "/traders/" },

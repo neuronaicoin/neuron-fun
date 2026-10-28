@@ -71,6 +71,31 @@ function TestnetBand() {
   );
 }
 
+/** A ready X post for an Elysium coin (the creator's own words when it's theirs). */
+function shareUrl(coin: ElysiumCoin, mine: boolean) {
+  const link = `https://sasapad.fun${elysiumHref(coin.address)}`;
+  const text = mine
+    ? `just launched $${coin.symbol} on Elysium ${ELYSIUM.testnet ? "testnet " : ""}with @sasapadfun 🚀\n\none tx, liquidity locked forever. ${ELYSIUM.testnet ? "free to try before mainnet 👇" : "go 👇"}`
+    : `$${coin.symbol} on Elysium ${ELYSIUM.testnet ? "testnet " : ""}via @sasapadfun 👀`;
+  return `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(link)}`;
+}
+
+function ShareButton({ coin, mine, big = false }: { coin: ElysiumCoin; mine: boolean; big?: boolean }) {
+  return (
+    <a
+      href={shareUrl(coin, mine)}
+      target="_blank"
+      rel="noreferrer"
+      className={
+        "inline-flex items-center justify-center gap-2 rounded-xl font-bold " +
+        (big ? "h-12 px-5 bg-ink text-mist text-[0.9375rem]" : "h-9 px-3.5 border border-line text-[0.8125rem] hover:border-ink/40")
+      }
+    >
+      <span aria-hidden="true">𝕏</span> {mine ? "Share your coin" : "Share"}
+    </a>
+  );
+}
+
 const TestTag = () =>
   ELYSIUM.testnet ? <span className="ml-1.5 align-[0.15em] text-[0.625rem] font-extrabold tracking-wide px-1.5 py-0.5 rounded bg-warn-bg text-warn-ink">TEST</span> : null;
 
@@ -142,7 +167,7 @@ function ElysiumHomeInner() {
       setDescription("");
       setLogo("");
       load();
-      if (coin) window.location.href = elysiumHref(coin);
+      if (coin) window.location.href = elysiumHref(coin) + "&new=1";
     } catch (e) {
       toast(friendlyError(e));
     } finally {
@@ -197,6 +222,16 @@ function ElysiumHomeInner() {
         <div className="hidden sm:block">
           <ConnectButton full />
         </div>
+      )}
+
+      {test && (
+        <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
+          <span className="text-[1.25rem]" aria-hidden="true">🪂</span>
+          <span className="min-w-0 flex-1 text-ink-2">
+            <b className="text-ink">Earn sasa airdrop points on testnet:</b> 100 for your first launch, 50 a launch (3 a day), 10 a trade (10 a day).
+          </span>
+          <span className="text-emerald font-bold shrink-0">→</span>
+        </Link>
       )}
 
       <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-3">
@@ -329,6 +364,8 @@ function ElysiumCoinInner({ address }: { address: string }) {
       </div>
     );
 
+  const mine = !!w.address && coin.creator.toLowerCase() === w.address.toLowerCase();
+  const fresh = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("new") === "1";
   let raw = 0n;
   try {
     raw = amount ? (side === "buy" ? parseEther(amount) : parseUnits(amount, 18)) : 0n;
@@ -346,7 +383,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
       setBusy("Confirm in your wallet…");
       const calls = side === "buy" ? buyCalls(coin, w.address as Address, raw, SLIPPAGE_BPS) : sellCalls(coin, w.address as Address, raw, SLIPPAGE_BPS);
       await w.send(ELYSIUM.chain, calls, setBusy);
-      toast(side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`);
+      toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? " · +10 airdrop points" : ""));
       setAmount("");
       for (const ms of [0, 1500, 4000]) setTimeout(() => void load(), ms);
     } catch (e) {
@@ -359,6 +396,17 @@ function ElysiumCoinInner({ address }: { address: string }) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-5 sm:py-6 pb-28 flex flex-col gap-4">
       <TestnetBand />
+      {fresh && mine && (
+        <div className="rounded-3xl border border-up/30 bg-up/[0.07] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="font-display font-bold text-[1.125rem]">🎉 ${coin.symbol} is live{ELYSIUM.testnet ? " on testnet" : ""}</div>
+            <div className="text-[0.8125rem] text-ink-2">
+              {ELYSIUM.testnet ? "You earned airdrop points for it. " : ""}Share it so people trade it.
+            </div>
+          </div>
+          <ShareButton coin={coin} mine big />
+        </div>
+      )}
       <div className="flex items-center gap-3 min-w-0">
         {coin.image ? <img src={coin.image} alt="" className="w-16 h-16 rounded-2xl object-cover" /> : <div className="w-16 h-16 rounded-2xl bg-paper border border-line" />}
         <div className="min-w-0">
@@ -368,6 +416,9 @@ function ElysiumCoinInner({ address }: { address: string }) {
           </h1>
           <div className="text-[0.8125rem] text-ink-3">{ELYSIUM.testnet ? "Elysium testnet" : "Elysium"} · liquidity locked forever</div>
         </div>
+        <span className="ml-auto shrink-0">
+          <ShareButton coin={coin} mine={mine} />
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-line bg-surface p-3">
