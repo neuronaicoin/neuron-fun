@@ -945,7 +945,11 @@ export async function sniperLoop(pool, log) {
       m.dirty = true;
     }
   }
+  let flushing = false; // one write at a time: a slow database never piles them up
   setInterval(async () => {
+    if (flushing) return;
+    flushing = true;
+    try {
     if (smartQueue.length) {
       const rows = smartQueue.splice(0, 200);
       const args = [];
@@ -976,6 +980,9 @@ export async function sniperLoop(pool, log) {
           [mints, mcs]
         )
         .catch(() => {});
+    } finally {
+      flushing = false;
+    }
   }, 5000).unref();
 
   const coins = new Map(); // mint hex → coin being watched
@@ -1328,9 +1335,13 @@ export async function sniperLoop(pool, log) {
   let conn = null;
   let sub = null;
   let subAmm = null;
+  // a dead websocket can leave these waiting forever: give up on the old listeners after 5 s
+  const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
   const connect = async () => {
-    if (conn && sub !== null) await conn.removeOnLogsListener(sub).catch(() => {});
-    if (conn && subAmm !== null) await conn.removeOnLogsListener(subAmm).catch(() => {});
+    if (conn && sub !== null) await within(conn.removeOnLogsListener(sub).catch(() => {}), 5000);
+    if (conn && subAmm !== null) await within(conn.removeOnLogsListener(subAmm).catch(() => {}), 5000);
+    sub = null;
+    subAmm = null;
     conn = new web3.Connection(rpc, { commitment: "confirmed", wsEndpoint: rpc.replace(/^http/, "ws") });
     sub = conn.onLogs(
       new web3.PublicKey(PUMP),
@@ -1389,18 +1400,19 @@ export async function sniperLoop(pool, log) {
     await sleep(30_000);
     if (Date.now() - lastEvent > 60_000) {
       log("bot test: feed quiet for a minute, reconnecting");
-      await connect().catch((e) => log(`bot test: reconnect failed: ${e.message}`));
+      await within(connect(), 20_000).catch((e) => log(`bot test: reconnect failed: ${e.message}`));
       lastEvent = Date.now();
     }
     if (n % 20 === 0) {
       const ls = late.size();
       log(`bot test: ${events} events, ${coins.size} new coins watched, ${ls.coins} trading coins, ${ls.follows} proven-coin signals followed, ${ls.pools} pools`);
       log(`bot test: smart wallets ${smart.size}, their buys seen ${smartSeen.any} (${smartSeen.sized} big enough, ${smartSeen.named} shown), whale buys ${smartSeen.whales}`);
-      await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
-      await pool.query(`delete from smart_buys where at < now() - interval '2 days'`).catch(() => {});
-      await pool.query(`delete from smart_coins where updated_at < now() - interval '2 days'`).catch(() => {});
+      // never let the clean-up hold the loop (and its log lines) up
+      void pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
+      void pool.query(`delete from smart_buys where at < now() - interval '2 days'`).catch(() => {});
+      void pool.query(`delete from smart_coins where updated_at < now() - interval '2 days'`).catch(() => {});
       // price paths are the big part: kept 3 days (the optimizer uses the much smaller grid)
-      await pool.query(`update sniper_signals set path = null where path is not null and created_at < now() - interval '3 days'`).catch(() => {});
+      void pool.query(`update sniper_signals set path = null where path is not null and created_at < now() - interval '3 days'`).catch(() => {});
     }
   }
   // (never returns; the interval keeps deciding)
