@@ -1,0 +1,94 @@
+name: Deploy sasa Day-1 Pass
+
+# The free Day-1 Pass NFT on Elysium (contracts-elysium/src/SasaDayPass.sol). Testnet first;
+# mainnet on launch day. Runs only when started by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "elysium-testnet or elysium"
+        required: true
+        default: elysium-testnet
+      broadcast:
+        description: "Send the transactions (false = dry run)"
+        type: boolean
+        default: false
+      rpc:
+        description: "RPC URL (empty = Kinetiq's public testnet RPC)"
+        required: false
+        default: ""
+      mint_end:
+        description: "When minting closes (unix seconds, 0 = until sasa ends it)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts-elysium
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.5
+
+      - name: Get libraries
+        run: |
+          rm -rf lib && mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+
+      - name: Tests
+        run: forge test --match-contract SasaDayPassTest -vv
+
+      - name: Network
+        env:
+          NET: ${{ inputs.network }}
+          IN_RPC: ${{ inputs.rpc }}
+        run: |
+          case "$NET" in
+            elysium-testnet) CHAIN_ID=99801; RPC="${IN_RPC:-https://testnet-rpc.elysium.kinetiq.xyz}" ;;
+            elysium) CHAIN_ID=""; RPC="$IN_RPC"; if [ -z "$RPC" ]; then echo "mainnet needs the rpc input"; exit 1; fi ;;
+            *) echo "unknown network $NET"; exit 1 ;;
+          esac
+          GOT=$(cast chain-id --rpc-url "$RPC")
+          if [ -n "$CHAIN_ID" ] && [ "$GOT" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT, expected $CHAIN_ID"; exit 1; fi
+          echo "chain $GOT"
+          echo "RPC=$RPC" >> "$GITHUB_ENV"
+
+      - name: Deploy (+ the deployer's own pass as a smoke test)
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BROADCAST: ${{ inputs.broadcast }}
+          MINT_END: ${{ inputs.mint_end }}
+        run: |
+          k="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+          echo "::add-mask::$k"
+          if [ "$k" = "0x" ]; then echo "DEPLOYER_PRIVATE_KEY secret is missing"; exit 1; fi
+          export PRIVATE_KEY="$k"
+          ME=$(cast wallet address "$k"); BAL=$(cast balance "$ME" --rpc-url "$RPC")
+          echo "deployer $ME has $BAL wei HYPE"
+          if [ "$BAL" = "0" ]; then echo "Send a little HYPE on this network to $ME first"; exit 1; fi
+          export OWNER=0xe0ba5905940D748b23Dc01266AA884E2391CcA2F
+          export PASS_URI=https://sasapad.fun/pass.json
+          FLAGS="--rpc-url $RPC -vv"
+          if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          forge script script/DeployPass.s.sol $FLAGS
+
+      - name: Save the address to the repo
+        if: inputs.broadcast
+        working-directory: .
+        run: |
+          git config user.name "sasa-deploy"
+          git config user.email "deploy@sasapad.fun"
+          git add -A contracts-elysium/deployments
+          git commit -m "sasa Day-1 Pass deployed on ${{ inputs.network }}" || echo "nothing to commit"
+          git pull --rebase
+          git push
