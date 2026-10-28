@@ -322,6 +322,7 @@ export function Header() {
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
   { href: "/bot/", label: "🤖 sasa Bot · NEW", note: "WHALES, traps and trends, live" },
+  { href: "/elysium/", label: "Elysium testnet · NEW", note: "Practice a launch free with test HYPE" },
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/predict/", label: "Predict", note: "Yes or no on prices, matches and rates" },

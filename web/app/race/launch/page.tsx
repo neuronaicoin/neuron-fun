@@ -22,6 +22,7 @@ import { RACE_CHAINS, chainsLinked, fetchRaceLinks, raceClient, raceErc20Abi, ra
 import { GAS_ASK_CENTS, crossReady, homeChain } from "@/lib/racecross";
 import { LAUNCH_FEE_ROOM_CENTS, liveOn, planLaunch, sendLaunch, type LaunchPlan } from "@/lib/racecrossflow";
 import { solanaFor } from "@/lib/solana";
+import { ELYSIUM, ELYSIUM_LISTED } from "@/lib/elysium";
 import { SolanaMark } from "@/components/solanamoney";
 import { SolanaLaunchBox } from "@/components/solanalaunch";
 
@@ -740,6 +741,24 @@ export default function RaceLaunchPage() {
                   </button>,
                 ];
               })}
+              {ELYSIUM_LISTED && (
+                <Link
+                  href="/elysium/"
+                  className="col-span-2 rounded-xl border-2 border-dashed border-mint/50 bg-warn-bg px-3 py-2.5 flex flex-col gap-1 min-w-0"
+                >
+                  <span className="flex items-center gap-2 text-[0.9375rem] font-semibold text-ink">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-[#2e8b7a]" />
+                    Elysium
+                    {ELYSIUM.testnet && <span className="text-[0.625rem] font-black tracking-[0.1em] px-1.5 py-0.5 rounded bg-[#ffc23d] text-[#1a1410]">TESTNET</span>}
+                    <span className="ml-auto text-warn-ink" aria-hidden="true">→</span>
+                  </span>
+                  {ELYSIUM.testnet && (
+                    <span className="text-[0.75rem] text-warn-ink leading-snug">
+                      Free practice with test HYPE, nothing has real value. Opens on its own page. Real launches from Nov 9.
+                    </span>
+                  )}
+                </Link>
+              )}
             </div>
             {onSolana ? (
               <p className="text-[0.8125rem] text-ink-2">Your coin goes live on Solana and shows up on DexScreener, GMGN and every Solana app at once.</p>

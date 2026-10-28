@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Elysium on sasa (admin-only until Elysium's mainnet): launch a coin, list the coins, and each
- * coin's page with buy and sell. Uses lib/elysium.ts; transactions go through the wallet's send().
+ * Elysium on sasa: launch a coin, list the coins, and each coin's page with buy and sell. Before
+ * Elysium's mainnet (Nov 9) it runs on the public testnet with free test HYPE, marked TESTNET everywhere. Uses lib/elysium.ts; transactions go through the wallet's send().
  */
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -16,8 +16,10 @@ import {
   ELYSIUM,
   buyCalls,
   elysiumBalances,
+  FAUCET_URL,
   elysiumFor,
   elysiumHref,
+  elysiumHypeBalance,
   elysiumLaunchFee,
   fetchElysiumCoin,
   fetchElysiumCoins,
@@ -36,16 +38,6 @@ const fmtNum = (n: number) =>
 
 function Gate({ children }: { children: React.ReactNode }) {
   const w = useWallet();
-  if (!w.address)
-    return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center">
-        <h1 className="font-display font-bold text-[1.5rem]">Elysium</h1>
-        <p className="text-ink-2 mt-2">Launches and trading on Elysium open with its mainnet on November 9.</p>
-        <div className="mt-6">
-          <ConnectButton full />
-        </div>
-      </div>
-    );
   if (!elysiumFor(w.address))
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
@@ -59,18 +51,28 @@ function Gate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function TestnetNote() {
+/** The stripe on every Elysium testnet page: nobody mistakes test coins for real ones. */
+function TestnetBand() {
   if (!ELYSIUM.testnet) return null;
   return (
-    <p className="rounded-xl border border-line bg-paper px-3 py-2 text-[0.8125rem] text-ink-2">
-      Admin test on Elysium testnet: needs a browser wallet (MetaMask) with test HYPE from the{" "}
-      <a href="https://testnet.elysium.kinetiq.xyz/faucet" target="_blank" rel="noreferrer" className="text-emerald font-semibold">
-        faucet
-      </a>
-      .
-    </p>
+    <div
+      className="rounded-2xl text-white px-3.5 sm:px-4 py-2.5 flex items-start sm:items-center gap-2.5 text-[0.8125rem] sm:text-[0.875rem] leading-snug"
+      style={{ background: "repeating-linear-gradient(135deg,#1a1410 0 12px,#241b14 12px 24px)" }}
+      role="note"
+    >
+      <span className="shrink-0 text-[0.625rem] font-black tracking-[0.12em] px-2 py-1 rounded-md bg-[#ffc23d] text-[#1a1410]">TESTNET</span>
+      <span>
+        Free test HYPE only. Nothing here has real value. Mainnet opens <b>Nov 9</b>.{" "}
+        <Link href="/learn/what-is-elysium/" className="text-[#ffb27a] font-semibold whitespace-nowrap">
+          What is Elysium? →
+        </Link>
+      </span>
+    </div>
   );
 }
+
+const TestTag = () =>
+  ELYSIUM.testnet ? <span className="ml-1.5 align-[0.15em] text-[0.625rem] font-extrabold tracking-wide px-1.5 py-0.5 rounded bg-warn-bg text-warn-ink">TEST</span> : null;
 
 // ------------------------------------------------------------------ launch + list
 
@@ -91,6 +93,10 @@ function ElysiumHomeInner() {
   const [logo, setLogo] = useState<string>("");
   const [buy, setBuy] = useState("0.001");
   const [busy, setBusy] = useState("");
+  const [hype, setHype] = useState<bigint | null>(null);
+  const browser = !!w.address && !w.embedded;
+  const test = ELYSIUM.testnet;
+  const unit = test ? "test HYPE" : "HYPE";
 
   const load = useCallback(() => {
     fetchElysiumCoins()
@@ -98,19 +104,39 @@ function ElysiumHomeInner() {
       .catch(() => setCoins([]));
   }, []);
   useEffect(load, [load]);
+  const loadBal = useCallback(() => {
+    if (!w.address) return setHype(null);
+    elysiumHypeBalance(w.address as Address)
+      .then(setHype)
+      .catch(() => {});
+  }, [w.address]);
+  useEffect(() => {
+    loadBal();
+    const t = setInterval(() => document.visibilityState === "visible" && loadBal(), 15_000);
+    return () => clearInterval(t);
+  }, [loadBal]);
 
   async function launch() {
     try {
+      if (!w.address) throw new Error("Log in with MetaMask first (step 1).");
+      if (w.embedded) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
       if (!name.trim() || !symbol.trim()) throw new Error("Add a name and a ticker.");
       if (!logo) throw new Error("Add a picture.");
-      if (w.embedded) throw new Error("For the testnet, connect a browser wallet (MetaMask) with test HYPE.");
+      let first = 0n;
+      try {
+        first = parseEther(buy || "0");
+      } catch {
+        throw new Error("The first buy isn't a number.");
+      }
+      if (hype !== null && hype < first + 300_000_000_000_000n)
+        throw new Error(hype === 0n ? `You have no ${unit} yet: get some free from the faucet (step 2).` : `Not enough ${unit} for this first buy plus the network fee. Lower it, or get more from the faucet.`);
       setBusy("Saving the picture…");
       const info = await uploadElysiumInfo({ name: name.trim(), symbol: symbol.trim().toUpperCase(), description: description.trim(), image: logo });
       const fee = await elysiumLaunchFee();
       setBusy("Confirm in your wallet…");
-      const tx = await w.send(ELYSIUM.chain, [launchCall({ name: name.trim(), symbol: symbol.trim().toUpperCase(), uri: info.uri, firstBuyWei: parseEther(buy || "0"), launchFeeWei: fee })], setBusy);
+      const tx = await w.send(ELYSIUM.chain, [launchCall({ name: name.trim(), symbol: symbol.trim().toUpperCase(), uri: info.uri, firstBuyWei: first, launchFeeWei: fee })], setBusy);
       const coin = await launchedCoin(tx);
-      toast("Your coin is live on Elysium ✓");
+      toast(test ? "Your test coin is live on Elysium testnet ✓" : "Your coin is live on Elysium ✓");
       setName("");
       setSymbol("");
       setDescription("");
@@ -124,25 +150,66 @@ function ElysiumHomeInner() {
     }
   }
 
-  return (
-    <div className="max-w-3xl mx-auto px-4 py-6 pb-28 flex flex-col gap-5">
-      <div>
-        <h1 className="font-display font-bold text-[1.75rem]">Elysium</h1>
-        <p className="text-ink-2 text-[0.9375rem]">Launch a coin on Elysium in one transaction: the whole supply goes into a locked HYPE pool and your first buy lands before anyone else.</p>
-      </div>
-      <TestnetNote />
+  const people = coins ? new Set(coins.map((c) => c.creator.toLowerCase())).size : 0;
+  const Step = ({ n, done, title, text, children }: { n: number; done?: boolean; title: string; text: string; children?: React.ReactNode }) => (
+    <div className="rounded-2xl border border-line bg-surface p-3 sm:p-4 flex items-center sm:items-start gap-3 min-w-0">
+      <span className={"w-7 h-7 rounded-full grid place-items-center font-black text-[0.8125rem] shrink-0 " + (done ? "bg-up/15 text-up" : "bg-emerald-soft text-emerald")}>{done ? "✓" : n}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold text-[0.9375rem]">{title}</span>
+        <span className="block text-[0.75rem] sm:text-[0.8125rem] text-ink-3 leading-snug">{text}</span>
+      </span>
+      {children}
+    </div>
+  );
 
-      <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-3">
-        <h2 className="font-semibold text-[1.0625rem]">Launch a coin</h2>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <input value={name} onChange={(e) => setName(e.target.value.slice(0, 32))} placeholder="Name" className="h-11 px-3 rounded-xl border border-line bg-paper" />
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10))} placeholder="Ticker" className="h-11 px-3 rounded-xl border border-line bg-paper uppercase" />
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-5 sm:py-6 pb-28 flex flex-col gap-4 sm:gap-5">
+      <TestnetBand />
+      <div>
+        <h1 className="font-display font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-tight flex items-center gap-2.5 flex-wrap">
+          Launch on Elysium
+          {test && <span className="text-[0.6875rem] font-extrabold tracking-[0.08em] px-2.5 py-1 rounded-full bg-warn-bg text-warn-ink border border-mint/40">TESTNET · FREE</span>}
+        </h1>
+        <p className="text-ink-2 text-[0.9375rem] sm:text-[1rem] mt-1.5">
+          One transaction: your coin goes live with its whole supply in a locked HYPE pool, and your first buy lands before anyone else.
+          {test && " Try it free before mainnet."}
+        </p>
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-2 sm:gap-3">
+        <Step n={1} done={browser} title={browser ? "Wallet connected" : "Connect MetaMask"} text={browser ? `${w.address!.slice(0, 6)}…${w.address!.slice(-4)}` : w.address ? "Email accounts can't use the testnet: log in with MetaMask" : "Any browser wallet works"}>
+          {!w.address && (
+            <span className="shrink-0 sm:hidden">
+              <ConnectButton />
+            </span>
+          )}
+        </Step>
+        {test && (
+          <Step n={2} done={hype !== null && hype > 0n} title="Get free test HYPE" text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : "From Kinetiq's faucet, once every 12 hours"}>
+            <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="shrink-0 h-8 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.75rem] grid place-items-center whitespace-nowrap">
+              Faucet ↗
+            </a>
+          </Step>
+        )}
+        <Step n={test ? 3 : 2} title="Launch your coin" text="Name, ticker, picture. Live in seconds." />
+      </div>
+      {!w.address && (
+        <div className="hidden sm:block">
+          <ConnectButton full />
         </div>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="Description (optional)" rows={2} className="px-3 py-2 rounded-xl border border-line bg-paper" />
+      )}
+
+      <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-3">
+        <h2 className="font-display font-bold text-[1.125rem] sm:text-[1.25rem]">{test ? "Create a test coin" : "Create a coin"}</h2>
+        <div className="grid grid-cols-[1.4fr_1fr] gap-2 sm:gap-3">
+          <input value={name} onChange={(e) => setName(e.target.value.slice(0, 32))} placeholder="Name" className="h-12 px-3.5 rounded-xl border border-line bg-paper min-w-0" />
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10))} placeholder="TICKER" className="h-12 px-3.5 rounded-xl border border-line bg-paper uppercase min-w-0" />
+        </div>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What's the story? (optional)" rows={2} className="px-3.5 py-2.5 rounded-xl border border-line bg-paper" />
         <div className="flex items-center gap-3">
-          {logo ? <img src={logo} alt="" className="w-14 h-14 rounded-xl object-cover border border-line" /> : <div className="w-14 h-14 rounded-xl border border-dashed border-line" />}
+          {logo ? <img src={logo} alt="" className="w-14 h-14 rounded-xl object-cover border border-line" /> : <div className="w-14 h-14 rounded-xl border border-dashed border-line grid place-items-center text-ink-3 text-[1.25rem]">+</div>}
           <label className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center cursor-pointer">
-            Picture
+            {logo ? "Change picture" : "Add a picture"}
             <input
               type="file"
               accept="image/*"
@@ -154,28 +221,59 @@ function ElysiumHomeInner() {
             />
           </label>
         </div>
-        <label className="flex items-center gap-2 text-[0.875rem]">
-          First buy
-          <input value={buy} onChange={(e) => setBuy(e.target.value.replace(/[^0-9.]/g, ""))} className="w-28 h-10 px-3 rounded-xl border border-line bg-paper text-right" />
-          HYPE
-        </label>
-        <button type="button" disabled={!!busy} onClick={launch} className="h-12 rounded-xl bg-emerald text-on-accent font-semibold disabled:opacity-60">
-          {busy || "Launch on Elysium"}
+        <div className="flex items-center gap-2 flex-wrap text-[0.875rem]">
+          <span>First buy</span>
+          {["0", "0.001", "0.005"].map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setBuy(v)}
+              className={"h-9 px-3 rounded-lg font-bold text-[0.8125rem] " + (buy === v ? "border border-emerald text-emerald bg-emerald-soft" : "border border-line")}
+            >
+              {v}
+            </button>
+          ))}
+          <input
+            value={buy}
+            onChange={(e) => setBuy(e.target.value.replace(/[^0-9.]/g, ""))}
+            inputMode="decimal"
+            aria-label="First buy"
+            className="hidden sm:block w-24 h-9 px-2.5 rounded-lg border border-line bg-paper text-right"
+          />
+          <span className="text-ink-3">{unit}</span>
+        </div>
+        <button type="button" disabled={!!busy} onClick={launch} className="mt-1 h-13 min-h-[3.25rem] rounded-xl bg-emerald text-on-accent font-bold text-[1rem] disabled:opacity-60">
+          {busy || (test ? "Launch on Elysium testnet" : "Launch on Elysium")}
         </button>
+        {hype !== null && (
+          <p className="text-center text-[0.75rem] text-ink-3">
+            You have {fmtHype(hype)} {unit} · network fee about 0.0006
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
-        <h2 className="font-semibold text-[1.0625rem]">Coins on Elysium</h2>
+        <h2 className="font-display font-bold text-[1.125rem] flex items-baseline justify-between gap-3">
+          {test ? "Test coins on Elysium" : "Coins on Elysium"}
+          {people > 0 && <span className="font-sans font-medium text-[0.8125rem] text-ink-3">launched by {people} {people === 1 ? "person" : "people"}</span>}
+        </h2>
         {coins === null && <div className="shimmer h-20 rounded-2xl" />}
-        {coins && coins.length === 0 && <p className="text-ink-3 text-[0.875rem]">None yet.</p>}
+        {coins && coins.length === 0 && <p className="text-ink-3 text-[0.875rem]">None yet. Be the first.</p>}
         {coins?.map((c) => (
-          <Link key={c.address} href={elysiumHref(c.address)} className="rounded-2xl border border-line bg-surface p-3 flex items-center gap-3 min-w-0">
-            {c.image ? <img src={c.image} alt="" className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-paper border border-line" />}
+          <Link key={c.address} href={elysiumHref(c.address)} className="rounded-2xl border border-line bg-surface p-3 flex items-center gap-3 min-w-0 hover:border-emerald/40">
+            {c.image ? <img src={c.image} alt="" className="w-11 h-11 rounded-xl object-cover" /> : <div className="w-11 h-11 rounded-xl bg-paper border border-line" />}
             <div className="min-w-0 flex-1">
               <div className="font-semibold truncate">
-                {c.name} <span className="text-ink-3">${c.symbol}</span>
+                {c.name} <span className="text-ink-3 font-normal">${c.symbol}</span>
+                <TestTag />
               </div>
-              <div className="text-[0.75rem] text-ink-3">MC {fmtNum(c.mcHype)} HYPE</div>
+              <div className="text-[0.75rem] text-ink-3 truncate">
+                by {c.creator.slice(0, 6)}…{c.creator.slice(-4)}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="font-display font-bold text-[0.9375rem]">{fmtNum(c.mcHype)} HYPE</div>
+              <div className="text-[0.6875rem] text-ink-3">market cap</div>
             </div>
           </Link>
         ))}
@@ -243,7 +341,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
   async function trade() {
     if (!coin || !w.address || raw <= 0n) return;
     try {
-      if (w.embedded) throw new Error("For the testnet, connect a browser wallet (MetaMask) with test HYPE.");
+      if (w.embedded) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
       if (have !== undefined && raw > have) throw new Error(side === "buy" ? "Not enough HYPE." : `You don't have that many ${coin.symbol}.`);
       setBusy("Confirm in your wallet…");
       const calls = side === "buy" ? buyCalls(coin, w.address as Address, raw, SLIPPAGE_BPS) : sellCalls(coin, w.address as Address, raw, SLIPPAGE_BPS);
@@ -259,15 +357,16 @@ function ElysiumCoinInner({ address }: { address: string }) {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 pb-28 flex flex-col gap-4">
-      <TestnetNote />
+    <div className="max-w-3xl mx-auto px-4 py-5 sm:py-6 pb-28 flex flex-col gap-4">
+      <TestnetBand />
       <div className="flex items-center gap-3 min-w-0">
         {coin.image ? <img src={coin.image} alt="" className="w-16 h-16 rounded-2xl object-cover" /> : <div className="w-16 h-16 rounded-2xl bg-paper border border-line" />}
         <div className="min-w-0">
           <h1 className="font-display font-bold text-[1.5rem] truncate">
             {coin.name} <span className="text-ink-3">${coin.symbol}</span>
+            <TestTag />
           </h1>
-          <div className="text-[0.8125rem] text-ink-3">Elysium · liquidity locked forever</div>
+          <div className="text-[0.8125rem] text-ink-3">{ELYSIUM.testnet ? "Elysium testnet" : "Elysium"} · liquidity locked forever</div>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -323,9 +422,21 @@ function ElysiumCoinInner({ address }: { address: string }) {
             You get about <b>{side === "buy" ? `${fmtNum(Number(out) / 1e18)} ${coin.symbol}` : `${fmtHype(out)} HYPE`}</b>
           </div>
         )}
-        <button type="button" disabled={!!busy || raw <= 0n} onClick={trade} className="h-12 rounded-xl bg-emerald text-on-accent font-semibold disabled:opacity-60">
-          {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
-        </button>
+        {!w.address ? (
+          <ConnectButton full />
+        ) : (
+          <button type="button" disabled={!!busy || raw <= 0n} onClick={trade} className="h-12 rounded-xl bg-emerald text-on-accent font-semibold disabled:opacity-60">
+            {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
+          </button>
+        )}
+        {ELYSIUM.testnet && side === "buy" && bal && bal.hype === 0n && (
+          <p className="text-[0.75rem] text-ink-3">
+            No test HYPE yet?{" "}
+            <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="text-emerald font-semibold">
+              Get some free from the faucet ↗
+            </a>
+          </p>
+        )}
       </div>
 
       <div className="text-[0.75rem] text-ink-3 break-all">

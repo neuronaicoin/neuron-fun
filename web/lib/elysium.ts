@@ -15,7 +15,8 @@ import { SOLANA_TEAM } from "./solana";
 
 /** Everyone sees Elysium (true once mainnet is open on sasa). */
 export const ELYSIUM_OPEN = false;
-export const elysiumFor = (address?: string | null) => ELYSIUM_OPEN || (!!address && SOLANA_TEAM.has(address.toLowerCase()));
+/** The testnet is open to everyone (free practice with test HYPE) while mainnet waits. */
+export const ELYSIUM_PUBLIC_TESTNET = true;
 
 type ElysiumNet = {
   chain: ReturnType<typeof defineChain>;
@@ -50,8 +51,14 @@ export const ELYSIUM_TESTNET: ElysiumNet = {
 export const ELYSIUM_MAINNET: ElysiumNet | null = null;
 
 export const ELYSIUM: ElysiumNet = ELYSIUM_MAINNET ?? ELYSIUM_TESTNET;
+/** Who can use sasa on Elysium: everyone on the public testnet or once mainnet opens, else sasa's team. */
+export const elysiumFor = (address?: string | null) =>
+  ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC_TESTNET) || (!!address && SOLANA_TEAM.has(address.toLowerCase()));
+/** Shown to everyone (menus, the chain list on Create a coin). */
+export const ELYSIUM_LISTED = ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC_TESTNET);
+export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
 export const ELYSIUM_NETWORK = "elysium";
-export const elysiumHref = (coin: string) => `/x/?n=${ELYSIUM_NETWORK}&a=${coin.toLowerCase()}`;
+export const elysiumHref = (coin: string) => `/x/?n=${ELYSIUM_NETWORK}&a=${coin}`;
 
 let client: PublicClient | null = null;
 export function elysiumClient(): PublicClient {
@@ -165,6 +172,10 @@ export async function fetchElysiumCoins(limit = 30): Promise<ElysiumCoin[]> {
   const addrs = await Promise.all(ids.map((i) => c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "allCoins", args: [i] })));
   const list = await Promise.all(addrs.map((a) => fetchElysiumCoin(a).catch(() => null)));
   return list.filter((x): x is ElysiumCoin => !!x);
+}
+
+export async function elysiumHypeBalance(user: Address): Promise<bigint> {
+  return elysiumClient().getBalance({ address: user });
 }
 
 export async function elysiumBalances(user: Address, coin: Address): Promise<{ hype: bigint; coin: bigint }> {
