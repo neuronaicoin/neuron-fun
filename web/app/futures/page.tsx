@@ -15,6 +15,7 @@ export default function Page() {
 
 function Inner() {
   const q = useSearchParams();
-  const c = (q.get("c") ?? "BTC").replace(/[^A-Za-z0-9:]/g, "").slice(0, 20);
-  return <PerpsScreen initialCoin={c || "BTC"} />;
+  // no market asked for: the screen opens the user's biggest position (else Bitcoin)
+  const c = (q.get("c") ?? "").replace(/[^A-Za-z0-9:]/g, "").slice(0, 20);
+  return <PerpsScreen initialCoin={c || undefined} />;
 }

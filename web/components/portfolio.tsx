@@ -401,7 +401,7 @@ export function FuturesBlock({ f, big = false }: { f: NonNullable<Portfolio["fut
   return (
     <div className={big ? "" : "mt-5"}>
       {!big && <h3 className="font-display font-semibold text-[1rem] mb-1">Futures</h3>}
-      <Link href="/perps/" onClick={closeMoney} className="flex items-center justify-between py-2 text-[0.875rem]">
+      <Link href={f.positions.length ? `/futures/?c=${encodeURIComponent([...f.positions].sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0].coin)}` : "/futures/"} onClick={closeMoney} className="flex items-center justify-between py-2 text-[0.875rem]">
         <span className="text-ink-2">Futures balance</span>
         <span className="font-mono font-semibold">{money(f.valueUsd)}</span>
       </Link>

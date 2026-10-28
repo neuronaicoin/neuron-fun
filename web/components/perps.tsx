@@ -181,6 +181,16 @@ export function PerpsScreen({ initialCoin }: { initialCoin?: string }) {
     });
   }, [coin]);
 
+  // opened without a market (the Futures balance, the menu): the user's biggest open position
+  // instead of Bitcoin, once, so what they hold is what they see first
+  const pickedOpen = useRef(!!initialCoin);
+  useEffect(() => {
+    if (pickedOpen.current || !account) return;
+    pickedOpen.current = true;
+    const top = [...account.positions].sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
+    if (top) setCoin(top.coin);
+  }, [account]);
+
   // a link typed in another case (?c=kpepe, ?c=btc) opens the market as Hyperliquid names it
   useEffect(() => {
     if (!markets || markets.some((x) => x.coin === coin)) return;
