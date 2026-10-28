@@ -53,7 +53,12 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   const [held, setHeld] = useState<bigint | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
+  const [busy, setBusyState] = useState("");
+  const stepNow = useRef(""); // the last step shown, for the error report
+  const setBusy = useCallback((m: string) => {
+    if (m) stepNow.current = m;
+    setBusyState(m);
+  }, []);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -103,7 +108,15 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   const loadHeld = useCallback(async () => {
     if (!sol.address) return setHeld(null);
     const { solTokenBalance } = await import("@/lib/solrelay");
-    setHeld(await solTokenBalance(sol.address, mint).catch(() => 0n));
+    // a busy node fails now and then: try again before saying the wallet holds none
+    for (let i = 0; i < 3; i++) {
+      try {
+        return setHeld(await solTokenBalance(sol.address, mint));
+      } catch {
+        await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+      }
+    }
+    setHeld((h) => h ?? 0n);
   }, [sol.address, mint]);
   useEffect(() => {
     void loadHeld();
@@ -290,6 +303,18 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       for (const ms of [1500, 6000, 15000, 30000]) setTimeout(() => void loadHeld(), ms);
     } catch (e) {
       setError(friendlyError(e));
+      // the admins see every failed buy and sale, with the step and Solana's own words (bot page)
+      try {
+        const err = e as { message?: string; logs?: string[]; transactionLogs?: string[] };
+        const logs = (err.logs ?? err.transactionLogs ?? []).slice(-6).join(" | ");
+        void fetch("/api/sol/error", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ step: stepNow.current, error: `${String(err?.message ?? e)}${logs ? ` || ${logs}` : ""}`.slice(0, 800), mint, creator: sol.address, kind: side }),
+        }).catch(() => {});
+      } catch {
+        /* never stands in the way */
+      }
     } finally {
       solInflight(false);
       lock.current = false;
