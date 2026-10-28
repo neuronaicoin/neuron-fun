@@ -434,6 +434,9 @@ export default function BotPage() {
             </span>
           </h1>
           <p className="mt-2.5 text-ink-3 text-[0.9375rem] sm:text-[1rem] max-w-2xl">Watching every new coin, every second. It catches the traps, follows the WHALES and finds what&apos;s trending.</p>
+          <Link href="/scan/" className="mt-3 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl border border-line bg-surface font-semibold text-[0.8125rem] hover:border-emerald/50">
+            🛡️ Check any coin: is it safe? →
+          </Link>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <Tile label="Coins scanned today" value={data?.scanned ?? 0} />

@@ -7,6 +7,8 @@
 // Public (anyone), the sasa Bot page (app/bot):
 //   GET /api/bot/live             → { scanned, traps, smart, scans, buys, trends, futures }
 //   GET /api/bot/scan?m=<mint>    → { scan }           one Solana coin's safety scan (coin pages)
+//   GET /api/bot/evmscan?c=<chain>&a=<address> → { token }  an EVM coin's security facts (GoPlus,
+//                                  free): the "Is it safe?" page (app/scan) for Ethereum, BNB Chain, Base
 //
 // The indexer (indexer/sniper.mjs) watches every new pump.fun coin and fills sniper_signals.
 
@@ -128,7 +130,69 @@ async function scanOne(env, url) {
   });
 }
 
+// chains GoPlus checks (Elysium, Robinhood Chain and Arc are read straight from the chain in the browser)
+const GOPLUS_CHAINS = new Set(["1", "56", "8453"]);
+const num = (v) => (v === undefined || v === null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+// GoPlus gives shares as fractions ("0.05"); a value above 1 would be a whole percent: made a fraction
+const frac = (v) => (v === null ? null : v > 1 ? v / 100 : v);
+const flag = (v) => (v === undefined || v === null || v === "" ? null : String(v) === "1");
+
+/** An EVM coin's security facts from GoPlus, cached 2 minutes at the edge. */
+async function evmScan(url) {
+  const chain = String(url.searchParams.get("c") || "");
+  const a = String(url.searchParams.get("a") || "").toLowerCase();
+  if (!GOPLUS_CHAINS.has(chain) || !/^0x[0-9a-f]{40}$/.test(a)) return json({ token: null, error: "Unsupported." }, 400);
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const key = new Request(`https://sasapad.fun/__cache/evmscan-v1/${chain}/${a}`);
+  if (cache) {
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  }
+  let t = null;
+  try {
+    const r = await fetch(`https://api.gopluslabs.io/api/v1/token_security/${chain}?contract_addresses=${a}`, { headers: { accept: "application/json" } });
+    const j = await r.json();
+    t = j?.result?.[a] ?? null;
+  } catch {
+    t = null;
+  }
+  if (!t) return json({ token: null });
+  const holders = Array.isArray(t.holders) ? t.holders : [];
+  // the 10 biggest wallets, leaving out locked or contract wallets (pools, lockers, burns)
+  const people = holders.filter((h) => String(h.is_locked) !== "1" && String(h.is_contract) !== "1" && !/^0x0{36}(dead|0000)$/i.test(String(h.address || "")));
+  const top10 = people.slice(0, 10).reduce((sum, h) => sum + (num(h.percent) ?? 0), 0);
+  const lp = Array.isArray(t.lp_holders) ? t.lp_holders : [];
+  const lpLocked = lp.length ? lp.filter((h) => String(h.is_locked) === "1" || /^0x0{36}(dead|0000)$/i.test(String(h.address || ""))).reduce((s, h) => s + (num(h.percent) ?? 0), 0) : null;
+  const owner = String(t.owner_address || "").toLowerCase();
+  const token = {
+    name: t.token_name ?? null,
+    symbol: t.token_symbol ?? null,
+    honeypot: flag(t.is_honeypot),
+    cannotSellAll: flag(t.cannot_sell_all),
+    buyTax: frac(num(t.buy_tax)),
+    sellTax: frac(num(t.sell_tax)),
+    taxChangeable: flag(t.slippage_modifiable),
+    mintable: flag(t.is_mintable),
+    ownerRenounced: owner === "" ? null : /^0x0{40}$|^0x0{36}dead$/.test(owner),
+    hiddenOwner: flag(t.hidden_owner),
+    takeBackOwnership: flag(t.can_take_back_ownership),
+    pausable: flag(t.transfer_pausable),
+    blacklist: flag(t.is_blacklisted),
+    openSource: flag(t.is_open_source),
+    holderCount: num(t.holder_count),
+    top10: holders.length ? frac(top10) : null,
+    creatorPct: frac(num(t.creator_percent)),
+    lpLocked: lpLocked === null ? null : Math.min(1, frac(lpLocked)),
+  };
+  const res = new Response(JSON.stringify({ token }), {
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=120" },
+  });
+  if (cache) await cache.put(key, res.clone()).catch(() => {});
+  return res;
+}
+
 export async function botRoute(env, me, parts, method, url) {
+  if (parts.length === 2 && parts[1] === "evmscan" && method === "GET") return evmScan(url);
   if (parts.length === 2 && parts[1] === "live" && method === "GET") return live(env);
   if (parts.length === 2 && parts[1] === "scan" && method === "GET") return scanOne(env, url);
   const who = String(me || "").toLowerCase();

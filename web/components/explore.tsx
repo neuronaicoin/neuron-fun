@@ -710,12 +710,17 @@ function AddressJump({ query }: { query: string }) {
               Open this Solana coin →
             </Link>
           ) : (
-            EXT_NETWORKS.map((n) => (
+            [
+              <Link key="scan" href={`/scan/?a=${a}`} className="h-10 px-3.5 rounded-xl bg-emerald text-on-accent font-bold text-[0.8125rem] inline-flex items-center">
+                🛡️ Is it safe?
+              </Link>,
+              ...EXT_NETWORKS.map((n) => (
               <Link key={n.id} href={extHref({ network: n.id, address: a.toLowerCase() })} className="h-10 px-3.5 rounded-xl border border-line bg-paper font-semibold text-[0.8125rem] inline-flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full" style={{ background: n.color }} aria-hidden="true" />
                 Open on {n.label}
               </Link>
-            ))
+              )),
+            ]
           )}
         </div>
       </div>
