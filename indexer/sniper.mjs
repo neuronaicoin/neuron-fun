@@ -334,7 +334,7 @@ grant select on sniper_signals to service_role;
 -- "hot" = 15+ buyers in its first seconds; 2x = a followed coin that doubled from its start.
 create or replace function sniper_trends() returns jsonb language sql stable as $$
   with s as (
-    select mint, name, symbol, created_at, start_mc, peak_mc,
+    select mint, name, symbol, created_at, start_mc, peak_mc, creator,
       (x is not null or telegram is not null or website is not null or passed) as followed,
       coalesce((checks->>'buyers')::int, 0) as buyers
     from sniper_signals where created_at > now() - interval '4 hours'
@@ -361,8 +361,9 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
         'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions')
   ), d as (select distinct on (theme, mint) * from t), g as (
     select theme,
-      count(*) filter (where created_at > now() - interval '1 hour') as n1,
-      round((count(*) filter (where created_at <= now() - interval '1 hour'))::numeric / 3, 1) as prev,
+      -- different people, not coins: one creator spamming the same name is one, not 40
+      count(distinct creator) filter (where created_at > now() - interval '1 hour') as n1,
+      round((count(distinct creator) filter (where created_at <= now() - interval '1 hour'))::numeric / 3, 1) as prev,
       count(*) filter (where created_at > now() - interval '1 hour' and buyers >= 15) as hot1,
       count(*) filter (where followed and start_mc > 0) as tracked,
       count(*) filter (where followed and start_mc > 0 and peak_mc >= 2 * start_mc) as x2,
@@ -375,7 +376,7 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
         select d.name, d.symbol, d.mint, round((d.peak_mc / nullif(d.start_mc, 0))::numeric, 1) as x
         from d where d.theme = g.theme and d.followed and d.start_mc > 0
         order by d.peak_mc / nullif(d.start_mc, 0) desc nulls last limit 3) c) as best
-    from g where g.n1 >= 2 order by score desc limit 15
+    from g where g.n1 >= 3 order by score desc limit 15
   ) r;
 $$;
 revoke all on function sniper_trends() from public, anon, authenticated;
@@ -893,13 +894,17 @@ export async function sniperLoop(pool, log) {
   setInterval(() => void loadSmart(), 10 * 60_000).unref();
   const smartQueue = []; // buys waiting to be written
   const smartMc = new Map(); // mint hex → { mc, at, dirty }: coins smart wallets bought (a day)
-  const SMART_MIN_SOL = 0.2e9; // smaller buys are left off the page
+  const SMART_MIN_SOL = 0.05e9; // smaller buys are left off the page
+  const smartSeen = { any: 0, sized: 0, named: 0 }; // for the log: how many smart-wallet buys the feed saw
   function smartBuy(user, mintHex, lamports, mc) {
-    if (lamports < SMART_MIN_SOL || !(mc > 0)) return;
     const s = smart.get(user);
     if (!s) return;
+    smartSeen.any++;
+    if (lamports < SMART_MIN_SOL || !(mc > 0)) return;
+    smartSeen.sized++;
     const meta = metas.get(mintHex);
     if (!meta) return; // a coin the bot never saw launch: no name to show
+    smartSeen.named++;
     smartQueue.push([hexToB58(user), hexToB58(mintHex), meta.name, meta.symbol, lamports / 1e9, (lamports / 1e9) * solUsd, mc, s[0], s[1]]);
     smartMc.set(mintHex, { mc, at: Date.now(), dirty: true });
   }
@@ -1360,6 +1365,7 @@ export async function sniperLoop(pool, log) {
     if (n % 20 === 0) {
       const ls = late.size();
       log(`bot test: ${events} events, ${coins.size} new coins watched, ${ls.coins} trading coins, ${ls.follows} proven-coin signals followed, ${ls.pools} pools`);
+      log(`bot test: smart wallets ${smart.size}, their buys seen ${smartSeen.any} (${smartSeen.sized} big enough, ${smartSeen.named} shown)`);
       await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
       await pool.query(`delete from smart_buys where at < now() - interval '2 days'`).catch(() => {});
       await pool.query(`delete from smart_coins where updated_at < now() - interval '2 days'`).catch(() => {});
