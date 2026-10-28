@@ -17,6 +17,7 @@ import { reportExtTrade } from "@/lib/exttrades";
 import { rememberExtBuy } from "@/lib/extheld";
 import { AutoPanel } from "./autopanel";
 import { SolanaTradeBox } from "./soltrade";
+import { TradeDock } from "./tradedock";
 import { isSolExt } from "@/lib/extcoins";
 import { SOL_RPC } from "@/lib/solana";
 
@@ -221,8 +222,10 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           {/* other DEXs' coins: the server's search section says all this and more (components/coinseo.tsx) */}
           {market ? <AboutCoin coin={coin} chain={net.label} market={market} /> : <CoinSeoSlot network={coin.network} address={coin.address} />}
         </div>
-        {isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}
+        {/* desktop: the trade box in the right column; phones: the Buy / Sell bar below */}
+        <div className="hidden lg:block lg:sticky lg:top-20 self-start">{isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}</div>
       </div>
+      <TradeDock symbol={coin.symbol} render={(side) => (isSolExt(coin.network) ? <SolanaTradeBox coin={coin} initialSide={side} bare /> : <TradeBox coin={coin} initialSide={side} bare />)} />
     </div>
   );
 }
@@ -316,7 +319,7 @@ function TokenCheck({ coin }: { coin: ExtCoin }) {
   );
 }
 
-function TradeBox({ coin }: { coin: ExtCoin }) {
+function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; initialSide?: "buy" | "sell"; bare?: boolean }) {
   const w = useWallet();
   const { address } = w;
   const route = extRoute(coin.network, !!w.embedded);
@@ -325,7 +328,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
   const live = !IS_TESTNET && (!!chain || !!cross);
   const autoChain = autoForNetwork(coin.network);
   const canAuto = !IS_TESTNET && autoReady(autoChain);
-  const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
+  const [side, setSide] = useState<"buy" | "sell" | "auto">(initialSide);
   const [usd, setUsd] = useState("25");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
@@ -438,7 +441,7 @@ function TradeBox({ coin }: { coin: ExtCoin }) {
 
   const tabs = (canAuto ? ["buy", "sell", "auto"] : ["buy", "sell"]) as ("buy" | "sell" | "auto")[];
   return (
-    <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24">
+    <aside className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"}>
       <div className={"grid gap-1 p-1 rounded-2xl bg-paper " + (canAuto ? "grid-cols-3" : "grid-cols-2")} role="tablist" aria-label="Buy, sell or auto">
         {tabs.map((s) => (
           <button

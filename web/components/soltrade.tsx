@@ -27,6 +27,7 @@ import type { ExtCoin } from "@/lib/extcoins";
 import { IS_TESTNET } from "@/lib/config";
 import { solanaFor } from "@/lib/solana";
 import { solInflight, solIsInflight } from "@/lib/solheld";
+import { baseCashUsd, transitAdd, transitDone, transitToCash } from "@/lib/transit";
 
 const BASE = CHAINS.find((c) => c.key === "base")!;
 const FEE = 0.01;
@@ -43,10 +44,10 @@ const usdText = (raw: bigint) => `$${(Number(raw) / 1e6).toFixed(2)}`;
 const fmt = (t: number) =>
   t >= 1e9 ? `${(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `${(t / 1e6).toFixed(2)}M` : t >= 1e3 ? `${(t / 1e3).toFixed(1)}K` : t >= 1 || t <= 0 ? t.toFixed(2) : String(Number(t.toPrecision(3)));
 
-export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
+export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; initialSide?: "buy" | "sell"; bare?: boolean }) {
   const w = useWallet();
   const sol = useSolSigner();
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [side, setSide] = useState<"buy" | "sell">(initialSide);
   const [usd, setUsd] = useState("25");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
@@ -169,6 +170,8 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (cash < need + room) throw new Error(`This buy needs ${usdText(need + room)} in your Cash, fees included. Lower the amount or add money.`);
     setBusy("Buying…");
     await w.send(BASE.chain, calls, (m) => setBusy(m));
+    // the dollars left Cash and are on their way to Solana: still counted in the total meanwhile
+    const moving = transitAdd(Number(need) / 1e6);
     if (curve) {
       // wait for the SOL, then buy on the curve with it (a little stays for network fees)
       const want = BigInt(q.outRaw || "0");
@@ -181,6 +184,7 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
       // only the SOL that arrived for this buy is spent (never the wallet's own), and a little
       // stays for the network fee and the coin's account
       const arrived = bal - solBefore;
+      if (arrived >= (want * 95n) / 100n) transitDone(moving); // landed as SOL (counted as SOL from here)
       if (arrived < (want * 95n) / 100n)
         throw new Error("Your dollars are still on their way. They'll show in your Solana wallet in a moment; try the buy again then.");
       const room = bal - 3_000_000n;
@@ -198,8 +202,14 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     if (q.requestId)
       for (let i = 0; i < 30 && alive.current; i++) {
         const st = await requestStatus(q.requestId).catch(() => "waiting" as const);
-        if (st === "success") break;
-        if (st === "failure" || st === "refund") throw new Error("The buy didn't go through. Your USDC went back to your Cash.");
+        if (st === "success") {
+          transitDone(moving);
+          break;
+        }
+        if (st === "failure" || st === "refund") {
+          transitDone(moving);
+          throw new Error("The buy didn't go through. Your USDC went back to your Cash.");
+        }
         await new Promise((r) => setTimeout(r, 2000));
       }
     // the coin has landed (or is about to): the balance and "Your coins" pick it up now
@@ -262,7 +272,9 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
     const q = await getQuote({ user: s.address, recipient: w.address, originChainId: SOLANA_ID, originCurrency: mint, destinationChainId: BASE.chain.id, destinationCurrency: BASE.usdc, amount: raw.toString(), fee: "swap" });
     const { sendSolanaQuote } = await import("@/lib/solrelay");
     setBusy("Selling…");
+    const before = await baseCashUsd(w.address);
     await sendSolanaQuote(q, s, (m) => setBusy(m));
+    transitToCash(Number(q.outRaw || "0") / 1e6, before);
     toast(`Sold $${coin.symbol}: USDC arriving in your Cash in a few seconds ✓`);
     for (const ms of [4000, 10000, 20000]) setTimeout(() => afterTrade(), ms);
   }
@@ -288,13 +300,13 @@ export function SolanaTradeBox({ coin }: { coin: ExtCoin }) {
   // hidden until Solana opens (lib/solana.ts), and mainnet only
   if (IS_TESTNET || !solanaFor(w.address))
     return (
-      <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24 text-center text-[0.875rem] text-ink-2">
+      <aside className={(bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5 ") + "text-center text-[0.875rem] text-ink-2"}>
         Trading Solana coins on sasa opens soon.
       </aside>
     );
 
   return (
-    <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-24">
+    <aside className={bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5"}>
       <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-paper" role="tablist" aria-label="Buy or sell">
         {(["buy", "sell"] as const).map((s) => (
           <button

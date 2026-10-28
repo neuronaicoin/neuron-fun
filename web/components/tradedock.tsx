@@ -1,0 +1,44 @@
+"use client";
+
+/**
+ * The same trading on every coin page, whatever its chain (sasa coins, race coins, other DEXs'
+ * coins on Base, BNB Chain, Robinhood, Arc and Solana):
+ *   phones   a Buy / Sell bar pinned above the menu; a tap opens the coin's trade box in a sheet
+ *            on that side (the page itself never has to be scrolled to find it)
+ *   desktop  the trade box in the right column (each page places it), this bar is hidden
+ * Same look as components/mobiletrade.tsx (sasa's own coins).
+ */
+import { useEffect, useState, type ReactNode } from "react";
+import { Sheet } from "./chrome";
+
+export type TradeSide = "buy" | "sell";
+
+export function TradeDock({ symbol, render, canBuy = true }: { symbol: string; render: (side: TradeSide) => ReactNode; canBuy?: boolean }) {
+  const [side, setSide] = useState<TradeSide | null>(null);
+  // "…&buy=1" (from an alert's "Buy too") opens the Buy box right away on phones
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get("buy") === "1" && window.matchMedia("(max-width: 1023px)").matches) setSide("buy");
+  }, []);
+  return (
+    <>
+      {/* keeps the last content clear of the pinned bar */}
+      <div className="h-20 lg:hidden" aria-hidden="true" />
+      <div className="lg:hidden fixed inset-x-0 z-30 px-3 pb-2 pt-2 bg-mist/95 backdrop-blur border-t border-line" style={{ bottom: "calc(58px + env(safe-area-inset-bottom, 0px))" }}>
+        <div className="grid grid-cols-2 gap-2 max-w-lg mx-auto">
+          <button type="button" data-haptic-strong disabled={!canBuy} onClick={() => setSide("buy")} className="h-12 rounded-2xl bg-up text-on-accent text-[1rem] font-bold disabled:opacity-40">
+            Buy
+          </button>
+          <button type="button" data-haptic-strong onClick={() => setSide("sell")} className="h-12 rounded-2xl bg-danger text-white text-[1rem] font-bold">
+            Sell
+          </button>
+        </div>
+      </div>
+      {side && (
+        <Sheet title={`${side === "buy" ? "Buy" : "Sell"} $${symbol}`} onClose={() => setSide(null)}>
+          {render(side)}
+        </Sheet>
+      )}
+    </>
+  );
+}

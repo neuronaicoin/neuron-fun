@@ -99,6 +99,10 @@ export async function quoteSolToCash(solAddress: string, evmAddress: string, max
 export async function solToCash(signer: SolSigner, evmAddress: string, onStep?: (m: string) => void, max?: bigint): Promise<Quote | null> {
   const q = await quoteSolToCash(signer.address, evmAddress, max);
   if (!q) return null;
+  const { baseCashUsd, transitToCash } = await import("./transit");
+  const before = await baseCashUsd(evmAddress);
   await sendSolanaQuote(q, signer, onStep);
+  // on its way to Cash for a few seconds: still counted in the total meanwhile
+  transitToCash(Number(q.outRaw || "0") / 1e6, before);
   return q;
 }

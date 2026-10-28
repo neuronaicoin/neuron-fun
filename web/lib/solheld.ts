@@ -13,6 +13,7 @@ import type { ExtHolding } from "./extheld";
 
 const KEY = (evm: string) => `sasa.solwallet.${evm.toLowerCase()}`;
 const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const WSOL = "So11111111111111111111111111111111111111112";
 const PROGRAMS = ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"];
 
 export function rememberSolWallet(evm: string, sol: string) {
@@ -40,7 +41,7 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
 }
 
 /** Every Solana coin in the wallet of sasa account `evm` (dust and unpriced zero left out). */
-export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
+export async function fetchSolHoldings(evm: string, prev: ExtHolding[] = []): Promise<ExtHolding[]> {
   if (!solanaFor(evm)) return [];
   const owner = solWalletOf(evm);
   if (!owner) return [];
@@ -54,7 +55,9 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
       if (mint && B58.test(mint) && n > 0) amounts.set(mint, (amounts.get(mint) ?? 0) + n);
     }
   }
-  if (!amounts.size) return [];
+  // SOL itself (a buy's dollars that just arrived, a sale's on their way to Cash, the network fee)
+  const lamports = await rpc<{ value: number }>("getBalance", [owner, { commitment: "confirmed" }]).then((r) => r.value, () => 0);
+  if (!amounts.size && lamports < 1_000_000) return [];
   const mints = [...amounts.keys()].slice(0, 100);
   const [market, ours] = await Promise.all([
     db.from("sol_ext_coins_all").select("*").in("address", mints),
@@ -74,13 +77,23 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
   // brand-new coins (bought from sasa Bot minutes after launch) aren't in our lists yet:
   // their live numbers straight from DexScreener, so they still show in "You"
   const missing = mints.filter((m) => !rows.has(m));
-  if (missing.length) for (const [k, r] of await fromDex(missing)) rows.set(k, r);
+  const dex = await fromDex(lamports >= 1_000_000 ? [...missing, WSOL] : missing);
+  for (const [k, r] of dex) if (k !== WSOL) rows.set(k, r);
+  // still unpriced (DexScreener hasn't seen it trade yet): its last known price, never $0
+  const last = new Map(prev.map((h) => [h.address, h]));
+  for (const m of mints) if (!rows.has(m) && last.has(m)) rows.set(m, { network: "solana", address: m, name: last.get(m)!.name, symbol: last.get(m)!.symbol, image: last.get(m)!.image, price_usd: last.get(m)!.priceUsd });
   const out: ExtHolding[] = [];
+  const solUsd = Number(dex.get(WSOL)?.price_usd) || last.get(WSOL)?.priceUsd || 0;
+  if (lamports >= 1_000_000 && solUsd > 0) {
+    const tokens = lamports / 1e9;
+    out.push({ network: "solana", chainId: SOLANA_ID, address: WSOL, name: "Solana", symbol: "SOL", image: null, tokens, priceUsd: solUsd, valueUsd: tokens * solUsd, change24h: null, href: extHref({ network: "solana", address: WSOL }) });
+  }
   for (const r of rows.values()) {
     const e = toExt(r);
     const tokens = amounts.get(e.address) ?? 0;
-    const valueUsd = e.priceUsd ? tokens * e.priceUsd : 0;
-    if (tokens <= 0 || (e.priceUsd && valueUsd < 0.01)) continue; // dust
+    const price = e.priceUsd ?? last.get(e.address)?.priceUsd ?? null;
+    const valueUsd = price ? tokens * price : 0;
+    if (tokens <= 0 || (price && valueUsd < 0.01)) continue; // dust
     out.push({
       network: "solana",
       chainId: SOLANA_ID,
@@ -89,7 +102,7 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
       symbol: e.symbol,
       image: e.image,
       tokens,
-      priceUsd: e.priceUsd,
+      priceUsd: price,
       valueUsd,
       change24h: e.change24h,
       href: extHref({ network: "solana", address: e.address }),

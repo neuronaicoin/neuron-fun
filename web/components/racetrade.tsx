@@ -46,9 +46,23 @@ function fmtAmount(n: number, max = 2) {
  * is read from the chain (a dry run of the real trade) right before the wallet asks, and the
  * user's slippage is applied to that.
  */
-export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; lanes: RaceLane[]; lane: RaceLane; onLane: (chainId: number) => void }) {
+export function RaceTradeBox({
+  coin,
+  lanes,
+  lane,
+  onLane,
+  initialSide = "buy",
+  bare = false,
+}: {
+  coin: RaceCoin;
+  lanes: RaceLane[];
+  lane: RaceLane;
+  onLane: (chainId: number) => void;
+  initialSide?: "buy" | "sell";
+  bare?: boolean;
+}) {
   const w = useWallet();
-  const [side, setSide] = useState<"buy" | "sell" | "auto">("buy");
+  const [side, setSide] = useState<"buy" | "sell" | "auto">(initialSide);
   const supply = useChainSupply(lane.chain, coin.coin);
   // the phone's Buy / Sell bar picks the side
   useEffect(() => {
@@ -414,7 +428,7 @@ export function RaceTradeBox({ coin, lanes, lane, onLane }: { coin: RaceCoin; la
   const open = coin.winner ? lanes.filter((l) => l.chain.chainId === coin.winner!.chainId) : lanes.filter((l) => l.state !== 3);
 
   return (
-    <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0">
+    <div className={(bare ? "" : "rounded-3xl border border-line bg-surface p-4 sm:p-5 ") + "flex flex-col gap-4 min-w-0"}>
       {open.length > 1 && side !== "sell" && (
         <div className="flex flex-col gap-2">
           <span className="text-[0.8125rem] text-ink-3">Trade on</span>

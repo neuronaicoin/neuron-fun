@@ -55,14 +55,17 @@ export function rememberExtBuy(user: string, c: Seen) {
 }
 
 /** Every coin of other DEXs the user bought, with what's held now (dust and zero left out). */
-export async function fetchExtHoldings(user: string): Promise<ExtHolding[]> {
+export async function fetchExtHoldings(user: string, prev: ExtHolding[] = []): Promise<ExtHolding[]> {
+  // what was shown last time: kept when a read fails, so a busy node doesn't make coins vanish
+  const last = new Map(prev.map((h) => [`${h.network}:${h.address.toLowerCase()}`, h]));
   const local = readLocal(user);
   const server = await Promise.resolve(db.rpc("ext_held", { p_trader: user.toLowerCase() }))
     .then(({ data, error }) => (error ? [] : ((data ?? []) as { coin: string; coin_chain: number }[])))
     .then((rows) => rows.flatMap((r): Seen[] => (CHAIN_NETWORK[Number(r.coin_chain)] && r.coin ? [{ network: CHAIN_NETWORK[Number(r.coin_chain)], address: r.coin.toLowerCase() }] : [])))
     .catch(() => [] as Seen[]);
   const all = new Map<string, Seen>();
-  for (const s of [...server, ...local]) {
+  const before: Seen[] = prev.map((h) => ({ network: h.network, address: h.address, name: h.name, symbol: h.symbol, image: h.image }));
+  for (const s of [...before, ...server, ...local]) {
     const k = `${s.network}:${s.address.toLowerCase()}`;
     all.set(k, { ...all.get(k), ...s, address: s.address.toLowerCase() });
   }
@@ -101,14 +104,17 @@ export async function fetchExtHoldings(user: string): Promise<ExtHolding[]> {
       if (!chain) return null;
       const pub = xClient(chain);
       const token = s.address as Address;
+      const k = `${s.network}:${s.address}`;
+      const read = () => pub.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [user as Address] });
       const [bal, dec] = await Promise.all([
-        pub.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [user as Address] }).catch(() => null),
+        read().catch(() => new Promise((r) => setTimeout(r, 400)).then(read)).catch(() => undefined),
         pub.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }).catch(() => 18),
       ]);
-      if (bal === null || bal === 0n) return null;
+      if (bal === undefined) return last.get(k) ?? null; // couldn't read it: as last shown
+      if (bal === 0n) return null;
       const tokens = Number(bal) / 10 ** Number(dec);
-      const p = priced.get(`${s.network}:${s.address}`);
-      const price = p?.price ?? null;
+      const p = priced.get(k);
+      const price = p?.price ?? last.get(k)?.priceUsd ?? null;
       const valueUsd = price ? tokens * price : 0;
       // under a cent of a priced coin: dust, not shown
       if (price && valueUsd < 0.01) return null;

@@ -14,6 +14,7 @@ import { fetchRacePositions, verifyRacePositions, type RaceCoin, type RacePositi
 import { fetchExtHoldings, type ExtHolding } from "./extheld";
 import { fetchSolHoldings } from "./solheld";
 import { PERPS_TRADING, fetchPerpAccount, type PerpPosition } from "./perps";
+import { transitSettle, transitUsd } from "./transit";
 
 /** What cash is held in: dollars (USDC; USDG on Robinhood mainnet) in the dollar edition. */
 export const CASH_SYMBOL = USD_MODE ? "USDC" : "ETH";
@@ -49,6 +50,8 @@ export type Portfolio = {
   extPositions: ExtHolding[];
   /** The futures (Hyperliquid) account: its value counts in totalUsd; open positions listed. */
   futures: { valueUsd: number; available: number; positions: PerpPosition[] } | null;
+  /** Dollars moving between Base and Solana right now (lib/transit.ts), counted in totalUsd. */
+  transitUsd: number;
   ethUsd: number | null;
 };
 
@@ -169,7 +172,7 @@ export async function refreshCash(): Promise<void> {
   const p = state.portfolio;
   if (!address || !p) return;
   try {
-    const cash = await Promise.all(uniqueChains().map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) })));
+    const cash = await readCash(address, p);
     const cur = state.portfolio;
     if (!cur || state.address !== address) return;
     const cashByChain = cash.map(({ chain, wei }) => {
@@ -187,7 +190,8 @@ export async function refreshCash(): Promise<void> {
     }
     const now = state.portfolio ?? cur;
     if (state.address !== address) return;
-    set({ portfolio: { ...now, cashByChain, cashUsd, racePositions, coinsUsd, totalUsd: coinsUsd + cashUsd + (now.futures?.valueUsd ?? 0) }, version: state.version + 1 });
+    const moving = settleTransit(cashByChain);
+    set({ portfolio: { ...now, cashByChain, cashUsd, racePositions, coinsUsd, transitUsd: moving, totalUsd: coinsUsd + cashUsd + (now.futures?.valueUsd ?? 0) + moving }, version: state.version + 1 });
   } catch {
     /* the full reload will fix it */
   }
@@ -248,16 +252,16 @@ async function loadPortfolio(address: string, prev: Portfolio | null = null, onP
   let extrasDone = false;
   const extras = Promise.all([
     Promise.all([
-      fetchExtHoldings(address).catch(() => prev?.extPositions.filter((h) => h.network !== "solana") ?? ([] as ExtHolding[])),
+      fetchExtHoldings(address, prev?.extPositions.filter((h) => h.network !== "solana")).catch(() => prev?.extPositions.filter((h) => h.network !== "solana") ?? ([] as ExtHolding[])),
       // Solana coins (only for people who see Solana yet; nothing for anyone else)
-      fetchSolHoldings(address).catch(() => prev?.extPositions.filter((h) => h.network === "solana") ?? ([] as ExtHolding[])),
+      fetchSolHoldings(address, prev?.extPositions.filter((h) => h.network === "solana")).catch(() => prev?.extPositions.filter((h) => h.network === "solana") ?? ([] as ExtHolding[])),
     ]).then(([evm, sol]) => [...evm, ...sol].sort((a, b) => b.valueUsd - a.valueUsd)),
     PERPS_TRADING ? fetchPerpAccount(address).catch(() => null) : Promise.resolve(null),
   ]).finally(() => (extrasDone = true));
   const [pf, cash, trades, racePositions] = await Promise.all([
     fetchPortfolio(address),
     // Cash: USDC in the dollar edition (the chain's coin otherwise).
-    Promise.all(chains.map(async (c) => ({ chain: c, wei: await cashOf(c, address as Address) }))),
+    readCash(address, prev, chains),
     fetchTrades({ trader: address, limit: 1000 }).catch(() => []),
     fetchRacePositions(address)
       .catch(() => prev?.racePositions ?? ([] as RacePosition[]))
@@ -344,7 +348,8 @@ function buildPortfolio(
     positions.reduce((a, p) => a + p.valueUsd, 0) + racePositions.reduce((a, p) => a + p.valueUsd, 0) + extPositions.reduce((a, p) => a + p.valueUsd, 0);
   const openPnlUsd = positions.reduce((a, p) => a + (p.pnlUsd ?? 0), 0);
   const dayUsd = positions.reduce((a, p) => a + p.dayUsd, 0);
-  const totalUsd = cashUsd + coinsUsd + (futures?.valueUsd ?? 0);
+  const moving = settleTransit(cashByChain);
+  const totalUsd = cashUsd + coinsUsd + (futures?.valueUsd ?? 0) + moving;
   const start = totalUsd - dayUsd;
   return {
     totalUsd,
@@ -359,6 +364,7 @@ function buildPortfolio(
     racePositions,
     extPositions,
     futures,
+    transitUsd: moving,
     ethUsd,
   };
 }
@@ -387,6 +393,39 @@ export function capText(v: number): string {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
   return `$${v.toFixed(v < 10 ? 2 : 0)}`;
+}
+
+/**
+ * Cash on every chain. A chain whose read fails (a busy public node) keeps its last known
+ * amount instead of counting as zero, so the total doesn't jump down and back.
+ */
+async function readCash(address: string, prev: Portfolio | null, chains = uniqueChains()): Promise<{ chain: NeuronChain; wei: bigint }[]> {
+  return Promise.all(
+    chains.map(async (c) => {
+      const last = prev?.cashByChain.find((x) => x.chain.chain.id === c.chain.id)?.wei;
+      for (let i = 0; i < 2; i++) {
+        try {
+          return { chain: c, wei: await cashOfStrict(c, address as Address) };
+        } catch {
+          if (i === 0) await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+      return { chain: c, wei: last ?? 0n };
+    })
+  );
+}
+
+/** Drops moves to Cash that have landed on Base; returns what is still on its way. */
+function settleTransit(cashByChain: { chain: NeuronChain; usd: number }[]): number {
+  const base = cashByChain.find((c) => c.chain.key === "base");
+  if (base) transitSettle(base.usd);
+  return transitUsd();
+}
+
+async function cashOfStrict(c: NeuronChain, address: Address): Promise<bigint> {
+  const pub = clientFor(c);
+  if (USD_MODE) return pub.readContract({ address: c.usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>;
+  return pub.getBalance({ address });
 }
 
 /** Spendable cash on one chain: its USDC (dollar edition), else its native coin. Raw units. */

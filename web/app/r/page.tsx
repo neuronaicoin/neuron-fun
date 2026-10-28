@@ -16,6 +16,7 @@ import { RaceReplay } from "@/components/racereplay";
 import { Confetti } from "@/components/confetti";
 import { compactUsd, shortAddr } from "@/lib/format";
 import { onTrade } from "@/lib/live";
+import { TradeDock } from "@/components/tradedock";
 import {
   clock,
   fetchRaceCoin,
@@ -220,11 +221,6 @@ function RacePage() {
 
           <CreatorKit coin={coin} now={now} />
 
-          {/* phones: the trade box comes before the activity lists */}
-          <div className="lg:hidden scroll-mt-24" id="trade">
-            {lane && <RaceTradeBox coin={coin} lanes={coin.lanes} lane={lane} onLane={setPick} />}
-          </div>
-
           <Activity coin={coin} lane={lane} supply={supply} />
 
           {coin.description && (
@@ -255,30 +251,9 @@ function RacePage() {
         </aside>
       </div>
 
-      {/* phones: a fixed buy button that jumps to the trade box */}
+      {/* phones: the same Buy / Sell bar as every coin page; the trade box opens in a sheet */}
       {lane && lane.state !== 3 && (
-        <div
-          className="lg:hidden fixed inset-x-0 z-30 px-4 pt-2 pb-2 bg-paper/95 backdrop-blur border-t border-line"
-          // sits on the phone menu when it shows (it publishes its height), else on the screen's edge
-          style={{ bottom: "var(--money-bar-bottom, env(safe-area-inset-bottom, 0px))" }}
-        >
-          <div className="flex gap-2 max-w-lg mx-auto">
-            {(["buy", "sell"] as const).map((side) => (
-              <a
-                key={side}
-                href="#trade"
-                data-haptic-strong
-                onClick={() => window.dispatchEvent(new CustomEvent("sasa-trade-side", { detail: side }))}
-                className={
-                  "flex items-center justify-center h-12 rounded-2xl font-bold text-[1rem] " +
-                  (side === "buy" ? "flex-1 bg-up text-white" : "w-[34%] border-2 border-line text-ink bg-paper")
-                }
-              >
-                {side === "buy" ? `Buy ${coin.symbol}` : "Sell"}
-              </a>
-            ))}
-          </div>
-        </div>
+        <TradeDock symbol={coin.symbol} render={(side) => <RaceTradeBox coin={coin} lanes={coin.lanes} lane={lane} onLane={setPick} initialSide={side} bare />} />
       )}
     </div>
   );
