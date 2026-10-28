@@ -62,7 +62,7 @@ export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
  * on Elysium. Filled in from contracts-elysium/deployments/pass-<chain>.json after the
  * "Deploy sasa Day-1 Pass" workflow; null = the page says it's coming.
  */
-export const ELYSIUM_PASS: Address | null = null;
+export const ELYSIUM_PASS: Address | null = ELYSIUM_MAINNET ? null : "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789";
 export const passAbi = parseAbi([
   "function mint() returns (uint256)",
   "function minted(address) view returns (bool)",

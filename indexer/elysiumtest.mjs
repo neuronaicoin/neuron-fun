@@ -29,7 +29,8 @@ function passAddress() {
     const j = JSON.parse(readFileSync(new URL("../contracts-elysium/deployments/pass-99801.json", import.meta.url), "utf8"));
     return /^0x[0-9a-fA-F]{40}$/.test(j.pass || "") ? getAddress(j.pass) : null;
   } catch {
-    return null;
+    // deployed Oct 28, 2026 by the "Deploy sasa Day-1 Pass" workflow
+    return getAddress("0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789");
   }
 }
 
