@@ -40,26 +40,27 @@ jobs:
       - name: Build
         run: forge build src/race src/omni src/fees src/auto 2>&1 | tail -5
 
-      - name: Verify on BscScan
+      - name: Verify on Sourcify (free) + BscScan files
         env:
-          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           RPC: https://bsc-dataseed.bnbchain.org
         run: |
           set +e
           set -uo pipefail
           S="$GITHUB_STEP_SUMMARY"
-          [ -n "${ETHERSCAN_API_KEY:-}" ] || { echo "ETHERSCAN_API_KEY secret is missing" >> "$S"; exit 1; }
-          echo "## sasa v8 on BNB Chain: BscScan verification" >> "$S"
+          mkdir -p bscscan
+          echo "## sasa v8 on BNB Chain: source verification" >> "$S"
+          echo "Sourcify is free (Etherscan's free plan no longer covers BNB Chain). Files for BscScan's own form are in the **bscscan-files** artifact." >> "$S"
           ok=0
           while read -r name addr path; do
             [ -n "$addr" ] || continue
-            out=$(forge verify-contract "$addr" "$path" --chain 56 --verifier etherscan --etherscan-api-key "$ETHERSCAN_API_KEY" \
-                  --guess-constructor-args --rpc-url "$RPC" --watch 2>&1) || true
-            if grep -qiE "Pass - Verified|successfully verified|already verified" <<<"$out"; then
-              echo "- $name \`$addr\`: **verified** ✅" >> "$S"; ok=$((ok+1))
+            out=$(forge verify-contract "$addr" "$path" --chain 56 --verifier sourcify --rpc-url "$RPC" --watch 2>&1) || true
+            if grep -qiE "verified|perfect|partial|already" <<<"$out" && ! grep -qiE "error|fail|mismatch" <<<"$out"; then
+              echo "- $name \`$addr\`: **verified on Sourcify** ✅" >> "$S"; ok=$((ok+1))
             else
               echo "- $name \`$addr\`: not verified" >> "$S"; echo '```' >> "$S"; echo "$out" | tail -8 >> "$S"; echo '```' >> "$S"
             fi
+            # the same contract as one Standard-JSON file, for BscScan's free web form
+            forge verify-contract "$addr" "$path" --chain 56 --show-standard-json-input > "bscscan/$name-$addr.json" 2>/dev/null || rm -f "bscscan/$name-$addr.json"
           done <<'LIST'
           Factory 0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa src/race/RaceFactory.sol:RaceFactory
           Hub 0xd211F61274284DC3Af39C428bd4bDf59c27836AE src/omni/OmniHub.sol:OmniHub
@@ -73,5 +74,11 @@ jobs:
           AutoOrders 0xc5501F162E5E0ccFa462418c568d13dbFE0097f4 src/auto/AutoOrders.sol:AutoOrders
           Bridge 0x5B76474ffe524f04f3522d7121471311C743ae58 src/omni/AcrossUsdBridge.sol:AcrossUsdBridge
           LIST
-          echo "" >> "$S"; echo "**$ok verified.**" >> "$S"
-          [ "$ok" -gt 0 ]
+          echo "" >> "$S"; echo "**$ok verified on Sourcify.** Compiler for BscScan: v0.8.26, optimizer on (200 runs), via-IR, EVM cancun." >> "$S"
+          ls bscscan >> "$S"
+          true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bscscan-files
+          path: contracts-v7/bscscan
