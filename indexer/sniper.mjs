@@ -358,7 +358,8 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
       and word not in ('the','and','for','you','your','are','was','not','but','with','this','that','from','all','one','get','just','new',
         'coin','token','tokens','sol','solana','pump','fun','meme','memecoin','official','real','first','ceo','dev','inc','club',
         'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl',
-        'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions')
+        'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions',
+        'make','anti','get','buy','sell','this','that','only','last','next','first','token')
   ), d as (select distinct on (theme, mint) * from t), g as (
     select theme,
       -- different people, not coins: one creator spamming the same name is one, not 40
@@ -887,7 +888,16 @@ export async function sniperLoop(pool, log) {
   const loadSmart = async () => {
     try {
       const r = await pool.query("select wallet, coins, runners from smart_wallets");
-      smart = new Map(r.rows.map((x) => [x.wallet, [x.coins, x.runners]]));
+      // saved as normal Solana addresses (base58); the feed sees wallets as hex
+      const m = new Map();
+      for (const x of r.rows) {
+        try {
+          m.set(new web3.PublicKey(x.wallet).toBuffer().toString("hex"), [x.coins, x.runners]);
+        } catch {
+          if (/^[0-9a-f]{64}$/.test(x.wallet)) m.set(x.wallet, [x.coins, x.runners]);
+        }
+      }
+      smart = m;
     } catch {}
   };
   await loadSmart();
