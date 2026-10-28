@@ -46,6 +46,23 @@ const CONFIRMATIONS = BigInt(env("CONFIRMATIONS", "3"));
 const MAX_RANGE = BigInt(env("RACE_MAX_RANGE", "2000"));
 const POLL_MS = Number(env("POLL_MS", "2500"));
 const LIVE_MS = Number(env("RACE_LIVE_MS", "3000"));
+// no race running and nothing happening on a chain: poll slower, up to this (saves RPC credits)
+const IDLE_MS = Number(env("IDLE_MS", "8000"));
+
+/** Is any race running (launched in the last 20 minutes)? One small query, reused for 10 s. */
+let liveAt = 0;
+let liveNow = true;
+async function anyLiveRace(pool) {
+  if (Date.now() - liveAt < 10_000) return liveNow;
+  liveAt = Date.now();
+  try {
+    const r = await pool.query("select 1 from race_coins where launched_at > now() - interval '20 minutes' limit 1");
+    liveNow = r.rowCount > 0;
+  } catch {
+    liveNow = true;
+  }
+  return liveNow;
+}
 const RACE_SECONDS = 300;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const RACING = 1, WON = 2, LOST = 3;
@@ -542,6 +559,9 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
   let range = c.maxRange;
   let fails = 0;
   let target = null;
+  // pause between polls: POLL_MS during a race or while swaps come in, growing to IDLE_MS otherwise
+  let wait = POLL_MS;
+  const pause = async () => sleep((await anyLiveRace(pool)) ? POLL_MS : wait);
   for (;;) {
     try {
       const st = await pool.query("select last_block from race_state where chain_id = $1", [c.stateKey]);
@@ -553,7 +573,7 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
       }
       if (from > tip) {
         if (once) return;
-        await sleep(POLL_MS);
+        await pause();
         continue;
       }
       const to = from + range - 1n > tip ? tip : from + range - 1n;
@@ -561,7 +581,8 @@ async function runRaceChain(pool, c, byEid, log, once = false) {
       if (r.launches || r.swaps) log(`race ${c.chainId} ${from}-${to}: ${r.launches} launches, ${r.swaps} swaps, ${r.transfers} transfers`);
       fails = 0;
       if (range < c.maxRange) range = range * 2n > c.maxRange ? c.maxRange : range * 2n;
-      if (to === tip && !once) await sleep(POLL_MS);
+      wait = r.launches || r.swaps ? POLL_MS : Math.min(IDLE_MS, Math.round(wait * 1.5));
+      if (to === tip && !once) await pause();
     } catch (e) {
       fails++;
       const { rateLimited, rangeCap } = classifyRpcError(e);

@@ -57,6 +57,8 @@ const env = (n, d) => {
 const CONFIRMATIONS = BigInt(env("CONFIRMATIONS", "3"));
 const MAX_RANGE = BigInt(env("MAX_RANGE", "2000"));
 const POLL_MS = Number(env("POLL_MS", "2500"));
+// quiet chain (no launches or trades lately): poll slower, up to this (saves RPC credits)
+const IDLE_MS = Number(env("IDLE_MS", "8000"));
 const REFRESH_MS = Number(env("REFRESH_MS", "10000"));
 const list = (v) => (v ? (Array.isArray(v) ? v : [v]).map((a) => getAddress(a)) : []);
 const CHAINS = JSON.parse(env("CHAINS")).map((c) => ({
@@ -471,20 +473,23 @@ async function indexRange(c, from, to) {
 
 async function runChain(c) {
   let range = MAX_RANGE;
+  // pause between polls: POLL_MS while the chain is busy, growing to IDLE_MS while it is quiet
+  let wait = POLL_MS;
   for (;;) {
     try {
       const st = await pool.query("select last_block from indexer_state where chain_id = $1", [c.chainId]);
       const from = st.rowCount ? BigInt(st.rows[0].last_block) + 1n : c.startBlock;
       const tip = (await c.pub.getBlockNumber()) - CONFIRMATIONS;
       if (from > tip) {
-        await sleep(POLL_MS);
+        await sleep(wait);
         continue;
       }
       const to = from + range - 1n > tip ? tip : from + range - 1n;
       const r = await indexRange(c, from, to);
       if (r.launches || r.trades) log(`${c.name} ${from}-${to}: ${r.launches} launches, ${r.trades} trades, ${r.transfers} transfers`);
       if (range < MAX_RANGE) range = range * 2n > MAX_RANGE ? MAX_RANGE : range * 2n;
-      if (to === tip) await sleep(POLL_MS);
+      wait = r.launches || r.trades ? POLL_MS : Math.min(IDLE_MS, Math.round(wait * 1.5));
+      if (to === tip) await sleep(wait);
     } catch (e) {
       // Too many logs or a flaky RPC: take smaller steps and try again.
       range = range > 10n ? range / 4n : 10n;
