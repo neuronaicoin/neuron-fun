@@ -1,0 +1,76 @@
+name: verify-race-bnb
+
+# Verifies sasa's v8 race contracts on BNB Chain (BscScan, Etherscan key) so explorers and
+# DappBay show "Contract verified". Sends no transaction. Libraries and compiler are pinned
+# exactly as in deploy-race-mainnet-v8 (same bytecode); constructor arguments are read from
+# each contract's own creation transaction.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: contracts-v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.5
+
+      - name: Get libraries
+        run: |
+          mkdir -p lib
+          git clone -q --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone -q --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone -q https://github.com/Uniswap/v4-periphery lib/v4-periphery
+          cd lib/v4-periphery
+          git -c advice.detachedHead=false checkout -q 9969eec44cfdf07e24b41de47f40276a58401976
+          git submodule update -q --init --depth 1 lib/v4-core lib/permit2
+          cd lib/v4-core && git submodule update -q --init --depth 1 lib/solmate
+          cd ../../../..
+          cp -r ../contracts/lib/layerzero lib/layerzero
+          git clone -q https://github.com/pancakeswap/infinity-core lib/infinity-core
+          git -C lib/infinity-core -c advice.detachedHead=false checkout -q 3c5ef1be1f71442d8bc60cc6fd11f9c677b714df
+
+      - name: Build
+        run: forge build src/race src/omni src/fees src/auto 2>&1 | tail -5
+
+      - name: Verify on BscScan
+        env:
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          RPC: https://bsc-dataseed.bnbchain.org
+        run: |
+          set -uo pipefail
+          S="$GITHUB_STEP_SUMMARY"
+          [ -n "${ETHERSCAN_API_KEY:-}" ] || { echo "ETHERSCAN_API_KEY secret is missing" >> "$S"; exit 1; }
+          echo "## sasa v8 on BNB Chain: BscScan verification" >> "$S"
+          ok=0
+          while read -r name addr path; do
+            [ -n "$addr" ] || continue
+            out=$(forge verify-contract "$addr" "$path" --chain 56 --verifier etherscan --etherscan-api-key "$ETHERSCAN_API_KEY" \
+                  --guess-constructor-args --rpc-url "$RPC" --watch 2>&1)
+            if echo "$out" | grep -qiE "Pass - Verified|successfully verified|already verified"; then
+              echo "- $name \`$addr\`: **verified** ✅" >> "$S"; ok=$((ok+1))
+            else
+              echo "- $name \`$addr\`: not verified" >> "$S"; echo '```' >> "$S"; echo "$out" | tail -8 >> "$S"; echo '```' >> "$S"
+            fi
+          done <<'LIST'
+          Factory 0x1Fe532901FE7c66251E55606021b4F2A7e12ABaa src/race/RaceFactory.sol:RaceFactory
+          Hub 0xd211F61274284DC3Af39C428bd4bDf59c27836AE src/omni/OmniHub.sol:OmniHub
+          Builder 0x68e8a49487421F2B1A976254feb205197C7bCBBF src/race/RaceBuilderPcs.sol:RaceBuilderPcs
+          Router 0x4b43040e89F1440E4752C12addcD6A347e33E7E1 src/race/RaceTradePcs.sol:RaceTradePcs
+          Hook 0x8b6D9C429804566A1550Ce938701B1FC1f87dcf8 src/race/RaceLaunchHookPcs.sol:RaceLaunchHookPcs
+          FeeVault 0x4BD4c52A0c520EBfe617Bc0d81d6bc7D3280e7cC src/fees/SasaFeeVault.sol:SasaFeeVault
+          Cross 0xc7A8aF8A1B5Cc3fC0F9667646b9B0787962e2F08 src/race/RaceCross.sol:RaceCrossPcs
+          Consolidator 0x94dA60488AB18F708Cd9563Fdf86aaffb0AF56B4 src/omni/ConsolidatorV6.sol:ConsolidatorV6
+          CoinDeployer 0xcA51855Aa66Ed06d0B06aA098fB1420A7BC3B61d src/omni/OmniDeployers.sol:OmniCoinDeployer
+          AutoOrders 0xc5501F162E5E0ccFa462418c568d13dbFE0097f4 src/auto/AutoOrders.sol:AutoOrders
+          Bridge 0x5B76474ffe524f04f3522d7121471311C743ae58 src/omni/AcrossUsdBridge.sol:AcrossUsdBridge
+          LIST
+          echo "" >> "$S"; echo "**$ok verified.**" >> "$S"
+          [ "$ok" -gt 0 ]
