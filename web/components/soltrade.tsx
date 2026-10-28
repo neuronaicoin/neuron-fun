@@ -10,6 +10,7 @@
  *
  * The user only sees dollars and the coin.
  */
+import { SellAmount, sellRaw } from "./sellamount";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { useWallet } from "./wallet";
@@ -48,7 +49,8 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   const w = useWallet();
   const sol = useSolSigner();
   const [side, setSide] = useState<"buy" | "sell">(initialSide);
-  const [usd, setUsd] = useState("25");
+  const [usd, setUsd] = useState("");
+  const [sellUsd, setSellUsd] = useState("");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -122,7 +124,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
     void loadHeld();
   }, [loadHeld]);
 
-  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : held !== null ? (held * BigInt(pct)) / 100n : 0n;
+  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : sellRaw(held, 6, sellUsd, pct, coin.priceUsd ?? null);
   // the price shown (a buy is priced once the Solana wallet's address is known)
   useEffect(() => {
     setQuote(null);
@@ -189,8 +191,10 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       // wait for the SOL, then buy on the curve with it (a little stays for network fees)
       const want = BigInt(q.outRaw || "0");
       let bal = solBefore;
-      for (let i = 0; i < 60 && alive.current; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
+      setBusy("Step 1 of 2: moving your dollars to Solana…");
+      // checked every second, and carried on even if this box is closed meanwhile
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
         bal = await L.solBalance(s.address).catch(() => bal);
         if (bal >= solBefore + (want * 95n) / 100n) break;
       }
@@ -203,30 +207,32 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       const room = bal - 3_000_000n;
       const spend = [arrived, want, room].reduce((a, b) => (b < a ? b : a));
       if (spend <= 0n) throw new Error("That amount is too small to buy.");
-      if (own) await D.dbcBuy(s, mint, spend, (m) => setBusy(m));
-      else await L.curveBuy(s, mint, spend, (m) => setBusy(m));
+      setBusy("Step 2 of 2: buying…");
+      if (own) await D.dbcBuy(s, mint, spend, (m) => setBusy(`Step 2 of 2: ${m.replace(/…$/, "")}…`));
+      else await L.curveBuy(s, mint, spend, (m) => setBusy(`Step 2 of 2: ${m.replace(/…$/, "")}…`));
       afterTrade();
       toast(`Bought $${coin.symbol} ✓`);
       return;
     }
     afterTrade();
     toast(`Buying $${coin.symbol}: arriving in a few seconds ✓`);
-    // watch it arrive
+    // done for the user now: the arrival is watched in the background (the button is free again)
     if (q.requestId)
-      for (let i = 0; i < 30 && alive.current; i++) {
-        const st = await requestStatus(q.requestId).catch(() => "waiting" as const);
-        if (st === "success") {
-          transitDone(moving);
-          break;
+      void (async () => {
+        for (let i = 0; i < 60; i++) {
+          const st = await requestStatus(q.requestId!).catch(() => "waiting" as const);
+          if (st === "success") break;
+          if (st === "failure" || st === "refund") {
+            toast("The buy didn't go through. Your USDC went back to your Cash.");
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
         }
-        if (st === "failure" || st === "refund") {
-          transitDone(moving);
-          throw new Error("The buy didn't go through. Your USDC went back to your Cash.");
-        }
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    // the coin has landed (or is about to): the balance and "Your coins" pick it up now
-    afterTrade();
+        transitDone(moving);
+        // the coin has landed (or is about to): the balance and "Your coins" pick it up now
+        afterTrade();
+        void loadHeld();
+      })();
   }
 
   /** Tops the Solana wallet up from Cash when it has less than `floor` SOL, and waits for it. */
@@ -348,9 +354,9 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       </div>
       {side === "buy" ? (
         <>
-          <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+          <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">
             <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
-            <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
+            <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Amount" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem] placeholder:text-ink-3" />
           </label>
           <div className="grid grid-cols-4 gap-1.5 mt-2">
             {[10, 25, 50, 100].map((v) => (
@@ -361,13 +367,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
           </div>
         </>
       ) : (
-        <div className="grid grid-cols-4 gap-1.5 mt-4">
-          {[25, 50, 75, 100].map((v) => (
-            <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
-              {v === 100 ? "All" : `${v}%`}
-            </button>
-          ))}
-        </div>
+        <SellAmount usd={sellUsd} setUsd={setSellUsd} pct={pct} setPct={setPct} heldTokens={held === null ? null : Number(held) / 1e6} priceUsd={coin.priceUsd ?? null} symbol={coin.symbol} />
       )}
       <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
         <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
@@ -389,7 +389,6 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
           {ownFee.nextBps !== null && ownFee.inSec !== null ? ` · ${ownFee.nextBps / 100}% in ${ownFee.inSec}s` : ""}
         </p>
       )}
-      {side === "sell" && held !== null && <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}</p>}
       <button
         type="button"
         disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n)}

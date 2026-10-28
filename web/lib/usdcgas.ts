@@ -164,17 +164,19 @@ export async function sendWithUsdcGas(
       userOperation: {
         estimateFeesPerGas: async ({ bundlerClient }) => {
           if (b.kind === "pimlico") {
-            const { standard } = (await bundlerClient.request({ method: "pimlico_getUserOperationGasPrice" as never })) as {
-              standard: { maxFeePerGas: Hex; maxPriorityFeePerGas: Hex };
+            // "fast": on Base the difference is a fraction of a cent, and it's picked up sooner
+            const { fast } = (await bundlerClient.request({ method: "pimlico_getUserOperationGasPrice" as never })) as {
+              fast: { maxFeePerGas: Hex; maxPriorityFeePerGas: Hex };
             };
-            return { maxFeePerGas: hexToBigInt(standard.maxFeePerGas), maxPriorityFeePerGas: hexToBigInt(standard.maxPriorityFeePerGas) };
+            return { maxFeePerGas: hexToBigInt(fast.maxFeePerGas), maxPriorityFeePerGas: hexToBigInt(fast.maxPriorityFeePerGas) };
           }
-          // Alchemy: at least its own priority-fee hint (+25%), and room for the base fee to double
+          // Alchemy: twice its own priority-fee hint (a fraction of a cent on Base, picked up in the
+          // next bundle instead of waiting), and room for the base fee to double
           const [hint, block] = await Promise.all([
             bundlerClient.request({ method: "rundler_maxPriorityFeePerGas" as never }) as Promise<Hex>,
             client.getBlock({ blockTag: "latest" }),
           ]);
-          const tip = (hexToBigInt(hint) * 125n) / 100n + 1n;
+          const tip = hexToBigInt(hint) * 2n + 1n;
           return { maxFeePerGas: (block.baseFeePerGas ?? 0n) * 2n + tip, maxPriorityFeePerGas: tip };
         },
       },
@@ -212,7 +214,7 @@ export async function sendWithUsdcGas(
     }
   }
   if (!bundler || !hash) throw lastErr ?? new Error("Couldn't send. Try again in a moment.");
-  onStep?.("Almost done…");
+  onStep?.("Confirming on the network…");
   let receipt: Awaited<ReturnType<typeof bundler.waitForUserOperationReceipt>>;
   try {
     receipt = await bundler.waitForUserOperationReceipt({ hash, timeout: 180_000, pollingInterval: 500 });

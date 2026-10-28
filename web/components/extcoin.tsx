@@ -1,5 +1,6 @@
 "use client";
 
+import { SellAmount, sellRaw } from "./sellamount";
 import { BotSafety } from "./botsafety";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
@@ -208,7 +209,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                       return fetchCurveCandles(curvePool, coin.address, frame);
                     })
                 }
-                refreshMs={curvePool ? 10_000 : 30_000}
+                refreshMs={curvePool ? 4_000 : 15_000}
                 mcFactor={coin.priceUsd && coin.mcapUsd ? coin.mcapUsd / coin.priceUsd : undefined}
                 emptyText="No chart data for this coin yet."
                 since={coin.poolCreated ? Date.parse(coin.poolCreated) || undefined : undefined}
@@ -329,7 +330,8 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
   const autoChain = autoForNetwork(coin.network);
   const canAuto = !IS_TESTNET && autoReady(autoChain);
   const [side, setSide] = useState<"buy" | "sell" | "auto">(initialSide);
-  const [usd, setUsd] = useState("25");
+  const [usd, setUsd] = useState("");
+  const [sellUsd, setSellUsd] = useState("");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
   const [decimals, setDecimals] = useState<number | null>(null);
@@ -364,14 +366,17 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
     void loadHeld();
   }, [loadHeld]);
   useEffect(() => {
-    if (side !== "auto" || decimals !== null || !autoChain) return;
-    raceClient(autoChain)
+    if (side === "buy" || decimals !== null) return;
+    const client = cross ? xClient(cross.there) : chain ? clientFor(chain) : autoChain ? raceClient(autoChain) : null;
+    if (!client) return;
+    client
       .readContract({ address: token, abi: erc20Abi, functionName: "decimals" })
       .then((d) => setDecimals(Number(d)))
       .catch(() => setDecimals(null));
-  }, [side, decimals, autoChain, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [side, decimals, coinKey, token]);
 
-  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : side === "sell" && held !== null ? (held * BigInt(pct)) / 100n : 0n;
+  const raw = side === "buy" ? BigInt(Math.floor(amount * 1e6)) : side === "sell" ? sellRaw(held, decimals ?? 18, sellUsd, pct, coin.priceUsd ?? null) : 0n;
   useEffect(() => {
     setQuote(null);
     setError("");
@@ -467,9 +472,9 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
         <>
           {side === "buy" ? (
             <>
-              <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-emerald">
+              <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">
                 <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
-                <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem]" />
+                <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Amount" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem] placeholder:text-ink-3" />
               </label>
               <div className="grid grid-cols-4 gap-1.5 mt-2">
                 {[10, 25, 50, 100].map((v) => (
@@ -480,13 +485,15 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
               </div>
             </>
           ) : (
-            <div className="grid grid-cols-4 gap-1.5 mt-4">
-              {[25, 50, 75, 100].map((v) => (
-                <button key={v} type="button" aria-pressed={pct === v} onClick={() => setPct(v)} className={"h-10 rounded-xl border-[1.5px] font-bold text-[0.875rem] " + (pct === v ? "border-danger text-danger" : "border-line")}>
-                  {v === 100 ? "All" : `${v}%`}
-                </button>
-              ))}
-            </div>
+            <SellAmount
+              usd={sellUsd}
+              setUsd={setSellUsd}
+              pct={pct}
+              setPct={setPct}
+              heldTokens={live && held !== null && decimals !== null ? Number(held) / 10 ** decimals : null}
+              priceUsd={coin.priceUsd ?? null}
+              symbol={`${coin.symbol}${cross ? ` on ${cross.there.short}` : ""}`}
+            />
           )}
           <div className="mt-3 flex justify-between rounded-2xl bg-paper px-4 py-3 text-[0.875rem]">
             <span className="text-ink-3">{side === "buy" ? "You get about" : "You get"}</span>
@@ -502,9 +509,6 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
                   : "—"}
             </b>
           </div>
-          {live && side === "sell" && held !== null && (
-            <p className="text-[0.75rem] text-ink-3 mt-2">You hold {held > 0n ? "some" : "no"} ${coin.symbol}{cross ? ` on ${cross.there.short}` : ""}</p>
-          )}
           <button
             type="button"
             disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
