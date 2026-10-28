@@ -241,9 +241,15 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             type="search"
             enterKeyHint="search"
             autoComplete="off"
+            onKeyDown={(e) => {
+              // a pasted Solana address: Enter opens the coin straight away
+              const a = query.trim();
+              if (e.key === "Enter" && SOL_ADDR.test(a)) window.location.href = extHref({ network: SOL_EXT_NETWORK.id, address: a });
+            }}
             className="h-10 w-full max-w-[13rem] sm:max-w-[20rem] min-w-0 px-3 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3 focus:border-ink-3 outline-none"
           />
         </div>
+        <AddressJump query={query} />
 
         <div className="px-4 sm:px-6">
           <BoostedRow />
@@ -678,5 +684,41 @@ function AlmostThere({ coins }: { coins: Coin[] }) {
         })}
       </div>
     </section>
+  );
+}
+
+const SOL_ADDR = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * A contract address pasted in Search: any coin on that chain opens on sasa (its page reads the
+ * numbers from DexScreener when it isn't in our lists yet), not just the ones listed here.
+ */
+function AddressJump({ query }: { query: string }) {
+  const a = query.trim();
+  const sol = SOL_ADDR.test(a);
+  const evm = EVM_ADDR.test(a);
+  if (!sol && !evm) return null;
+  return (
+    <div className="px-4 sm:px-6 mt-3">
+      <div className="rounded-2xl border-2 border-emerald bg-emerald-soft p-3 sm:p-4">
+        <div className="text-[0.875rem] font-semibold">Contract address</div>
+        <div className="font-mono text-[0.75rem] text-ink-3 truncate">{a}</div>
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          {sol ? (
+            <Link href={extHref({ network: SOL_EXT_NETWORK.id, address: a })} className="h-10 px-4 rounded-xl bg-emerald text-on-accent font-bold text-[0.875rem] inline-flex items-center">
+              Open this Solana coin →
+            </Link>
+          ) : (
+            EXT_NETWORKS.map((n) => (
+              <Link key={n.id} href={extHref({ network: n.id, address: a.toLowerCase() })} className="h-10 px-3.5 rounded-xl border border-line bg-paper font-semibold text-[0.8125rem] inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ background: n.color }} aria-hidden="true" />
+                Open on {n.label}
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
