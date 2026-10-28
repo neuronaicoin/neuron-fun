@@ -138,7 +138,7 @@ function MemeWhales({ buys }: { buys: Buy[] }) {
       <Empty
         icon="🐋"
         title="Watching for the first move"
-        text="sasa Bot follows wallets that keep getting in early on coins that later run 3× or more. Their next buy lands here the second it happens."
+        text="Big buys into brand-new coins, and wallets that keep getting in early on coins that later run 3× or more. They land here the second they happen."
       />
     );
   return (
@@ -153,9 +153,15 @@ function MemeWhales({ buys }: { buys: Buy[] }) {
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5 text-[0.875rem] font-semibold min-w-0">
                 <span className="font-mono truncate">{short(b.wallet)}</span>
-                <span className="shrink-0 text-[0.625rem] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-up/15 text-up" title={`${b.runners} of the ${b.coins} new coins this wallet bought early ran 3× or more`}>
-                  {b.runners}/{b.coins} ran 3×
-                </span>
+                {b.coins > 0 ? (
+                  <span className="shrink-0 text-[0.625rem] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-up/15 text-up" title={`${b.runners} of the ${b.coins} new coins this wallet bought early ran 3× or more`}>
+                    {b.runners}/{b.coins} ran 3×
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[0.625rem] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-emerald-soft text-emerald" title="One big buy into a brand-new coin">
+                    WHALE BUY
+                  </span>
+                )}
               </span>
               <span className="block text-[0.8125rem] text-ink-3 truncate">
                 bought <b className="text-ink">{compactUsd(b.usd)}</b> of <b className="text-ink">${b.symbol || short(b.mint)}</b> at {compactUsd(b.mc)} · {timeAgo(b.at)}
@@ -458,7 +464,7 @@ export default function BotPage() {
                 </button>
               ))}
             </div>
-            <span className="text-[0.75rem] text-ink-3 font-medium text-right hidden sm:block lg:hidden xl:block">{tab === "meme" ? "wallets that keep getting in early" : "top 100 traders, $25K+ moves"}</span>
+            <span className="text-[0.75rem] text-ink-3 font-medium text-right hidden sm:block lg:hidden xl:block">{tab === "meme" ? "big buys + early wallets" : "top 100 traders, $25K+ moves"}</span>
           </div>
           {!data ? <Rows /> : tab === "meme" ? <MemeWhales buys={data.buys} /> : <FuturesWhales moves={data.futures} />}
         </Card>

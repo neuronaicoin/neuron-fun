@@ -359,12 +359,16 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
         'coin','token','tokens','sol','solana','pump','fun','meme','memecoin','official','real','first','ceo','dev','inc','club',
         'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl',
         'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions',
-        'make','anti','get','buy','sell','this','that','only','last','next','first','token')
+        'make','anti','get','buy','sell','this','that','only','last','next','first','token',
+        'launch','launched','launching','fee','fees','test','testing')
   ), d as (select distinct on (theme, mint) * from t), g as (
     select theme,
       -- different people, not coins: one creator spamming the same name is one, not 40
-      count(distinct creator) filter (where created_at > now() - interval '1 hour') as n1,
-      round((count(distinct creator) filter (where created_at <= now() - interval '1 hour'))::numeric / 3, 1) as prev,
+      -- and different names: a farm launching the same name from fresh wallets is one, not 500
+      least(count(distinct creator) filter (where created_at > now() - interval '1 hour'),
+            count(distinct lower(name)) filter (where created_at > now() - interval '1 hour')) as n1,
+      round((least(count(distinct creator) filter (where created_at <= now() - interval '1 hour'),
+            count(distinct lower(name)) filter (where created_at <= now() - interval '1 hour')))::numeric / 3, 1) as prev,
       count(*) filter (where created_at > now() - interval '1 hour' and buyers >= 15) as hot1,
       count(*) filter (where followed and start_mc > 0) as tracked,
       count(*) filter (where followed and start_mc > 0 and peak_mc >= 2 * start_mc) as x2,
@@ -905,10 +909,26 @@ export async function sniperLoop(pool, log) {
   const smartQueue = []; // buys waiting to be written
   const smartMc = new Map(); // mint hex → { mc, at, dirty }: coins smart wallets bought (a day)
   const SMART_MIN_SOL = 0.05e9; // smaller buys are left off the page
-  const smartSeen = { any: 0, sized: 0, named: 0 }; // for the log: how many smart-wallet buys the feed saw
+  const smartSeen = { any: 0, sized: 0, named: 0, whales: 0 }; // for the log: how many smart-wallet buys the feed saw
+  // whales: any single buy this big into a coin the bot saw launch also goes on the page (not the creator's own)
+  const WHALE_MIN_SOL = Number(process.env.WHALE_MIN_SOL || 2) * 1e9;
+  const whaleSeen = new Map(); // wallet+mint → time, so one whale splitting a buy shows once per 10 min
   function smartBuy(user, mintHex, lamports, mc) {
-    const s = smart.get(user);
-    if (!s) return;
+    let s = smart.get(user);
+    if (!s) {
+      if (lamports < WHALE_MIN_SOL || !(mc > 0)) return;
+      const meta = metas.get(mintHex);
+      if (!meta || meta.creator === user) return;
+      const k = user + mintHex;
+      const now = Date.now();
+      if (now - (whaleSeen.get(k) ?? 0) < 10 * 60_000) return;
+      whaleSeen.set(k, now);
+      if (whaleSeen.size > 20000) whaleSeen.clear();
+      smartSeen.whales++;
+      smartQueue.push([hexToB58(user), hexToB58(mintHex), meta.name, meta.symbol, lamports / 1e9, (lamports / 1e9) * solUsd, mc, 0, 0]);
+      smartMc.set(mintHex, { mc, at: now, dirty: true });
+      return;
+    }
     smartSeen.any++;
     if (lamports < SMART_MIN_SOL || !(mc > 0)) return;
     smartSeen.sized++;
@@ -1375,7 +1395,7 @@ export async function sniperLoop(pool, log) {
     if (n % 20 === 0) {
       const ls = late.size();
       log(`bot test: ${events} events, ${coins.size} new coins watched, ${ls.coins} trading coins, ${ls.follows} proven-coin signals followed, ${ls.pools} pools`);
-      log(`bot test: smart wallets ${smart.size}, their buys seen ${smartSeen.any} (${smartSeen.sized} big enough, ${smartSeen.named} shown)`);
+      log(`bot test: smart wallets ${smart.size}, their buys seen ${smartSeen.any} (${smartSeen.sized} big enough, ${smartSeen.named} shown), whale buys ${smartSeen.whales}`);
       await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
       await pool.query(`delete from smart_buys where at < now() - interval '2 days'`).catch(() => {});
       await pool.query(`delete from smart_coins where updated_at < now() - interval '2 days'`).catch(() => {});
