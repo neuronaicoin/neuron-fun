@@ -4,6 +4,7 @@
  * "You": profile, portfolio (cash, coins with profit / loss and quick sell),
  * coins you created and your trades. Deposit and Withdraw stay pinned at the bottom.
  */
+import { TransitBanner } from "@/components/transitbanner";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useWallet } from "@/components/wallet";
@@ -154,6 +155,7 @@ export default function MePage() {
       )}
 
       {/* Money */}
+      <TransitBanner className="mt-6" />
       <section className="mt-6 rounded-3xl border border-line bg-surface p-4 sm:p-6" aria-label="Your money">
         {!p ? (
           <div aria-hidden="true">

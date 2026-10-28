@@ -23,7 +23,8 @@ import { useWallet } from "@/components/wallet";
 import { CHAINS, HL_BUILDER } from "./config";
 import { getQuote } from "./relay";
 import { quoteCallsOn } from "./extcross";
-import { BUILDER_FEE, BUILDER_FEE_TENTHS_BP, HL_API, HL_TAKER_FEE, MIN_NOTIONAL, PERPS_TRADING, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
+import { BUILDER_FEE, BUILDER_FEE_TENTHS_BP, HL_API, HL_TAKER_FEE, MIN_NOTIONAL, PERPS_TRADING, fetchPerpAccount, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
+import { baseCashUsd, transitAdd, transitToCash } from "./transit";
 import { cashOf } from "./portfolio";
 import { PREDICT_FEE_TENTHS_BP, PREDICT_MIN, bestOf, fetchPredictWallet, type PredictHolding, type PredictOutcome } from "./predict";
 
@@ -228,6 +229,8 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
     const pricePx = (v: number, up: boolean) => Math.min(0.999, Math.max(0.001, (up ? Math.ceil(v * 1000) : Math.floor(v * 1000)) / 1000)).toFixed(3);
 
     const futuresFree = async () => Number((await infoClient.clearinghouseState({ user: user! }).catch(() => null))?.withdrawable ?? 0);
+    /** The futures balance as the header counts it (all its exchanges), for "has it landed". */
+    const futuresValue = async () => (await fetchPerpAccount(user!).catch(() => null))?.accountValue ?? 0;
 
     /**
      * Makes sure the futures balance can pay `need` dollars: the difference (at least $5, Relay's
@@ -255,7 +258,9 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         destinationCurrency: HL_PERPS_USDC,
         amount: String(Math.round(top * 1e6)),
       });
+      const inFutures = await futuresValue();
       await w.send(base.chain, quoteCallsOn(q, base.chain.id), (s) => onStep(s));
+      transitAdd(top, { to: "futures", futuresAtLeast: inFutures + top * 0.9, ms: 600_000, etaMs: 45_000 });
       void after();
       onStep("Waiting for the money to land in futures…");
       const until = Date.now() + 120_000;
@@ -281,7 +286,10 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
           destinationCurrency: HL_PERPS_USDC,
           amount: String(Math.round(amount * 1e6)),
         });
+        const inFutures = await futuresValue();
         await w.send(base.chain, quoteCallsOn(q, base.chain.id), (m) => onStep(m));
+        // on its way for under a minute: still counted in the total, and shown as on its way
+        transitAdd(amount, { to: "futures", futuresAtLeast: inFutures + amount * 0.9, ms: 600_000, etaMs: 45_000 });
         onStep(null);
         setTimeout(() => void after(), 8_000);
         setTimeout(() => void after(), 30_000);
@@ -306,11 +314,14 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         });
         if (!q.depositAddress || !/^0x[0-9a-fA-F]{40}$/.test(q.depositAddress)) throw new Error("This route isn't available right now. Try again in a moment.");
         onStep("Confirm in your wallet…");
+        const cashBefore = await baseCashUsd(user);
         try {
           await mainClient().withdraw3({ destination: q.depositAddress as `0x${string}`, amount: String(amount) });
         } catch (e) {
           throw hlError(e);
         }
+        // Hyperliquid's own bridge takes a few minutes: counted in the total meanwhile, and shown
+        transitToCash(amount - HL_WITHDRAW_FEE, cashBefore, { ms: 20 * 60_000, etaMs: 4 * 60_000 });
         onStep(null);
         setTimeout(() => void after(), 5_000);
       },

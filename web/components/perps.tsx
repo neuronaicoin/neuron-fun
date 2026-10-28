@@ -5,6 +5,7 @@
  * panel (long / short, leverage, amount, TP/SL), the perps balance with Add / Move to main, and
  * the user's positions, orders and history. Trading itself is in lib/perpstrade.ts.
  */
+import { TransitBanner } from "./transitbanner";
 import { afterTrade, useMoney } from "@/lib/portfolio";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PerpsChart, type ChartLine } from "./perpschart";
@@ -590,6 +591,7 @@ function BalanceCard({ account, trade, signedIn }: { account: PerpAccount | null
   const [sheet, setSheet] = useState<"add" | "out" | null>(null);
   return (
     <section className="rounded-3xl border border-line bg-surface p-4" aria-label="Futures balance">
+      <TransitBanner className="mb-3" />
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[0.8125rem] text-ink-3">Futures balance</span>
         <span className="font-mono font-semibold text-[1.125rem] tabular-nums">{account ? usd(account.accountValue) : signedIn ? "…" : "—"}</span>
@@ -656,7 +658,8 @@ function MoveSheet({ kind, account, trade, onClose }: { kind: "add" | "out"; acc
         <button type="button" disabled={!!busy || n <= 0} onClick={() => void go()} className="h-12 rounded-full bg-ink text-paper font-bold disabled:opacity-50">
           {busy ?? (kind === "add" ? `Add $${n > 0 ? n.toFixed(2) : "0"}` : `Move $${n > 0 ? n.toFixed(2) : "0"}`)}
         </button>
-        {msg && <p className={"rounded-xl px-3 py-2 text-[0.875rem] " + (msg.ok ? "bg-emerald-soft" : "bg-warn-bg text-warn-ink")}>{msg.text}</p>}
+        {msg && !msg.ok && <p className="rounded-xl px-3 py-2 text-[0.875rem] bg-warn-bg text-warn-ink">{msg.text}</p>}
+        {msg?.ok && <TransitBanner />}
       </div>
     </Sheet>
   );

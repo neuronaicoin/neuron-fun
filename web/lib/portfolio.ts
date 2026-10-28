@@ -190,7 +190,7 @@ export async function refreshCash(): Promise<void> {
     }
     const now = state.portfolio ?? cur;
     if (state.address !== address) return;
-    const moving = settleTransit(cashByChain);
+    const moving = settleTransit(cashByChain, now.futures?.valueUsd);
     set({ portfolio: { ...now, cashByChain, cashUsd, racePositions, coinsUsd, transitUsd: moving, totalUsd: coinsUsd + cashUsd + (now.futures?.valueUsd ?? 0) + moving }, version: state.version + 1 });
   } catch {
     /* the full reload will fix it */
@@ -348,7 +348,7 @@ function buildPortfolio(
     positions.reduce((a, p) => a + p.valueUsd, 0) + racePositions.reduce((a, p) => a + p.valueUsd, 0) + extPositions.reduce((a, p) => a + p.valueUsd, 0);
   const openPnlUsd = positions.reduce((a, p) => a + (p.pnlUsd ?? 0), 0);
   const dayUsd = positions.reduce((a, p) => a + p.dayUsd, 0);
-  const moving = settleTransit(cashByChain);
+  const moving = settleTransit(cashByChain, futures?.valueUsd);
   const totalUsd = cashUsd + coinsUsd + (futures?.valueUsd ?? 0) + moving;
   const start = totalUsd - dayUsd;
   return {
@@ -416,9 +416,9 @@ async function readCash(address: string, prev: Portfolio | null, chains = unique
 }
 
 /** Drops moves to Cash that have landed on Base; returns what is still on its way. */
-function settleTransit(cashByChain: { chain: NeuronChain; usd: number }[]): number {
+function settleTransit(cashByChain: { chain: NeuronChain; usd: number }[], futuresUsd?: number): number {
   const base = cashByChain.find((c) => c.chain.key === "base");
-  if (base) transitSettle(base.usd);
+  if (base) transitSettle(base.usd, futuresUsd);
   return transitUsd();
 }
 
