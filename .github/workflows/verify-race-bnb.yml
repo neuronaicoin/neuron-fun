@@ -45,6 +45,7 @@ jobs:
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           RPC: https://bsc-dataseed.bnbchain.org
         run: |
+          set +e
           set -uo pipefail
           S="$GITHUB_STEP_SUMMARY"
           [ -n "${ETHERSCAN_API_KEY:-}" ] || { echo "ETHERSCAN_API_KEY secret is missing" >> "$S"; exit 1; }
@@ -53,8 +54,8 @@ jobs:
           while read -r name addr path; do
             [ -n "$addr" ] || continue
             out=$(forge verify-contract "$addr" "$path" --chain 56 --verifier etherscan --etherscan-api-key "$ETHERSCAN_API_KEY" \
-                  --guess-constructor-args --rpc-url "$RPC" --watch 2>&1)
-            if echo "$out" | grep -qiE "Pass - Verified|successfully verified|already verified"; then
+                  --guess-constructor-args --rpc-url "$RPC" --watch 2>&1) || true
+            if grep -qiE "Pass - Verified|successfully verified|already verified" <<<"$out"; then
               echo "- $name \`$addr\`: **verified** ✅" >> "$S"; ok=$((ok+1))
             else
               echo "- $name \`$addr\`: not verified" >> "$S"; echo '```' >> "$S"; echo "$out" | tail -8 >> "$S"; echo '```' >> "$S"
