@@ -401,7 +401,7 @@ function Trends({ trends }: { trends: Theme[] }) {
           href={`/race/launch/?theme=${encodeURIComponent(top.theme)}`}
           className="mt-3 h-12 rounded-xl bg-emerald text-on-accent font-bold text-[0.9375rem] grid place-items-center shadow-[0_10px_30px_-10px_var(--color-emerald)] hover:bg-emerald-dark"
         >
-          🚀 Launch a coin on “{top.theme}”
+          🚀 Launch a coin on “{top.theme.charAt(0).toUpperCase() + top.theme.slice(1)}”
         </Link>
       )}
     </div>

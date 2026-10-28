@@ -357,7 +357,8 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
     where (length(word) >= 3 or word in ('ai','cz'))
       and word not in ('the','and','for','you','your','are','was','not','but','with','this','that','from','all','one','get','just','new',
         'coin','token','tokens','sol','solana','pump','fun','meme','memecoin','official','real','first','ceo','dev','inc','club',
-        'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl')
+        'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl',
+        'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions')
   ), d as (select distinct on (theme, mint) * from t), g as (
     select theme,
       count(*) filter (where created_at > now() - interval '1 hour') as n1,
