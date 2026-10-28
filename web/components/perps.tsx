@@ -654,7 +654,6 @@ function MoveSheet({ kind, account, trade, onClose }: { kind: "add" | "out"; acc
 
 // ------------------------------------------------------------------ order panel
 
-const LEV_CHIPS = [2, 5, 10, 20];
 
 function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; account: PerpAccount | null; trade: PerpsTrade; signedIn: boolean }) {
   const [side, setSide] = useState<"long" | "short">("long");
@@ -823,12 +822,10 @@ function OrderPanel({ m, account, trade, signedIn }: { m: PerpMarket | null; acc
         aria-label="Leverage"
         className="w-full mt-2 accent-[var(--color-emerald)]"
       />
-      <div className="grid grid-cols-4 gap-1.5 mt-1">
-        {LEV_CHIPS.filter((c) => c <= maxLev).map((c) => (
-          <button key={c} type="button" aria-pressed={lev === c} onClick={() => setLev(c)} className={"h-8 rounded-lg border text-[0.8125rem] font-semibold " + (lev === c ? "border-ink" : "border-line text-ink-2")}>
-            {c}x
-          </button>
-        ))}
+      {/* drag to choose: the ends show the range */}
+      <div className="flex justify-between text-[0.75rem] text-ink-3 font-mono mt-0.5" aria-hidden="true">
+        <span>1x</span>
+        <span>{maxLev}x</span>
       </div>
 
       <label className="mt-4 flex items-center gap-2 text-[0.875rem] cursor-pointer select-none">

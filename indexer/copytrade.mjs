@@ -31,17 +31,19 @@ const transport = new HttpTransport();
 const infoClient = new InfoClient({ transport });
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+/** Drops trailing zeros after the decimal point only ("1.50" → "1.5", but "340" stays 340). */
+const trimZeros = (s) => (s.includes(".") ? s.replace(/\.?0+$/, "") : s);
 /** A coin amount: at most szDecimals decimals, rounded down. */
 export function sizeString(coins, szDecimals) {
   const f = 10 ** szDecimals;
   const v = Math.floor(coins * f + 1e-9) / f;
-  return v.toFixed(szDecimals).replace(/\.?0+$/, "") || "0";
+  return trimZeros(v.toFixed(szDecimals)) || "0";
 }
 /** A price: at most 5 significant digits and (6 − szDecimals) decimals. */
 export function priceString(px, szDecimals) {
   if (!(px > 0)) return "0";
   if (Number.isInteger(px) && px >= 1e5) return String(px);
-  return Number(px.toPrecision(5)).toFixed(Math.max(0, 6 - szDecimals)).replace(/\.?0+$/, "");
+  return trimZeros(Number(px.toPrecision(5)).toFixed(Math.max(0, 6 - szDecimals)));
 }
 /** The copier's leverage: the trader's, capped by the copier's max and the market's, at least 1x. */
 export function copyLeverage(traderLev, maxLev, marketMax) {

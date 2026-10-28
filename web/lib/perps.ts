@@ -354,11 +354,13 @@ export function liqPrice(side: "long" | "short", entry: number, lev: number, hlM
   return side === "long" ? entry * (1 - room / (1 - l)) : entry * (1 + room / (1 + l));
 }
 
+/** Drops trailing zeros after the decimal point only ("1.50" → "1.5", but "340" stays 340). */
+const trimZeros = (s: string) => (s.includes(".") ? s.replace(/\.?0+$/, "") : s);
 /** A coin amount in Hyperliquid's format: at most szDecimals decimals, rounded down. */
 export function sizeString(coins: number, szDecimals: number): string {
   const f = 10 ** szDecimals;
   const v = Math.floor(coins * f + 1e-9) / f;
-  return v.toFixed(szDecimals).replace(/\.?0+$/, "") || "0";
+  return trimZeros(v.toFixed(szDecimals)) || "0";
 }
 
 /**
@@ -370,7 +372,7 @@ export function priceString(px: number, szDecimals: number): string {
   if (Number.isInteger(px) && px >= 1e5) return String(px);
   const sig = Number(px.toPrecision(5));
   const maxDec = Math.max(0, 6 - szDecimals);
-  return sig.toFixed(maxDec).replace(/\.?0+$/, "");
+  return trimZeros(sig.toFixed(maxDec));
 }
 
 export type OrderPlan = {
