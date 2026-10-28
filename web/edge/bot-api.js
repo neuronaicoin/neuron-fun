@@ -6,6 +6,7 @@
 //
 // Public (anyone), the sasa Bot page (app/bot):
 //   GET /api/bot/live             → { scanned, traps, smart, scans, buys, trends, futures }
+//   GET /api/bot/scan?m=<mint>    → { scan }           one Solana coin's safety scan (coin pages)
 //
 // The indexer (indexer/sniper.mjs) watches every new pump.fun coin and fills sniper_signals.
 
@@ -113,8 +114,23 @@ async function live(env) {
   return res;
 }
 
+/** One coin's scan (a Solana coin page's safety box), or null when the bot never scanned it. */
+async function scanOne(env, url) {
+  const mint = String(url.searchParams.get("m") || "");
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return json({ scan: null });
+  const rows = await db(
+    env,
+    `sniper_signals?select=mint,name,symbol,created_at,start_mc,entry_mc,score,passed,fail,checks&mint=eq.${mint}&decided_at=not.is.null&limit=1`
+  ).catch(() => null);
+  const scan = rows && rows[0] ? scanOf(rows[0]) : null;
+  return new Response(JSON.stringify({ scan }), {
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" },
+  });
+}
+
 export async function botRoute(env, me, parts, method, url) {
   if (parts.length === 2 && parts[1] === "live" && method === "GET") return live(env);
+  if (parts.length === 2 && parts[1] === "scan" && method === "GET") return scanOne(env, url);
   const who = String(me || "").toLowerCase();
   if (!SASA_ADMINS.includes(who) && !admins(env).includes(who)) return json({ error: "Not found." }, 404);
   // Solana launches that failed in someone's browser (edge/sol-api.js keeps them)

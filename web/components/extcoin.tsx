@@ -1,5 +1,6 @@
 "use client";
 
+import { BotSafety } from "./botsafety";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
@@ -185,6 +186,8 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
               </p>
             )}
           </section>
+
+          {isSolExt(coin.network) && <BotSafety mint={coin.address} />}
 
           {pool && (
             <section className="sm:rounded-3xl sm:border sm:border-line sm:bg-surface sm:p-5 min-w-0">

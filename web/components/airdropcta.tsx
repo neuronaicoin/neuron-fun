@@ -25,6 +25,26 @@ export function AirdropBanner() {
   );
 }
 
+/** A slim live band under the airdrop one on Explore: the way into sasa Bot (phones have no menu link). */
+export function BotBanner() {
+  return (
+    <div className="px-4 sm:px-6 pt-2">
+      <Link href="/bot/" className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 sm:px-5 border border-line bg-surface hover:border-emerald/50 transition-colors">
+        <span className="relative flex w-2.5 h-2.5 shrink-0" aria-hidden="true">
+          <span className="absolute inset-0 rounded-full bg-up animate-ping opacity-60" />
+          <span className="relative w-2.5 h-2.5 rounded-full bg-up" />
+        </span>
+        <span className="min-w-0 flex-1 text-[0.8125rem] sm:text-[0.875rem]">
+          <b className="font-display">🤖 sasa Bot is live</b>
+          <span className="text-ink-3"> · WHALES, traps and trends, as they happen</span>
+        </span>
+        <span className="text-[0.75rem] font-extrabold px-1.5 py-0.5 rounded bg-emerald text-on-accent shrink-0">NEW</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-ink-3" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+      </Link>
+    </div>
+  );
+}
+
 /** Top-bar button on phones and tablets (computers have "Airdrop" in the menu). Logged in, the
  * bar is fuller, so small phones get just the parachute. */
 export function AirdropButton() {

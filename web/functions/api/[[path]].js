@@ -408,7 +408,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "session" && parts.length === 1 && method === "POST") return await session(env, request, body);
 
     // the public sasa Bot page's live feed (edge/bot-api.js): anyone, no sign-in
-    if (parts[0] === "bot" && parts[1] === "live" && parts.length === 2 && method === "GET") return await botRoute(env, null, parts, method, url);
+    if (parts[0] === "bot" && (parts[1] === "live" || parts[1] === "scan") && parts.length === 2 && method === "GET") return await botRoute(env, null, parts, method, url);
 
     // trades of other DEXs' coins: checked on chain and with Relay, so no sign-in needed
     if (parts[0] === "exttrade" && parts.length === 1 && method === "POST") return await extTradeRoute(env, body);
