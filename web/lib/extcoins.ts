@@ -224,7 +224,9 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
     if (own) return own;
     // quiet for a while: the archive (every real coin we ever saw)
     const arch = await db.from("ext_archive_pages").select("*").eq("network", "solana").eq("address", address).maybeSingle();
-    return arch.error || !arch.data ? null : fromArchive(arch.data as Record<string, unknown>);
+    if (!arch.error && arch.data) return fromArchive(arch.data as Record<string, unknown>);
+    // a brand-new coin (sasa Bot links to coins minutes old): straight from DexScreener, once it trades
+    return fetchSolFromDex(address);
   }
   const a = address.toLowerCase();
   const [live, arch] = await Promise.all([
@@ -237,6 +239,47 @@ export async function fetchExtCoin(network: string, address: string): Promise<Ex
   if (live.error && !archRow) throw live.error;
   if (!archRow) return null;
   return fromArchive(archRow);
+}
+
+/**
+ * A Solana coin not in our lists yet (minutes old, still on its launch curve): its live numbers
+ * from DexScreener's public API. Null until DexScreener sees it trade.
+ */
+async function fetchSolFromDex(address: string): Promise<ExtCoin | null> {
+  try {
+    const r = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${address}`);
+    if (!r.ok) return null;
+    const pairs = (await r.json()) as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const mine = (pairs || []).filter((p) => p?.baseToken?.address === address);
+    if (!mine.length) return null;
+    mine.sort((a, b) => (Number(b?.liquidity?.usd) || 0) - (Number(a?.liquidity?.usd) || 0) || (Number(b?.volume?.h24) || 0) - (Number(a?.volume?.h24) || 0));
+    const p = mine[0];
+    const x = (p.info?.socials || []).find((s: { type?: string }) => s?.type === "twitter")?.url as string | undefined;
+    return {
+      ...toExt({
+        network: "solana",
+        address,
+        pool: p.pairAddress ?? null,
+        dex: p.dexId ?? null,
+        name: p.baseToken?.name,
+        symbol: p.baseToken?.symbol,
+        image: p.info?.imageUrl ?? null,
+        price_usd: p.priceUsd,
+        mcap_usd: p.marketCap,
+        fdv_usd: p.fdv,
+        liq_usd: p.liquidity?.usd,
+        vol_24h: p.volume?.h24,
+        change_1h: p.priceChange?.h1,
+        change_24h: p.priceChange?.h24,
+        buys_24h: p.txns?.h24?.buys,
+        sells_24h: p.txns?.h24?.sells,
+        pool_created: p.pairCreatedAt ? new Date(p.pairCreatedAt).toISOString() : null,
+      }),
+      xHandle: x ? (x.match(/(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})/)?.[1] ?? null) : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** A coin from the archive only (not traded lately): its last numbers, no 24h changes. */
