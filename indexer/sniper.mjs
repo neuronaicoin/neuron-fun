@@ -374,11 +374,63 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
         select d.name, d.symbol, d.mint, round((d.peak_mc / nullif(d.start_mc, 0))::numeric, 1) as x
         from d where d.theme = g.theme and d.followed and d.start_mc > 0
         order by d.peak_mc / nullif(d.start_mc, 0) desc nulls last limit 3) c) as best
-    from g where g.n1 >= 3 order by score desc limit 15
+    from g where g.n1 >= 2 order by score desc limit 15
   ) r;
 $$;
 revoke all on function sniper_trends() from public, anon, authenticated;
 grant execute on function sniper_trends() to service_role;
+-- Smart wallets (indexer/sniperopt.mjs learns them: wallets among new coins' first buyers whose
+-- coins often ran 3x+) and their buys as they happen: the public sasa Bot page (edge/bot-api.js)
+create table if not exists smart_wallets (
+  wallet     text primary key, -- hex, as the feed sees it
+  coins      int not null,
+  runners    int not null,
+  updated_at timestamptz not null default now()
+);
+create table if not exists smart_buys (
+  id      bigserial primary key,
+  at      timestamptz not null default now(),
+  wallet  text not null,
+  mint    text not null,
+  name    text,
+  symbol  text,
+  sol     double precision,
+  usd     double precision,
+  mc      double precision,
+  coins   int,
+  runners int
+);
+create index if not exists smart_buys_at on smart_buys (at desc);
+-- the latest market cap of coins smart wallets bought (a day)
+create table if not exists smart_coins (
+  mint       text primary key,
+  mc         double precision,
+  updated_at timestamptz not null default now()
+);
+alter table smart_wallets enable row level security;
+alter table smart_buys enable row level security;
+alter table smart_coins enable row level security;
+revoke all on smart_wallets, smart_buys, smart_coins from anon, authenticated;
+grant all on smart_wallets, smart_buys, smart_coins to service_role;
+grant usage on sequence smart_buys_id_seq to service_role;
+-- everything the public sasa Bot page shows, in one call (edge/bot-api.js caches it a few seconds)
+create or replace function bot_public() returns jsonb language sql stable as $$
+  select jsonb_build_object(
+    'scanned', (select count(*) from sniper_signals where created_at > now() - interval '24 hours'),
+    'traps', (select count(*) from sniper_signals where created_at > now() - interval '24 hours'
+      and (fail in ('creator sold', 'creator holds too much', 'serial launcher', 'creator dumped before', 'bundled', 'top 10 hold too much') or fail like 'reused%')),
+    'smart', (select count(*) from smart_wallets),
+    'scans', (select coalesce(jsonb_agg(to_jsonb(s) order by s.created_at desc), '[]'::jsonb) from (
+      select mint, name, symbol, created_at, decided_at, start_mc, entry_mc, score, passed, fail, checks from sniper_signals
+      where created_at > now() - interval '30 minutes' and decided_at is not null order by created_at desc limit 16) s),
+    'buys', (select coalesce(jsonb_agg(to_jsonb(b) order by b.at desc), '[]'::jsonb) from (
+      select b.id, b.at, b.wallet, b.mint, b.name, b.symbol, b.sol, b.usd, b.mc, b.coins, b.runners, c.mc as now_mc
+      from smart_buys b left join smart_coins c on c.mint = b.mint order by b.at desc limit 24) b),
+    'trends', sniper_trends()
+  );
+$$;
+revoke all on function bot_public() from public, anon, authenticated;
+grant execute on function bot_public() to service_role;
 notify pgrst, 'reload schema';`;
 
 // ------------------------------------------------------------------ reading pump.fun's events
@@ -828,6 +880,68 @@ export async function sniperLoop(pool, log) {
   await price();
   setInterval(price, 60_000).unref();
 
+  // ---- smart wallets (sniperopt.mjs learns them): their buys go on the public sasa Bot page
+  let smart = new Map(); // wallet hex → [coins, runners]
+  const loadSmart = async () => {
+    try {
+      const r = await pool.query("select wallet, coins, runners from smart_wallets");
+      smart = new Map(r.rows.map((x) => [x.wallet, [x.coins, x.runners]]));
+    } catch {}
+  };
+  await loadSmart();
+  setInterval(() => void loadSmart(), 10 * 60_000).unref();
+  const smartQueue = []; // buys waiting to be written
+  const smartMc = new Map(); // mint hex → { mc, at, dirty }: coins smart wallets bought (a day)
+  const SMART_MIN_SOL = 0.2e9; // smaller buys are left off the page
+  function smartBuy(user, mintHex, lamports, mc) {
+    if (lamports < SMART_MIN_SOL || !(mc > 0)) return;
+    const s = smart.get(user);
+    if (!s) return;
+    const meta = metas.get(mintHex);
+    if (!meta) return; // a coin the bot never saw launch: no name to show
+    smartQueue.push([hexToB58(user), hexToB58(mintHex), meta.name, meta.symbol, lamports / 1e9, (lamports / 1e9) * solUsd, mc, s[0], s[1]]);
+    smartMc.set(mintHex, { mc, at: Date.now(), dirty: true });
+  }
+  function smartPrice(mintHex, mc) {
+    const m = smartMc.get(mintHex);
+    if (m && mc > 0) {
+      m.mc = mc;
+      m.dirty = true;
+    }
+  }
+  setInterval(async () => {
+    if (smartQueue.length) {
+      const rows = smartQueue.splice(0, 200);
+      const args = [];
+      const vals = rows.map((r, i) => {
+        args.push(...r);
+        return `(${r.map((_, k) => `$${i * r.length + k + 1}`).join(",")})`;
+      });
+      await pool
+        .query(`insert into smart_buys (wallet, mint, name, symbol, sol, usd, mc, coins, runners) values ${vals.join(",")}`, args)
+        .catch((e) => log(`bot test: smart buys: ${e.message}`));
+    }
+    const now = Date.now();
+    const mints = [];
+    const mcs = [];
+    for (const [k, m] of smartMc) {
+      if (now - m.at > 86400_000) smartMc.delete(k);
+      else if (m.dirty) {
+        m.dirty = false;
+        mints.push(hexToB58(k));
+        mcs.push(m.mc);
+      }
+    }
+    if (mints.length)
+      await pool
+        .query(
+          `insert into smart_coins (mint, mc, updated_at) select u.m, u.v, now() from unnest($1::text[], $2::float8[]) as u(m, v)
+           on conflict (mint) do update set mc = excluded.mc, updated_at = now()`,
+          [mints, mcs]
+        )
+        .catch(() => {});
+  }, 5000).unref();
+
   const coins = new Map(); // mint hex → coin being watched
   const seen = new Map(); // link / picture key → { mint, at } (24 h)
   const tickers = new Map(); // ticker → [times] (1 h)
@@ -968,7 +1082,10 @@ export async function sniperLoop(pool, log) {
 
   function onTrade(e, slot) {
     // every coin's trades feed the proven-coins signals
-    late.curveTrade(e, mcOf(e.vSol, e.vTok, solUsd));
+    const tradeMc = mcOf(e.vSol, e.vTok, solUsd);
+    late.curveTrade(e, tradeMc);
+    smartPrice(e.mint, tradeMc);
+    if (e.buy) smartBuy(e.user, e.mint, e.sol, tradeMc);
     if (!e.buy) {
       const meta = metas.get(e.mint);
       if (meta && meta.creator === e.user) meta.devSold = true;
@@ -1217,6 +1334,10 @@ export async function sniperLoop(pool, log) {
                 if (!e) continue;
                 const mc = ammMc(e.base, e.quote, solUsd);
                 const mint = late.poolTrade(e, mc);
+                if (mint) {
+                  smartPrice(mint, mc);
+                  if (e.buy) smartBuy(e.user, mint, e.sol, mc);
+                }
                 const c = mint ? coins.get(mint) : null;
                 if (c) poolPrice(c, mc);
               }
@@ -1239,6 +1360,8 @@ export async function sniperLoop(pool, log) {
       const ls = late.size();
       log(`bot test: ${events} events, ${coins.size} new coins watched, ${ls.coins} trading coins, ${ls.follows} proven-coin signals followed, ${ls.pools} pools`);
       await pool.query(`delete from sniper_signals where created_at < now() - interval '14 days'`).catch(() => {});
+      await pool.query(`delete from smart_buys where at < now() - interval '2 days'`).catch(() => {});
+      await pool.query(`delete from smart_coins where updated_at < now() - interval '2 days'`).catch(() => {});
       // price paths are the big part: kept 3 days (the optimizer uses the much smaller grid)
       await pool.query(`update sniper_signals set path = null where path is not null and created_at < now() - interval '3 days'`).catch(() => {});
     }

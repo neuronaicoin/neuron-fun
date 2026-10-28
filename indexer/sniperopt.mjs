@@ -134,6 +134,52 @@ export const SMART_MIN_RATE = 0.4; // …and this share of them running 3×+ to 
 const RUNNER = 3;
 
 /**
+ * Smart wallets over every coin (not split): what the public sasa Bot page follows live.
+ * [wallet hex, coins, runners] for wallets with SMART_MIN_COINS+ early buys and SMART_MIN_RATE
+ * of them running 3×+.
+ */
+export function smartList(rows) {
+  const stat = new Map();
+  for (const row of rows) {
+    const run = row.start_mc > 0 && row.peak_mc >= row.start_mc * RUNNER ? 1 : 0;
+    const seenHere = new Set();
+    for (const [w] of row.buyers ?? []) {
+      if (seenHere.has(w)) continue;
+      seenHere.add(w);
+      const s = stat.get(w) ?? [0, 0];
+      s[0]++;
+      s[1] += run;
+      stat.set(w, s);
+    }
+  }
+  const out = [];
+  for (const [w, [n, r]] of stat) if (n >= SMART_MIN_COINS && r / n >= SMART_MIN_RATE) out.push([w, n, r]);
+  return out;
+}
+
+/** Replaces the smart wallet list the live feed (sniper.mjs) watches. */
+async function saveSmart(pool, rows) {
+  const list = smartList(rows);
+  if (!list.length) return 0;
+  const db = await pool.connect();
+  try {
+    await db.query("begin");
+    await db.query("delete from smart_wallets");
+    await db.query(
+      `insert into smart_wallets (wallet, coins, runners) select * from unnest($1::text[], $2::int[], $3::int[])`,
+      [list.map((x) => x[0]), list.map((x) => x[1]), list.map((x) => x[2])]
+    );
+    await db.query("commit");
+  } catch (e) {
+    await db.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    db.release();
+  }
+  return list.length;
+}
+
+/**
  * Smart wallets, learned only from the search part (train): wallets among coins' first 40 buyers
  * whose coins ran 3×+ from launch often. Fills T.smart[i][entry] = smart wallets that had bought
  * coin i before that entry point. On the search part a coin's own result never counts for its
@@ -420,6 +466,8 @@ export async function sniperOptLoop(pool, log) {
         });
         await pool.query(`insert into sniper_opt (coins, result) values ($1, $2)`, [out.coins, JSON.stringify(out)]);
         await pool.query(`delete from sniper_opt where run_at < now() - interval '14 days'`);
+        const nSmart = await saveSmart(pool, rows).catch((e) => (log(`bot optimizer: smart wallets: ${e.message}`), 0));
+        if (nSmart) log(`bot optimizer: ${nSmart} smart wallets saved for the live feed`);
         log(`bot optimizer: ${out.tried + out.late.tried} rules on ${out.coins} new coins + ${out.late.signals} proven-coin signals in ${Math.round((Date.now() - started) / 1000)} s`);
       } else log(`bot optimizer: ${rows.length} new coins and ${lateRows.length} proven-coin signals so far, starts at ${MIN_COINS} / ${MIN_LATE}`);
     } catch (e) {

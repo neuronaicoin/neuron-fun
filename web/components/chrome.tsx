@@ -241,9 +241,10 @@ const NAV_ALL = [
   { href: "/explore/", label: "Explore", from: "md" },
   { href: "/market/", label: "Market", from: "lg" },
   { href: "/terminal/", label: "Terminal", from: "lg" },
+  { href: "/bot/", label: "Bot", from: "lg" },
   { href: "/predict/", label: "Predict", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
-  { href: "/me/", label: "You", from: "lg" },
+  { href: "/me/", label: "You", from: "xl" },
   // in "More" on computers too: a short, calm top bar
   { href: "/traders/", label: "Traders", from: "never" },
   { href: "/copy/", label: "Copy", from: "never" },
@@ -291,6 +292,9 @@ export function Header() {
                 className={(isActive(pathname, n.href) ? "text-ink font-semibold " : "text-ink-3 hover:text-ink ") + SHOW_FROM[n.from]}
               >
                 {n.label}
+                {n.href === "/bot/" && (
+                  <span className="ml-1 align-[0.1em] text-[0.5625rem] font-extrabold tracking-wide px-1 py-px rounded bg-emerald text-on-accent">NEW</span>
+                )}
               </Link>
             )
           )}
@@ -317,6 +321,7 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
+  { href: "/bot/", label: "🤖 sasa Bot · NEW", note: "WHALES, traps and trends, live" },
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/predict/", label: "Predict", note: "Yes or no on prices, matches and rates" },
@@ -477,7 +482,7 @@ export function BottomNav() {
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-6">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/" && n.href !== "/predict/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/" && n.href !== "/predict/" && n.href !== "/bot/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
