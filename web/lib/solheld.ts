@@ -71,6 +71,10 @@ export async function fetchSolHoldings(evm: string): Promise<ExtHolding[]> {
     for (const [f, v] of Object.entries(r)) if (v !== null && v !== undefined && v !== "") merged[f] = v;
     rows.set(k, merged);
   }
+  // brand-new coins (bought from sasa Bot minutes after launch) aren't in our lists yet:
+  // their live numbers straight from DexScreener, so they still show in "You"
+  const missing = mints.filter((m) => !rows.has(m));
+  if (missing.length) for (const [k, r] of await fromDex(missing)) rows.set(k, r);
   const out: ExtHolding[] = [];
   for (const r of rows.values()) {
     const e = toExt(r);
@@ -112,4 +116,40 @@ export function solIsInflight(): boolean {
   } catch {
     return false;
   }
+}
+
+/** DexScreener rows (our list's shape) for up to 60 Solana coins, 30 per call; missing ones left out. */
+async function fromDex(mints: string[]): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const want = new Set(mints);
+  for (let i = 0; i < Math.min(mints.length, 60); i += 30) {
+    try {
+      const r = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mints.slice(i, i + 30).join(",")}`);
+      if (!r.ok) continue;
+      const pairs = (await r.json()) as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      for (const p of pairs || []) {
+        const a = p?.baseToken?.address as string | undefined;
+        if (!a || !want.has(a)) continue;
+        const prev = out.get(a);
+        if (prev && (Number(prev.liq_usd) || 0) >= (Number(p?.liquidity?.usd) || 0)) continue; // keep its biggest pool
+        out.set(a, {
+          network: "solana",
+          address: a,
+          pool: p.pairAddress ?? null,
+          dex: p.dexId ?? null,
+          name: p.baseToken?.name,
+          symbol: p.baseToken?.symbol,
+          image: p.info?.imageUrl ?? null,
+          price_usd: p.priceUsd,
+          mcap_usd: p.marketCap,
+          fdv_usd: p.fdv,
+          liq_usd: p.liquidity?.usd,
+          vol_24h: p.volume?.h24,
+          change_1h: p.priceChange?.h1,
+          change_24h: p.priceChange?.h24,
+        });
+      }
+    } catch {}
+  }
+  return out;
 }
