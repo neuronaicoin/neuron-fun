@@ -1,6 +1,7 @@
 "use client";
 
 /** Ways into the Airdrop page: a band at the top of Explore and a button in the top bar. */
+import { ELYSIUM, ELYSIUM_LISTED } from "@/lib/elysium";
 import Link from "next/link";
 import { useWallet } from "./wallet";
 
@@ -40,6 +41,37 @@ export function BotBanner() {
         </span>
         <span className="text-[0.75rem] font-extrabold px-1.5 py-0.5 rounded bg-emerald text-on-accent shrink-0">NEW</span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-ink-3" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * Elysium testnet call on Explore: launching there is free (gas from Kinetiq's faucet) and earns
+ * sasa points (indexer/elysiumtest.mjs). Shown while the testnet is open to everyone.
+ */
+export function ElysiumBanner() {
+  if (!ELYSIUM_LISTED || !ELYSIUM.testnet) return null;
+  return (
+    <div className="px-4 sm:px-6 pt-2">
+      <Link
+        href="/elysium/"
+        className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 sm:px-5 border transition-colors hover:brightness-110"
+        style={{ background: "linear-gradient(90deg,#0b2a33,#123c47)", borderColor: "#2f6f80", color: "#e8f6fa" }}
+      >
+        <span className="text-[1.25rem] shrink-0" aria-hidden="true">
+          🧪
+        </span>
+        <span className="min-w-0 flex-1 text-[0.8125rem] sm:text-[0.875rem]">
+          <b className="font-display">Elysium testnet is open</b>
+          <span style={{ color: "#a9d4df" }}> · launch a coin for free, earn points: 100 first launch, 50 each launch, 10 each trade</span>
+        </span>
+        <span className="text-[0.75rem] font-extrabold px-1.5 py-0.5 rounded shrink-0" style={{ background: "#7fd8ea", color: "#062027" }}>
+          FREE
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" style={{ color: "#a9d4df" }} aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
       </Link>
     </div>
   );

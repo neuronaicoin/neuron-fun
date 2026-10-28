@@ -18,7 +18,7 @@ import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 import { RaceBanner } from "@/components/racepromo";
 import { LiveRaces } from "@/components/liveraces";
-import { AirdropBanner, BotBanner } from "@/components/airdropcta";
+import { AirdropBanner, BotBanner, ElysiumBanner } from "@/components/airdropcta";
 import { TopWins } from "@/components/topwins";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
@@ -226,7 +226,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       </div>
     )}
     <div className="app-root">
-      <div className="max-w-7xl mx-auto"><AirdropBanner /><BotBanner /></div>
+      <div className="max-w-7xl mx-auto"><AirdropBanner /><ElysiumBanner /><BotBanner /></div>
       <div className="max-w-7xl mx-auto"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
