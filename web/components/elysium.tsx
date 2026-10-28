@@ -5,7 +5,7 @@
  * coin's page with buy and sell. Uses lib/elysium.ts; transactions go through the wallet's send().
  */
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseEther, parseUnits, type Address } from "viem";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
@@ -202,9 +202,16 @@ function ElysiumCoinInner({ address }: { address: string }) {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState("");
 
+  const misses = useRef(0);
   const load = useCallback(async () => {
-    const c = await fetchElysiumCoin(address).catch(() => null);
-    setCoin(c);
+    let c = await fetchElysiumCoin(address).catch(() => null);
+    // a coin launched a moment ago: the public node can be a few blocks behind, try again first
+    for (let k = 0; !c && k < 3 && misses.current === 0; k++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      c = await fetchElysiumCoin(address).catch(() => null);
+    }
+    if (!c) misses.current++;
+    setCoin((x) => c ?? (x ? x : null));
     if (c && w.address) setBal(await elysiumBalances(w.address as Address, c.address).catch(() => null));
   }, [address, w.address]);
 

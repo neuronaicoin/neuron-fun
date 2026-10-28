@@ -9,7 +9,7 @@
  * While ELYSIUM_OPEN is false only sasa's team wallets see any of it (testnet now; mainnet opens
  * with Elysium's mainnet, Nov 9 2026: fill in ELYSIUM_MAINNET and switch ELYSIUM_NET).
  */
-import { createPublicClient, defineChain, encodeFunctionData, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
+import { createPublicClient, defineChain, encodeFunctionData, getAddress, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import type { Call } from "./tx";
 import { SOLANA_TEAM } from "./solana";
 
@@ -55,7 +55,7 @@ export const elysiumHref = (coin: string) => `/x/?n=${ELYSIUM_NETWORK}&a=${coin.
 
 let client: PublicClient | null = null;
 export function elysiumClient(): PublicClient {
-  if (!client) client = createPublicClient({ chain: ELYSIUM.chain, transport: http(undefined, { retryCount: 3, timeout: 10_000 }), pollingInterval: 300 }) as PublicClient;
+  if (!client) client = createPublicClient({ chain: ELYSIUM.chain, transport: http(undefined, { retryCount: 3, timeout: 10_000, batch: true }), pollingInterval: 300 }) as PublicClient;
   return client;
 }
 
@@ -133,7 +133,13 @@ function priceOf(sqrtPriceX96: bigint, coinIsToken0: boolean): number {
 
 export async function fetchElysiumCoin(address: string): Promise<ElysiumCoin | null> {
   const c = elysiumClient();
-  const coin = address as Address;
+  // one spelling everywhere (links from a launch's log are lowercase)
+  let coin: Address;
+  try {
+    coin = getAddress(address);
+  } catch {
+    return null;
+  }
   const [info, name, symbol, uri] = await Promise.all([
     c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "coins", args: [coin] }),
     c.readContract({ address: coin, abi: erc20Abi, functionName: "name" }).catch(() => ""),
@@ -253,7 +259,7 @@ export async function launchedCoin(tx: Hex): Promise<Address | null> {
   const r = await elysiumClient().getTransactionReceipt({ hash: tx });
   for (const log of r.logs) {
     if (log.address.toLowerCase() !== ELYSIUM.launcher.toLowerCase() || !log.topics[1]) continue;
-    return ("0x" + log.topics[1].slice(26)) as Address;
+    return getAddress("0x" + log.topics[1].slice(26));
   }
   return null;
 }
