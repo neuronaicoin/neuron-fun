@@ -4,9 +4,12 @@
 //   - first launch ever: the "elysium" quest, 100
 //   - every launch: 50, at most 3 a day
 //   - every buy or sale of a sasa coin there: 10, at most 10 a day
+//   - minting the sasa Day-1 Pass (contracts-elysium SasaDayPass): the "elysium_pass" quest, 50;
+//     pass holders get twice the launch and trade points
 // Switched off on mainnet day (ELYSIUM_TEST_OFF=1) or by itself once the testnet is gone.
 
 import { createPublicClient, defineChain, getAddress, http, parseAbiItem } from "viem";
+import { readFileSync } from "node:fs";
 
 const RPC = process.env.ELYSIUM_TEST_RPC || "https://testnet-rpc.elysium.kinetiq.xyz";
 const LAUNCHER = "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9";
@@ -17,6 +20,19 @@ const EVERY_MS = 20_000;
 const LAUNCHED = parseAbiItem(
   "event Launched(address indexed coin, address indexed creator, address pool, uint256 tokenId, string name, string symbol, string uri, uint256 startMc, uint256 firstBuyIn, uint256 firstBuyOut)"
 );
+const TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)");
+
+/** The Day-1 Pass on the testnet: written by the "Deploy sasa Day-1 Pass" workflow (or ELYSIUM_PASS). */
+function passAddress() {
+  if (/^0x[0-9a-fA-F]{40}$/.test(process.env.ELYSIUM_PASS || "")) return getAddress(process.env.ELYSIUM_PASS);
+  try {
+    const j = JSON.parse(readFileSync(new URL("../contracts-elysium/deployments/pass-99801.json", import.meta.url), "utf8"));
+    return /^0x[0-9a-fA-F]{40}$/.test(j.pass || "") ? getAddress(j.pass) : null;
+  } catch {
+    return null;
+  }
+}
+
 const SWAP = parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)");
 
 export const SQL = `
@@ -35,6 +51,14 @@ create table if not exists elysium_test_trades (
   block      bigint not null,
   created_at timestamptz not null default now()
 );
+create table if not exists elysium_pass (
+  owner      text primary key,
+  token_id   bigint not null,
+  block      bigint not null,
+  created_at timestamptz not null default now()
+);
+alter table elysium_pass enable row level security;
+revoke all on elysium_pass from anon, authenticated;
 alter table elysium_test_state enable row level security;
 alter table elysium_test_coins enable row level security;
 alter table elysium_test_trades enable row level security;
@@ -43,12 +67,15 @@ revoke all on elysium_test_state, elysium_test_coins, elysium_test_trades from a
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Day-1 Pass holders earn twice the launch and trade points. */
+const passX = (owner) => `(case when exists (select 1 from elysium_pass where owner = '${owner.replace(/[^0-9a-fx]/gi, "")}') then 2 else 1 end)`;
+
 /** Points for one launch (the quest the first time; 50 a launch, 3 a day). */
 async function pointLaunch(pool, owner, coin) {
   await pool.query(`insert into points_events (owner, kind, ref, pts) values ($1, 'quest', 'elysium', 100) on conflict do nothing`, [owner]);
   await pool.query(
     `insert into points_events (owner, kind, ref, pts)
-     select $1, 'elysium', $2, 50
+     select $1, 'elysium', $2, 50 * ${passX(owner)}
      where (select count(*) from points_events where owner = $1 and kind = 'elysium' and ref like 'launch:%'
             and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc') < 3
      on conflict do nothing`,
@@ -60,7 +87,7 @@ async function pointLaunch(pool, owner, coin) {
 async function pointTrade(pool, owner, tx) {
   await pool.query(
     `insert into points_events (owner, kind, ref, pts)
-     select $1, 'elysium', $2, 10
+     select $1, 'elysium', $2, 10 * ${passX(owner)}
      where (select count(*) from points_events where owner = $1 and kind = 'elysium' and ref like 'trade:%'
             and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc') < 10
      on conflict do nothing`,
@@ -73,6 +100,8 @@ export async function elysiumTestLoop(pool, log) {
   await pool.query(SQL);
   const chain = defineChain({ id: 99801, name: "Elysium Testnet", nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
   const pub = createPublicClient({ chain, transport: http(RPC, { retryCount: 2, timeout: 20_000 }) });
+  const PASS = passAddress();
+  if (PASS) log(`elysium testnet: Day-1 Pass ${PASS}`);
   let fails = 0;
   for (;;) {
     try {
@@ -91,6 +120,16 @@ export async function elysiumTestLoop(pool, log) {
             [coin, getAddress(l.args.pool), creator, l.blockNumber.toString()]
           );
           await pointLaunch(pool, creator, coin);
+        }
+        // Day-1 Pass mints: the holder is recorded (2x from now on) and gets the pass quest
+        if (PASS) {
+          const mints = await pub.getLogs({ address: PASS, event: TRANSFER, args: { from: "0x0000000000000000000000000000000000000000" }, fromBlock: from, toBlock: to });
+          for (const m of mints) {
+            const owner = m.args.to.toLowerCase();
+            const r = await pool.query(`insert into elysium_pass (owner, token_id, block) values ($1, $2, $3) on conflict do nothing`, [owner, m.args.tokenId.toString(), m.blockNumber.toString()]);
+            if (r.rowCount) await pool.query(`insert into points_events (owner, kind, ref, pts) values ($1, 'quest', 'elysium_pass', 50) on conflict do nothing`, [owner]);
+          }
+          if (mints.length) log(`elysium testnet: ${mints.length} Day-1 Pass mint(s)`);
         }
         // trades in sasa's pools (the trader is whoever sent the transaction)
         const pools = (await pool.query("select pool, coin from elysium_test_coins")).rows;

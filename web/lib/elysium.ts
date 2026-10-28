@@ -57,6 +57,18 @@ export const elysiumFor = (address?: string | null) =>
 /** Shown to everyone (menus, the chain list on Create a coin). */
 export const ELYSIUM_LISTED = ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC_TESTNET);
 export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
+/**
+ * The sasa Day-1 Pass (contracts-elysium/src/SasaDayPass.sol): free NFT, one per wallet, 2x points
+ * on Elysium. Filled in from contracts-elysium/deployments/pass-<chain>.json after the
+ * "Deploy sasa Day-1 Pass" workflow; null = the page says it's coming.
+ */
+export const ELYSIUM_PASS: Address | null = null;
+export const passAbi = parseAbi([
+  "function mint() returns (uint256)",
+  "function minted(address) view returns (bool)",
+  "function totalSupply() view returns (uint256)",
+  "function mintOpen() view returns (bool)",
+]);
 export const ELYSIUM_NETWORK = "elysium";
 export const elysiumHref = (coin: string) => `/x/?n=${ELYSIUM_NETWORK}&a=${coin}`;
 

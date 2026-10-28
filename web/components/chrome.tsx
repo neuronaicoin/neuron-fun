@@ -323,6 +323,7 @@ export function Header() {
 const MORE_ALL = [
   { href: "/bot/", label: "🤖 sasa Bot · NEW", note: "WHALES, traps and trends, live" },
   { href: "/scan/", label: "🛡️ Is it safe? · NEW", note: "Free rug check for any coin" },
+  { href: "/pass/", label: "🎟️ Day-1 Pass · FREE", note: "Free NFT on Elysium, 2x points" },
   { href: "/elysium/", label: "Elysium testnet · NEW", note: "Practice a launch free with test HYPE" },
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },

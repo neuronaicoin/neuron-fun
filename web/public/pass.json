@@ -1,0 +1,16 @@
+{
+ "name": "sasa Day-1 Pass",
+ "description": "Minted free on Elysium in sasa's first days. Holders earn 2x sasa points on every Elysium launch and trade. sasapad.fun/pass",
+ "image": "https://sasapad.fun/pass.png",
+ "external_url": "https://sasapad.fun/pass/",
+ "attributes": [
+  {
+   "trait_type": "Chain",
+   "value": "Elysium"
+  },
+  {
+   "trait_type": "Perk",
+   "value": "2x points"
+  }
+ ]
+}
