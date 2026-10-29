@@ -47,7 +47,7 @@ export const ELYSIUM_TESTNET: ElysiumNet = {
   testnet: true,
 };
 
-type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null; start?: number | null };
+type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null; start?: number | null; smoke?: string | null };
 const fill = MAINNET_FILL as Fill;
 const isAddr = (a: string | null): a is Address => !!a && /^0x[0-9a-fA-F]{40}$/.test(a);
 
@@ -87,6 +87,15 @@ export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
  * "Deploy sasa Day-1 Pass" workflow; null = the page says it's coming.
  */
 export const ELYSIUM_PASS: Address | null = ELYSIUM_MAINNET ? (isAddr(fill.pass) ? getAddress(fill.pass) : null) : "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789";
+/**
+ * The deploy workflow's own smoke-test coin ("sasa smoke test"): a check that the launcher works,
+ * not a real coin. Left out of the coin list and of the Day-1 count.
+ */
+const HIDDEN = new Set(
+  [ELYSIUM_MAINNET ? fill.smoke : "0x105A898B23cab7220936dba426C175231C85Ddfa"].filter((a): a is string => isAddr(a ?? null)).map((a) => a.toLowerCase())
+);
+export const elysiumHidden = (coin: string) => HIDDEN.has(coin.toLowerCase());
+
 /** Mainnet's first week: 3x points on every launch and trade (indexer/elysiummain.mjs). */
 export const BOOST_X = 3;
 export const BOOST_DAYS = 7;
@@ -215,7 +224,7 @@ export async function fetchElysiumCoins(limit = 30): Promise<ElysiumCoin[]> {
   const n = Number(await c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "coinCount" }));
   const ids = Array.from({ length: Math.min(n, limit) }, (_, i) => BigInt(n - 1 - i));
   const addrs = await Promise.all(ids.map((i) => c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "allCoins", args: [i] })));
-  const list = await Promise.all(addrs.map((a) => fetchElysiumCoin(a).catch(() => null)));
+  const list = await Promise.all(addrs.filter((a) => !elysiumHidden(a)).map((a) => fetchElysiumCoin(a).catch(() => null)));
   return list.filter((x): x is ElysiumCoin => !!x);
 }
 
@@ -230,9 +239,11 @@ export function elysiumDay1(): Promise<{ set: Set<string>; count: number }> {
   const p = (async () => {
     const c = elysiumClient();
     const count = Number(await c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "coinCount" }));
-    const ids = Array.from({ length: Math.min(count, DAY1_COINS) }, (_, i) => BigInt(i));
+    // the first DAY1_COINS real coins (the smoke-test coin doesn't take a spot)
+    const ids = Array.from({ length: Math.min(count, DAY1_COINS + HIDDEN.size) }, (_, i) => BigInt(i));
     const addrs = await Promise.all(ids.map((i) => c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "allCoins", args: [i] })));
-    return { set: new Set(addrs.map((a) => a.toLowerCase())), count };
+    const real = addrs.map((a) => a.toLowerCase()).filter((a) => !HIDDEN.has(a));
+    return { set: new Set(real.slice(0, DAY1_COINS)), count: count - addrs.filter((a) => HIDDEN.has(a.toLowerCase())).length };
   })();
   day1 = { at: Date.now(), set: p };
   p.catch(() => {
