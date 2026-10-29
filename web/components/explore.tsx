@@ -19,6 +19,7 @@ import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 import { RaceBanner } from "@/components/racepromo";
 import { LiveRaces } from "@/components/liveraces";
 import { AirdropBanner, BotBanner, ElysiumBanner } from "@/components/airdropcta";
+import { Hero, HeroStrip } from "@/components/hero";
 import { TopWins } from "@/components/topwins";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
@@ -67,7 +68,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const sort: SortKey = tab === "racing" || tab === "winners" ? "new" : tab === "ai" ? "trending" : tab;
   const [chain, setChain] = useState<string>("all");
   // Solana's coins: a chip of their own, for people who see Solana yet
-  const { address: me } = useWallet();
+  const { address: me, restoring } = useWallet();
   const solChip = solanaFor(me);
   useEffect(() => {
     if (!solChip && chain === "solana") setChain("all");
@@ -226,7 +227,13 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       </div>
     )}
     <div className="app-root">
-      <div className="max-w-7xl mx-auto"><AirdropBanner /><ElysiumBanner /><BotBanner /></div>
+      {/* sasapad.fun for people who aren't logged in: the hero (one line, two buttons, live box).
+          Logged in (or coming back logged in) and on /explore/: the bands, straight to the coins. */}
+      {withLanding && !me && !restoring ? (
+        <div className="max-w-7xl mx-auto"><Hero /><HeroStrip /></div>
+      ) : (
+        <div className="max-w-7xl mx-auto"><AirdropBanner /><ElysiumBanner /><BotBanner /></div>
+      )}
       <div className="max-w-7xl mx-auto"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
