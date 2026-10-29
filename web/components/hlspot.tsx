@@ -1,168 +1,52 @@
 "use client";
 
 /**
- * The Market page's "Hyperliquid" tab: every token on Hyperliquid's own spot market (HYPE, KNTQ,
- * PURR…), bought and sold with dollars through the user's Hyperliquid account (lib/hlspot.ts).
+ * Coins from Hyperliquid's own spot market (HYPE, KNTQ, PURR…) that the Market list shows as ordinary
+ * rows: bought and sold with dollars through the user's trading balance (lib/hlspot.ts).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Skeleton } from "./coins";
+import { useCallback, useEffect, useState } from "react";
 import { ConnectButton, Sheet } from "./chrome";
 import { useWallet } from "./wallet";
 import { compactUsd, friendlyError } from "@/lib/format";
 import { fmtPrice } from "@/lib/race";
 import { showToast } from "@/lib/toast";
-import { fetchHlSpot, hlSpotBalances, SPOT_MIN, type HlSpot } from "@/lib/hlspot";
+import { hlSpotBalances, SPOT_MIN, type HlSpot } from "@/lib/hlspot";
 import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
 
 const pct = (v: number | null) => (v === null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
 const tone = (v: number | null) => (v === null ? "text-ink-3" : v >= 0 ? "text-up" : "text-danger");
-type Sort = "volume" | "gainers" | "losers" | "mcap";
 
-export function HlSpotList({ q }: { q: string }) {
+/**
+ * Trading Hyperliquid spot coins from the Market list: the user's holdings, whether trading is
+ * allowed here, and the buy/sell actions. The page shows SpotSheet for the coin picked.
+ */
+export function useSpotDesk() {
   const w = useWallet();
-  const [list, setList] = useState<HlSpot[] | null>(null);
-  const [error, setError] = useState(false);
-  const [sort, setSort] = useState<Sort>("volume");
   const [bal, setBal] = useState<Map<string, number>>(new Map());
-  const [pick, setPick] = useState<HlSpot | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setList(await fetchHlSpot());
-      setError(false);
-    } catch {
-      setError(true);
-    }
-  }, []);
   const loadBal = useCallback(async () => {
     if (!w.address) return setBal(new Map());
     setBal(await hlSpotBalances(w.address).catch(() => new Map()));
   }, [w.address]);
   useEffect(() => {
-    void load();
     void loadBal();
-    const t = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void load();
-      void loadBal();
-    }, 20_000);
+    const t = setInterval(() => document.visibilityState === "visible" && void loadBal(), 20_000);
     return () => clearInterval(t);
-  }, [load, loadBal]);
+  }, [loadBal]);
   useEffect(() => {
     void perpsAllowedHere().then(setAllowed);
   }, []);
-  // a shared link (?src=hl&c=KNTQ) opens that token
-  useEffect(() => {
-    if (!list || pick) return;
-    const c = new URLSearchParams(window.location.search).get("c")?.toUpperCase();
-    if (c) setPick(list.find((m) => m.token.toUpperCase() === c) ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list]);
-
-  const after = useCallback(async () => {
-    await Promise.all([load(), loadBal()]);
-  }, [load, loadBal]);
-  const trade = usePerpsTrade(after);
-
-  const rows = useMemo(() => {
-    if (!list) return null;
-    const s = q.trim().toLowerCase();
-    const hit = s ? list.filter((m) => m.name.toLowerCase().includes(s) || m.token.toLowerCase().includes(s)) : list.slice();
-    const num = (v: number | null, desc: boolean) => (v === null ? (desc ? -Infinity : Infinity) : v);
-    if (sort === "gainers") return hit.sort((a, b) => num(b.change24h, true) - num(a.change24h, true));
-    if (sort === "losers") return hit.sort((a, b) => num(a.change24h, false) - num(b.change24h, false));
-    if (sort === "mcap") return hit.sort((a, b) => num(b.mcap, true) - num(a.mcap, true));
-    return hit.sort((a, b) => b.vol24h - a.vol24h);
-  }, [list, sort, q]);
-
-  const held = rows?.filter((m) => (bal.get(m.token) ?? 0) * m.price >= 0.5) ?? [];
-  const canTrade = PERPS_TRADING && (allowed || geoExempt(w.address));
-
-  return (
-    <>
-      <div className="mt-3 flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Sort">
-        {(
-          [
-            ["volume", "Volume"],
-            ["gainers", "Gainers"],
-            ["losers", "Losers"],
-            ["mcap", "Market cap"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={sort === id}
-            onClick={() => setSort(id)}
-            className={"h-9 px-3.5 rounded-lg text-[0.875rem] font-semibold shrink-0 " + (sort === id ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {held.length > 0 && (
-        <div className="mt-3 rounded-2xl border border-line bg-surface p-3">
-          <div className="text-[0.8125rem] text-ink-3 mb-2">You hold</div>
-          <div className="flex flex-wrap gap-2">
-            {held.map((m) => (
-              <button key={m.coin} type="button" onClick={() => setPick(m)} className="h-9 px-3 rounded-xl border border-line text-[0.875rem] font-semibold hover:border-emerald/60">
-                {m.token} · {compactUsd((bal.get(m.token) ?? 0) * m.price)}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error && !list && <p className="mt-6 text-danger">Couldn&apos;t load Hyperliquid. Try again in a moment.</p>}
-      <div className="mt-3 rounded-3xl border border-line bg-surface overflow-hidden">
-        <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_7rem_5rem_7rem_7rem] gap-3 px-4 py-2.5 text-[0.75rem] text-ink-3 border-b border-line">
-          <span>Token</span>
-          <span className="text-right">Price</span>
-          <span className="text-right">24h</span>
-          <span className="text-right">Volume 24h</span>
-          <span className="text-right">Market cap</span>
-        </div>
-        {rows === null ? (
-          <div className="p-4 flex flex-col gap-2">
-            {Array.from({ length: 8 }, (_, i) => (
-              <Skeleton key={i} className="h-12" />
-            ))}
-          </div>
-        ) : rows.length === 0 ? (
-          <p className="p-6 text-center text-ink-3">{q ? "No token by that name on Hyperliquid." : "Nothing trading right now."}</p>
-        ) : (
-          <ul className="divide-y divide-line">
-            {rows.map((m) => (
-              <li key={m.coin}>
-                <button type="button" onClick={() => setPick(m)} className="w-full text-left grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_7rem_5rem_7rem_7rem] gap-3 items-center px-4 py-3 hover:bg-paper">
-                  <span className="min-w-0">
-                    <span className="block font-semibold text-[0.9375rem] truncate">{m.token}</span>
-                    {m.name !== m.token && <span className="block text-[0.75rem] text-ink-3 truncate">{m.name}</span>}
-                  </span>
-                  <span className="text-right sm:contents">
-                    <span className="block sm:text-right font-mono text-[0.875rem] tabular-nums">{fmtPrice(m.price)}</span>
-                    <span className={"block sm:text-right font-mono text-[0.8125rem] tabular-nums " + tone(m.change24h)}>{pct(m.change24h)}</span>
-                    <span className="hidden sm:block text-right font-mono text-[0.8125rem] tabular-nums">{compactUsd(m.vol24h)}</span>
-                    <span className="hidden sm:block text-right font-mono text-[0.8125rem] tabular-nums">{m.mcap ? compactUsd(m.mcap) : "—"}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <p className="mt-3 text-[0.75rem] text-ink-3">Hyperliquid&apos;s own spot market, live from Hyperliquid. Bought and sold with your dollars through your Hyperliquid balance, the same one as Futures.</p>
-
-      {pick && <SpotSheet m={pick} have={bal.get(pick.token) ?? 0} canTrade={canTrade} blocked={allowed === false && !geoExempt(w.address)} trade={trade} onClose={() => setPick(null)} />}
-    </>
-  );
+  const trade = usePerpsTrade(loadBal);
+  return {
+    bal,
+    trade,
+    canTrade: PERPS_TRADING && (allowed || geoExempt(w.address)),
+    blocked: allowed === false && !geoExempt(w.address),
+  };
 }
 
-function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; have: number; canTrade: boolean; blocked: boolean; trade: ReturnType<typeof usePerpsTrade>; onClose: () => void }) {
+export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; have: number; canTrade: boolean; blocked: boolean; trade: ReturnType<typeof usePerpsTrade>; onClose: () => void }) {
   const w = useWallet();
   const [side, setSide] = useState<"buy" | "sell">(have * m.price >= SPOT_MIN ? "sell" : "buy");
   const [amount, setAmount] = useState("25");
@@ -179,10 +63,10 @@ function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; 
     try {
       if (side === "buy") {
         const r = await trade.spotBuy(m, n, setStep);
-        showToast({ kind: "buy", title: `Bought ${r.amount.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${m.token}`, body: `For about $${n}. It's in your Hyperliquid balance.` });
+        showToast({ kind: "buy", title: `Bought ${r.amount.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${m.token}`, body: `For about $${n}. It's in your trading balance.` });
       } else {
         const r = await trade.spotSell(m, sellAmt, setStep);
-        showToast({ kind: "sell", title: `Sold ${m.token}${r.usd ? ` for about $${r.usd.toFixed(2)}` : ""}`, body: "The dollars are in your Hyperliquid balance." });
+        showToast({ kind: "sell", title: `Sold ${m.token}${r.usd ? ` for about $${r.usd.toFixed(2)}` : ""}`, body: "The dollars are in your trading balance." });
       }
       onClose();
     } catch (e) {
@@ -255,8 +139,8 @@ function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; 
           </div>
         )}
         {side === "buy" && n > 0 && n < SPOT_MIN && <p className="text-[0.8125rem] text-warn-ink">The smallest buy is ${SPOT_MIN}.</p>}
-        {side === "sell" && sellAmt * m.price < SPOT_MIN && <p className="text-[0.8125rem] text-warn-ink">Hyperliquid&apos;s smallest order is ${SPOT_MIN}.</p>}
-        {blocked && <p className="text-[0.8125rem] text-warn-ink">Hyperliquid trading isn&apos;t available in your region.</p>}
+        {side === "sell" && sellAmt * m.price < SPOT_MIN && <p className="text-[0.8125rem] text-warn-ink">The smallest sell is ${SPOT_MIN}.</p>}
+        {blocked && <p className="text-[0.8125rem] text-warn-ink">This coin can&apos;t be traded from your region.</p>}
         {err && <p className="text-[0.8125rem] text-danger">{err}</p>}
         {!w.address ? (
           <ConnectButton full />
@@ -270,7 +154,7 @@ function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; 
             {busy ? (step ?? "Working…") : side === "buy" ? `Buy ${m.token} for $${n > 0 ? n : 0}` : `Sell ${part === 1 ? "all" : `${part * 100}%`} ${m.token}`}
           </button>
         )}
-        <p className="text-[0.75rem] text-ink-3 text-center">Paid from your balance (moved to Hyperliquid if needed). Prices can move fast.</p>
+        <p className="text-[0.75rem] text-ink-3 text-center">Paid with USDC from your balance. Prices can move fast.</p>
       </div>
     </Sheet>
   );

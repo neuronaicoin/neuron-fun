@@ -1,6 +1,6 @@
 /**
  * Hyperliquid's own spot market (HyperCore): HYPE, KNTQ, PURR and every other token paired with
- * USDC there. Listed on the Market page's "Hyperliquid" tab; bought and sold through the user's
+ * USDC there. The ones the Market list doesn't already have join it as ordinary rows (newSpotOnly); bought and sold through the user's
  * Hyperliquid account (lib/perpstrade.ts spotBuy / spotSell), the same account as Futures and
  * Predict. Prices come from Hyperliquid itself (spotMetaAndAssetCtxs), no other source.
  */
@@ -84,6 +84,30 @@ export function spotPrice(px: number, szDecimals: number): string {
   const sig = Number(px.toPrecision(5));
   const s = sig.toFixed(Math.max(0, 8 - szDecimals));
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}
+
+/** Dollar coins never show on the Market list (USDT0, USDH, USDE, feUSD…). */
+const isDollar = (m: HlSpot) => /USD|^USDT|DAI$/i.test(m.token) || /dollar/i.test(m.name) || (m.price > 0.97 && m.price < 1.03 && /usd/i.test(m.name));
+
+/**
+ * Hyperliquid tokens that may join the Market list: only coins the main list doesn't already have,
+ * so no coin ever shows twice. Dropped: any symbol or name already on the list; Hyperliquid's wrapped
+ * copies (UBTC, UETH, USOL… "Unit" assets: the leading U taken off matches a listed coin, or the name
+ * starts "Unit "); dollar coins; and thin pairs (under $5K traded today) that would only add noise.
+ */
+export function newSpotOnly(list: HlSpot[], have: { symbol: string; name: string }[]): HlSpot[] {
+  const syms = new Set(have.map((c) => c.symbol.toUpperCase()));
+  const names = new Set(have.map((c) => c.name.trim().toLowerCase()));
+  const seen = new Set<string>();
+  return list.filter((m) => {
+    const s = m.token.toUpperCase();
+    const bare = s.startsWith("U") && s.length > 2 ? s.slice(1) : null;
+    if (syms.has(s) || (bare && syms.has(bare))) return false;
+    if (names.has(m.name.trim().toLowerCase()) || /^unit\s/i.test(m.name)) return false;
+    if (isDollar(m) || m.vol24h < 5_000 || seen.has(s)) return false;
+    seen.add(s);
+    return true;
+  });
 }
 
 /** Smallest spot order Hyperliquid takes, in dollars. */
