@@ -88,7 +88,8 @@ jobs:
           for a in "$NPM" "$WHYPE"; do
             if [ "$(cast code "$a" --rpc-url "$RPC")" = "0x" ]; then echo "no contract at $a on this chain"; exit 1; fi
           done
-          { echo "RPC=$RPC"; echo "NPM=$NPM"; echo "WHYPE=$WHYPE"; echo "SMOKE_BUY=$SMOKE"; } >> "$GITHUB_ENV"
+          # where the points scan starts, and when the 3x points week starts
+          { echo "RPC=$RPC"; echo "NPM=$NPM"; echo "WHYPE=$WHYPE"; echo "SMOKE_BUY=$SMOKE"; echo "START_BLOCK=$(cast block-number --rpc-url "$RPC")"; echo "START_TIME=$(date +%s)"; } >> "$GITHUB_ENV"
 
       - name: Deploy (+ smoke-test coin)
         env:
@@ -129,10 +130,12 @@ jobs:
           D=contracts-elysium/deployments/$CHAIN.json
           P=contracts-elysium/deployments/pass-$CHAIN.json
           if [ -z "$IN_ROUTER" ]; then echo "router input missing: site stays on testnet"; exit 0; fi
-          jq -n --argjson id "$CHAIN" --arg rpc "$RPC" --arg ex "$IN_EXPLORER" --arg router "$IN_ROUTER" \
+          jq -n --argjson id "$CHAIN" --argjson start "$START_TIME" --arg block "$START_BLOCK" --arg rpc "$RPC" --arg ex "$IN_EXPLORER" --arg router "$IN_ROUTER" \
             --arg launcher "$(jq -r .launcher "$D")" --arg whype "$(jq -r .wrapped "$D")" --arg pass "$(jq -r '.pass // empty' "$P" 2>/dev/null)" \
-            '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end)}' \
+            '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end), start: $start, startBlock: $block}' \
             > web/lib/elysium-mainnet.json
+          # the same file on the site, for the indexer (3x points week, first-100 badges)
+          cp web/lib/elysium-mainnet.json web/public/elysium-mainnet.json
           cat web/lib/elysium-mainnet.json
 
       - name: Save addresses to the repo
@@ -141,7 +144,7 @@ jobs:
         run: |
           git config user.name "sasa-deploy"
           git config user.email "deploy@sasapad.fun"
-          git add -A contracts-elysium/deployments web/lib/elysium-mainnet.json
+          git add -A contracts-elysium/deployments web/lib/elysium-mainnet.json web/public/elysium-mainnet.json
           git commit -m "sasa launcher deployed on ${{ inputs.network }}" || echo "nothing to commit"
           git pull --rebase
           git push
