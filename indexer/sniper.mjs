@@ -343,7 +343,8 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
     from s, regexp_matches(coalesce(s.name, '') || ' ' || coalesce(s.symbol, ''), '([A-Za-z]{2,})', 'g') as m
   ), t as (
     select w.*, case
-      when word in ('ai','agent','agents','gpt','agi','bot','bots','robot','neural','llm','claude','grok','openai','chatgpt','aixbt') then 'AI agents'
+      when word in ('ai','agent','agents','gpt','agi','bot','bots','robot','neural','llm','claude','grok','openai','chatgpt','aixbt',
+        'artificial','intelligence','sentient','machine','android','cyborg','agentic','aigent') then 'AI agents'
       when word in ('cat','cats','kitty','kitten','meow','neko','popcat','mew') then 'Cats'
       when word in ('dog','dogs','doge','inu','shib','shiba','puppy','pup','wif','bonk','woof') then 'Dogs'
       when word in ('pepe','frog','frogs','toad','kek') then 'Frogs'
@@ -360,7 +361,7 @@ create or replace function sniper_trends() returns jsonb language sql stable as 
         'its','his','her','our','who','why','what','how','big','lil','mr','mrs','too','now','day','man','guy','boy','girl',
         'com','net','org','xyz','app','www','http','https','life','live','love','world','time','home','best','good','companions',
         'make','anti','get','buy','sell','this','that','only','last','next','first','token',
-        'launch','launched','launching','fee','fees','test','testing')
+        'launch','launched','launching','fee','fees','test','testing','super','mega','ultra')
   ), d as (select distinct on (theme, mint) * from t), g as (
     select theme,
       -- different people, not coins: one creator spamming the same name is one, not 40

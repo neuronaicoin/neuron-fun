@@ -9,7 +9,14 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { timeAgo } from "@/components/coins";
+import { timeAgo as timeAgoLocal } from "@/components/coins";
+
+/**
+ * The server clock minus this device's clock (set from each live response). A phone or PC whose
+ * clock runs a little behind made every new buy say "0s ago"; times here use the server's clock.
+ */
+let skew = 0;
+const timeAgo = (iso: string | null) => (iso ? timeAgoLocal(new Date(new Date(iso).getTime() - skew).toISOString()) : timeAgoLocal(iso));
 import { compactUsd } from "@/lib/format";
 import { extHref } from "@/lib/extcoins";
 
@@ -59,6 +66,8 @@ function useLive() {
         const r = await fetch("/api/bot/live", { cache: "no-store" });
         if (!r.ok) throw new Error(String(r.status));
         const j = (await r.json()) as Live;
+        const server = Date.parse(j.at);
+        if (Number.isFinite(server)) skew = server - Date.now();
         if (alive) {
           setData(j);
           setErr(false);
@@ -439,8 +448,8 @@ export default function BotPage() {
           </Link>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          <Tile label="Coins scanned today" value={data?.scanned ?? 0} />
-          <Tile label="Traps caught" value={data?.traps ?? 0} tone="text-danger" />
+          <Tile label="Coins scanned · 24h" value={data?.scanned ?? 0} />
+          <Tile label="Traps caught · 24h" value={data?.traps ?? 0} tone="text-danger" />
           <Tile label="Wallets followed" value={data?.smart ?? 0} tone="text-emerald" />
         </div>
       </header>
@@ -510,11 +519,14 @@ export default function BotPage() {
 }
 
 function Tile({ label, value, tone = "" }: { label: string; value: number; tone?: string }) {
+  // a rolling 24-hour count dips when old coins leave the window: on screen it only goes up
+  const top = useRef(0);
+  top.current = Math.max(top.current, value);
   return (
     <div className="rounded-2xl border border-line bg-surface px-3 sm:px-4 py-2.5 sm:py-3 min-w-0 xl:min-w-[170px]">
       <div className="text-[0.625rem] sm:text-[0.6875rem] font-bold tracking-[0.06em] uppercase text-ink-3 leading-tight min-h-[2em] sm:min-h-0">{label}</div>
       <div className={"mt-0.5 font-display font-extrabold text-[1.25rem] sm:text-[1.625rem] tabular-nums " + tone}>
-        <Counter value={value} />
+        <Counter value={top.current} />
       </div>
     </div>
   );
