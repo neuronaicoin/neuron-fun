@@ -160,7 +160,7 @@ function ElysiumHomeInner() {
       const info = await uploadElysiumInfo({ name: name.trim(), symbol: symbol.trim().toUpperCase(), description: description.trim(), image: logo });
       const fee = await elysiumLaunchFee();
       setBusy("Confirm in your wallet…");
-      const tx = await w.send(ELYSIUM.chain, [launchCall({ name: name.trim(), symbol: symbol.trim().toUpperCase(), uri: info.uri, firstBuyWei: first, launchFeeWei: fee })], setBusy);
+      const tx = await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, [launchCall({ name: name.trim(), symbol: symbol.trim().toUpperCase(), uri: info.uri, firstBuyWei: first, launchFeeWei: fee })], setBusy);
       const coin = await launchedCoin(tx);
       toast(test ? "Your test coin is live on Elysium testnet ✓" : "Your coin is live on Elysium ✓");
       setName("");
@@ -393,7 +393,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
       if (have !== undefined && raw > have) throw new Error(side === "buy" ? "Not enough HYPE." : `You don't have that many ${coin.symbol}.`);
       setBusy("Confirm in your wallet…");
       const calls = side === "buy" ? buyCalls(coin, w.address as Address, raw, SLIPPAGE_BPS) : sellCalls(coin, w.address as Address, raw, SLIPPAGE_BPS);
-      await w.send(ELYSIUM.chain, calls, setBusy);
+      await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, calls, setBusy);
       toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? " · +10 airdrop points" : ""));
       setAmount("");
       for (const ms of [0, 1500, 4000]) setTimeout(() => void load(), ms);

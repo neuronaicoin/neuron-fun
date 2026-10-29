@@ -5,6 +5,7 @@
  * login code never slows down the first paint. It reports the signed-in
  * user's embedded wallet back to WalletProvider and nothing else.
  */
+import { ELYSIUM } from "@/lib/elysium";
 import { useEffect, useRef } from "react";
 import type { LocalAccount } from "viem";
 import { PrivyProvider, toViemAccount, usePrivy, useSign7702Authorization, useWallets } from "@privy-io/react-auth";
@@ -50,6 +51,8 @@ const SUPPORTED = [
   ...[base, baseSepolia].filter((c) => usdcGasChain(c.id) && (c.testnet ?? false) === (CHAINS[0].chain.testnet ?? false)),
   // mainnet: Ethereum too (Market coins live there; the account pays its own gas)
   ...(CHAINS[0].chain.testnet ? [] : [mainnet]),
+  // Elysium (testnet now, mainnet once filled in): email accounts pay their own HYPE gas there
+  ELYSIUM.chain,
 ].filter((c, i, a) => a.findIndex((x) => x.id === c.id) === i);
 
 let sendLane: Promise<unknown> = Promise.resolve();

@@ -6,15 +6,15 @@
  * and makes the creator's first buy. Trades go through the DEX's swap router (wrap HYPE → WHYPE →
  * coin, and back). The pool fee (1%) is the trading fee: 70% sasa, 30% the creator.
  *
- * While ELYSIUM_OPEN is false only sasa's team wallets see any of it (testnet now; mainnet opens
- * with Elysium's mainnet, Nov 9 2026: fill in ELYSIUM_MAINNET and switch ELYSIUM_NET).
+ * Mainnet switches on by itself: the "Deploy sasa launcher on Elysium" workflow (network: elysium)
+ * writes lib/elysium-mainnet.json (chain, RPC, launcher, router, WHYPE, Day-1 Pass). Once it's
+ * filled, the whole site uses Elysium mainnet and every TESTNET label goes away; until then it's
+ * the public testnet.
  */
 import { createPublicClient, defineChain, encodeFunctionData, getAddress, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import type { Call } from "./tx";
 import { SOLANA_TEAM } from "./solana";
-
-/** Everyone sees Elysium (true once mainnet is open on sasa). */
-export const ELYSIUM_OPEN = false;
+import MAINNET_FILL from "./elysium-mainnet.json";
 /** The testnet is open to everyone (free practice with test HYPE) while mainnet waits. */
 export const ELYSIUM_PUBLIC_TESTNET = true;
 
@@ -47,8 +47,32 @@ export const ELYSIUM_TESTNET: ElysiumNet = {
   testnet: true,
 };
 
-/** Filled in on mainnet day (chain id, RPC, launcher from the deploy workflow, the DEX's router). */
-export const ELYSIUM_MAINNET: ElysiumNet | null = null;
+type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null };
+const fill = MAINNET_FILL as Fill;
+const isAddr = (a: string | null): a is Address => !!a && /^0x[0-9a-fA-F]{40}$/.test(a);
+
+/** Elysium mainnet, from lib/elysium-mainnet.json (written by the deploy workflow on mainnet day). */
+export const ELYSIUM_MAINNET: ElysiumNet | null =
+  fill.chainId && fill.rpc && isAddr(fill.launcher) && isAddr(fill.router) && isAddr(fill.whype)
+    ? {
+        chain: defineChain({
+          id: fill.chainId,
+          name: "Elysium",
+          nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+          rpcUrls: { default: { http: [fill.rpc] } },
+          ...(fill.explorer ? { blockExplorers: { default: { name: "Elysium explorer", url: fill.explorer } } } : {}),
+        }),
+        launcher: getAddress(fill.launcher),
+        router: getAddress(fill.router),
+        whype: getAddress(fill.whype),
+        fee: 10_000,
+        explorer: fill.explorer ?? "",
+        testnet: false,
+      }
+    : null;
+
+/** Everyone sees Elysium: on by itself once mainnet is filled in. */
+export const ELYSIUM_OPEN = !!ELYSIUM_MAINNET;
 
 export const ELYSIUM: ElysiumNet = ELYSIUM_MAINNET ?? ELYSIUM_TESTNET;
 /** Who can use sasa on Elysium: everyone on the public testnet or once mainnet opens, else sasa's team. */
@@ -62,7 +86,7 @@ export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
  * on Elysium. Filled in from contracts-elysium/deployments/pass-<chain>.json after the
  * "Deploy sasa Day-1 Pass" workflow; null = the page says it's coming.
  */
-export const ELYSIUM_PASS: Address | null = ELYSIUM_MAINNET ? null : "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789";
+export const ELYSIUM_PASS: Address | null = ELYSIUM_MAINNET ? (isAddr(fill.pass) ? getAddress(fill.pass) : null) : "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789";
 export const passAbi = parseAbi([
   "function mint() returns (uint256)",
   "function minted(address) view returns (bool)",

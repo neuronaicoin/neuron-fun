@@ -50,7 +50,7 @@ export default function Page() {
     if (!ELYSIUM_PASS || !w.address) return;
     try {
       setBusy("Minting…");
-      await w.send(ELYSIUM.chain, [{ to: ELYSIUM_PASS, data: encodeFunctionData({ abi: passAbi, functionName: "mint" }) }], setBusy);
+      await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, [{ to: ELYSIUM_PASS, data: encodeFunctionData({ abi: passAbi, functionName: "mint" }) }], setBusy);
       setMine(true);
       toast("Your Day-1 Pass is minted ✓ 2x points are on");
       void load();
