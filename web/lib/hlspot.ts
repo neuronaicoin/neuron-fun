@@ -28,6 +28,11 @@ type Meta = {
 };
 type Ctx = { dayNtlVlm: string; markPx: string; midPx: string | null; prevDayPx: string; circulatingSupply?: string };
 
+/** Names people search for when Hyperliquid has no full name on the token. */
+const KNOWN: Record<string, string> = { KNTQ: "Kinetiq", HFUN: "HypurrFun", PURR: "Purr", HYPE: "HYPE" };
+/** Always listed, whatever today's volume: coins people come looking for. */
+const ALWAYS = new Set(["KNTQ", "HYPE", "PURR", "HFUN"]);
+
 let cache: { at: number; list: Promise<HlSpot[]> } | null = null;
 
 /** Every USDC-quoted spot pair on Hyperliquid with real trading, biggest volume first (cached 20 s). */
@@ -57,7 +62,7 @@ export function fetchHlSpot(): Promise<HlSpot[]> {
         coin: u.name,
         asset: 10_000 + u.index,
         token: base.name,
-        name: full && !/hyperliquid/i.test(full) ? full : base.name,
+        name: KNOWN[base.name] ?? (full && !/hyperliquid/i.test(full) ? full : base.name),
         szDecimals: base.szDecimals,
         price,
         change24h: prev > 0 ? ((price - prev) / prev) * 100 : null,
@@ -111,7 +116,7 @@ export function newSpotOnly(list: HlSpot[], have: { symbol: string; name: string
     const bare = [s.startsWith("U") && s.length > 2 ? s.slice(1) : null, s.endsWith("0") && s.length > 2 ? s.slice(0, -1) : null];
     if (syms.has(s) || bare.some((b) => b && syms.has(b))) return false;
     if (names.has(m.name.trim().toLowerCase()) || /^unit\s/i.test(m.name)) return false;
-    if (isDollar(m) || m.vol24h < 25_000 || seen.has(s)) return false;
+    if (isDollar(m) || seen.has(s) || (m.vol24h < 25_000 && !ALWAYS.has(s))) return false;
     seen.add(s);
     return true;
   });
