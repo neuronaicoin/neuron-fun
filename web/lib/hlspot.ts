@@ -48,16 +48,21 @@ export function fetchHlSpot(): Promise<HlSpot[]> {
       const vol = Number(c.dayNtlVlm) || 0;
       if (!(price > 0) || vol < 1) return; // dead pairs (no trading today) stay out
       const supply = Number(c.circulatingSupply);
+      const cap = supply > 0 ? supply * price : null;
+      // Thin markets quote silly prices (a $4,000 coin with $2K traded): only believe a market cap that
+      // real trading backs up, at least 0.05% of it traded today and $20K in all.
+      const mcap = cap && vol >= 20_000 && vol >= cap * 0.0005 ? cap : null;
+      const full = base.fullName?.trim();
       out.push({
         coin: u.name,
         asset: 10_000 + u.index,
         token: base.name,
-        name: base.fullName?.trim() || base.name,
+        name: full && !/hyperliquid/i.test(full) ? full : base.name,
         szDecimals: base.szDecimals,
         price,
         change24h: prev > 0 ? ((price - prev) / prev) * 100 : null,
         vol24h: vol,
-        mcap: supply > 0 ? supply * price : null,
+        mcap,
       });
     });
     return out.sort((a, b) => b.vol24h - a.vol24h);
@@ -87,13 +92,15 @@ export function spotPrice(px: number, szDecimals: number): string {
 }
 
 /** Dollar coins never show on the Market list (USDT0, USDH, USDE, feUSD…). */
-const isDollar = (m: HlSpot) => /USD|^USDT|DAI$/i.test(m.token) || /dollar/i.test(m.name) || (m.price > 0.97 && m.price < 1.03 && /usd/i.test(m.name));
+const isDollar = (m: HlSpot) =>
+  /USD|^USDT|DAI$/i.test(m.token) || /dollar/i.test(m.name) || (m.price > 0.97 && m.price < 1.03 && /usd/i.test(m.name)) || (m.price > 0.99 && m.price < 1.01 && Math.abs(m.change24h ?? 0) < 1);
 
 /**
  * Hyperliquid tokens that may join the Market list: only coins the main list doesn't already have,
  * so no coin ever shows twice. Dropped: any symbol or name already on the list; Hyperliquid's wrapped
  * copies (UBTC, UETH, USOL… "Unit" assets: the leading U taken off matches a listed coin, or the name
- * starts "Unit "); dollar coins; and thin pairs (under $5K traded today) that would only add noise.
+ * starts "Unit "; AVAX0-style copies with a trailing 0); dollar coins; and thin pairs (under $25K
+ * traded today) that would only add noise.
  */
 export function newSpotOnly(list: HlSpot[], have: { symbol: string; name: string }[]): HlSpot[] {
   const syms = new Set(have.map((c) => c.symbol.toUpperCase()));
@@ -101,10 +108,10 @@ export function newSpotOnly(list: HlSpot[], have: { symbol: string; name: string
   const seen = new Set<string>();
   return list.filter((m) => {
     const s = m.token.toUpperCase();
-    const bare = s.startsWith("U") && s.length > 2 ? s.slice(1) : null;
-    if (syms.has(s) || (bare && syms.has(bare))) return false;
+    const bare = [s.startsWith("U") && s.length > 2 ? s.slice(1) : null, s.endsWith("0") && s.length > 2 ? s.slice(0, -1) : null];
+    if (syms.has(s) || bare.some((b) => b && syms.has(b))) return false;
     if (names.has(m.name.trim().toLowerCase()) || /^unit\s/i.test(m.name)) return false;
-    if (isDollar(m) || m.vol24h < 5_000 || seen.has(s)) return false;
+    if (isDollar(m) || m.vol24h < 25_000 || seen.has(s)) return false;
     seen.add(s);
     return true;
   });

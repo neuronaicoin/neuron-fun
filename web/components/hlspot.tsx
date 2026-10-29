@@ -13,6 +13,7 @@ import { showToast } from "@/lib/toast";
 import { hlSpotBalances, SPOT_MIN, type HlSpot } from "@/lib/hlspot";
 import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
+import { PerpsChart } from "./perpschart";
 
 const pct = (v: number | null) => (v === null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
 const tone = (v: number | null) => (v === null ? "text-ink-3" : v >= 0 ? "text-up" : "text-danger");
@@ -90,6 +91,7 @@ export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: H
             {m.mcap && <div>Market cap {compactUsd(m.mcap)}</div>}
           </div>
         </div>
+        <PerpsChart coin={m.coin} decimals={Math.min(Math.max(0, 8 - m.szDecimals), Math.max(2, 4 - Math.floor(Math.log10(m.price))))} height={260} />
         <div className="grid grid-cols-2 gap-2">
           {(["buy", "sell"] as const).map((s) => (
             <button
