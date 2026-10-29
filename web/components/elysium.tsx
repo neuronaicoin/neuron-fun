@@ -36,6 +36,7 @@ import {
   DAY1_COINS,
   ELYSIUM_BOOST_END,
   testnetClosed,
+  FAUCET_RULE,
   boostLive,
   elysiumDay1,
 } from "@/lib/elysium";
@@ -380,14 +381,8 @@ function ElysiumHomeInner() {
           <Step
             n={2}
             done={hype !== null && hype > 0n}
-            title="Get free test HYPE"
-            text={
-              hype !== null && hype > 0n
-                ? `You have ${fmtHype(hype)} test HYPE`
-                : w.address
-                  ? "Copy your address, paste it in the faucet (once every 12 hours)"
-                  : "From Kinetiq's faucet, once every 12 hours"
-            }
+            title="Get test HYPE"
+            text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : `${FAUCET_RULE} No HYPE? Wait for mainnet on Nov 9: you'll start with your USDC.`}
           >
             <span className="shrink-0 flex flex-col sm:flex-row gap-1.5">
               {w.address && !(hype !== null && hype > 0n) && <CopyAddress address={w.address} />}
@@ -694,10 +689,11 @@ function ElysiumCoinInner({ address }: { address: string }) {
         )}
         {ELYSIUM.testnet && side === "buy" && bal && bal.hype === 0n && (
           <p className="text-[0.75rem] text-ink-3">
-            No test HYPE yet?{" "}
+            No test HYPE yet? {FAUCET_RULE}{" "}
             <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="text-emerald font-semibold">
-              Get some free from the faucet ↗
-            </a>
+              Faucet ↗
+            </a>{" "}
+            No HYPE? Mainnet opens Nov 9, with your USDC.
           </p>
         )}
       </div>

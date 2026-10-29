@@ -12,7 +12,7 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { toast } from "@/components/alerts";
 import { friendlyError } from "@/lib/format";
-import { ELYSIUM, ELYSIUM_PASS, FAUCET_URL, elysiumClient, elysiumHypeBalance, passAbi, testnetClosed } from "@/lib/elysium";
+import { ELYSIUM, ELYSIUM_PASS, FAUCET_RULE, FAUCET_URL, elysiumClient, elysiumHypeBalance, passAbi, testnetClosed } from "@/lib/elysium";
 
 export default function Page() {
   const w = useWallet();
@@ -108,10 +108,11 @@ export default function Page() {
               </button>
               {noGas && ELYSIUM.testnet && (
                 <p className="text-[0.8125rem] text-ink-2">
-                  You need a little test HYPE for the network fee.{" "}
+                  You need a little test HYPE for the network fee. {FAUCET_RULE}{" "}
                   <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="text-emerald font-semibold">
-                    Get it free from the faucet →
-                  </a>
+                    Faucet →
+                  </a>{" "}
+                  No HYPE? The mainnet pass opens Nov 9.
                 </p>
               )}
             </div>

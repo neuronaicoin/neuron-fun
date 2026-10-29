@@ -86,6 +86,12 @@ export const ELYSIUM_LISTED = ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC
  */
 export const TESTNET_END = Date.parse("2026-11-08T18:00:00Z");
 export const testnetClosed = () => ELYSIUM.testnet && Date.now() >= TESTNET_END;
+/**
+ * Test HYPE now comes from Quicknode's faucet (to HyperEVM testnet, then Kinetiq's bridge to
+ * Elysium), and that faucet only serves wallets that already hold a little real HYPE. So the
+ * testnet is mainly for people with HYPE; everyone else is pointed at mainnet (Nov 9).
+ */
+export const FAUCET_RULE = "The faucet only gives test HYPE to wallets that already hold a little real HYPE.";
 export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
 /**
  * The sasa Day-1 Pass (contracts-elysium/src/SasaDayPass.sol): free NFT, one per wallet, 2x points
