@@ -107,7 +107,10 @@ export async function elysiumTestLoop(pool, log) {
   if (PASS) log(`elysium testnet: Day-1 Pass ${PASS}`);
   let fails = 0;
   let checked = 0;
+  // the public testnet closes Nov 8, 2026 at 21:00 Turkey time: no testnet points after that
+  const END = Date.parse(process.env.ELYSIUM_TEST_END || "2026-11-08T18:00:00Z");
   for (;;) {
+    if (Date.now() >= END) return log("elysium testnet: closed, testnet points stop here");
     if (Date.now() - checked > 5 * 60_000) {
       checked = Date.now();
       if (await elysiumMainnet().catch(() => null)) return log("elysium testnet: mainnet is live, testnet points stop here");

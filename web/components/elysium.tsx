@@ -35,6 +35,7 @@ import {
   BOOST_X,
   DAY1_COINS,
   ELYSIUM_BOOST_END,
+  testnetClosed,
   boostLive,
   elysiumDay1,
 } from "@/lib/elysium";
@@ -46,6 +47,16 @@ const fmtNum = (n: number) =>
 
 function Gate({ children }: { children: React.ReactNode }) {
   const w = useWallet();
+  if (testnetClosed())
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center">
+        <h1 className="font-display font-bold text-[1.5rem]">The testnet is closed</h1>
+        <p className="text-ink-2 mt-2">Thanks for testing. Your points are saved. Elysium mainnet opens on sasa on November 9: real coins, 3x points the first week.</p>
+        <Link href="/points/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">
+          See your points
+        </Link>
+      </div>
+    );
   if (!elysiumFor(w.address))
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
@@ -214,6 +225,28 @@ function HypeTopup({ hype, onDone, compact = false }: { hype: bigint | null; onD
   );
 }
 
+/** Copies the account's address (email accounts paste it into the faucet). */
+function CopyAddress({ address }: { address: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard
+          ?.writeText(address)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 2000);
+          })
+          .catch(() => toast(address));
+      }}
+      className="h-8 px-3 rounded-lg bg-emerald text-on-accent font-bold text-[0.75rem] whitespace-nowrap"
+    >
+      {done ? "Copied ✓" : "Copy address"}
+    </button>
+  );
+}
+
 // ------------------------------------------------------------------ launch + list
 
 export function ElysiumHome() {
@@ -234,7 +267,6 @@ function ElysiumHomeInner() {
   const [buy, setBuy] = useState("0.001");
   const [busy, setBusy] = useState("");
   const [hype, setHype] = useState<bigint | null>(null);
-  const browser = !!w.address && !w.embedded;
   const test = ELYSIUM.testnet;
   const unit = test ? "test HYPE" : "HYPE";
 
@@ -258,8 +290,7 @@ function ElysiumHomeInner() {
 
   async function launch() {
     try {
-      if (!w.address) throw new Error("Log in with MetaMask first (step 1).");
-      if (w.embedded && test) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
+      if (!w.address) throw new Error("Log in first (step 1).");
       if (!name.trim() || !symbol.trim()) throw new Error("Add a name and a ticker.");
       if (!logo) throw new Error("Add a picture.");
       let first = 0n;
@@ -335,17 +366,9 @@ function ElysiumHomeInner() {
       <div className="grid sm:grid-cols-3 gap-2 sm:gap-3">
         <Step
           n={1}
-          done={test ? browser : !!w.address}
-          title={test ? (browser ? "Wallet connected" : "Connect MetaMask") : w.address ? "Logged in" : "Log in"}
-          text={
-            w.address && (browser || !test)
-              ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}`
-              : test
-                ? w.address
-                  ? "Email accounts can't use the testnet: log in with MetaMask"
-                  : "Any browser wallet works"
-                : "Email, Google or any wallet"
-          }
+          done={!!w.address}
+          title={w.address ? "Logged in" : "Log in"}
+          text={w.address ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}` : "Email, Google or any wallet"}
         >
           {!w.address && (
             <span className="shrink-0 sm:hidden">
@@ -354,10 +377,24 @@ function ElysiumHomeInner() {
           )}
         </Step>
         {test && (
-          <Step n={2} done={hype !== null && hype > 0n} title="Get free test HYPE" text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : "From Kinetiq's faucet, once every 12 hours"}>
-            <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="shrink-0 h-8 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.75rem] grid place-items-center whitespace-nowrap">
-              Faucet ↗
-            </a>
+          <Step
+            n={2}
+            done={hype !== null && hype > 0n}
+            title="Get free test HYPE"
+            text={
+              hype !== null && hype > 0n
+                ? `You have ${fmtHype(hype)} test HYPE`
+                : w.address
+                  ? "Copy your address, paste it in the faucet (once every 12 hours)"
+                  : "From Kinetiq's faucet, once every 12 hours"
+            }
+          >
+            <span className="shrink-0 flex flex-col sm:flex-row gap-1.5">
+              {w.address && !(hype !== null && hype > 0n) && <CopyAddress address={w.address} />}
+              <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="h-8 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.75rem] grid place-items-center whitespace-nowrap">
+                Faucet ↗
+              </a>
+            </span>
           </Step>
         )}
         {!test && (
@@ -539,7 +576,6 @@ function ElysiumCoinInner({ address }: { address: string }) {
   async function trade() {
     if (!coin || !w.address || raw <= 0n) return;
     try {
-      if (w.embedded && ELYSIUM.testnet) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
       // Mainnet: not enough HYPE? It comes from the user's cash first, in the same tap: exactly what
       // this buy needs (plus the network fee), or a little for a sale's fee.
       let haveNow = have;

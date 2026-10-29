@@ -80,6 +80,12 @@ export const elysiumFor = (address?: string | null) =>
   ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC_TESTNET) || (!!address && SOLANA_TEAM.has(address.toLowerCase()));
 /** Shown to everyone (menus, the chain list on Create a coin). */
 export const ELYSIUM_LISTED = ELYSIUM_OPEN || (ELYSIUM.testnet && ELYSIUM_PUBLIC_TESTNET);
+/**
+ * The public testnet closes Nov 8, 2026 at 21:00 Turkey time (18:00 UTC): no more test launches,
+ * trades, testnet points or testnet Day-1 Passes after that (indexer/elysiumtest.mjs stops too).
+ */
+export const TESTNET_END = Date.parse("2026-11-08T18:00:00Z");
+export const testnetClosed = () => ELYSIUM.testnet && Date.now() >= TESTNET_END;
 export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
 /**
  * The sasa Day-1 Pass (contracts-elysium/src/SasaDayPass.sol): free NFT, one per wallet, 2x points

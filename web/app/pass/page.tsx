@@ -12,7 +12,7 @@ import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { toast } from "@/components/alerts";
 import { friendlyError } from "@/lib/format";
-import { ELYSIUM, ELYSIUM_PASS, FAUCET_URL, elysiumClient, elysiumHypeBalance, passAbi } from "@/lib/elysium";
+import { ELYSIUM, ELYSIUM_PASS, FAUCET_URL, elysiumClient, elysiumHypeBalance, passAbi, testnetClosed } from "@/lib/elysium";
 
 export default function Page() {
   const w = useWallet();
@@ -97,6 +97,8 @@ export default function Page() {
                 Launch a coin on Elysium →
               </Link>
             </div>
+          ) : testnetClosed() ? (
+            <p className="mt-5 rounded-2xl bg-paper border border-line px-4 py-3 text-[0.875rem]">The testnet pass is closed. The mainnet Day-1 Pass opens on November 9.</p>
           ) : !open ? (
             <p className="mt-5 rounded-2xl bg-paper border border-line px-4 py-3 text-[0.875rem]">Minting has ended.</p>
           ) : (
