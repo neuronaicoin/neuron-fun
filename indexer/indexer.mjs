@@ -29,6 +29,7 @@ import { solKeeperLoop } from "./solkeeper.mjs";
 import { sniperLoop } from "./sniper.mjs";
 import { elysiumTestLoop } from "./elysiumtest.mjs";
 import { elysiumMainLoop } from "./elysiummain.mjs";
+import { tgWhaleLoop } from "./tgwhales.mjs";
 import { sniperOptLoop } from "./sniperopt.mjs";
 import { solMarketsLoop } from "./solmarkets.mjs";
 import { alertLoop } from "./alerts.mjs";
@@ -550,6 +551,8 @@ async function main() {
     keep("race cards", () => raceCardLoop(pool, log)),
     keep("market cards", () => marketCardLoop(log)),
     keep("x bot", () => xbotLoop(pool, log)),
+    // big futures whale moves ($500K+) to the Telegram channel, with a card
+    keep("tg whales", () => tgWhaleLoop(pool, log)),
     keep("sol keeper", () => solKeeperLoop(pool, log)),
     // sasa Bot test mode (admins): scores every new pump.fun coin, writes what it would have done
     keep("bot test", () => sniperLoop(pool, log)),
