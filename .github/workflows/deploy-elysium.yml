@@ -29,6 +29,14 @@ on:
         description: "Start market cap in HYPE wei for the whole supply (default 50 HYPE)"
         required: false
         default: "50000000000000000000"
+      router:
+        description: "Mainnet only: the DEX's swap router (Uniswap v3 style). Turns the site over to mainnet."
+        required: false
+        default: ""
+      explorer:
+        description: "Mainnet only: block explorer URL"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -87,6 +95,7 @@ jobs:
           RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
           BROADCAST: ${{ inputs.broadcast }}
           START_MC: ${{ inputs.start_mc }}
+          NET: ${{ inputs.network }}
         run: |
           k="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
           echo "::add-mask::$k"
@@ -102,6 +111,29 @@ jobs:
           FLAGS="--rpc-url $RPC -vv"
           if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
           forge script script/Deploy.s.sol $FLAGS
+          # mainnet: the Day-1 Pass too (mint open for 7 days)
+          if [ "$NET" = "elysium" ]; then
+            export PASS_URI=https://sasapad.fun/pass.json
+            export MINT_END=$(( $(date +%s) + 7*24*3600 ))
+            forge script script/DeployPass.s.sol $FLAGS
+          fi
+
+      - name: Turn the site over to mainnet
+        if: inputs.broadcast && inputs.network == 'elysium'
+        working-directory: .
+        env:
+          IN_ROUTER: ${{ inputs.router }}
+          IN_EXPLORER: ${{ inputs.explorer }}
+        run: |
+          CHAIN=$(cast chain-id --rpc-url "$RPC")
+          D=contracts-elysium/deployments/$CHAIN.json
+          P=contracts-elysium/deployments/pass-$CHAIN.json
+          if [ -z "$IN_ROUTER" ]; then echo "router input missing: site stays on testnet"; exit 0; fi
+          jq -n --argjson id "$CHAIN" --arg rpc "$RPC" --arg ex "$IN_EXPLORER" --arg router "$IN_ROUTER" \
+            --arg launcher "$(jq -r .launcher "$D")" --arg whype "$(jq -r .wrapped "$D")" --arg pass "$(jq -r '.pass // empty' "$P" 2>/dev/null)" \
+            '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end)}' \
+            > web/lib/elysium-mainnet.json
+          cat web/lib/elysium-mainnet.json
 
       - name: Save addresses to the repo
         if: inputs.broadcast
@@ -109,7 +141,7 @@ jobs:
         run: |
           git config user.name "sasa-deploy"
           git config user.email "deploy@sasapad.fun"
-          git add -A contracts-elysium/deployments
+          git add -A contracts-elysium/deployments web/lib/elysium-mainnet.json
           git commit -m "sasa launcher deployed on ${{ inputs.network }}" || echo "nothing to commit"
           git pull --rebase
           git push
