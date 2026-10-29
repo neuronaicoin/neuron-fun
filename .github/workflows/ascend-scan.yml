@@ -32,4 +32,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ascend-watch.json
-          git diff --cached --quiet || (git commit -m "Ascend testnet scan" && git push)
+          git diff --cached --quiet && exit 0
+          git commit -m "Ascend testnet scan"
+          # the repo may have moved on during the scan: catch up, then push (a few tries)
+          for i in 1 2 3 4 5; do git pull --rebase && git push && exit 0; sleep 10; done
+          exit 1
+      - name: Keep a copy on the run page
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ascend-watch
+          path: indexer/ascend-watch.json
+          if-no-files-found: ignore
