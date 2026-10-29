@@ -1,4 +1,5 @@
 "use client";
+import { track } from "@/lib/track";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -368,7 +369,8 @@ export default function RaceLaunchPage() {
       if (allLive) {
         saveDraft(null);
         void saveSocials(d, coinId); // no need to wait: the page change doesn't stop it
-        router.push(raceHref(coinId.toLowerCase()) + "&new=1");
+        track("launch_coin", { where: "race" });
+      router.push(raceHref(coinId.toLowerCase()) + "&new=1");
       } else {
         setError("Not live everywhere yet. Press Continue to try the missing chains again (live chains are skipped).");
       }
@@ -463,6 +465,7 @@ export default function RaceLaunchPage() {
     if (!failed && coinId) {
       saveDraft(null);
       void saveSocials(d, coinId); // no need to wait: the page change doesn't stop it
+      track("launch_coin", { where: "race" });
       router.push(raceHref(coinId.toLowerCase()) + "&new=1");
     } else {
       setError("Stopped. Fix what's shown and press Continue: chains that are already live are skipped.");

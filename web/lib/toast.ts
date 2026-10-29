@@ -1,3 +1,4 @@
+import { trackFromMessage } from "./track";
 /**
  * One big, clear notice after a trade ("Bought 1.2M SPICY for $10"), shown on top of every page.
  * A tiny store any component can push to; <TradeToast /> in the app shell draws it.
@@ -27,6 +28,7 @@ export const getToast = () => current;
 export const getServerToast = () => null;
 
 export function showToast(t: Omit<Toast, "id">, ms = 5_000) {
+  if (t.kind === "buy" || t.kind === "sell") trackFromMessage(t.title, t.kind);
   current = { ...t, id: ++seq };
   listeners.forEach((l) => l());
   // a short buzz on phones that support it

@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWallet } from "./wallet";
+import { trackFromMessage } from "@/lib/track";
 import { ConnectButton, Sheet } from "./chrome";
 import { CoinAvatar, timeAgo } from "./coins";
 import { coinMarketCapUsd } from "./discover";
@@ -84,6 +85,7 @@ function Switch({ on, onClick, label, disabled = false }: { on: boolean; onClick
 // Tiny toast ("Alert set").
 let toastSet: ((m: string) => void) | null = null;
 export function toast(message: string) {
+  trackFromMessage(message);
   toastSet?.(message);
 }
 function ToastHost() {

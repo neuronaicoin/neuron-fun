@@ -1,5 +1,6 @@
 "use client";
 
+import { trackAccount } from "@/lib/track";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createWalletClient, custom, getAddress, numberToHex, type Address, type Chain, type LocalAccount, type WalletClient } from "viem";
 import dynamic from "next/dynamic";
@@ -555,6 +556,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const restoreOver = restoreTimedOut || (hint?.kind === "email" ? privySettled : walletRestoreDone && (!loadPrivy || privySettled));
   // until this device's hint is read (the first moment after load) nobody is "logged out" yet
   const restoring = !signedIn && (!hintChecked || (!!hint && !restoreOver));
+  // Analytics: a login (or a sign-up, the first time this device sees the address), once a visit
+  useEffect(() => {
+    if (signedIn) trackAccount(signedIn, active ? "wallet" : "email");
+  }, [signedIn, active]);
   useEffect(() => {
     if (signedIn) {
       const h: Hint = { address: signedIn, kind: active ? "wallet" : "email" };
