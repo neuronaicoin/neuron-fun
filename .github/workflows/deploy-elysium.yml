@@ -131,8 +131,8 @@ jobs:
           P=contracts-elysium/deployments/pass-$CHAIN.json
           if [ -z "$IN_ROUTER" ]; then echo "router input missing: site stays on testnet"; exit 0; fi
           jq -n --argjson id "$CHAIN" --argjson start "$START_TIME" --arg block "$START_BLOCK" --arg rpc "$RPC" --arg ex "$IN_EXPLORER" --arg router "$IN_ROUTER" \
-            --arg launcher "$(jq -r .launcher "$D")" --arg whype "$(jq -r .wrapped "$D")" --arg pass "$(jq -r '.pass // empty' "$P" 2>/dev/null)" \
-            '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end), start: $start, startBlock: $block}' \
+            --arg launcher "$(jq -r .launcher "$D")" --arg whype "$(jq -r .wrapped "$D")" --arg pass "$(jq -r '.pass // empty' "$P" 2>/dev/null)" --arg smoke "$(jq -r '.smokeCoin // empty' "$D")" \
+            '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end), start: $start, startBlock: $block, smoke: (if $smoke == "" or $smoke == "0x0000000000000000000000000000000000000000" then null else $smoke end)}' \
             > web/lib/elysium-mainnet.json
           # the same file on the site, for the indexer (3x points week, first-100 badges)
           cp web/lib/elysium-mainnet.json web/public/elysium-mainnet.json
