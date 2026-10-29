@@ -125,6 +125,10 @@ export function newSpotOnly(list: HlSpot[], have: { symbol: string; name: string
   });
 }
 
+/** A spot coin's own page (in-app path and the public link people share). */
+export const spotHref = (token: string) => `/spot/?c=${encodeURIComponent(token)}`;
+export const spotPageUrl = (token: string) => `https://sasapad.fun${spotHref(token)}`;
+
 /** Smallest spot order Hyperliquid takes, in dollars. */
 export const SPOT_MIN = 10;
 /** sasa's fee on Hyperliquid spot trades (builder fee, tenths of a basis point: 500 = 0.5%). */

@@ -47,7 +47,10 @@ export function useSpotDesk() {
   };
 }
 
-export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: HlSpot; have: number; canTrade: boolean; blocked: boolean; trade: ReturnType<typeof usePerpsTrade>; onClose: () => void }) {
+type TradeProps = { m: HlSpot; have: number; canTrade: boolean; blocked: boolean; trade: ReturnType<typeof usePerpsTrade> };
+
+/** Buy / sell box for one coin: in the sheet on the Market list and on the coin's own page. */
+export function SpotTrade({ m, have, canTrade, blocked, trade, onDone }: TradeProps & { onDone?: () => void }) {
   const w = useWallet();
   const [side, setSide] = useState<"buy" | "sell">(have * m.price >= SPOT_MIN ? "sell" : "buy");
   const [amount, setAmount] = useState("25");
@@ -69,7 +72,7 @@ export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: H
         const r = await trade.spotSell(m, sellAmt, setStep);
         showToast({ kind: "sell", title: `Sold ${m.token}${r.usd ? ` for about $${r.usd.toFixed(2)}` : ""}`, body: "The dollars are in your trading balance." });
       }
-      onClose();
+      onDone?.();
     } catch (e) {
       setErr(friendlyError(e));
     } finally {
@@ -79,19 +82,7 @@ export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: H
   };
 
   return (
-    <Sheet title={m.token} onClose={onClose}>
       <div className="flex flex-col gap-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <div className="font-display font-bold text-[1.5rem]">{fmtPrice(m.price)}</div>
-            <div className={"text-[0.875rem] font-semibold " + tone(m.change24h)}>{pct(m.change24h)} today</div>
-          </div>
-          <div className="text-right text-[0.8125rem] text-ink-3">
-            <div>Volume {compactUsd(m.vol24h)}</div>
-            {m.mcap && <div>Market cap {compactUsd(m.mcap)}</div>}
-          </div>
-        </div>
-        <PerpsChart coin={m.coin} decimals={Math.min(Math.max(0, 8 - m.szDecimals), Math.max(2, 4 - Math.floor(Math.log10(m.price))))} height={260} />
         <div className="grid grid-cols-2 gap-2">
           {(["buy", "sell"] as const).map((s) => (
             <button
@@ -157,6 +148,30 @@ export function SpotSheet({ m, have, canTrade, blocked, trade, onClose }: { m: H
           </button>
         )}
         <p className="text-[0.75rem] text-ink-3 text-center">Paid with USDC from your balance. Prices can move fast.</p>
+      </div>
+  );
+}
+
+/** A chart's price decimals for a spot coin. */
+export const spotDecimals = (m: HlSpot) => Math.min(Math.max(0, 8 - m.szDecimals), Math.max(2, 4 - Math.floor(Math.log10(m.price))));
+
+export function SpotSheet({ onClose, ...p }: TradeProps & { onClose: () => void }) {
+  const { m } = p;
+  return (
+    <Sheet title={m.token} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <div className="font-display font-bold text-[1.5rem]">{fmtPrice(m.price)}</div>
+            <div className={"text-[0.875rem] font-semibold " + tone(m.change24h)}>{pct(m.change24h)} today</div>
+          </div>
+          <div className="text-right text-[0.8125rem] text-ink-3">
+            <div>Volume {compactUsd(m.vol24h)}</div>
+            {m.mcap && <div>Market cap {compactUsd(m.mcap)}</div>}
+          </div>
+        </div>
+        <PerpsChart coin={m.coin} decimals={spotDecimals(m)} height={260} />
+        <SpotTrade {...p} onDone={onClose} />
       </div>
     </Sheet>
   );

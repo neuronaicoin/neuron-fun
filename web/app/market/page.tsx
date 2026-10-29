@@ -12,8 +12,8 @@ import { fmtPrice } from "@/lib/race";
 import { extNetwork } from "@/lib/extcoins";
 import { fetchTopCoins, topHref, type TopCoin } from "@/lib/topcoins";
 import { MarketSwitch } from "@/components/marketswitch";
-import { SpotSheet, useSpotDesk } from "@/components/hlspot";
-import { fetchHlSpot, newSpotOnly, type HlSpot } from "@/lib/hlspot";
+import { useSpotDesk } from "@/components/hlspot";
+import { fetchHlSpot, newSpotOnly, spotHref, type HlSpot } from "@/lib/hlspot";
 
 /** One Market row: a top-500 coin (opens its coin page) or a spot-only coin (opens the trade sheet). */
 type Row = {
@@ -67,7 +67,6 @@ export default function MarketPage() {
   const [shown, setShown] = useState(STEP);
   // coins only Hyperliquid's spot market has, joined into the same list (never a second copy of a coin)
   const [spot, setSpot] = useState<HlSpot[] | null>(null);
-  const [pick, setPick] = useState<HlSpot | null>(null);
   const desk = useSpotDesk();
   useEffect(() => {
     let alive = true;
@@ -95,13 +94,11 @@ export default function MarketPage() {
 
   const extra = useMemo(() => (coins && spot ? newSpotOnly(spot, coins) : []), [coins, spot]);
 
-  // a shared link (?c=KNTQ) opens that coin's trade sheet
+  // old shared links (/market/?c=KNTQ) go to the coin's own page
   useEffect(() => {
-    if (!extra.length || pick) return;
-    const c = new URLSearchParams(window.location.search).get("c")?.toUpperCase();
-    if (c) setPick(extra.find((m) => m.token.toUpperCase() === c) ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extra]);
+    const c = new URLSearchParams(window.location.search).get("c");
+    if (c) window.location.replace(spotHref(c.toUpperCase()));
+  }, []);
 
   const list = useMemo(() => {
     if (!coins) return null;
@@ -159,9 +156,9 @@ export default function MarketPage() {
           <div className="text-[0.8125rem] text-ink-3 mb-2">You hold</div>
           <div className="flex flex-wrap gap-2">
             {held.map((m) => (
-              <button key={m.coin} type="button" onClick={() => setPick(m)} className="h-9 px-3 rounded-xl border border-line text-[0.875rem] font-semibold hover:border-emerald/60">
+              <Link key={m.coin} href={spotHref(m.token)} className="h-9 px-3 rounded-xl border border-line text-[0.875rem] font-semibold hover:border-emerald/60 inline-flex items-center">
                 {m.token} · {compactUsd((desk.bal.get(m.token) ?? 0) * m.price)}
-              </button>
+              </Link>
             ))}
           </div>
         </div>
@@ -225,15 +222,9 @@ export default function MarketPage() {
               );
               return (
                 <li key={c.key}>
-                  {c.top ? (
-                    <Link href={topHref(c.top.id)} className={cls}>
-                      {body}
-                    </Link>
-                  ) : (
-                    <button type="button" onClick={() => setPick(c.spot!)} className={cls}>
-                      {body}
-                    </button>
-                  )}
+                  <Link href={c.top ? topHref(c.top.id) : spotHref(c.spot!.token)} className={cls}>
+                    {body}
+                  </Link>
                 </li>
               );
             })}
@@ -246,7 +237,6 @@ export default function MarketPage() {
         </button>
       )}
       <p className="mt-3 text-[0.75rem] text-ink-3">Prices update every minute from each coin&apos;s DEX market; ranking and market caps from CoinGecko. Trades go through the best price available for each coin.</p>
-      {pick && <SpotSheet m={pick} have={desk.bal.get(pick.token) ?? 0} canTrade={desk.canTrade} blocked={desk.blocked} trade={desk.trade} onClose={() => setPick(null)} />}
     </div>
   );
 }
