@@ -9,6 +9,7 @@ import { fmtPrice } from "@/lib/race";
 import { extNetwork } from "@/lib/extcoins";
 import { fetchTopCoins, topHref, type TopCoin } from "@/lib/topcoins";
 import { MarketSwitch } from "@/components/marketswitch";
+import { HlSpotList } from "@/components/hlspot";
 
 type Sort = "top" | "gainers" | "losers" | "volume";
 const SORTS: { id: Sort; label: string }[] = [
@@ -41,6 +42,11 @@ export default function MarketPage() {
   const [sort, setSort] = useState<Sort>("top");
   const [q, setQ] = useState("");
   const [shown, setShown] = useState(STEP);
+  // Top 300 (CoinGecko, bought on Base / BNB / Ethereum) or Hyperliquid's own spot market
+  const [src, setSrc] = useState<"top" | "hl">("top");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("src") === "hl") setSrc("hl");
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -79,7 +85,44 @@ export default function MarketPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28 md:pb-12">
       <MarketSwitch at="spot" />
       <h1 className="mt-3 font-display font-bold text-[1.625rem] sm:text-[2.25rem] tracking-tight">Market</h1>
-      <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">The 300 biggest coins. Buy and sell any of them with USDC in one tap.</p>
+      <p className="text-ink-2 text-[0.875rem] sm:text-[1rem]">
+        {src === "top" ? "The 300 biggest coins. Buy and sell any of them with USDC in one tap." : "Every token on Hyperliquid's spot market: HYPE, KNTQ and more, with your dollars."}
+      </p>
+      <div className="mt-3 inline-flex rounded-xl border border-line bg-surface p-1" role="tablist" aria-label="Which market">
+        {(
+          [
+            ["top", "Top 300"],
+            ["hl", "Hyperliquid"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={src === id}
+            onClick={() => {
+              setSrc(id);
+              window.history.replaceState(null, "", id === "hl" ? "?src=hl" : window.location.pathname);
+            }}
+            className={"h-9 px-4 rounded-lg text-[0.875rem] font-bold " + (src === id ? "bg-ink text-mist" : "text-ink-2 hover:text-ink")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {src === "hl" ? (
+        <>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search HYPE, KNTQ…"
+            aria-label="Search Hyperliquid tokens"
+            className="mt-4 h-10 w-full sm:w-64 rounded-xl border border-line bg-surface px-3.5 text-[0.9375rem] outline-none focus:border-ink-3"
+          />
+          <HlSpotList q={q} />
+        </>
+      ) : (
+      <>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Sort">
@@ -173,6 +216,8 @@ export default function MarketPage() {
         </button>
       )}
       <p className="mt-3 text-[0.75rem] text-ink-3">Prices update every minute from each coin&apos;s DEX market; ranking and market caps from CoinGecko. Trades go through the best DEX price on Base, BNB Chain or Ethereum.</p>
+      </>
+      )}
     </div>
   );
 }

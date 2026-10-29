@@ -26,6 +26,7 @@ import { quoteCallsOn } from "./extcross";
 import { BUILDER_FEE, BUILDER_FEE_TENTHS_BP, HL_API, HL_TAKER_FEE, MIN_NOTIONAL, PERPS_TRADING, fetchPerpAccount, priceString, sizeString, type PerpMarket, type PerpOrder, type PerpPosition } from "./perps";
 import { baseCashUsd, transitAdd, transitToCash } from "./transit";
 import { cashOf } from "./portfolio";
+import { SPOT_FEE_TENTHS_BP, SPOT_MIN, spotPrice, type HlSpot } from "./hlspot";
 import { PREDICT_FEE_TENTHS_BP, PREDICT_MIN, bestOf, fetchPredictWallet, type PredictHolding, type PredictOutcome } from "./predict";
 
 /** Hyperliquid's perps USDC, as Relay names it. */
@@ -60,6 +61,10 @@ export type PerpsTrade = {
   predictSell: (h: PredictHolding, onStep: (m: string | null) => void) => Promise<{ usd: number | null }>;
   /** Approves sasa's copy-trading key (it trades, never withdraws) and sasa's fee, once. */
   approveCopy: (agent: string, onStep: (m: string | null) => void) => Promise<void>;
+  /** Buys `usd` dollars of a Hyperliquid spot token; money comes from the spot balance, then futures, then Base cash. */
+  spotBuy: (m: HlSpot, usd: number, onStep: (m: string | null) => void) => Promise<{ amount: number; avgPx: number | null }>;
+  /** Sells `amount` of a Hyperliquid spot token; the dollars stay in the Hyperliquid balance. */
+  spotSell: (m: HlSpot, amount: number, onStep: (m: string | null) => void) => Promise<{ usd: number | null }>;
   /** Moves Predict cash back to the futures balance. */
   predictToFutures: (amount: number, onStep: (m: string | null) => void) => Promise<void>;
 };
@@ -211,9 +216,9 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         });
     }
     /** Places an order with sasa's prediction fee; if Hyperliquid won't take a builder fee here, without it. */
-    async function predictOrder(ex: ExchangeClient, order: Parameters<ExchangeClient["order"]>[0]["orders"][number]) {
+    async function predictOrder(ex: ExchangeClient, order: Parameters<ExchangeClient["order"]>[0]["orders"][number], fee = PREDICT_FEE_TENTHS_BP) {
       try {
-        return await ex.order({ orders: [order], grouping: "na", builder: { b: HL_BUILDER as `0x${string}`, f: PREDICT_FEE_TENTHS_BP } });
+        return await ex.order({ orders: [order], grouping: "na", builder: { b: HL_BUILDER as `0x${string}`, f: fee } });
       } catch (e) {
         const m = String((e as { message?: string })?.message ?? e);
         if (/builder/i.test(m) && !/approv/i.test(m)) return await ex.order({ orders: [order], grouping: "na" });
@@ -493,6 +498,64 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         try {
           onStep("Selling…");
           const res = await predictOrder(ex, { a: 100_000_000 + 10 * h.outcome + h.side, b: false, p: pricePx(bid * 0.97, false), s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
+          const f = filledOf(res);
+          onStep(null);
+          void after();
+          if (!f || !(f.sz > 0)) throw new Error("The price moved before it filled. Try again.");
+          return { usd: f.sz * f.px || null };
+        } catch (e) {
+          throw hlError(e);
+        }
+      },
+
+      async spotBuy(m, usd, onStep) {
+        if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
+        if (!(usd >= SPOT_MIN)) throw new Error(`The smallest buy is $${SPOT_MIN}.`);
+        const ex = await ready(onStep, SPOT_FEE_TENTHS_BP);
+        onStep("Getting the price…");
+        const { ask } = await bestOf(m.coin);
+        if (!ask) throw new Error(`No one is selling ${m.token} right now. Try again in a moment.`);
+        // a market order: up to 2% over the best offer
+        const px = spotPrice(ask * 1.02, m.szDecimals);
+        const size = sizeString(usd / Number(px), m.szDecimals);
+        if (!(Number(size) > 0) || Number(size) * Number(px) < SPOT_MIN) throw new Error(`The smallest buy is $${SPOT_MIN}.`);
+        const cost = Number(size) * Number(px);
+        try {
+          if (!(await unified())) {
+            const have = await predictCash();
+            if (have + 1e-6 < cost) {
+              const need = Math.ceil((cost - have + 0.05) * 100) / 100;
+              await fundFutures(need, onStep);
+              onStep("Moving money to spot…");
+              await moveUsdc(ex, need, false);
+              const until = Date.now() + 20_000;
+              while ((await predictCash()) + 1e-6 < cost && Date.now() < until) await new Promise((r) => setTimeout(r, 1_500));
+            }
+          }
+          onStep(`Buying ${m.token}…`);
+          const res = await predictOrder(ex, { a: m.asset, b: true, p: px, s: size, r: false, t: { limit: { tif: "Ioc" } } }, SPOT_FEE_TENTHS_BP);
+          const f = filledOf(res);
+          onStep(null);
+          void after();
+          if (!f || !(f.sz > 0)) throw new Error("The price moved before it filled. Try again.");
+          return { amount: f.sz, avgPx: f.px || null };
+        } catch (e) {
+          throw hlError(e);
+        }
+      },
+
+      async spotSell(m, amount, onStep) {
+        if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
+        const size = sizeString(amount, m.szDecimals);
+        if (!(Number(size) > 0)) throw new Error("Nothing to sell.");
+        const ex = await ready(onStep, SPOT_FEE_TENTHS_BP);
+        onStep("Getting the price…");
+        const { bid } = await bestOf(m.coin);
+        if (!bid) throw new Error(`No one is buying ${m.token} right now. Try again in a moment.`);
+        if (Number(size) * bid < SPOT_MIN) throw new Error(`Worth under $${SPOT_MIN}: Hyperliquid's smallest order.`);
+        try {
+          onStep(`Selling ${m.token}…`);
+          const res = await predictOrder(ex, { a: m.asset, b: false, p: spotPrice(bid * 0.98, m.szDecimals), s: size, r: false, t: { limit: { tif: "Ioc" } } }, SPOT_FEE_TENTHS_BP);
           const f = filledOf(res);
           onStep(null);
           void after();
