@@ -1,6 +1,6 @@
 "use client";
 
-/** A coin from the Market list (the 300 biggest). */
+/** A coin from the Market list (the 500 biggest). */
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -39,7 +39,7 @@ function TopCoinPage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.5rem]">Coin not found</h1>
-        <p className="text-ink-2 mt-2">It isn&apos;t in today&apos;s Market list of the 300 biggest coins.</p>
+        <p className="text-ink-2 mt-2">It isn&apos;t in today&apos;s Market list of the 500 biggest coins.</p>
         <Link href="/market/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Back to Market</Link>
       </div>
     );

@@ -2,7 +2,7 @@ import { db } from "./data";
 import type { ExtCoin } from "./extcoins";
 
 /**
- * Market: the 300 biggest coins (indexer/topcoins.mjs picks them daily from CoinGecko; prices
+ * Market: the 500 biggest coins (indexer/topcoins.mjs picks them daily from CoinGecko; prices
  * every 15 minutes). Each trades on the cheapest of Base, BNB Chain and Ethereum where it has
  * real DEX liquidity; Bitcoin, ETH and BNB as cbBTC, WETH and WBNB. Trading works like any
  * other DEX coin on sasa (Relay, USDC, 1% fee).

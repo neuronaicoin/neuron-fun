@@ -573,7 +573,7 @@ async function main() {
     keep("seo", () => seoLoop(pool, log)),
     // search pages: Solana coin archive, daily price history, big trades, daily pages (/day/)
     keep("seo pages", () => seoPagesLoop(pool, log)),
-    // Market: the 300 biggest coins (topcoins.sql), from CoinGecko + DexScreener
+    // Market: the 500 biggest coins (topcoins.sql), from CoinGecko + DexScreener
     keep("top coins", () => topLoop(pool, log)),
     // Perps: 🔔 + push when a take profit, stop loss or liquidation closes a position (perps.sql)
     keep("perps", () => perpsLoop(pool, log)),

@@ -122,7 +122,7 @@ ${chart}${T(60, 655, 24, SOFT, closed ? `wall street is asleep. ${L} isn't.` : `
   );
 }
 
-/** The day's biggest top-300 gainer: rising bars from its last days. c: { symbol, name, rank, price_usd, change_24h, spark } */
+/** The day's biggest top-500 gainer: rising bars from its last days. c: { symbol, name, rank, price_usd, change_24h, spark } */
 export function spotCard(c) {
   const S = String(c.symbol || "").toUpperCase().slice(0, 8);
   const sp = Array.isArray(c.spark) ? c.spark.map(num).filter((x) => x > 0) : [];
@@ -132,7 +132,7 @@ export function spotCard(c) {
   const bars = vals.map((v, i) => { const h = Math.round(60 + (hi > lo ? ((v - lo) / (hi - lo)) * 270 : 150)); return `<rect x="${720 + i * 62}" y="${560 - h}" width="44" height="${h}" rx="8" fill="${i === 6 ? UP : "#1E3B2A"}"/>`; }).join("");
   return png(
     svg(
-      `${bars}${logo()}${pill(60, 130, "#1 GAINER · TOP 300", UP, "#06200F")}${T(56, 330, fit(S, 620, 150, 80), INK, S, 800)}${T(60, 440, 110, UP, pct(c.change_24h), 800)}${T(60, 505, 32, SOFT, `${px(num(c.price_usd))}${c.rank ? ` · #${c.rank} by market cap` : ""}`, 600)}${T(60, 630, 24, SOFT, "still early or already late?", 600)}`,
+      `${bars}${logo()}${pill(60, 130, "#1 GAINER · TOP 500", UP, "#06200F")}${T(56, 330, fit(S, 620, 150, 80), INK, S, 800)}${T(60, 440, 110, UP, pct(c.change_24h), 800)}${T(60, 505, 32, SOFT, `${px(num(c.price_usd))}${c.rank ? ` · #${c.rank} by market cap` : ""}`, 600)}${T(60, 630, 24, SOFT, "still early or already late?", 600)}`,
       glow("80%", "70%", UP, 0.16)
     )
   );

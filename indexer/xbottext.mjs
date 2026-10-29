@@ -155,8 +155,8 @@ export function spot(c) {
   const C = cash(t);
   const ch = pct(c.change_24h);
   const v = [
-    ["g1", `${C} ${ch} today. biggest gainer in the top 300 right now 👀\n\nstill early or already late?`],
-    ["g2", `nothing in the top 300 is pumping like ${C} today. ${ch} 🚀\n\nyou holding any?`],
+    ["g1", `${C} ${ch} today. biggest gainer in the top 500 right now 👀\n\nstill early or already late?`],
+    ["g2", `nothing in the top 500 is pumping like ${C} today. ${ch} 🚀\n\nyou holding any?`],
     ["g3", `${c.name} just did ${ch} in a day. #${c.rank} by market cap and moving like a meme 👀`],
     ["g4", `${C} ${ch} 📈 while most of the market is flat\n\nwhat's the catalyst?`],
     ["g5", `top gainer today: ${C} ${ch}\n\nbuy the breakout or wait for the dip? 👇`],

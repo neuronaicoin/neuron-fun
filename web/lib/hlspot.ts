@@ -26,7 +26,7 @@ type Meta = {
   tokens: { name: string; szDecimals: number; index: number; fullName?: string | null }[];
   universe: { name: string; tokens: [number, number]; index: number }[];
 };
-type Ctx = { dayNtlVlm: string; markPx: string; midPx: string | null; prevDayPx: string; circulatingSupply?: string };
+type Ctx = { coin?: string; dayNtlVlm: string; markPx: string; midPx: string | null; prevDayPx: string; circulatingSupply?: string };
 
 /** Names people search for when Hyperliquid has no full name on the token. */
 const KNOWN: Record<string, string> = { KNTQ: "Kinetiq", HFUN: "HypurrFun", PURR: "Purr", HYPE: "HYPE" };
@@ -43,8 +43,11 @@ export function fetchHlSpot(): Promise<HlSpot[]> {
     const tok = new Map(meta.tokens.map((t) => [t.index, t]));
     const usdc = meta.tokens.find((t) => t.name === "USDC")?.index ?? 0;
     const out: HlSpot[] = [];
-    meta.universe.forEach((u, i) => {
-      const c = ctxs[i];
+    // Each price row names its pair ("@107", "PURR/USDC"): match on that, never on list position (the two
+    // lists don't come in the same order, which put HYPE's price on other coins). Fallback: the pair's index.
+    const byCoin = new Map(ctxs.filter((x) => x?.coin).map((x) => [x.coin as string, x]));
+    meta.universe.forEach((u) => {
+      const c = byCoin.size ? byCoin.get(u.name) : ctxs[u.index];
       if (!c || u.tokens[1] !== usdc) return;
       const base = tok.get(u.tokens[0]);
       if (!base) return;

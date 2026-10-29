@@ -1,15 +1,15 @@
-// Market: the 300 biggest coins, tradeable on sasa (topcoins.sql).
+// Market: the 500 biggest coins, tradeable on sasa (topcoins.sql).
 //
-// Once a day: CoinGecko's ranking by market cap (top 500 looked at) and every coin's contract
+// Once a day: CoinGecko's ranking by market cap (top 1000 looked at) and every coin's contract
 // addresses. Stablecoins and wrapped / staked copies are left out. Each coin is traded on the
 // cheapest of our chains where it has real DEX liquidity (DexScreener): Base, then BNB Chain,
 // then Ethereum. Bitcoin, ETH and BNB are bought as cbBTC (Base), WETH (Base), WBNB (BNB Chain).
-// Every 15 minutes: rank, market cap, 24h change and the 7-day line for the 300 (two CoinGecko calls).
+// Every 20 minutes: rank, market cap, 24h change and the 7-day line for the 500 (four CoinGecko calls).
 // Every minute: each coin's price from its own DEX pool (DexScreener, no monthly limit), with
 // market cap and 24h change scaled from CoinGecko's last numbers.
 //
 // Env: COINGECKO_KEY  optional free "demo" key (coingecko.com/en/api): steadier limits.
-//      TOP_COINS (300), TOP_EVERY_MS (900000), TOP_OFF=1 turns it off.
+//      TOP_COINS (500), TOP_EVERY_MS (1200000), TOP_OFF=1 turns it off.
 
 const CG = "https://api.coingecko.com/api/v3";
 const DS = "https://api.dexscreener.com";
@@ -126,7 +126,7 @@ export function priceCols(m) {
  * The day's list: CoinGecko market rows (rank order) + platforms by id → up to `n` rows.
  * `liquidity(network, addresses)` answers Map(address → {pool, dex, liq}). Exported for tests.
  */
-export async function pick(markets, platformsById, liquidity, n = 300) {
+export async function pick(markets, platformsById, liquidity, n = 500) {
   const want = [];
   for (const m of markets) {
     if (!m?.id || isStable(m) || isCopy(m)) continue;
@@ -214,7 +214,7 @@ const MARKET_Q = "vs_currency=usd&sparkline=true&price_change_percentage=24h,7d"
 
 export async function pickToday(pool, log, n) {
   const markets = [];
-  for (const page of [1, 2]) {
+  for (const page of [1, 2, 3, 4]) {
     markets.push(...(await cg(`/coins/markets?${MARKET_Q}&order=market_cap_desc&per_page=250&page=${page}`, log)));
     await sleep(3000);
   }
@@ -333,14 +333,15 @@ export async function livePrices(pool) {
 
 export async function topLoop(pool, log) {
   if (process.env.TOP_OFF === "1") return;
-  const n = Number(process.env.TOP_COINS ?? "300");
-  // 15 minutes: 2 CoinGecko calls each, about 6,000 a month (the free demo key allows 10,000)
-  const every = Number(process.env.TOP_EVERY_MS ?? "900000");
+  const n = Number(process.env.TOP_COINS ?? "500");
+  // 20 minutes: 4 CoinGecko calls each, about 8,600 a month (the free demo key allows 10,000)
+  const every = Number(process.env.TOP_EVERY_MS ?? "1200000");
   let lastPick = 0;
   let lastPrices = 0;
   try {
-    const r = await pool.query("select max(picked_at) as t, max(updated_at) as u from top_coins where listed");
-    if (r.rows[0]?.t) lastPick = new Date(r.rows[0].t).getTime();
+    const r = await pool.query("select max(picked_at) as t, max(updated_at) as u, count(*)::int as k from top_coins where listed");
+    // a list well short of the wanted size (say 300 when 500 are asked for) is picked again now
+    if (r.rows[0]?.t && r.rows[0].k >= n * 0.8) lastPick = new Date(r.rows[0].t).getTime();
     if (r.rows[0]?.u) lastPrices = new Date(r.rows[0].u).getTime();
   } catch (e) {
     log(`market: ${e.message} (run indexer/topcoins.sql)`);

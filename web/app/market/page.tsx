@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Market: the 300 biggest coins, plus the coins only Hyperliquid's spot market has (HYPE, KNTQ…), in one
+ * Market: the 500 biggest coins, plus the coins only Hyperliquid's spot market has (HYPE, KNTQ…), in one
  * list where every coin shows once. All bought and sold with USDC.
  */
 import Link from "next/link";
@@ -15,7 +15,7 @@ import { MarketSwitch } from "@/components/marketswitch";
 import { SpotSheet, useSpotDesk } from "@/components/hlspot";
 import { fetchHlSpot, newSpotOnly, type HlSpot } from "@/lib/hlspot";
 
-/** One Market row: a Top 300 coin (opens its coin page) or a spot-only coin (opens the trade sheet). */
+/** One Market row: a top-500 coin (opens its coin page) or a spot-only coin (opens the trade sheet). */
 type Row = {
   key: string;
   name: string;

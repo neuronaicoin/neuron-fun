@@ -374,7 +374,7 @@ const pct = (v) => `${v >= 0 ? "+" : "-"}${Math.abs(v) >= 100 ? Math.round(Math.
 const NET = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
 const sym = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) || "COIN";
 
-/** The biggest gainer of the top 300 today (not posted in the last 24 h). */
+/** The biggest gainer of the top 500 today (not posted in the last 24 h). */
 async function nextSpot(pool) {
   const { rows } = await pool.query(
     `select cg_id, rank, name, symbol, price_usd, change_24h, mcap_usd, spark from top_coins
@@ -401,8 +401,8 @@ async function nextMeme(pool) {
 export function spotText(c) {
   const S = sym(c.symbol);
   const lines = [
-    `${S} ${pct(c.change_24h)} today. biggest gainer in the top 300 right now 👀\n\nstill early or already too late?`,
-    `nothing in the top 300 is pumping like ${S} today. ${pct(c.change_24h)} 🚀\n\nyou holding any?`,
+    `${S} ${pct(c.change_24h)} today. biggest gainer in the top 500 right now 👀\n\nstill early or already too late?`,
+    `nothing in the top 500 is pumping like ${S} today. ${pct(c.change_24h)} 🚀\n\nyou holding any?`,
     `${c.name} just did ${pct(c.change_24h)} in a day. #${c.rank} by market cap and moving like a meme 👀`,
   ];
   return `${pick(lines)}\n\n#${S} #Crypto #Altcoins #TopGainers`;
@@ -428,7 +428,7 @@ export function spotCardSvg(c) {
 <text x="1120" y="385" text-anchor="end" font-family="IBM Plex Mono" font-size="38" fill="#FFF4EC">${esc(c.price_usd ? px(c.price_usd) : "")}</text>
 <line x1="80" y1="445" x2="1120" y2="445" stroke="#2E231A" stroke-width="2"/>
 <text x="80" y="520" font-family="Sora" font-weight="700" font-size="40" fill="#FFF4EC">Buy or sell <tspan fill="#FF6B1A">${esc(S)}</tspan> on sasa</text>
-<text x="80" y="575" font-family="Sora" font-weight="600" font-size="26" fill="#8F7F73">The 300 biggest coins, one tap, any chain.</text>`);
+<text x="80" y="575" font-family="Sora" font-weight="600" font-size="26" fill="#8F7F73">The 500 biggest coins, one tap, any chain.</text>`);
 }
 export function memeCardSvg(c) {
   const S = sym(c.symbol);
