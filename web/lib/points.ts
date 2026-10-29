@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { db } from "./data";
 import { V6 } from "./config";
 import { authedPost, type SignFn } from "./alerts";
+import { ELYSIUM } from "./elysium";
 
 export type MyPoints = {
   total: number;
@@ -35,7 +36,9 @@ const ALL_QUESTS: readonly Quest[] = [
   { id: "share_x", icon: "📣", title: "Share sasa on X", note: "Post your invite link or a coin", pts: 100, action: "share" },
   { id: "launch", icon: "🚀", title: "Launch your first coin", note: "Any chain, any idea", pts: 200, href: V6 ? "/create/" : "/race/launch/" },
   { id: "elysium_pass", icon: "🎟️", title: "Mint your sasa Day-1 Pass", note: "Free on Elysium. Holders earn 2x points on every Elysium launch and trade", pts: 50, href: "/pass/" },
-  { id: "elysium", icon: "🧪", title: "Launch on Elysium testnet", note: "Free with test HYPE. Then 50 a launch (3 a day), 10 a trade (10 a day)", pts: 100, href: "/elysium/" },
+  ELYSIUM.testnet
+    ? { id: "elysium", icon: "🧪", title: "Launch on Elysium testnet", note: "Free with test HYPE. Then 50 a launch (3 a day), 10 a trade (10 a day)", pts: 100, href: "/elysium/" }
+    : { id: "elysium_main", icon: "🔥", title: "Launch on Elysium", note: "Then 50 a launch (3 a day), 10 a trade (10 a day). 3x the first week, 6x with a Day-1 Pass", pts: 100, href: "/elysium/" },
   { id: "ai", icon: "✨", title: "Create a coin with AI", note: "Try the AI designer once", pts: 100, href: V6 ? "/create/?ai=1" : "/race/launch/" },
   { id: "buy", icon: "🛒", title: "Make your first buy", note: "Any coin", pts: 50, href: "/explore/" },
   { id: "follow3", icon: "👥", title: "Follow 3 traders", note: "From Traders or a profile", pts: 50, href: "/traders/" },

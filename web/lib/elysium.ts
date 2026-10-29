@@ -47,7 +47,7 @@ export const ELYSIUM_TESTNET: ElysiumNet = {
   testnet: true,
 };
 
-type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null };
+type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null; start?: number | null };
 const fill = MAINNET_FILL as Fill;
 const isAddr = (a: string | null): a is Address => !!a && /^0x[0-9a-fA-F]{40}$/.test(a);
 
@@ -87,6 +87,15 @@ export const FAUCET_URL = "https://testnet.elysium.kinetiq.xyz/faucet";
  * "Deploy sasa Day-1 Pass" workflow; null = the page says it's coming.
  */
 export const ELYSIUM_PASS: Address | null = ELYSIUM_MAINNET ? (isAddr(fill.pass) ? getAddress(fill.pass) : null) : "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789";
+/** Mainnet's first week: 3x points on every launch and trade (indexer/elysiummain.mjs). */
+export const BOOST_X = 3;
+export const BOOST_DAYS = 7;
+/** When the 3x week ends (ms), or null before mainnet. */
+export const ELYSIUM_BOOST_END: number | null = ELYSIUM_MAINNET ? ((fill.start ?? 0) > 0 ? (fill.start! + BOOST_DAYS * 86_400) * 1000 : null) : null;
+export const boostLive = () => ELYSIUM_BOOST_END !== null && Date.now() < ELYSIUM_BOOST_END;
+/** The first this-many coins launched through sasa on Elysium mainnet carry the Day-1 badge for good. */
+export const DAY1_COINS = 100;
+
 export const passAbi = parseAbi([
   "function mint() returns (uint256)",
   "function minted(address) view returns (bool)",
@@ -208,6 +217,28 @@ export async function fetchElysiumCoins(limit = 30): Promise<ElysiumCoin[]> {
   const addrs = await Promise.all(ids.map((i) => c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "allCoins", args: [i] })));
   const list = await Promise.all(addrs.map((a) => fetchElysiumCoin(a).catch(() => null)));
   return list.filter((x): x is ElysiumCoin => !!x);
+}
+
+let day1: { at: number; set: Promise<{ set: Set<string>; count: number }> } | null = null;
+/**
+ * The first DAY1_COINS coins launched on Elysium mainnet (lowercase addresses) and how many coins
+ * there are. Empty on testnet: the badge is a mainnet thing. Read once a minute at most.
+ */
+export function elysiumDay1(): Promise<{ set: Set<string>; count: number }> {
+  if (ELYSIUM.testnet) return Promise.resolve({ set: new Set(), count: 0 });
+  if (day1 && Date.now() - day1.at < 60_000) return day1.set;
+  const p = (async () => {
+    const c = elysiumClient();
+    const count = Number(await c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "coinCount" }));
+    const ids = Array.from({ length: Math.min(count, DAY1_COINS) }, (_, i) => BigInt(i));
+    const addrs = await Promise.all(ids.map((i) => c.readContract({ address: ELYSIUM.launcher, abi: launcherAbi, functionName: "allCoins", args: [i] })));
+    return { set: new Set(addrs.map((a) => a.toLowerCase())), count };
+  })();
+  day1 = { at: Date.now(), set: p };
+  p.catch(() => {
+    day1 = null;
+  });
+  return p;
 }
 
 export async function elysiumHypeBalance(user: Address): Promise<bigint> {

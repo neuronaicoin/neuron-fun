@@ -28,6 +28,7 @@ import { xbotLoop } from "./xbot.mjs";
 import { solKeeperLoop } from "./solkeeper.mjs";
 import { sniperLoop } from "./sniper.mjs";
 import { elysiumTestLoop } from "./elysiumtest.mjs";
+import { elysiumMainLoop } from "./elysiummain.mjs";
 import { sniperOptLoop } from "./sniperopt.mjs";
 import { solMarketsLoop } from "./solmarkets.mjs";
 import { alertLoop } from "./alerts.mjs";
@@ -553,6 +554,8 @@ async function main() {
     // sasa Bot test mode (admins): scores every new pump.fun coin, writes what it would have done
     keep("bot test", () => sniperLoop(pool, log)),
     keep("elysium testnet", () => elysiumTestLoop(pool, log)),
+    // Elysium mainnet points (waits until the deploy workflow fills in the addresses)
+    keep("elysium mainnet", () => elysiumMainLoop(pool, log)),
     // its rule optimizer: searches filter + trading rules on what the bot followed (every 3 hours)
     keep("bot optimizer", () => sniperOptLoop(pool, log)),
     keep("alerts", () => alertLoop(pool, log)),

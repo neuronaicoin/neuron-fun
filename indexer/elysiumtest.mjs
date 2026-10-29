@@ -6,10 +6,12 @@
 //   - every buy or sale of a sasa coin there: 10, at most 10 a day
 //   - minting the sasa Day-1 Pass (contracts-elysium SasaDayPass): the "elysium_pass" quest, 50;
 //     pass holders get twice the launch and trade points
-// Switched off on mainnet day (ELYSIUM_TEST_OFF=1) or by itself once the testnet is gone.
+// Stops by itself once Elysium mainnet is live on sasa (elysiummain.mjs takes over), or with
+// ELYSIUM_TEST_OFF=1.
 
 import { createPublicClient, defineChain, getAddress, http, parseAbiItem } from "viem";
 import { readFileSync } from "node:fs";
+import { elysiumMainnet } from "./elysiumnet.mjs";
 
 const RPC = process.env.ELYSIUM_TEST_RPC || "https://testnet-rpc.elysium.kinetiq.xyz";
 const LAUNCHER = "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9";
@@ -104,7 +106,12 @@ export async function elysiumTestLoop(pool, log) {
   const PASS = passAddress();
   if (PASS) log(`elysium testnet: Day-1 Pass ${PASS}`);
   let fails = 0;
+  let checked = 0;
   for (;;) {
+    if (Date.now() - checked > 5 * 60_000) {
+      checked = Date.now();
+      if (await elysiumMainnet().catch(() => null)) return log("elysium testnet: mainnet is live, testnet points stop here");
+    }
     try {
       const st = await pool.query("select last_block from elysium_test_state where id = 1");
       let from = st.rowCount ? BigInt(st.rows[0].last_block) + 1n : START_BLOCK;

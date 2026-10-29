@@ -31,7 +31,14 @@ import {
   sellCalls,
   uploadElysiumInfo,
   type ElysiumCoin,
+  BOOST_DAYS,
+  BOOST_X,
+  DAY1_COINS,
+  ELYSIUM_BOOST_END,
+  boostLive,
+  elysiumDay1,
 } from "@/lib/elysium";
+import { addHype, elysiumTopupReady, HYPE_GAS_FLOOR, HYPE_TOPUPS } from "@/lib/elysiumgas";
 
 const SLIPPAGE_BPS = 500;
 const fmtNum = (n: number) =>
@@ -100,6 +107,113 @@ function ShareButton({ coin, mine, big = false }: { coin: ElysiumCoin; mine: boo
 const TestTag = () =>
   ELYSIUM.testnet ? <span className="ml-1.5 align-[0.15em] text-[0.625rem] font-extrabold tracking-wide px-1.5 py-0.5 rounded bg-warn-bg text-warn-ink">TEST</span> : null;
 
+/** The permanent badge of the first DAY1_COINS coins on Elysium mainnet. */
+const Day1Badge = ({ big = false }: { big?: boolean }) => (
+  <span
+    title={`One of the first ${DAY1_COINS} coins launched on Elysium mainnet`}
+    className={
+      "ml-1.5 align-[0.15em] font-extrabold tracking-wide rounded bg-[#ffc23d] text-[#1a1410] whitespace-nowrap " +
+      (big ? "text-[0.6875rem] px-2 py-0.5" : "text-[0.5625rem] px-1.5 py-0.5")
+    }
+  >
+    🏅 DAY-1
+  </span>
+);
+
+/** The first DAY1_COINS coins (mainnet), refreshed with the list. */
+function useDay1(): { set: Set<string>; count: number } | null {
+  const [d, setD] = useState<{ set: Set<string>; count: number } | null>(null);
+  useEffect(() => {
+    if (ELYSIUM.testnet) return;
+    let alive = true;
+    const go = () => elysiumDay1().then((x) => alive && setD(x)).catch(() => {});
+    go();
+    const t = setInterval(() => document.visibilityState === "visible" && go(), 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  return d;
+}
+
+/**
+ * Mainnet's launch week. Before mainnet: what's coming (3x points, the Day-1 badge). On mainnet:
+ * the 3x countdown and how many Day-1 spots are left.
+ */
+function LaunchWeek({ day1 }: { day1: { count: number } | null }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const left = day1 ? Math.max(0, DAY1_COINS - day1.count) : null;
+  if (ELYSIUM.testnet)
+    return (
+      <div className="rounded-2xl border border-[#ffc23d]/50 bg-[#ffc23d]/10 px-4 py-3 text-[0.8125rem] sm:text-[0.875rem] text-ink-2 leading-snug">
+        <b className="text-ink">Mainnet week one (from Nov 9):</b> every launch and trade earns <b className="text-ink">{BOOST_X}x points</b> for {BOOST_DAYS} days ({BOOST_X * 2}x with a Day-1 Pass), and the first {DAY1_COINS} coins get a permanent <Day1Badge />
+      </div>
+    );
+  const live = boostLive();
+  if (!live && left === 0) return null;
+  const end = ELYSIUM_BOOST_END ? new Date(ELYSIUM_BOOST_END) : null;
+  const hoursLeft = end ? Math.max(0, Math.floor((end.getTime() - Date.now()) / 3_600_000)) : 0;
+  return (
+    <div className="rounded-2xl border border-[#ffc23d]/60 bg-[#ffc23d]/15 px-4 py-3 flex flex-col gap-1 text-[0.8125rem] sm:text-[0.875rem] text-ink-2 leading-snug">
+      {live && (
+        <span>
+          🔥 <b className="text-ink">{BOOST_X}x points week</b>: every launch and trade earns {BOOST_X}x ({BOOST_X * 2}x with a Day-1 Pass).{" "}
+          <b className="text-ink">{hoursLeft >= 24 ? `${Math.floor(hoursLeft / 24)}d ${hoursLeft % 24}h` : `${hoursLeft}h`} left</b>
+        </span>
+      )}
+      {left !== null && left > 0 && (
+        <span>
+          🏅 <b className="text-ink">{left} of {DAY1_COINS} Day-1 spots left</b>: the first {DAY1_COINS} coins keep the <Day1Badge /> badge for good.
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Cash → HYPE on Elysium, one tap (mainnet). The user pays the swap and network costs. */
+function HypeTopup({ hype, onDone, compact = false }: { hype: bigint | null; onDone: () => void; compact?: boolean }) {
+  const w = useWallet();
+  const [busy, setBusy] = useState("");
+  if (!w.address || !elysiumTopupReady()) return null;
+  const low = hype !== null && hype < HYPE_GAS_FLOOR;
+  async function go(usd: number) {
+    try {
+      setBusy("Getting the price…");
+      const got = await addHype({ user: w.address as Address, usd, send: w.send, onStep: setBusy });
+      toast(got === null ? `$${usd} of HYPE is on its way to Elysium (usually under a minute)` : `HYPE added ✓ You have ${fmtHype(got)} HYPE`);
+      onDone();
+    } catch (e) {
+      toast(friendlyError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className={"rounded-2xl border px-3.5 py-3 flex flex-col sm:flex-row sm:items-center gap-2.5 " + (low ? "border-emerald/50 bg-emerald-soft" : "border-line bg-surface")}>
+      <span className="min-w-0 flex-1 text-[0.8125rem] sm:text-[0.875rem] text-ink-2 leading-snug">
+        ⛽ <b className="text-ink">{low ? "You need HYPE here" : "Add HYPE"}</b>
+        {compact ? "" : ` — from your cash, one tap. ${low ? "It pays the network fee and your buys." : ""}`}
+      </span>
+      <span className="flex gap-1.5 shrink-0">
+        {busy ? (
+          <span className="h-9 px-3 rounded-lg border border-line text-[0.8125rem] grid place-items-center text-ink-3">{busy}</span>
+        ) : (
+          HYPE_TOPUPS.map((usd) => (
+            <button key={usd} type="button" onClick={() => void go(usd)} className="h-9 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.8125rem] bg-surface">
+              +${usd}
+            </button>
+          ))
+        )}
+      </span>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ launch + list
 
 export function ElysiumHome() {
@@ -145,7 +259,7 @@ function ElysiumHomeInner() {
   async function launch() {
     try {
       if (!w.address) throw new Error("Log in with MetaMask first (step 1).");
-      if (w.embedded) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
+      if (w.embedded && test) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
       if (!name.trim() || !symbol.trim()) throw new Error("Add a name and a ticker.");
       if (!logo) throw new Error("Add a picture.");
       let first = 0n;
@@ -154,8 +268,23 @@ function ElysiumHomeInner() {
       } catch {
         throw new Error("The first buy isn't a number.");
       }
-      if (hype !== null && hype < first + 300_000_000_000_000n)
-        throw new Error(hype === 0n ? `You have no ${unit} yet: get some free from the faucet (step 2).` : `Not enough ${unit} for this first buy plus the network fee. Lower it, or get more from the faucet.`);
+      if (!test && w.address && elysiumTopupReady()) {
+        // mainnet: missing HYPE comes from the user's cash first, in the same tap
+        const need = first + (await elysiumLaunchFee()) + HYPE_GAS_FLOOR;
+        const now = await elysiumHypeBalance(w.address as Address).catch(() => hype ?? 0n);
+        if (now < need) {
+          const got = await addHype({ user: w.address as Address, hypeOut: need - now, send: w.send, onStep: setBusy });
+          if (got === null) throw new Error("Your HYPE is still on its way. Tap Launch again in a few seconds.");
+          setHype(got);
+        }
+      } else if (hype !== null && hype < first + 300_000_000_000_000n)
+        throw new Error(
+          test
+            ? hype === 0n
+              ? `You have no ${unit} yet: get some free from the faucet (step 2).`
+              : `Not enough ${unit} for this first buy plus the network fee. Lower it, or get more from the faucet.`
+            : `Not enough HYPE for this first buy plus the network fee.`
+        );
       setBusy("Saving the picture…");
       const info = await uploadElysiumInfo({ name: name.trim(), symbol: symbol.trim().toUpperCase(), description: description.trim(), image: logo });
       const fee = await elysiumLaunchFee();
@@ -176,6 +305,7 @@ function ElysiumHomeInner() {
     }
   }
 
+  const day1 = useDay1();
   const people = coins ? new Set(coins.map((c) => c.creator.toLowerCase())).size : 0;
   const Step = ({ n, done, title, text, children }: { n: number; done?: boolean; title: string; text: string; children?: React.ReactNode }) => (
     <div className="rounded-2xl border border-line bg-surface p-3 sm:p-4 flex items-center sm:items-start gap-3 min-w-0">
@@ -203,7 +333,20 @@ function ElysiumHomeInner() {
       </div>
 
       <div className="grid sm:grid-cols-3 gap-2 sm:gap-3">
-        <Step n={1} done={browser} title={browser ? "Wallet connected" : "Connect MetaMask"} text={browser ? `${w.address!.slice(0, 6)}…${w.address!.slice(-4)}` : w.address ? "Email accounts can't use the testnet: log in with MetaMask" : "Any browser wallet works"}>
+        <Step
+          n={1}
+          done={test ? browser : !!w.address}
+          title={test ? (browser ? "Wallet connected" : "Connect MetaMask") : w.address ? "Logged in" : "Log in"}
+          text={
+            w.address && (browser || !test)
+              ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}`
+              : test
+                ? w.address
+                  ? "Email accounts can't use the testnet: log in with MetaMask"
+                  : "Any browser wallet works"
+                : "Email, Google or any wallet"
+          }
+        >
           {!w.address && (
             <span className="shrink-0 sm:hidden">
               <ConnectButton />
@@ -217,13 +360,18 @@ function ElysiumHomeInner() {
             </a>
           </Step>
         )}
-        <Step n={test ? 3 : 2} title="Launch your coin" text="Name, ticker, picture. Live in seconds." />
+        {!test && (
+          <Step n={2} done={hype !== null && hype >= HYPE_GAS_FLOOR} title="Have some HYPE" text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} HYPE` : "Comes from your cash by itself when you launch or buy"} />
+        )}
+        <Step n={3} title="Launch your coin" text="Name, ticker, picture. Live in seconds." />
       </div>
       {!w.address && (
         <div className="hidden sm:block">
           <ConnectButton full />
         </div>
       )}
+      <HypeTopup hype={hype} onDone={loadBal} />
+      <LaunchWeek day1={day1} />
 
       {test && (
         <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
@@ -312,6 +460,7 @@ function ElysiumHomeInner() {
               <div className="font-semibold truncate">
                 {c.name} <span className="text-ink-3 font-normal">${c.symbol}</span>
                 <TestTag />
+                {day1?.set.has(c.address.toLowerCase()) && <Day1Badge />}
               </div>
               <div className="text-[0.75rem] text-ink-3 truncate">
                 by {c.creator.slice(0, 6)}…{c.creator.slice(-4)}
@@ -346,6 +495,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState("");
 
+  const day1 = useDay1();
   const misses = useRef(0);
   const load = useCallback(async () => {
     let c = await fetchElysiumCoin(address).catch(() => null);
@@ -389,12 +539,23 @@ function ElysiumCoinInner({ address }: { address: string }) {
   async function trade() {
     if (!coin || !w.address || raw <= 0n) return;
     try {
-      if (w.embedded) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
-      if (have !== undefined && raw > have) throw new Error(side === "buy" ? "Not enough HYPE." : `You don't have that many ${coin.symbol}.`);
+      if (w.embedded && ELYSIUM.testnet) throw new Error("The testnet needs a browser wallet like MetaMask. Log out and log in with MetaMask.");
+      // Mainnet: not enough HYPE? It comes from the user's cash first, in the same tap: exactly what
+      // this buy needs (plus the network fee), or a little for a sale's fee.
+      let haveNow = have;
+      if (!ELYSIUM.testnet && bal && elysiumTopupReady()) {
+        const need = side === "buy" ? raw + HYPE_GAS_FLOOR : HYPE_GAS_FLOOR;
+        if (bal.hype < need) {
+          const got = await addHype({ user: w.address as Address, hypeOut: need - bal.hype, send: w.send, onStep: setBusy });
+          if (got === null) throw new Error("Your HYPE is still on its way. Tap again in a few seconds.");
+          if (side === "buy") haveNow = got;
+        }
+      }
+      if (haveNow !== undefined && raw > haveNow) throw new Error(side === "buy" ? "Not enough HYPE." : `You don't have that many ${coin.symbol}.`);
       setBusy("Confirm in your wallet…");
       const calls = side === "buy" ? buyCalls(coin, w.address as Address, raw, SLIPPAGE_BPS) : sellCalls(coin, w.address as Address, raw, SLIPPAGE_BPS);
       await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, calls, setBusy);
-      toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? " · +10 airdrop points" : ""));
+      toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? " · +10 airdrop points" : boostLive() ? ` · ${BOOST_X}x points week` : ""));
       setAmount("");
       for (const ms of [0, 1500, 4000]) setTimeout(() => void load(), ms);
     } catch (e) {
@@ -424,6 +585,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
           <h1 className="font-display font-bold text-[1.5rem] truncate">
             {coin.name} <span className="text-ink-3">${coin.symbol}</span>
             <TestTag />
+            {day1?.set.has(coin.address.toLowerCase()) && <Day1Badge big />}
           </h1>
           <div className="text-[0.8125rem] text-ink-3">{ELYSIUM.testnet ? "Elysium testnet" : "Elysium"} · liquidity locked forever</div>
         </div>
@@ -490,6 +652,9 @@ function ElysiumCoinInner({ address }: { address: string }) {
           <button type="button" disabled={!!busy || raw <= 0n} onClick={trade} className="h-12 rounded-xl bg-emerald text-on-accent font-semibold disabled:opacity-60">
             {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
           </button>
+        )}
+        {!ELYSIUM.testnet && bal && (side === "buy" || bal.hype < HYPE_GAS_FLOOR) && (
+          <HypeTopup hype={bal.hype} onDone={() => void load()} compact={bal.hype >= HYPE_GAS_FLOOR} />
         )}
         {ELYSIUM.testnet && side === "buy" && bal && bal.hype === 0n && (
           <p className="text-[0.75rem] text-ink-3">
