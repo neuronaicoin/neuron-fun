@@ -72,11 +72,21 @@ async function isToken(a) {
   return tokenInfo.get(a);
 }
 
+// A launch names more than one address: the new coin, but also the coin it's priced in (test USDC),
+// the launcher, the hook… Those others repeat across launches; the new coin is the one that doesn't.
+const addrsOf = (l) => [...new Set((l.decoded?.parameters || []).filter((p) => p.type === "address").map((p) => lc(p.value)).filter(Boolean))];
+const freq = new Map();
+for (const l of launchLogs) for (const a of addrsOf(l)) freq.set(a, (freq.get(a) || 0) + 1);
 const launches = [];
 for (const l of launchLogs) {
-  const addrs = (l.decoded?.parameters || []).filter((p) => p.type === "address").map((p) => lc(p.value));
   let token = null;
-  for (const a of addrs) if (a && a !== LAUNCHPAD && (await isToken(a))?.type === "ERC-20") (token = a);
+  for (const a of addrsOf(l).filter((a) => a !== LAUNCHPAD).sort((x, y) => freq.get(x) - freq.get(y))) {
+    if (freq.get(a) > 2) break; // shared by many launches: not a launched coin
+    if ((await isToken(a))?.type === "ERC-20") {
+      token = a;
+      break;
+    }
+  }
   if (!token) continue;
   const tx = await get(`/transactions/${l.transaction_hash || l.tx_hash}`).catch(() => null);
   const info = tokenInfo.get(token);
@@ -121,7 +131,8 @@ for (const c of launches) {
   for (const t of tr) outCount.set(lc(t.from), (outCount.get(lc(t.from)) || 0) + 1);
   const skip = new Set([LAUNCHPAD, c.token, "0x0000000000000000000000000000000000000000"]);
   const pool = [...outCount.entries()].filter(([a]) => !skip.has(a)).sort((a, b) => b[1] - a[1])[0]?.[0];
-  const buys = tr.filter((t) => lc(t.from) === pool && !skip.has(lc(t.to)) && lc(t.to) !== pool).sort((a, b) => ts(a.timestamp) - ts(b.timestamp));
+  // contracts (routers, the hook) pass coins on; only people's wallets count as buyers
+  const buys = tr.filter((t) => lc(t.from) === pool && !skip.has(lc(t.to)) && lc(t.to) !== pool && !t.to?.is_contract).sort((a, b) => ts(a.timestamp) - ts(b.timestamp));
   c.buys = buys.length;
   c.pool = pool;
   const start = c.at ?? ts(buys[0]?.timestamp);
