@@ -586,18 +586,25 @@ export function resultText(r) {
 
 // ------------------------------------------------------------------ the day's plan
 
-// About 10 posts a day: up to 2 whale moves of $1M+ the moment they happen, and 8 planned posts.
+// About 10 posts a day, now mostly about sasa on Elysium (~90%): nine elysium* slots spread through
+// the day plus one "existing" post (the day's hottest meme) for variety. Whale moves still fire the
+// moment they happen when XBOT_WHALES_PER_DAY is raised above its default of 0.
 // Times are Türkiye time (UTC+3); every day each one moves by up to ±25 minutes, so nothing goes
 // out at the same minute two days running (people notice a bot on a timer).
+// Each elysium* slot is a distinct kind (the loop posts a kind at most once a day) but they all draw
+// from one shared pool of lines; see makers()/freshElysium.
+export const ELYSIUM_SLOTS = ["elysium", "elysium2", "elysium3", "elysium4", "elysium5", "elysium6", "elysium7", "elysium8", "elysium9"];
 export const PLAN = [
-  { kind: "fear", at: "10:00" },
-  { kind: "biggest", at: "13:00" },
-  { kind: "predict", at: "15:00" },
-  { kind: "stock", at: "16:30" },
-  { kind: "spot", at: "17:30" },
-  { kind: "meme", at: "18:30" },
-  { kind: "poll", at: "19:30" },
-  { kind: "recap", at: "21:00" },
+  { kind: "elysium", at: "10:00" },
+  { kind: "elysium2", at: "11:30" },
+  { kind: "elysium3", at: "13:00" },
+  { kind: "elysium4", at: "14:30" },
+  { kind: "elysium5", at: "16:00" },
+  { kind: "meme", at: "17:00" },
+  { kind: "elysium6", at: "18:00" },
+  { kind: "elysium7", at: "19:15" },
+  { kind: "elysium8", at: "20:30" },
+  { kind: "elysium9", at: "21:30" },
 ];
 const TR = 3 * 3600e3;
 
@@ -620,12 +627,23 @@ async function fresh(pool, kind, list) {
   return { text, tpl };
 }
 
+/** Like fresh(), but dedups across every elysium* slot together (they share one pool of lines). */
+async function freshElysium(pool, list) {
+  const { rows } = await pool
+    .query(`select meta->>'tpl' as tpl from xbot_posts where kind like 'elysium%' and posted_at > now() - interval '3 days' and meta ? 'tpl'`)
+    .catch(() => ({ rows: [] }));
+  const used = new Set(rows.map((r) => r.tpl));
+  const left = list.filter(([id]) => !used.has(id));
+  const [tpl, text] = (left.length ? left : list)[Math.floor(Math.random() * (left.length || list.length))];
+  return { text, tpl };
+}
+
 const NETNAME = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
 
 /** What each planned kind posts (null: nothing worth posting right now; tried again later). */
 function makers(pool) {
   const today = new Date(Date.now() + TR).toISOString().slice(0, 10);
-  return {
+  const m = {
     fear: async () => {
       const f = await fearNow(pool);
       if (!f) return null;
@@ -688,6 +706,15 @@ function makers(pool) {
       return { ref: `c:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.recapCard(top) };
     },
   };
+  // sasa on Elysium: the account's main beat. Every elysium* slot shares one pool of lines (text
+  // only — no made-up numbers, since the bot posts on its own) and dedups across all of them over
+  // 3 days (freshElysium), so the timeline never repeats a line even though most posts are Elysium.
+  for (const kind of ELYSIUM_SLOTS)
+    m[kind] = async () => {
+      const w = await freshElysium(pool, say.elysium());
+      return { ref: `el:${today}:${kind}`, text: w.text, meta: { tpl: w.tpl } };
+    };
+  return m;
 }
 
 // ------------------------------------------------------------------ the loop
@@ -698,7 +725,8 @@ export async function xbotLoop(pool, log) {
   if (!keys.apiKey || !keys.apiSecret || !keys.accessToken || !keys.accessSecret) return;
   const dry = process.env.XBOT_DRY === "1";
   const minUsd = Number(process.env.XBOT_MIN_USD ?? "1000000");
-  const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "2");
+  // Default 0 so the timeline stays ~90% Elysium; raise XBOT_WHALES_PER_DAY to bring whale alerts back.
+  const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "0");
   const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "6");
   await pool.query(SQL);
   log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day + up to ${whalesPerDay} whale moves of ${money(minUsd)}+`);

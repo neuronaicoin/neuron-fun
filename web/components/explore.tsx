@@ -18,7 +18,8 @@ import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 import { RaceBanner } from "@/components/racepromo";
 import { LiveRaces } from "@/components/liveraces";
-import { AirdropBanner, BotBanner, ElysiumBanner } from "@/components/airdropcta";
+import { BotBanner, ElysiumBanner } from "@/components/airdropcta";
+import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { TopWins } from "@/components/topwins";
 
@@ -232,7 +233,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       {withLanding && !me && !restoring ? (
         <div className="max-w-7xl mx-auto"><Hero /><HeroStrip /></div>
       ) : (
-        <div className="max-w-7xl mx-auto"><AirdropBanner /><ElysiumBanner /><BotBanner /></div>
+        <div className="max-w-7xl mx-auto"><ElysiumBanner /><BotBanner /></div>
       )}
       <div className="max-w-7xl mx-auto"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>
@@ -288,6 +289,19 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
         <div className="px-4 sm:px-6 pt-2.5 flex items-center gap-2">
           <div className="ex-tabs flex-1 min-w-0 flex gap-1 overflow-x-auto" role="group" aria-label="Chain">
+            {/* Elysium leads the chain row: sasa is Elysium's launchpad. Its coins live on the
+                dedicated Elysium page (separate contracts), so this chip links there rather than
+                filtering the grid. The other chains below are live grid filters. */}
+            {ELYSIUM_LISTED && (
+              <Link
+                href="/elysium/"
+                className="shrink-0 h-8 px-3.5 rounded-lg text-[0.9375rem] font-extrabold whitespace-nowrap flex items-center gap-1.5 text-white hover:brightness-110"
+                style={{ background: "linear-gradient(90deg,#0f3b3a,#1b6b78)" }}
+              >
+                <span className="w-2 h-2 rounded-full bg-white/90 shrink-0" aria-hidden="true" />
+                Elysium
+              </Link>
+            )}
             {[
               { key: "all", short: "All chains", color: "" },
               // Solana right after Robinhood (for people who see it yet)

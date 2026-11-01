@@ -219,6 +219,35 @@ export function followup(f) {
   ];
 }
 
+/**
+ * sasa on Elysium: the account's main beat. Curiosity / FOMO hooks about launching and trading on
+ * the new chain through sasa, never flat descriptions. No fixed dates and no made-up numbers (the
+ * bot posts on its own, so it must not fabricate stats); attention words in CAPS, loose and human,
+ * a different hashtag set each time, the link stays on the profile. sasa is Elysium's launchpad.
+ */
+export function elysium() {
+  return [
+    ["e1", `a new chain just opened and most people haven't noticed yet 👀\n\nELYSIUM. the first coins launched here are the ones that get seen. do it on sasa\n\n#Elysium #Memecoins #Crypto #sasa`],
+    ["e2", `every chain had one window where launching early meant everything\n\nELYSIUM is in that window right now. launch your coin on sasa before the crowd shows up\n\n#Elysium #CryptoTrading #Altcoins #sasa`],
+    ["e3", `you keep saying you missed the early days of every chain\n\nELYSIUM is day one. one tap on sasa and your coin is live 🚀\n\n#Elysium #Memecoin #Crypto #LaunchPad`],
+    ["e4", `the WHALES are already sniffing around ELYSIUM 👀\n\nbe where they're looking. create a coin or trade one on sasa\n\n#Elysium #Whales #Crypto #sasa`],
+    ["e5", `no bridge. no 12 steps. just launch on ELYSIUM with one tap on sasa\n\nwhat are you waiting for? 👀\n\n#Elysium #Memecoins #CryptoNews #sasa`],
+    ["e6", `new chains make new names. whoever shows up first on ELYSIUM is who everyone copies later\n\nstart on sasa\n\n#Elysium #Altcoins #Crypto #Memecoin`],
+    ["e7", `quiet chains don't stay quiet 👀\n\nELYSIUM is early and sasa is already live on it. launch, trade, be first\n\n#Elysium #CryptoTrading #HYPE #sasa`],
+    ["e8", `the best time to launch a coin on a new chain is before anyone's watching\n\nthat's ELYSIUM right now. sasa makes it one tap\n\n#Elysium #Memecoins #Crypto #LaunchPad`],
+    ["e9", `everyone's about to ask what ELYSIUM is\n\nyou could already have a coin live there. sasa, one tap 🚀\n\n#Elysium #Memecoin #CryptoNews #sasa`],
+    ["e10", `coins are being created on ELYSIUM right now while you read this 👀\n\njoin them on sasa or watch someone else's pump\n\n#Elysium #Whales #Crypto #Altcoins`],
+    ["e11", `launching on ELYSIUM takes less time than reading this post\n\none tap on sasa. no wallet gymnastics\n\n#Elysium #Memecoins #CryptoTrading #sasa`],
+    ["e12", `the earliest coins on any chain write the story for the rest\n\nwrite yours on ELYSIUM. sasa\n\n#Elysium #Crypto #Memecoin #LaunchPad`],
+    ["e13", `ELYSIUM is new ground nobody's crowded onto yet 👀\n\nget your coin in early on sasa\n\n#Elysium #Altcoins #CryptoNews #sasa`],
+    ["e14", `trade it, launch it, be first on it\n\nELYSIUM is live on sasa and the crowd isn't here yet 🚀\n\n#Elysium #Memecoins #Crypto #HYPE`],
+    ["e15", `you don't catch the next chain by waiting for the headlines\n\nELYSIUM is already open on sasa. move 👀\n\n#Elysium #CryptoTrading #Memecoin #sasa`],
+    ["e16", `one tap. your coin. a brand new chain called ELYSIUM\n\nthe rest of the timeline finds out later. sasa\n\n#Elysium #Memecoins #Crypto #LaunchPad`],
+    ["e17", `WHALES love a fresh chain with room to move\n\nELYSIUM has it. so does sasa. launch or trade before it fills up 👀\n\n#Elysium #Whales #Altcoins #Crypto`],
+    ["e18", `being early isn't luck, it's showing up before the crowd\n\nshow up on ELYSIUM. sasa, one tap\n\n#Elysium #Memecoin #CryptoNews #sasa`],
+  ];
+}
+
 export function result(r, underlying) {
   const right = Math.round((r.yesWon ? r.yes : 1 - r.yes) * 100);
   const W = r.yesWon ? "YES" : "NO";

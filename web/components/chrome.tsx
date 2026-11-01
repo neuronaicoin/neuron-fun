@@ -18,7 +18,6 @@ import { AutoSweep } from "./autosweep";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
 import { useMyAirdrop } from "@/lib/points";
-import { AirdropButton } from "./airdropcta";
 import { installHaptics } from "@/lib/haptics";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
@@ -308,7 +307,6 @@ export function Header() {
           <SocialSync />
           <RefCapture />
           <PointsPill />
-          <AirdropButton />
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />

@@ -93,6 +93,9 @@ function SpotPage() {
       <div className="mt-5 grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-5 items-start">
         <div className="rounded-3xl border border-line bg-surface p-3 sm:p-4 min-w-0">
           <PerpsChart coin={m.coin} decimals={spotDecimals(m)} height={480} />
+          <p className="mt-2 text-right text-[0.6875rem] text-ink-3">
+            Powered by <span className="font-semibold text-ink-2">Hyperliquid</span>
+          </p>
         </div>
         <div className="rounded-3xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-20">
           <SpotTrade m={m} have={have} canTrade={desk.canTrade} blocked={desk.blocked} trade={desk.trade} />

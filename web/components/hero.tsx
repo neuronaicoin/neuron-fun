@@ -117,7 +117,7 @@ export function Hero() {
       >
         <div>
           <h1 className="font-display font-black text-[2.125rem] sm:text-[3.25rem] leading-[1.05] tracking-tight">
-            Launch a coin in <span className="text-[#FF6B1A]">one tap</span>.<br />
+            Launch a coin on <span className="text-[#FF6B1A]">Elysium</span> in one tap.<br />
             Trade what the <span className="text-[#FF6B1A]">WHALES</span> buy.
           </h1>
           <p className="mt-3 text-ink-2 text-[1rem] sm:text-[1.0625rem] leading-relaxed max-w-xl">
