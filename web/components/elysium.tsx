@@ -438,7 +438,7 @@ function ElysiumHomeInner() {
             {logo ? "Change picture" : "Add a picture"}
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,.gif"
               className="hidden"
               onChange={async (e) => {
                 const f = e.target.files?.[0];

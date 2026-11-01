@@ -7,8 +7,23 @@
 const SIZE = 128;
 const MAX_BYTES = 9_000;
 
+/**
+ * An animated GIF can't be squeezed into the coin's own small picture: it's uploaded to sasa
+ * (/api/gif, kept as it is, up to 2 MB) and the coin points to its address, so it moves everywhere.
+ */
+export async function uploadGif(file: File): Promise<string> {
+  if (file.size > 2_000_000) throw new Error("That GIF is over 2 MB. Try a smaller one (around 200×200 works well).");
+  const r = await fetch("/api/gif", { method: "POST", headers: { "content-type": "image/gif" }, body: file });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || typeof j.url !== "string") throw new Error(j.error || "Couldn't upload the GIF. Try again.");
+  return j.url;
+}
+const gifUrls = new WeakMap<File, Promise<string>>();
+const gifOnce = (file: File) => { let p = gifUrls.get(file); if (!p) { p = uploadGif(file); gifUrls.set(file, p); } return p; };
+
 export async function fileToLogo(file: File): Promise<string> {
   if (!file.type.startsWith("image/")) throw new Error("Please pick an image file.");
+  if (file.type === "image/gif") return gifOnce(file);
   if (file.size > 15 * 1024 * 1024) throw new Error("That picture is too big. Pick one under 15 MB.");
 
   const bitmap = await loadImage(file);
@@ -40,6 +55,7 @@ export async function fileToLogo(file: File): Promise<string> {
  */
 export async function fileToBigLogo(file: File): Promise<string> {
   if (!file.type.startsWith("image/")) throw new Error("Please pick an image file.");
+  if (file.type === "image/gif") return gifOnce(file);
   const BIG = 512;
   const bitmap = await loadImage(file);
   const side = Math.min(bitmap.width, bitmap.height);

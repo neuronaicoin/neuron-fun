@@ -380,6 +380,37 @@ async function deletePush(env, me, b) {
 
 // ------------------------------------------------------------------ entry
 
+/** Animated coin pictures (indexer/gifs.sql). POST /api/gif (body: the GIF) -> { url }; GET /api/gif/<sha256>. */
+async function gifRoute(ctx, parts, method, url) {
+  const { request, env } = ctx;
+  if (parts.length === 1 && method === "POST") {
+    const len = Number(request.headers.get("content-length") || 0);
+    if (len > 2_000_000) return fail(413, "That GIF is over 2 MB. Try a smaller one (around 200×200 works well).");
+    const buf = new Uint8Array(await request.arrayBuffer());
+    if (!buf.length || buf.length > 2_000_000) return fail(413, "That GIF is over 2 MB. Try a smaller one (around 200×200 works well).");
+    if (!(buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46)) return fail(400, "That file isn't a GIF.");
+    if (!(await underLimit(env, request, "gif", 30))) return fail(429, "Too many uploads today. Try again tomorrow.");
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", buf))].map((x) => x.toString(16).padStart(2, "0")).join("");
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    await sb(env, "sasa_images", { method: "POST", body: { hash, mime: "image/gif", data: btoa(bin) }, prefer: "resolution=ignore-duplicates,return=minimal" });
+    return new Response(JSON.stringify({ url: `${url.origin}/api/gif/${hash}` }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
+  if (parts.length === 2 && /^[0-9a-f]{64}$/.test(parts[1]) && (method === "GET" || method === "HEAD")) {
+    const cache = caches.default;
+    const key = new Request(`${url.origin}/api/gif/${parts[1]}`);
+    const hit = await cache.match(key);
+    if (hit) return hit;
+    const { data } = await sb(env, `sasa_images?select=mime,data&hash=eq.${parts[1]}&limit=1`);
+    const row = data && data[0];
+    if (!row) return new Response("not found", { status: 404, headers: { "cache-control": "public, max-age=30" } });
+    const res = new Response(Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0)), { headers: { "content-type": row.mime, "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*" } });
+    ctx.waitUntil(cache.put(key, res.clone()));
+    return res;
+  }
+  return fail(404, "Not found.");
+}
+
 export async function onRequest(ctx) {
   const { request, env } = ctx;
   if (!env.SUPABASE_SERVICE_KEY || !env.SESSION_SECRET) return fail(503, "Alerts are not set up yet.");
@@ -400,6 +431,9 @@ export async function onRequest(ctx) {
 
   let who = null; // for the admin-only error detail below
   try {
+    // animated coin pictures: upload (anyone, limited per day) and serve (public, cached)
+    if (parts[0] === "gif") return await gifRoute(ctx, parts, method, url);
+
     // Profile pictures travel as a data URL (a 256px WebP is ~10-40 KB); everything else stays small.
     const limit = parts[0] === "social" && parts[1] === "avatar" ? 400_000 : parts[0] === "sol" && parts[1] === "meta" ? 420_000 : 8192;
     const body = method === "GET" || method === "HEAD" ? {} : await readBody(request, limit);

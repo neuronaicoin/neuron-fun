@@ -632,7 +632,7 @@ export default function RaceLaunchPage() {
               )}
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,.gif"
                 className="sr-only"
                 disabled={picBusy}
                 onChange={async (e) => {
