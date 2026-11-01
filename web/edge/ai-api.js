@@ -152,7 +152,8 @@ async function makeIdeas(env, idea, count) {
     'Each object: {"name": catchy coin name, 2-4 words, max 28 characters; ' +
     '"symbol": ticker, 3-6 capital letters A-Z only; ' +
     '"description": one fun sentence, max 140 characters, no promises of profit, no emojis; ' +
-    '"art": a short visual description of a cute mascot logo for this coin, max 25 words}. ' +
+    '"art": art direction for the coin\'s mascot picture, max 35 words: the character, its expression, pose, ' +
+    'colors and one striking detail (a prop, outfit or glow), vivid and specific}. ' +
     (count > 1 ? `Make the ${count} ideas clearly different. ` : "") +
     "Never use real people, brands, celebrities, existing crypto names, " +
     "or anything hateful, sexual or violent.";
@@ -190,7 +191,7 @@ async function makeIdeas(env, idea, count) {
       name: clean(x && x.name, 32),
       symbol: clean(x && x.symbol, 12).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
       description: clean(x && x.description, 200),
-      art: clean(x && x.art, 240),
+      art: clean(x && x.art, 300),
     }))
     .filter((x) => x.name.length >= 2 && x.symbol.length >= 2 && !BLOCK.test(x.name + " " + x.description) && !BRANDS.test(x.name + " " + x.symbol))
     .filter((x) => (seen.has(x.symbol) ? false : (seen.add(x.symbol), true)))
@@ -199,11 +200,23 @@ async function makeIdeas(env, idea, count) {
   return { list: ideas };
 }
 
+// Picture looks, one picked at random per drawing: premium 3D mascot renders instead of flat stickers
+// (the flat-vector prompt drew plain, childish logos).
+const LOGO_STYLES = [
+  "Pixar-style 3D render, soft studio lighting, glossy subsurface materials",
+  "high-end 3D collectible toy render, cinematic rim light",
+  "polished 3D cartoon mascot render, octane lighting, depth of field",
+  "clean premium vector mascot logo, bold shapes, crisp outline",
+  "glossy 3D render with glowing neon accents, dark background",
+];
+
 /** One mascot picture: { image } or { image: null, message }. */
 async function drawLogo(env, art) {
+  const style = LOGO_STYLES[Math.floor(Math.random() * LOGO_STYLES.length)];
   const prompt =
-    `Cute meme coin mascot logo: ${art}. Centered single character, bold simple shapes, vibrant colors, ` +
-    "soft gradient background, flat vector illustration, sticker style, no text, no letters, no watermark.";
+    `${art}. Crypto coin mascot logo, square app-icon composition, one centered character, head and shoulders, ${style}, ` +
+    "rich detail, vibrant colors, smooth dark gradient background with a soft glow behind the subject, high contrast, " +
+    "ultra detailed, sharp focus, 4k, illustrated character not a photo of a real person, no text, no letters, no words, no watermark.";
   let image = null;
   let lastErr = null;
   // A safety check sometimes trips on harmless words; a plainer prompt usually passes.
@@ -325,7 +338,7 @@ export async function aiRoute(ctx, me, parts, method, body) {
   }
 
   if (parts[1] === "logo") {
-    const art = clean(body.art, 240);
+    const art = clean(body.art, 300);
     if (art.length < 3 || BLOCK.test(art)) return fail(400, "Can't draw that one.");
     const no = await allowance(ctx, me, "logo", LOGOS_PER_DAY);
     if (no) return usedUp(no, "That's all the AI pictures for today. Upload your own below.");
