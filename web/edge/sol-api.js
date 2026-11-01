@@ -91,7 +91,7 @@ async function config(env, sb) {
   return json({ treasury, alt, dbc }, 200, "public, max-age=60");
 }
 
-async function meta(env, request, body, underLimit) {
+async function meta(env, request, body, underLimit, sb) {
   if (!(await underLimit(env, request, "solmeta", 40))) return fail(429, "Too many launches from here today. Try again tomorrow.");
   const name = clean(body.name, 32);
   const symbol = clean(body.symbol, 10)
@@ -99,18 +99,36 @@ async function meta(env, request, body, underLimit) {
     .replace(/[^A-Z0-9]/g, "");
   if (!name || symbol.length < 2) return fail(400, "Give the coin a name and a ticker.");
   const description = clean(body.description, 500);
-  const m = IMAGE.exec(String(body.image || ""));
-  if (!m) return fail(400, "Add a picture for your coin.");
-  let bytes;
-  try {
-    bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
-  } catch {
-    return fail(400, "That picture could not be used.");
+  const raw = String(body.image || "");
+  // an animated GIF uploaded through /api/gif (indexer/gifs.sql): stored with the coin as a .gif, so
+  // Solana wallets and apps show it moving
+  const gif = /^https:\/\/[a-z0-9.-]+\/api\/gif\/([0-9a-f]{64})$/.exec(raw);
+  let bytes, kind;
+  if (gif && sb) {
+    try {
+      const { data } = await sb(env, `sasa_images?select=mime,data&hash=eq.${gif[1]}&limit=1`);
+      const row = data && data[0];
+      if (!row) return fail(400, "That GIF wasn't found. Pick it again.");
+      bytes = Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0));
+      kind = "gif";
+    } catch {
+      return fail(400, "That picture could not be used.");
+    }
+    if (bytes.length > 2_000_000 || bytes.length < 20) return fail(400, "That picture could not be used.");
+  } else {
+    const m = IMAGE.exec(raw);
+    if (!m) return fail(400, "Add a picture for your coin.");
+    try {
+      bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    } catch {
+      return fail(400, "That picture could not be used.");
+    }
+    if (bytes.length > MAX_IMAGE || bytes.length < 100) return fail(400, "That picture could not be used.");
+    kind = m[1];
   }
-  if (bytes.length > MAX_IMAGE || bytes.length < 100) return fail(400, "That picture could not be used.");
-  const ext = m[1] === "jpeg" ? "jpg" : m[1];
+  const ext = kind === "jpeg" ? "jpg" : kind;
   const id = newId();
-  const image = await storagePut(env, `sol/${id}.${ext}`, bytes, `image/${m[1]}`);
+  const image = await storagePut(env, `sol/${id}.${ext}`, bytes, `image/${kind}`);
   // the usual Solana coin info file (what pump-style apps, DexScreener, GMGN and wallets read)
   const info = {
     name,
@@ -205,7 +223,7 @@ async function recent(env, sb) {
 export async function solRoute(env, request, me, parts, method, body, { sb, underLimit }) {
   if (parts[1] === "recent" && parts.length === 2 && method === "GET") return await recent(env, sb);
   if (parts[1] === "config" && parts.length === 2 && method === "GET") return await config(env, sb);
-  if (parts[1] === "meta" && parts.length === 2 && method === "POST") return await meta(env, request, body, underLimit);
+  if (parts[1] === "meta" && parts.length === 2 && method === "POST") return await meta(env, request, body, underLimit, sb);
   if (parts[1] === "coin" && parts.length === 2 && method === "POST") return await record(env, request, body, me, sb, underLimit);
   if (parts[1] === "coin" && parts.length === 3 && method === "GET") return await status(env, parts[2], sb);
   if (parts[1] === "error" && parts.length === 2 && method === "POST") return await launchError(env, request, body, me, sb, underLimit);
