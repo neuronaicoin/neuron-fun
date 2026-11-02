@@ -293,17 +293,18 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 dedicated Elysium page (separate contracts), so this chip links there rather than
                 filtering the grid. The other chains below are live grid filters. */}
             {ELYSIUM_LISTED && (
-              <Link
-                href="/elysium/"
-                className="shrink-0 h-8 px-3.5 rounded-lg text-[0.9375rem] font-extrabold whitespace-nowrap flex items-center gap-1.5 text-white hover:brightness-110"
+              <button
+                type="button"
+                aria-pressed={chain === "elysium"}
+                onClick={() => setChain("elysium")}
+                className={"shrink-0 h-8 px-3.5 rounded-lg text-[0.9375rem] font-extrabold whitespace-nowrap flex items-center gap-1.5 text-white hover:brightness-110 " + (chain === "elysium" ? "ring-2 ring-white/80" : "")}
                 style={{ background: "linear-gradient(90deg,#0f3b3a,#1b6b78)" }}
               >
                 <span className="w-2 h-2 rounded-full bg-white/90 shrink-0" aria-hidden="true" />
                 Elysium
-              </Link>
+              </button>
             )}
             {[
-              { key: "all", short: "All chains", color: "" },
               // Solana right after Robinhood (for people who see it yet)
               ...EXT_NETWORKS.flatMap((n) => (n.id === "robinhood" && solChip ? [n, SOL_EXT_NETWORK] : [n])).map((n) => ({ key: n.id, short: n.label, color: n.color })),
             ].map((c) => (
@@ -371,7 +372,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         {coins && rows.length === 0 && ext !== null && races !== null && (
           <div className="mx-4 sm:mx-6 mt-5 text-center py-12 border border-dashed border-line rounded-xl">
             <p className="text-ink-2">
-              {filtered
+              {chain === "elysium"
+                ? "Elysium coins will be listed here soon."
+                : filtered
                 ? "No coins match these filters."
                 : search
                   ? "Nothing matches that search."

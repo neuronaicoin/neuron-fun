@@ -220,31 +220,44 @@ export function followup(f) {
 }
 
 /**
- * sasa on Elysium: the account's main beat. Curiosity / FOMO hooks about launching and trading on
- * the new chain through sasa, never flat descriptions. No fixed dates and no made-up numbers (the
- * bot posts on its own, so it must not fabricate stats); attention words in CAPS, loose and human,
- * a different hashtag set each time, the link stays on the profile. sasa is Elysium's launchpad.
+ * sasa on Elysium: the account's main beat. Curiosity / FOMO hooks aimed at people who follow and
+ * trade on Elysium, to pull them to sasa. Never flat descriptions. No fixed dates, no made-up
+ * numbers (the bot posts on its own). Attention words in CAPS, loose and human. EVERY post tags the
+ * Elysium accounts, carries the sasapad.fun link, and uses a DIFFERENT, heavy hashtag set.
  */
+const LINK = "sasapad.fun";
 export function elysium() {
   return [
-    ["e1", `a new chain just opened and most people haven't noticed yet 👀\n\nELYSIUM. the first coins launched here are the ones that get seen. do it on sasa\n\n#Elysium #Memecoins #Crypto #sasa`],
-    ["e2", `every chain had one window where launching early meant everything\n\nELYSIUM is in that window right now. launch your coin on sasa before the crowd shows up\n\n#Elysium #CryptoTrading #Altcoins #sasa`],
-    ["e3", `you keep saying you missed the early days of every chain\n\nELYSIUM is day one. one tap on sasa and your coin is live 🚀\n\n#Elysium #Memecoin #Crypto #LaunchPad`],
-    ["e4", `the WHALES are already sniffing around ELYSIUM 👀\n\nbe where they're looking. create a coin or trade one on sasa\n\n#Elysium #Whales #Crypto #sasa`],
-    ["e5", `no bridge. no 12 steps. just launch on ELYSIUM with one tap on sasa\n\nwhat are you waiting for? 👀\n\n#Elysium #Memecoins #CryptoNews #sasa`],
-    ["e6", `new chains make new names. whoever shows up first on ELYSIUM is who everyone copies later\n\nstart on sasa\n\n#Elysium #Altcoins #Crypto #Memecoin`],
-    ["e7", `quiet chains don't stay quiet 👀\n\nELYSIUM is early and sasa is already live on it. launch, trade, be first\n\n#Elysium #CryptoTrading #HYPE #sasa`],
-    ["e8", `the best time to launch a coin on a new chain is before anyone's watching\n\nthat's ELYSIUM right now. sasa makes it one tap\n\n#Elysium #Memecoins #Crypto #LaunchPad`],
-    ["e9", `everyone's about to ask what ELYSIUM is\n\nyou could already have a coin live there. sasa, one tap 🚀\n\n#Elysium #Memecoin #CryptoNews #sasa`],
-    ["e10", `coins are being created on ELYSIUM right now while you read this 👀\n\njoin them on sasa or watch someone else's pump\n\n#Elysium #Whales #Crypto #Altcoins`],
-    ["e11", `launching on ELYSIUM takes less time than reading this post\n\none tap on sasa. no wallet gymnastics\n\n#Elysium #Memecoins #CryptoTrading #sasa`],
-    ["e12", `the earliest coins on any chain write the story for the rest\n\nwrite yours on ELYSIUM. sasa\n\n#Elysium #Crypto #Memecoin #LaunchPad`],
-    ["e13", `ELYSIUM is new ground nobody's crowded onto yet 👀\n\nget your coin in early on sasa\n\n#Elysium #Altcoins #CryptoNews #sasa`],
-    ["e14", `trade it, launch it, be first on it\n\nELYSIUM is live on sasa and the crowd isn't here yet 🚀\n\n#Elysium #Memecoins #Crypto #HYPE`],
-    ["e15", `you don't catch the next chain by waiting for the headlines\n\nELYSIUM is already open on sasa. move 👀\n\n#Elysium #CryptoTrading #Memecoin #sasa`],
-    ["e16", `one tap. your coin. a brand new chain called ELYSIUM\n\nthe rest of the timeline finds out later. sasa\n\n#Elysium #Memecoins #Crypto #LaunchPad`],
-    ["e17", `WHALES love a fresh chain with room to move\n\nELYSIUM has it. so does sasa. launch or trade before it fills up 👀\n\n#Elysium #Whales #Altcoins #Crypto`],
-    ["e18", `being early isn't luck, it's showing up before the crowd\n\nshow up on ELYSIUM. sasa, one tap\n\n#Elysium #Memecoin #CryptoNews #sasa`],
+    ["e1", `a new chain just opened and most people haven't noticed yet 👀\n\n@Enter_Elysium is live and the first coins here are the ones that get seen. launch yours on sasa\n\n👉 ${LINK}\n\n#Elysium #Memecoins #NewChain #Crypto #DeFi #sasa`],
+    ["e2", `every chain had ONE window where launching early meant everything\n\n@Enter_Elysium is in that window right now. get in on sasa before the crowd shows up\n\n👉 ${LINK}\n\n#Elysium #CryptoTrading #Altcoins #GEM #Web3 #Pump`],
+    ["e3", `you keep saying you missed the early days of every chain\n\n@Enter_Elysium is day one. one tap on sasa and your coin is live 🚀\n\n👉 ${LINK}\n\n#Elysium #Memecoin #100x #LaunchPad #Crypto #Degens`],
+    ["e4", `the WHALES are already sniffing around @HyperliquidX's new chain 👀\n\nbe where the smart money's looking. trade or launch on sasa\n\n👉 ${LINK}\n\n#Elysium #Whales #HYPE #SmartMoney #Altcoins #Crypto`],
+    ["e5", `no bridge. no 12 steps. just launch on ELYSIUM with one tap on sasa\n\nwhat are you waiting for? @Enter_Elysium\n\n👉 ${LINK}\n\n#Elysium #Memecoins #CryptoNews #DeFi #NewChain #Web3`],
+    ["e6", `new chains make new names. whoever shows up first on @Enter_Elysium is who everyone copies later\n\nstart on sasa\n\n👉 ${LINK}\n\n#Elysium #Altcoins #CryptoGems #Memecoin #OnChain #Degens`],
+    ["e7", `quiet chains don't stay quiet 👀\n\n@Enter_Elysium is early and sasa is already live on it. launch, trade, be FIRST\n\n👉 ${LINK}\n\n#Elysium #CryptoTrading #HYPE #Altseason #Memecoins #Crypto`],
+    ["e8", `the best time to launch on a new chain is BEFORE anyone's watching\n\nthat's @Enter_Elysium right now. sasa makes it one tap\n\n👉 ${LINK}\n\n#Elysium #Memecoins #OnChain #LaunchPad #Web3 #GEM`],
+    ["e9", `everyone's about to ask what ELYSIUM is\n\nyou could already have a coin live there. sasa, one tap 🚀 @Enter_Elysium\n\n👉 ${LINK}\n\n#Elysium #Memecoin #CryptoNews #100x #Altcoins #Pump`],
+    ["e10", `coins are being created on @Enter_Elysium right now while you read this 👀\n\njoin them on sasa or watch someone else's pump\n\n👉 ${LINK}\n\n#Elysium #Whales #Altcoins #GEM #Memecoins #Crypto`],
+    ["e11", `launching on ELYSIUM takes less time than reading this post\n\none tap on sasa. no wallet gymnastics @Enter_Elysium\n\n👉 ${LINK}\n\n#Elysium #Memecoins #CryptoTrading #DeFi #Degens #Web3`],
+    ["e12", `the earliest coins on any chain write the story for the rest\n\nwrite yours on @Enter_Elysium with sasa\n\n👉 ${LINK}\n\n#Elysium #Crypto #Memecoin #NewChain #100x #CryptoGems`],
+    ["e13", `@fomo made @Enter_Elysium their home. the smart money's already moving in 👀\n\nget your coin in early on sasa\n\n👉 ${LINK}\n\n#Elysium #Altcoins #SmartMoney #Memecoins #HYPE #sasa`],
+    ["e14", `trade it, launch it, be first on it\n\n@HyperliquidX's ELYSIUM is live on sasa and the crowd isn't here yet 🚀\n\n👉 ${LINK}\n\n#Elysium #Memecoins #HYPE #Hyperliquid #Altseason #Crypto`],
+    ["e15", `you don't catch the next chain by waiting for the headlines\n\n@Enter_Elysium is already open on sasa. MOVE 👀\n\n👉 ${LINK}\n\n#Elysium #CryptoTrading #Memecoin #100x #Degens #Altcoins`],
+    ["e16", `one tap. your coin. a brand new chain called ELYSIUM\n\nthe rest of the timeline finds out later. sasa @Enter_Elysium\n\n👉 ${LINK}\n\n#Elysium #Memecoins #LaunchPad #GEM #Web3 #Crypto`],
+    ["e17", `WHALES love a fresh chain with room to move 🐋\n\n@Enter_Elysium has it. so does sasa. launch before it fills up\n\n👉 ${LINK}\n\n#Elysium #Whales #Altcoins #SmartMoney #Memecoin #HYPE`],
+    ["e18", `being early isn't luck, it's showing up before the crowd\n\nshow up on @Enter_Elysium with sasa\n\n👉 ${LINK}\n\n#Elysium #Memecoin #CryptoNews #Web3 #NewChain #Degens`],
+    ["e19", `@AscendLaunch gets the spotlight on @Enter_Elysium, but sasa is where YOU launch your own coin in one tap 👀\n\n👉 ${LINK}\n\n#Elysium #Memecoins #LaunchPad #Altcoins #Crypto #sasa`],
+    ["e20", `the chart you'll screenshot in a month starts as a launch TODAY\n\ndo it on @Enter_Elysium with sasa 🚀\n\n👉 ${LINK}\n\n#Elysium #Altcoins #100x #CryptoGems #Pump #Memecoins`],
+    ["e21", `HYPE built a whole new chain and barely anyone's launched on it yet 👀\n\n@Enter_Elysium. sasa. your move\n\n👉 ${LINK}\n\n#Elysium #HYPE #Hyperliquid #Memecoin #NewChain #DeFi`],
+    ["e22", `first mover on a new chain beats best builder on a crowded one, every time\n\nbe first on @Enter_Elysium with sasa\n\n👉 ${LINK}\n\n#Elysium #CryptoTrading #NewChain #GEM #Altseason #Web3`],
+    ["e23", `your coin. live on @Enter_Elysium. in the time it takes to make coffee ☕\n\none tap on sasa\n\n👉 ${LINK}\n\n#Elysium #Memecoins #Altseason #LaunchPad #100x #Crypto`],
+    ["e24", `the crowd always shows up LATE 👀\n\nbeat them to @Enter_Elysium. launch or trade on sasa right now\n\n👉 ${LINK}\n\n#Elysium #Whales #Crypto #SmartMoney #Memecoin #Degens`],
+    ["e25", `nobody remembers coin #4000 on a chain. they remember the FIRST ones\n\nbe one of them on @Enter_Elysium with sasa\n\n👉 ${LINK}\n\n#Elysium #Memecoin #100x #CryptoGems #Altcoins #Pump`],
+    ["e26", `@Enter_Elysium is the cleanest launch field in crypto right now — empty and early 👀\n\nplant your flag on sasa\n\n👉 ${LINK}\n\n#Elysium #Altcoins #NewChain #DeFi #Memecoins #Web3`],
+    ["e27", `everyone wants the next big chain's first 100x. it starts with a LAUNCH\n\n@Enter_Elysium, one tap on sasa 🚀\n\n👉 ${LINK}\n\n#Elysium #Memecoins #100x #HYPE #Pump #CryptoGems`],
+    ["e28", `the whales on @HyperliquidX don't wait for permission. neither should you\n\nlaunch on @Enter_Elysium with sasa 👀\n\n👉 ${LINK}\n\n#Elysium #Whales #Hyperliquid #SmartMoney #Altcoins #Memecoin`],
+    ["e29", `launch a coin, trade a coin, be early — all on ELYSIUM, all on sasa\n\nthe crowd isn't here yet @Enter_Elysium\n\n👉 ${LINK}\n\n#Elysium #CryptoTrading #Memecoin #Altseason #Degens #Crypto`],
+    ["e30", `a brand new chain only happens ONCE 👀\n\n@Enter_Elysium is now. launch on sasa before it's obvious\n\n👉 ${LINK}\n\n#Elysium #Memecoins #CryptoNews #GEM #NewChain #100x`],
   ];
 }
 

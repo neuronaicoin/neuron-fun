@@ -17,7 +17,6 @@ import { TradeToast } from "./tradetoast";
 import { AutoSweep } from "./autosweep";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
-import { useMyAirdrop } from "@/lib/points";
 import { installHaptics } from "@/lib/haptics";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
@@ -247,7 +246,6 @@ const NAV_ALL = [
   // in "More" on computers too: a short, calm top bar
   { href: "/traders/", label: "Traders", from: "never" },
   { href: "/copy/", label: "Copy", from: "never" },
-  { href: "/points/", label: "Airdrop", from: "lg" },
   { href: "/forum/", label: "Forum", from: "never" },
   { href: "/stats/", label: "Stats", from: "xl" },
 ] as const;
@@ -306,7 +304,6 @@ export function Header() {
           <AutoSweep />
           <SocialSync />
           <RefCapture />
-          <PointsPill />
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />
@@ -329,7 +326,6 @@ const MORE_ALL = [
   { href: "/me/", label: "You", note: "Your coins, futures and profile", tablet: true },
   { href: "/traders/", label: "Top traders", note: "Follow the best" },
   { href: "/copy/", label: "Copy trading", note: "Signals from traders you copy" },
-  { href: "/points/", label: "Airdrop", note: "Create coins and trade to earn it" },
   { href: "/swipe/", label: "Swipe", note: "Discover coins fast" },
   { href: "/play/", label: "Play", note: "Chain Run and Pump Tower" },
   { href: "/forum/", label: "Forum", note: "Every coin's community", plain: true },
@@ -344,7 +340,6 @@ const MORE = MORE_ALL.filter((m) => V6 || !V6_ONLY.has(m.href)).map((m) =>
 function MoreSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname() || "/";
   const { address, disconnect, solana } = useWallet();
-  const airdrop = useMyAirdrop(address);
   return (
     <Sheet title="More" onClose={onClose}>
       <div className="grid -mx-1">
@@ -361,11 +356,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
                 <span className="block font-semibold text-[0.9375rem]">{m.label}</span>
                 <span className="block text-[0.75rem] text-ink-3 leading-snug">{m.note}</span>
               </span>
-              {m.href === "/points/" && airdrop && airdrop.rank > 0 ? (
-                <span className="font-mono text-[0.875rem] text-ink-2 shrink-0">#{airdrop.rank.toLocaleString("en-US")}</span>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-ink-3 shrink-0" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-ink-3 shrink-0" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
             </>
           );
           // The forum is served outside the app, so it needs a full page load.
@@ -483,7 +474,7 @@ export function BottomNav() {
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-6">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/points/" && n.href !== "/predict/" && n.href !== "/bot/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
@@ -603,19 +594,3 @@ export function Footer() {
   );
 }
 
-/** Your place on the airdrop list on very wide screens; elsewhere the "Airdrop" link leads there. */
-function PointsPill() {
-  const { address } = useWallet();
-  const a = useMyAirdrop(address);
-  if (!address || a === null) return null;
-  return (
-    <Link
-      href="/points/"
-      title="Your place on the airdrop list"
-      className="hidden 2xl:flex h-10 items-center gap-1.5 px-3 rounded-xl border border-line font-semibold text-[0.875rem] hover:text-ink"
-    >
-      <span aria-hidden="true">🪂</span>
-      <span className="font-mono tabular-nums">{a.rank > 0 ? `#${a.rank.toLocaleString("en-US")}` : "Join"}</span>
-    </Link>
-  );
-}

@@ -1,20 +1,19 @@
 // @sasapadfun on X: posts on its own timeline only, by itself, with a picture card.
 //
-//   - whale moves: a top-30 trader (Data tab) opens, flips, adds to or closes a position worth
-//     $500K or more (whale_moves, written by whales.mjs)
-//   - predictions: now and then an open BTC / ETH price question that is close to 50/50
-//   - sasa races: a decided race (coin, chains, winner), at most 2 a day
-//   - recap: the day's best traders so far, every 8 hours (3 a day)
-//   - stocks: the biggest stock / commodity futures mover, every 8 hours (3 a day)
-//   - fear & greed: once a day
+//   - sasa on Elysium: the main beat — 16 posts a day, high-engagement FOMO hooks that tag the
+//     Elysium accounts (@Enter_Elysium, @HyperliquidX, @fomo, @AscendLaunch), carry the sasapad.fun
+//     link and a heavy, different hashtag set each time (xbottext.elysium()/freshElysium). The goal
+//     is to pull people who follow and trade on Elysium over to sasa. No made-up numbers.
+//   - 4 "classic" market posts a day for variety: top gainer, hottest meme, biggest stock/commodity
+//     mover, daily whale recap (live data; skipped when there's nothing worth it)
+//   - whale moves still fire the moment they happen when XBOT_WHALES_PER_DAY is raised above 0
 //
-// It never replies, mentions, follows, likes or reads anyone's posts (X's automation rules allow
-// automated posts on your own account; automated replies to others are not allowed). No links in
-// the text (a post with a link costs much more on X's pay-per-use API; the link is on the profile).
+// Posts go out on its own timeline. The Elysium posts DO @-mention the Elysium accounts and include
+// the sasapad.fun link (a mention/link inside your own post is not an automated reply/follow).
 //
-// Limits: at most XBOT_PER_DAY posts in 24 hours (default 30), at least XBOT_GAP_MIN minutes apart
-// (default 30), the same trader + coin at most once in 6 hours, a prediction at most every 3 hours.
-// Whale moves come first; the other kinds fill the quiet times.
+// Schedule (Türkiye time): mornings 05:00–11:00 every 30 min, the rest across the evening 15:00–22:00.
+// Limits: at most XBOT_PER_DAY posts in 24 hours (default 30, PLAN holds 20), at least 20 minutes
+// apart, the same trader + coin at most once in 6 hours, a prediction at most every 3 hours.
 //
 // Env (all four keys are the @sasapadfun app's OAuth 1.0a keys, from console.x.com):
 //   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET   without them this does nothing
@@ -586,25 +585,41 @@ export function resultText(r) {
 
 // ------------------------------------------------------------------ the day's plan
 
-// About 10 posts a day, now mostly about sasa on Elysium (~90%): nine elysium* slots spread through
-// the day plus one "existing" post (the day's hottest meme) for variety. Whale moves still fire the
-// moment they happen when XBOT_WHALES_PER_DAY is raised above its default of 0.
-// Times are Türkiye time (UTC+3); every day each one moves by up to ±25 minutes, so nothing goes
-// out at the same minute two days running (people notice a bot on a timer).
+// 20 posts a day, fully about sasa on Elysium: 16 elysium* slots plus 4 "classic" market posts
+// (the hottest meme, the top gainer, the biggest stock/commodity mover, the daily whale recap) for
+// variety. Whale moves still fire the moment they happen when XBOT_WHALES_PER_DAY is raised above 0.
+// Times are Türkiye time (UTC+3): mornings 05:00–11:00 one post every 30 minutes, then the rest
+// spread across the evening 15:00–22:00. Every day each slot moves by up to ±10 minutes, so posts
+// never land at the exact same minute two days running (people notice a bot on a timer).
 // Each elysium* slot is a distinct kind (the loop posts a kind at most once a day) but they all draw
 // from one shared pool of lines; see makers()/freshElysium.
-export const ELYSIUM_SLOTS = ["elysium", "elysium2", "elysium3", "elysium4", "elysium5", "elysium6", "elysium7", "elysium8", "elysium9"];
+export const ELYSIUM_SLOTS = [
+  "elysium", "elysium2", "elysium3", "elysium4", "elysium5", "elysium6", "elysium7", "elysium8",
+  "elysium9", "elysium10", "elysium11", "elysium12", "elysium13", "elysium14", "elysium15", "elysium16",
+];
 export const PLAN = [
-  { kind: "elysium", at: "10:00" },
-  { kind: "elysium2", at: "11:30" },
-  { kind: "elysium3", at: "13:00" },
-  { kind: "elysium4", at: "14:30" },
-  { kind: "elysium5", at: "16:00" },
-  { kind: "meme", at: "17:00" },
-  { kind: "elysium6", at: "18:00" },
-  { kind: "elysium7", at: "19:15" },
-  { kind: "elysium8", at: "20:30" },
-  { kind: "elysium9", at: "21:30" },
+  // morning: every 30 minutes, 05:00–11:00 (Türkiye time)
+  { kind: "elysium", at: "05:00" },
+  { kind: "elysium2", at: "05:30" },
+  { kind: "elysium3", at: "06:00" },
+  { kind: "elysium4", at: "06:30" },
+  { kind: "spot", at: "07:00" }, // classic
+  { kind: "elysium5", at: "07:30" },
+  { kind: "elysium6", at: "08:00" },
+  { kind: "elysium7", at: "08:30" },
+  { kind: "elysium8", at: "09:00" },
+  { kind: "meme", at: "09:30" }, // classic
+  { kind: "elysium9", at: "10:00" },
+  { kind: "elysium10", at: "10:30" },
+  { kind: "elysium11", at: "11:00" },
+  // evening: the rest, spread across 15:00–22:00 (Türkiye time)
+  { kind: "elysium12", at: "15:00" },
+  { kind: "stock", at: "16:10" }, // classic
+  { kind: "elysium13", at: "17:20" },
+  { kind: "elysium14", at: "18:30" },
+  { kind: "recap", at: "19:40" }, // classic
+  { kind: "elysium15", at: "20:50" },
+  { kind: "elysium16", at: "22:00" },
 ];
 const TR = 3 * 3600e3;
 
@@ -613,7 +628,7 @@ export function slotTime(kind, at, now = Date.now()) {
   const day = new Date(now + TR).toISOString().slice(0, 10);
   let h = 2166136261;
   for (const ch of `${day}:${kind}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  const jitter = (h % 51) - 25; // minutes
+  const jitter = (h % 21) - 10; // minutes
   const [hh, mm] = at.split(":").map(Number);
   return Date.parse(`${day}T00:00:00Z`) - TR + ((hh * 60 + mm + jitter) * 60e3);
 }
