@@ -141,6 +141,7 @@ function seed() {
     if (/^0x[0-9a-f]{40}$/.test(a) && !NOISY.has(a) && !watch.has(a)) watch.set(a, label);
   };
   try {
+    if (process.env.RADAR_CROWD !== "1") throw new Error("team-only mode");
     const j = JSON.parse(readFileSync(new URL("./ascend-watch.json", import.meta.url), "utf8"));
     const noisyGroup = new Set(j.wallets.filter((w) => NOISY.has(w.funder)).map((w) => w.address));
     for (const c of j.coins || []) if (c.launcher && !NOISY.has(c.launcher)) add(c.launcher, `${c.symbol} dev`);
@@ -179,7 +180,7 @@ export async function elyRadarLoop(pool, log) {
 
   let last = Number(await rpc("eth_blockNumber"));
   log(`radar: ${NET}, watching ${watch.size} wallets from block ${last}`);
-  send(`🛰 <b>Elysium Radar on</b> (${NET})\nWatching ${watch.size} wallets: early Ascend wallets, coin devs and ${FUNDERS.size} distributor wallets.`);
+  send(`🛰 <b>Elysium Radar on</b> (${NET})\nWatching ${watch.size} team wallets (Ascend, Kinetiq, Tommy, Elysium).`);
 
   const fundersSeen = new Map(); // funder -> newest tx hash already looked at
   let lastFunding = 0;
