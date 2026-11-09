@@ -21,10 +21,10 @@
 
 import { readFileSync } from "node:fs";
 
-const RPC = process.env.ELY_RADAR_RPC || "https://testnet-rpc.elysium.kinetiq.xyz";
-const API = process.env.ELY_RADAR_API || "https://testnet-api.elysium.kinetiq.xyz/api/v2";
-const EXPLORER = (process.env.ELY_RADAR_EXPLORER || "https://elysium.kinetiq.xyz/testnet-explorer").replace(/\/$/, "");
-const LAUNCHPAD = (process.env.ASCEND_LAUNCHPAD || "0xE2f6254508DEB93Da081837F545e0bAF7b00d8E9").toLowerCase();
+const RPC = process.env.ELY_RADAR_RPC || "https://rpc-elysium-mainnet.t.conduit.xyz";
+const API = process.env.ELY_RADAR_API || "off"; // mainnet has no explorer API we can rely on yet: coin names are read from the chain itself
+const EXPLORER = (process.env.ELY_RADAR_EXPLORER || "https://scan.elysp.com").replace(/\/$/, "");
+const LAUNCHPAD = (process.env.ASCEND_LAUNCHPAD || "0xe2e105d3f7209a9da11f83ccf3e7398a753823f1").toLowerCase();
 const TOKEN = () => process.env.TG_RADAR_TOKEN || process.env.TG_POST_TOKEN;
 const CHAT = () => process.env.TG_RADAR_CHAT || "178588677";
 const NET = /testnet/i.test(RPC) ? "testnet" : "mainnet";
@@ -56,6 +56,7 @@ async function rpc(method, params = []) {
   return j.result;
 }
 async function api(path) {
+  if (API === "off") throw new Error("explorer api off");
   const r = await fetch(API + path, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
   return r.json();
@@ -89,7 +90,7 @@ async function drain() {
   sending = false;
 }
 const addrLink = (a, label) => `<a href="${EXPLORER}/address/${a}">${esc(label || short(a))}</a>`;
-const tokenLink = (t) => `<a href="${EXPLORER}/token/${t.address}">$${esc(t.symbol)}</a>`;
+const tokenLink = (t) => `<a href="https://elyscreener.com/#coin=${t.address}">$${esc(t.symbol)}</a>`;
 
 // ---------------------------------------------------------------- what we know
 const watch = new Map(); // address -> label
@@ -102,6 +103,21 @@ async function codeAt(a) {
   if (!isContract.has(a)) isContract.set(a, ((await rpc("eth_getCode", [a, "latest"]).catch(() => "0x")) || "0x").length > 2);
   return isContract.get(a);
 }
+/** ERC-20 string() (symbol / name) from the chain; handles the usual dynamic string and the old bytes32 form */
+const readStr = (hex) => {
+  try {
+    const h = String(hex || "").replace(/^0x/, "");
+    if (h.length === 64) return Buffer.from(h, "hex").toString("utf8").replace(/\0+$/, "");
+    const len = parseInt(h.slice(64, 128), 16);
+    return Buffer.from(h.slice(128, 128 + len * 2), "hex").toString("utf8");
+  } catch { return ""; }
+};
+async function tokenOnChain(a) {
+  const call = (data) => rpc("eth_call", [{ to: a, data }, "latest"]).catch(() => null);
+  const [sy, nm, dc] = await Promise.all([call("0x95d89b41"), call("0x06fdde03"), call("0x313ce567")]);
+  const d = dc && dc !== "0x" ? parseInt(dc, 16) : 18;
+  return { address: a, symbol: readStr(sy) || "?", name: readStr(nm) || "?", decimals: Number.isFinite(d) && d <= 36 ? d : 18, holders: null };
+}
 async function tokenOf(a) {
   if (tokens.has(a)) return tokens.get(a);
   let t = { address: a, symbol: "?", name: "?", decimals: 18, holders: null };
@@ -109,7 +125,7 @@ async function tokenOf(a) {
     const j = await api(`/tokens/${a}`);
     t = { address: a, symbol: j.symbol || "?", name: j.name || "?", decimals: Number(j.decimals ?? 18), holders: Number(j.holders_count ?? j.holders ?? 0) || null };
   } catch {
-    // explorer busy: show the address
+    t = await tokenOnChain(a); // no explorer: ask the coin itself
   }
   tokens.set(a, t);
   return t;
@@ -163,7 +179,7 @@ export async function elyRadarLoop(pool, log) {
 
   let last = Number(await rpc("eth_blockNumber"));
   log(`radar: ${NET}, watching ${watch.size} wallets from block ${last}`);
-  send(`🛰 <b>Elysium Radar on</b> (${NET})\nWatching ${watch.size} wallets: Ascend's invited testers, coin devs and ${FUNDERS.size} distributor wallets.`);
+  send(`🛰 <b>Elysium Radar on</b> (${NET})\nWatching ${watch.size} wallets: early Ascend wallets, coin devs and ${FUNDERS.size} distributor wallets.`);
 
   const fundersSeen = new Map(); // funder -> newest tx hash already looked at
   let lastFunding = 0;
