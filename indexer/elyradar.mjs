@@ -172,7 +172,7 @@ export async function elyRadarLoop(pool, log) {
     alter table radar_watch enable row level security;
     revoke all on radar_watch from anon, authenticated;`);
   seed();
-  for (const r of (await pool.query("select address, label from radar_watch")).rows) if (!watch.has(r.address)) watch.set(r.address, r.label);
+  if (process.env.RADAR_CROWD === "1") for (const r of (await pool.query("select address, label from radar_watch")).rows) if (!watch.has(r.address)) watch.set(r.address, r.label);
   const remember = (a, label) => {
     watch.set(a, label);
     pool.query("insert into radar_watch (address, label) values ($1, $2) on conflict (address) do nothing", [a, label]).catch(() => {});
