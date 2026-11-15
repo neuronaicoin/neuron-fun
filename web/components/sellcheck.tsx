@@ -17,7 +17,8 @@ const sellableFor = (y: number, d: number) => y * (1 / Math.sqrt(1 - d) - 1);
 
 export function SellCheck({ poolUsd, mcap }: { poolUsd: number | null | undefined; mcap: number | null | undefined }) {
   const [open, setOpen] = useState(false);
-  if (!poolUsd || poolUsd <= 0 || !mcap || mcap <= 0) return null;
+  // meme-size coins only: big coins trade in many pools, and one pool's depth would mislead
+  if (!poolUsd || poolUsd <= 0 || !mcap || mcap <= 0 || mcap > 5_000_000) return null;
   const ratio = (poolUsd * 2) / mcap;
   const verdict =
     ratio >= 0.1

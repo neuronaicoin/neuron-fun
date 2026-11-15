@@ -706,7 +706,8 @@ function fullTime(t: number): string {
  */
 export function TradeTape({ trades, max = 5 }: { trades?: LiveTrade[]; max?: number }) {
   const rows = (trades ?? [])
-    .filter((t) => t.usd > 0)
+    // only today's trades (an old coin's last trades aren't "live"), and no dust
+    .filter((t) => t.usd >= 0.01 && Date.now() - t.t < 6 * 3600_000)
     .sort((a, b) => b.t - a.t)
     .slice(0, max);
   if (!rows.length) return null;
