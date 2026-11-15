@@ -46,6 +46,7 @@ import { seoPagesLoop } from "./seopages.mjs";
 import { topLoop } from "./topcoins.mjs";
 import { perpsLoop } from "./perps.mjs";
 import { whalesLoop } from "./whales.mjs";
+import { whaleFeedLoop } from "./whalefeed.mjs";
 import { raceLoop, loadRaceChains } from "./race.mjs";
 import { createPublicClient, defineChain, getAddress, http, parseAbi, parseAbiItem } from "viem";
 
@@ -582,6 +583,8 @@ async function main() {
     keep("perps", () => perpsLoop(pool, log)),
     // Data tab: top traders, Market Fear & Greed history, whale alerts (data.sql)
     keep("whales", () => whalesLoop(pool, log)),
+    // the site's whale card: big trades in the busiest other-DEX coins, every few seconds (whalefeed.sql)
+    keep("whale feed", () => whaleFeedLoop(pool, log)),
     // v7 five-minute races (race.sql, race-chains.json, RPC_<chainId>); off when no race RPC is set
     keep("races", () => raceLoop(pool, log)),
   ]);

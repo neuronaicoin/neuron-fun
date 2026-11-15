@@ -433,3 +433,8 @@ html.is-guest .guest-hide { display: none !important; }
 @keyframes tape-in { from { transform: translateX(-10px); opacity: 0; } }
 .tape-in { animation: tape-in .35s ease-out; }
 @media (prefers-reduced-motion: reduce) { .tape-in { animation: none; } }
+
+/* whale card (components/whalecard.tsx): drops in under the header */
+@keyframes whale-pop { 0% { transform: translateY(-14px) scale(.96); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.whale-pop { animation: whale-pop .35s cubic-bezier(.2,.9,.3,1.2); }
+@media (prefers-reduced-motion: reduce) { .whale-pop { animation: none; } }

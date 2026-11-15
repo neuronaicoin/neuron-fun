@@ -1,3 +1,4 @@
+import { WhaleCard } from "@/components/whalecard";
 import type { Metadata, Viewport } from "next";
 // Two self-hosted fonts (no Google request): Sora for headings and numbers, Instrument Sans for text.
 // Loaded through next/font: the files are preloaded and the stand-in system font is sized to match,
@@ -113,6 +114,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <PauseBanner />
             <Header />
           </div>
+          <WhaleCard />
           {/* At least a screen tall: the footer never sits mid-page and then jumps down when data arrives (layout shift). */}
           <main className="flex-1 w-full min-h-[100dvh]">{children}</main>
           <div className="app-chrome">
