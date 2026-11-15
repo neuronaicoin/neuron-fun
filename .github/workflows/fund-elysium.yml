@@ -1,0 +1,58 @@
+name: Fund deployer on Elysium
+
+# Started by hand. Moves a little ETH the sasa deployer already holds on Base to HYPE in the same
+# deployer address on Elysium mainnet (Relay), for the "Deploy sasa launcher on Elysium" gas.
+# Dry run first: it only prints Relay's quote (what arrives, fees).
+on:
+  workflow_dispatch:
+    inputs:
+      eth:
+        description: "ETH to move from Base (e.g. 0.003)"
+        required: true
+        default: "0.003"
+      broadcast:
+        description: "Send it (false = quote only)"
+        type: boolean
+        default: false
+
+jobs:
+  fund:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.5
+
+      - name: Quote and send
+        env:
+          RAW_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          ETH: ${{ inputs.eth }}
+          BROADCAST: ${{ inputs.broadcast }}
+          BASE_RPC: ${{ secrets.BASE_RPC }}
+        run: |
+          set -e
+          k="$(printf '%s' "$RAW_KEY" | tr -d '[:space:]')"; case "$k" in 0x*) ;; *) k="0x$k" ;; esac
+          echo "::add-mask::$k"
+          ME=$(cast wallet address "$k")
+          BRPC="${BASE_RPC:-https://mainnet.base.org}"
+          ERPC=https://rpc-elysium-mainnet.t.conduit.xyz
+          WEI=$(cast to-wei "$ETH" ether)
+          echo "deployer $ME: $(cast balance "$ME" --rpc-url "$BRPC" --ether) ETH on Base"
+          Z=0x0000000000000000000000000000000000000000
+          Q=$(curl -sS -X POST https://api.relay.link/quote -H 'content-type: application/json' \
+            -d "{\"user\":\"$ME\",\"recipient\":\"$ME\",\"originChainId\":8453,\"destinationChainId\":99901,\"originCurrency\":\"$Z\",\"destinationCurrency\":\"$Z\",\"amount\":\"$WEI\",\"tradeType\":\"EXACT_INPUT\"}")
+          echo "$Q" | jq '{in: .details.currencyIn.amountFormatted, out: .details.currencyOut.amountFormatted, outUsd: .details.currencyOut.amountUsd, fees: .fees, time: .details.timeEstimate}' || { echo "$Q"; exit 1; }
+          if [ "$(echo "$Q" | jq '[.steps[]?.items[]?] | length')" = "0" ]; then echo "no route: $Q"; exit 1; fi
+          if [ "$BROADCAST" != "true" ]; then echo "quote only (dry run)"; exit 0; fi
+          BEFORE=$(cast balance "$ME" --rpc-url "$ERPC" || echo 0)
+          echo "$Q" | jq -c '.steps[] | select(.kind=="transaction") | .items[].data' | while read -r d; do
+            CH=$(echo "$d" | jq -r .chainId); [ "$CH" = "8453" ] || { echo "unexpected chain $CH"; exit 1; }
+            cast send "$(echo "$d" | jq -r .to)" "$(echo "$d" | jq -r .data)" --value "$(echo "$d" | jq -r '.value // "0"')" --private-key "$k" --rpc-url "$BRPC"
+          done
+          for i in $(seq 1 40); do
+            sleep 15
+            NOW=$(cast balance "$ME" --rpc-url "$ERPC" 2>/dev/null || echo "$BEFORE")
+            if [ "$NOW" != "$BEFORE" ] && [ "$NOW" != "0" ]; then echo "arrived: $(cast from-wei "$NOW") HYPE on Elysium"; exit 0; fi
+          done
+          echo "sent on Base; not seen on Elysium yet (Relay can take a few minutes): check the balance before deploying"

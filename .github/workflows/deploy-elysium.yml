@@ -1,7 +1,8 @@
 name: Deploy sasa launcher on Elysium
 
-# Runs only when started by hand. Testnet first; mainnet once Elysium is live (Nov 9, 2026) and the
-# DEX's position manager + WHYPE addresses are known (pass them as inputs).
+# Runs only when started by hand. Mainnet (network: elysium): leave npm / whype / router empty and
+# sasa deploys its own WHYPE + Uniswap v3 first (script/DeployDex.s.sol: Elysium has no shared DEX),
+# then the launcher + a smoke coin, then turns the site over to mainnet by itself.
 on:
   workflow_dispatch:
     inputs:
@@ -22,7 +23,7 @@ on:
         required: false
         default: ""
       rpc:
-        description: "RPC URL (empty = Kinetiq's public RPC for that network)"
+        description: "RPC URL (empty = sasa's Elysium doorway on mainnet, Kinetiq's public RPC on testnet)"
         required: false
         default: ""
       start_mc:
@@ -30,7 +31,7 @@ on:
         required: false
         default: "50000000000000000000"
       router:
-        description: "Mainnet only: the DEX's swap router (Uniswap v3 style). Turns the site over to mainnet."
+        description: "Mainnet only: the DEX's swap router (empty = the one DeployDex makes). Turns the site over to mainnet."
         required: false
         default: ""
       explorer:
@@ -78,14 +79,14 @@ jobs:
               WHYPE="${IN_WHYPE:-0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234}"
               SMOKE=1000000000000000 ;;
             elysium)
-              CHAIN_ID=""; RPC="$IN_RPC"; NPM="$IN_NPM"; WHYPE="$IN_WHYPE"; SMOKE=10000000000000000
-              if [ -z "$RPC" ] || [ -z "$NPM" ] || [ -z "$WHYPE" ]; then echo "mainnet needs rpc, npm and whype inputs"; exit 1; fi ;;
+              CHAIN_ID=99901; RPC="${IN_RPC:-https://sasapad.fun/ely-rpc}"; NPM="$IN_NPM"; WHYPE="$IN_WHYPE"; SMOKE=10000000000000000
+              if [ -n "$NPM$WHYPE" ] && { [ -z "$NPM" ] || [ -z "$WHYPE" ]; }; then echo "give both npm and whype, or neither (sasa's own DEX)"; exit 1; fi ;;
             *) echo "unknown network $NET"; exit 1 ;;
           esac
           GOT=$(cast chain-id --rpc-url "$RPC")
           if [ -n "$CHAIN_ID" ] && [ "$GOT" != "$CHAIN_ID" ]; then echo "RPC is chain $GOT, expected $CHAIN_ID"; exit 1; fi
           echo "chain $GOT"
-          for a in "$NPM" "$WHYPE"; do
+          for a in $NPM $WHYPE; do
             if [ "$(cast code "$a" --rpc-url "$RPC")" = "0x" ]; then echo "no contract at $a on this chain"; exit 1; fi
           done
           # where the points scan starts, and when the 3x points week starts
@@ -111,6 +112,15 @@ jobs:
           export CREATOR_BPS=3000 FEE=10000 SPACING=200
           FLAGS="--rpc-url $RPC -vv"
           if [ "$BROADCAST" = "true" ]; then FLAGS="$FLAGS --broadcast --slow"; fi
+          # no DEX given: sasa's own WHYPE + Uniswap v3 first
+          if [ -z "$NPM" ]; then
+            forge script script/DeployDex.s.sol $FLAGS
+            if [ "$BROADCAST" != "true" ]; then echo "dry run: the DEX would be deployed first; the launcher step needs it live, so it is skipped"; exit 0; fi
+            D=deployments/dex-$(cast chain-id --rpc-url "$RPC").json
+            NPM=$(jq -r .positionManager "$D"); WHYPE=$(jq -r .whype "$D")
+            echo "DEX_ROUTER=$(jq -r .router "$D")" >> "$GITHUB_ENV"
+          fi
+          export NPM WHYPE
           forge script script/Deploy.s.sol $FLAGS
           # mainnet: the Day-1 Pass too (mint open for 7 days)
           if [ "$NET" = "elysium" ]; then
@@ -129,8 +139,11 @@ jobs:
           CHAIN=$(cast chain-id --rpc-url "$RPC")
           D=contracts-elysium/deployments/$CHAIN.json
           P=contracts-elysium/deployments/pass-$CHAIN.json
-          if [ -z "$IN_ROUTER" ]; then echo "router input missing: site stays on testnet"; exit 0; fi
-          jq -n --argjson id "$CHAIN" --argjson start "$START_TIME" --arg block "$START_BLOCK" --arg rpc "$RPC" --arg ex "$IN_EXPLORER" --arg router "$IN_ROUTER" \
+          ROUTER="${IN_ROUTER:-$DEX_ROUTER}"
+          if [ -z "$ROUTER" ]; then echo "router input missing: site stays on testnet"; exit 0; fi
+          # the public node goes in the file (wallets, the indexer); the site reads through /ely-rpc
+          PUB=https://rpc-elysium-mainnet.t.conduit.xyz
+          jq -n --argjson id "$CHAIN" --argjson start "$START_TIME" --arg block "$START_BLOCK" --arg rpc "$PUB" --arg ex "$IN_EXPLORER" --arg router "$ROUTER" \
             --arg launcher "$(jq -r .launcher "$D")" --arg whype "$(jq -r .wrapped "$D")" --arg pass "$(jq -r '.pass // empty' "$P" 2>/dev/null)" --arg smoke "$(jq -r '.smokeCoin // empty' "$D")" \
             '{chainId: $id, rpc: $rpc, explorer: (if $ex == "" then null else $ex end), launcher: $launcher, router: $router, whype: $whype, pass: (if $pass == "" then null else $pass end), start: $start, startBlock: $block, smoke: (if $smoke == "" or $smoke == "0x0000000000000000000000000000000000000000" then null else $smoke end)}' \
             > web/lib/elysium-mainnet.json
