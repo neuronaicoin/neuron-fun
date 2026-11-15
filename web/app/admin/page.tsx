@@ -21,6 +21,7 @@ import { readSafety, refreshSafety, type Safety } from "@/lib/safety";
 import { call } from "@/lib/tx";
 import { HelpInbox } from "@/components/helpinbox";
 import { MoneyPanel } from "@/components/moneypanel";
+import { SolFeesPanel } from "@/components/solfees";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -163,6 +164,9 @@ export default function AdminPage() {
       {isAdmin && (
         <div className="mb-8">
           <MoneyPanel />
+          <div className="mt-5">
+            <SolFeesPanel />
+          </div>
         </div>
       )}
       {/* the v6 factories' safety controls (testnet only: on mainnet launches are paused in "sasa money") */}

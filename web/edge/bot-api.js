@@ -202,6 +202,15 @@ export async function botRoute(env, me, parts, method, url) {
     const rows = await db(env, "sol_launch_errors?select=at,owner,creator,mint,kind,step,error,ua&order=at.desc&limit=50").catch(() => null);
     return json({ errors: rows ?? [] });
   }
+  // sasa's Solana income per coin: the creator fees the keeper paid out (indexer/solkeeper.mjs,
+  // half of every payout goes to sasa) — for the admin money panel
+  if (parts.length === 2 && parts[1] === "solfees" && method === "GET") {
+    const rows = await db(
+      env,
+      "sol_coins?select=mint,name,symbol,kind,status,created_at,paid_at,paid_lamports,payouts,mcap_usd&status=neq.bad&order=paid_lamports.desc.nullslast,created_at.desc&limit=200"
+    ).catch(() => null);
+    return json({ coins: rows ?? [], treasury: env.SOLANA_TREASURY || null });
+  }
   // Trend Radar: the themes new pump.fun coins launch on right now (indexer/sniper.mjs, sniper_trends)
   if (parts.length === 2 && parts[1] === "trends" && method === "GET") {
     // read directly (not through db(), which hides sniper_ errors) so a broken query shows its reason
