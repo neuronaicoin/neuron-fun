@@ -211,6 +211,29 @@ export async function botRoute(env, me, parts, method, url) {
     ).catch(() => null);
     return json({ coins: rows ?? [], treasury: env.SOLANA_TREASURY || null });
   }
+  // race coins (Base, BNB, Robinhood, Arc): pool fees collected per coin and chain
+  // (indexer/race.mjs, race_fees; 70% of each collection goes to sasa, 30% to the coin's side)
+  if (parts.length === 2 && parts[1] === "racefees" && method === "GET") {
+    const fees = (await db(env, "race_fees?select=chain_id,coin_id,native_amount,created_at&order=created_at.desc&limit=20000").catch(() => null)) ?? [];
+    const by = new Map();
+    for (const f of fees) {
+      const k = `${f.coin_id}|${f.chain_id}`;
+      const o = by.get(k) ?? { coin_id: f.coin_id, chain_id: Number(f.chain_id), native: 0, collections: 0, last: f.created_at };
+      o.native += Number(f.native_amount) || 0;
+      o.collections += 1;
+      if (f.created_at > o.last) o.last = f.created_at;
+      by.set(k, o);
+    }
+    const rows = [...by.values()];
+    const ids = [...new Set(rows.map((r) => r.coin_id))].filter((x) => /^[0-9a-zA-Z_:-]+$/.test(String(x)));
+    const names = new Map();
+    for (let i = 0; i < ids.length; i += 100) {
+      const part = ids.slice(i, i + 100).map((x) => `"${x}"`).join(",");
+      const got = (await db(env, `race_coins?select=id,name,symbol,launched_at&id=in.(${encodeURIComponent(part)})`).catch(() => null)) ?? [];
+      for (const c of got) names.set(c.id, c);
+    }
+    return json({ rows: rows.map((r) => ({ ...r, name: names.get(r.coin_id)?.name ?? null, symbol: names.get(r.coin_id)?.symbol ?? null, launched: names.get(r.coin_id)?.launched_at ?? null })) });
+  }
   // Trend Radar: the themes new pump.fun coins launch on right now (indexer/sniper.mjs, sniper_trends)
   if (parts.length === 2 && parts[1] === "trends" && method === "GET") {
     // read directly (not through db(), which hides sniper_ errors) so a broken query shows its reason

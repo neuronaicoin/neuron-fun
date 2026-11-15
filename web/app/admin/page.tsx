@@ -22,6 +22,7 @@ import { call } from "@/lib/tx";
 import { HelpInbox } from "@/components/helpinbox";
 import { MoneyPanel } from "@/components/moneypanel";
 import { SolFeesPanel } from "@/components/solfees";
+import { ElysiumFeesPanel, RaceFeesPanel } from "@/components/chainfees";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -166,6 +167,12 @@ export default function AdminPage() {
           <MoneyPanel />
           <div className="mt-5">
             <SolFeesPanel />
+          </div>
+          <div className="mt-5">
+            <RaceFeesPanel />
+          </div>
+          <div className="mt-5">
+            <ElysiumFeesPanel />
           </div>
         </div>
       )}

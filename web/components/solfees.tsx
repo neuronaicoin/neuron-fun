@@ -90,7 +90,7 @@ export function SolFeesPanel() {
         <div className="rounded-2xl bg-night p-3 sm:p-4 min-w-0">
           <div className="text-[0.75rem] text-ink-3">Trading fees waiting at Relay</div>
           <div className="font-display font-bold text-[1.25rem] truncate">{relay === null ? "…" : money(relay)}</div>
-          <div className="text-[0.75rem] text-ink-3">Not yet claimed to the treasury</div>
+          <div className="text-[0.75rem] text-ink-3">All chains, not claimed yet</div>
         </div>
         <div className="rounded-2xl bg-night p-3 sm:p-4 min-w-0 col-span-2 lg:col-span-1">
           <div className="text-[0.75rem] text-ink-3">Coins launched on Solana</div>
