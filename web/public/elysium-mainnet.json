@@ -1,12 +1,12 @@
 {
-  "chainId": null,
-  "rpc": null,
+  "chainId": 99901,
+  "rpc": "https://rpc-elysium-mainnet.t.conduit.xyz",
   "explorer": null,
-  "launcher": null,
-  "router": null,
-  "whype": null,
-  "pass": null,
-  "start": null,
-  "startBlock": null,
-  "smoke": null
+  "launcher": "0xfbc644749a2216248E64249420c71B32039ae469",
+  "router": "0x74aE321cD971f92E07CD734E4C9fA3643F60c28c",
+  "whype": "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9",
+  "pass": "0x44dd76F2eAfd6708c63DB93c03804F4f15017dFd",
+  "start": 1794732023,
+  "startBlock": "6707376",
+  "smoke": "0x221584C09543Bc52EBe5DEce592E04Cfcb0a74F3"
 }

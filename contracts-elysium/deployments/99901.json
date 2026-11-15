@@ -1,0 +1,12 @@
+{
+  "block": 6707404,
+  "creatorBps": 3000,
+  "fee": 10000,
+  "launcher": "0xfbc644749a2216248E64249420c71B32039ae469",
+  "owner": "0xe0ba5905940D748b23Dc01266AA884E2391CcA2F",
+  "positionManager": "0x2fBf535502Eaa2f39502a04ea26BfBfA7F7b9789",
+  "smokeCoin": "0x221584C09543Bc52EBe5DEce592E04Cfcb0a74F3",
+  "startMc": 30000000000000000000,
+  "treasury": "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60AC35aca6F",
+  "wrapped": "0x6c1d150124777243ce9A6eF5b4740a2E0aaF41E9"
+}
