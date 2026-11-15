@@ -23,7 +23,7 @@ on:
         required: false
         default: ""
       rpc:
-        description: "RPC URL (empty = sasa's Elysium doorway on mainnet, Kinetiq's public RPC on testnet)"
+        description: "RPC URL (empty = the public RPC of that network)"
         required: false
         default: ""
       start_mc:
@@ -79,7 +79,7 @@ jobs:
               WHYPE="${IN_WHYPE:-0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234}"
               SMOKE=1000000000000000 ;;
             elysium)
-              CHAIN_ID=99901; RPC="${IN_RPC:-https://sasapad.fun/ely-rpc}"; NPM="$IN_NPM"; WHYPE="$IN_WHYPE"; SMOKE=10000000000000000
+              CHAIN_ID=99901; RPC="${IN_RPC:-https://rpc-elysium-mainnet.t.conduit.xyz}"; NPM="$IN_NPM"; WHYPE="$IN_WHYPE"; SMOKE=10000000000000000
               if [ -n "$NPM$WHYPE" ] && { [ -z "$NPM" ] || [ -z "$WHYPE" ]; }; then echo "give both npm and whype, or neither (sasa's own DEX)"; exit 1; fi ;;
             *) echo "unknown network $NET"; exit 1 ;;
           esac
