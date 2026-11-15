@@ -15,7 +15,7 @@ export function InviteCard({ address, username }: { address: string; username: s
   const shown = link.replace(/^https?:\/\//, "");
 
   async function copy() {
-    toast((await copyText(link)) ? "Invite link copied" : "Couldn't copy. Open Airdrop to copy it from the box.");
+    toast((await copyText(link)) ? "Invite link copied" : "Couldn't copy. Open Earn to copy it from the box.");
   }
 
   return (
@@ -30,10 +30,10 @@ export function InviteCard({ address, username }: { address: string; username: s
         <Link
           href="/points/"
           className="h-9 px-3 rounded-xl border border-line bg-surface font-bold text-[0.8125rem] flex items-center gap-1 shrink-0 hover:border-emerald/60"
-          title="Your place on the airdrop list"
+          title="Your place on the most active list"
         >
-          <span aria-hidden="true">🪂</span>
-          <span className="font-mono tabular-nums">{a === null ? "…" : a.rank > 0 ? `#${a.rank.toLocaleString("en-US")}` : "Airdrop"}</span>
+          <span aria-hidden="true">💸</span>
+          <span className="font-mono tabular-nums">{a === null ? "…" : a.rank > 0 ? `#${a.rank.toLocaleString("en-US")}` : "Earn"}</span>
         </Link>
       </div>
       <div className="flex gap-2 mt-3">

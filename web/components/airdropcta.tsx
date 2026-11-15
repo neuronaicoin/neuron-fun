@@ -18,7 +18,7 @@ export function AirdropBanner() {
         <span className="text-[1.625rem] leading-none shrink-0" aria-hidden="true">🏆</span>
         <span className="min-w-0 flex-1">
           <span className="block font-display font-bold text-[0.9375rem] sm:text-[1.0625rem]">Win up to $100,000: launch a coin on sasa</span>
-          <span className="block text-[0.8125rem] sm:text-[0.875rem] leading-snug">The creator whose coins trade the most by Nov 25 wins. Plus the airdrop.</span>
+          <span className="block text-[0.8125rem] sm:text-[0.875rem] leading-snug">The creator whose coins trade the most by Nov 25 wins. Plus 30% of your coins&apos; fees.</span>
         </span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
       </Link>
@@ -87,12 +87,12 @@ export function AirdropButton() {
   return (
     <Link
       href="/points/"
-      title="Airdrop"
+      title="Earn"
       className="lg:hidden h-10 px-2.5 rounded-xl flex items-center gap-1 text-white font-bold text-[0.875rem] shrink-0"
       style={{ background: "#FF6B1A" }}
     >
-      <span aria-hidden="true">🪂</span>
-      <span className={inn ? "hidden sm:inline" : "hidden min-[380px]:inline"}>Airdrop</span>
+      <span aria-hidden="true">💸</span>
+      <span className={inn ? "hidden sm:inline" : "hidden min-[380px]:inline"}>Earn</span>
     </Link>
   );
 }

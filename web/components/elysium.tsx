@@ -428,9 +428,9 @@ function ElysiumHomeInner() {
 
         {test && (
           <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
-            <span className="text-[1.25rem]" aria-hidden="true">🪂</span>
+            <span className="text-[1.25rem]" aria-hidden="true">🧪</span>
             <span className="min-w-0 flex-1 text-ink-2">
-              <b className="text-ink">Earn sasa airdrop points on testnet:</b> 100 for your first launch, 50 a launch (3 a day), 10 a trade (10 a day).
+              <b className="text-ink">Testnet:</b> try launching and trading free before mainnet.
             </span>
             <span className="text-emerald font-bold shrink-0">→</span>
           </Link>
@@ -599,7 +599,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
       setBusy("Confirm in your wallet…");
       const calls = side === "buy" ? buyCalls(coin, w.address as Address, raw, SLIPPAGE_BPS) : sellCalls(coin, w.address as Address, raw, SLIPPAGE_BPS);
       await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, calls, setBusy);
-      toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? " · +10 airdrop points" : boostLive() ? ` · ${BOOST_X}x points week` : ""));
+      toast((side === "buy" ? `Bought $${coin.symbol} ✓` : `Sold $${coin.symbol} ✓`) + (ELYSIUM.testnet ? "" : boostLive() ? ` · ${BOOST_X}x points week` : ""));
       setAmount("");
       for (const ms of [0, 1500, 4000]) setTimeout(() => void load(), ms);
     } catch (e) {
@@ -617,7 +617,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
           <div className="flex-1 min-w-0">
             <div className="font-display font-bold text-[1.125rem]">🎉 ${coin.symbol} is live{ELYSIUM.testnet ? " on testnet" : ""}</div>
             <div className="text-[0.8125rem] text-ink-2">
-              {ELYSIUM.testnet ? "You earned airdrop points for it. " : ""}Share it so people trade it.
+              Share it so people trade it.
             </div>
           </div>
           <ShareButton coin={coin} mine big />

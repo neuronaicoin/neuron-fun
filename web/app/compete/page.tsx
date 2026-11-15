@@ -51,7 +51,7 @@ export default function CompetePage() {
         <p className="text-[0.875rem] font-semibold">🏆 Creator competition · until Nov 25</p>
         <h1 className="font-display font-bold text-[2rem] sm:text-[3rem] leading-[1.05] tracking-tight mt-1">Win up to $100,000</h1>
         <p className="mt-2 max-w-[58ch] text-[0.9375rem] sm:text-[1rem]">
-          Launch coins on sasa and bring your community. The creator whose coins get the most trading volume wins. You also earn 30% of your coins&apos; fees, and every trade counts for the airdrop.
+          Launch coins on sasa and bring your community. The creator whose coins get the most trading volume wins. You also earn 30% of your coins&apos; fees.
         </p>
         <div className="grid grid-cols-3 gap-2 mt-5 max-w-lg">
           <Box label={started ? "Ends in" : "Starts in"} value={left(started ? end - now : start - now)} />

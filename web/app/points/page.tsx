@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Airdrop: what counts toward the future sasa airdrop (coins created, dollars traded), your
+ * Earn: coins created and dollars traded (the most active list), your
  * place on the list, the top of the list, and invites. Only what people did is shown: never a
  * score, a ratio or an amount.
  */
@@ -67,7 +67,7 @@ export default function PointsPage() {
 
   function shareOnX() {
     postOnX(
-      "Farming the @sasapadfun airdrop 🪂 Create a coin, trade, the more you do the bigger it gets 👇",
+      "Launching and trading meme coins on @sasapadfun with plain USDC. Join with my link and we both earn from the fees 👇",
       inviteLink || "https://sasapad.fun/points/"
     );
   }
@@ -86,24 +86,24 @@ export default function PointsPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-10 pb-28 md:pb-12">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 sm:p-7">
-        <p className="relative text-[0.8125rem] text-ink-3">🪂 sasa airdrop</p>
-        <h1 className="relative font-display font-bold text-[1.625rem] sm:text-[2.25rem] leading-[1.1] tracking-tight mt-1">Create coins. Trade. Earn the airdrop.</h1>
+        <p className="relative text-[0.8125rem] text-ink-3">💸 Earn with sasa</p>
+        <h1 className="relative font-display font-bold text-[1.625rem] sm:text-[2.25rem] leading-[1.1] tracking-tight mt-1">Create coins. Invite friends. Earn real USDC.</h1>
         <p className="relative text-ink-2 mt-2 max-w-[58ch] text-[0.9375rem]">
-          The sasa token isn&apos;t out yet. When it comes, early users get the airdrop. The more coins you create and the more you trade, the bigger your share. No limit.
+          No token, no airdrop, no points to wait for. You earn from real trading fees: on the coins you create and on your friends&apos; trades, plus the creator competition.
         </p>
 
         <ol className="relative grid sm:grid-cols-3 gap-2.5 mt-5">
-          <Step n={1} title="Follow @sasapadfun" note="The airdrop is announced only there">
+          <Step n={1} title="Follow @sasapadfun" note="News comes only from there">
             <button type="button" onClick={followOnX} className="h-9 px-3 rounded-lg border border-line bg-paper text-[0.8125rem] font-bold hover:border-emerald">
               Follow on X
             </button>
           </Step>
-          <Step n={2} title="Create a coin" note="Every coin counts">
+          <Step n={2} title="Create a coin" note="You earn from its trading fees">
             <Link href="/race/launch/" className="h-9 px-3 rounded-lg bg-emerald text-on-accent text-[0.8125rem] font-bold flex items-center hover:bg-emerald-dark">
               Create a coin
             </Link>
           </Step>
-          <Step n={3} title="Trade" note="Every dollar counts, any coin">
+          <Step n={3} title="Trade" note="Any coin, in plain USDC">
             <Link href="/explore/" className="h-9 px-3 rounded-lg border border-line bg-paper text-[0.8125rem] font-bold flex items-center hover:border-emerald">
               Find coins
             </Link>
@@ -138,15 +138,15 @@ export default function PointsPage() {
 
       <div className="grid gap-4 mt-4 lg:grid-cols-[1.15fr_1fr] lg:items-start">
         {/* The list */}
-        <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5" aria-label="Airdrop list">
+        <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5" aria-label="Most active">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display font-bold text-[1.125rem]">Top of the list</h2>
+            <h2 className="font-display font-bold text-[1.125rem]">Most active on sasa</h2>
             <span className="text-[0.75rem] text-ink-3">updates live</span>
           </div>
           {board === null ? (
             <Skeleton className="h-48 mt-3" />
           ) : top.length === 0 ? (
-            <p className="text-[0.875rem] text-ink-3 mt-3">No one is on the list yet. Be the first.</p>
+            <p className="text-[0.875rem] text-ink-3 mt-3">No one here yet. Be the first.</p>
           ) : (
             <>
               <div className="flex items-center gap-3 px-2 pt-3 pb-1 text-[0.6875rem] text-ink-3">
@@ -212,8 +212,7 @@ export default function PointsPage() {
       </div>
 
       <p className="text-[0.75rem] text-ink-3 mt-5 max-w-[80ch]">
-        There is no sasa token yet. The date and the amounts haven&apos;t been decided; they&apos;ll be announced only on @sasapadfun on X. Any &quot;sasa token&quot; you see
-        before that is fake. Counted on Base, BNB Chain, Robinhood Chain and Arc. Rules can change before the airdrop.
+        sasa has no token and no airdrop. Any &quot;sasa token&quot; or &quot;sasa airdrop&quot; you see is fake. We only announce news on @sasapadfun on X.
       </p>
     </div>
   );
