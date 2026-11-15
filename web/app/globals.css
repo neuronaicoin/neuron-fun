@@ -458,3 +458,14 @@ html.is-guest .guest-hide { display: none !important; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .chat-in { animation: chat-in .25s ease-out; }
 @media (prefers-reduced-motion: reduce) { .chat-in { animation: none; } }
+
+/* The phone menu's Create button: a round orange button with a light ring turning around it. */
+.create-ring {
+  background: conic-gradient(from 0deg, #ff6b1a 0deg, rgba(255,138,61,.15) 120deg, rgba(255,107,26,0) 200deg, #ffb27a 300deg, #ff6b1a 360deg);
+  animation: create-spin 2.4s linear infinite;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+.create-orb { box-shadow: 0 4px 14px -4px rgba(255,107,26,.65); }
+@keyframes create-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .create-ring { animation: none; } }

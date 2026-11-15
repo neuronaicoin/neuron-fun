@@ -42,25 +42,48 @@ export function SiteChat() {
   const atBottom = useRef(true);
   const lastId = useRef(0);
 
-  // the room fills the screen between the top bar and the phone menu
+  // the room fills the screen between the top bar and the phone menu. On phones it is pinned
+  // there (the page itself doesn't scroll; only the messages do).
   const [h, setH] = useState<number | null>(null);
+  const [pin, setPin] = useState<{ top: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
     const fit = () => {
       const el = box.current;
       if (!el) return;
-      const top = el.getBoundingClientRect().top + window.scrollY;
       const nav = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--money-bar-bottom")) || 0;
       const phone = window.matchMedia("(max-width: 767px)").matches;
-      setH(Math.max(360, window.innerHeight - top - (phone ? nav : 24)));
+      if (phone) {
+        const header = document.querySelector("body header") as HTMLElement | null;
+        const top = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        setPin({ top, bottom: nav });
+        setH(null);
+      } else {
+        setPin(null);
+        const top = el.getBoundingClientRect().top + window.scrollY;
+        setH(Math.max(420, window.innerHeight - top - 24));
+      }
     };
     fit();
     window.addEventListener("resize", fit);
     const t = setTimeout(fit, 400);
+    const t2 = setTimeout(fit, 1500);
     return () => {
       window.removeEventListener("resize", fit);
       clearTimeout(t);
+      clearTimeout(t2);
     };
   }, []);
+  // phones: the page behind the room stays still
+  useEffect(() => {
+    if (!pin) return;
+    const html = document.documentElement;
+    const before = html.style.overflow;
+    html.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+    return () => {
+      html.style.overflow = before;
+    };
+  }, [pin]);
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - KEEP_MS).toISOString();
@@ -100,7 +123,7 @@ export function SiteChat() {
   useLayoutEffect(() => {
     const el = list.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [msgs, h]);
+  }, [msgs, h, pin]);
 
   const onScroll = () => {
     const el = list.current;
@@ -147,7 +170,7 @@ export function SiteChat() {
       <section
         aria-label="sasa Chat"
         className="relative flex flex-col min-h-0 overflow-hidden bg-surface md:rounded-3xl md:border md:border-line md:shadow-sm"
-        style={{ height: h ?? "70vh" }}
+        style={pin ? { position: "fixed", left: 0, right: 0, top: pin.top, bottom: pin.bottom, zIndex: 20 } : { height: h ?? "70vh" }}
       >
         {/* header */}
         <header className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-line" style={{ background: "linear-gradient(100deg, rgba(255,107,26,.12), rgba(255,107,26,0) 60%)" }}>

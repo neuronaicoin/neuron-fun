@@ -483,19 +483,20 @@ export function BottomNav() {
   return (
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
-      <div className="grid grid-cols-6">
+      {/* Create sits in the exact middle: two links on its left share the same width as three on its right */}
+      <div className="grid items-end" style={{ gridTemplateColumns: "1.5fr 1.5fr 4.25rem 1fr 1fr 1fr" }}>
         {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/" && n.href !== "/terminal/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             n.href === "/race/launch/" ? (
-              <Link key={n.href} href={n.href} aria-label="Create a coin" className="flex flex-col items-center gap-0.5 pb-1 -mt-3 text-[0.6875rem] font-bold text-[#ff6b1a]">
-                <span
-                  className="w-11 h-11 rounded-2xl grid place-items-center text-white shadow-[0_6px_16px_-4px_rgba(255,107,26,.6)]"
-                  style={{ background: "linear-gradient(135deg,#ff8a3d,#ff6b1a)" }}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-                    <path d="M12 6 V18 M6 12 H18" />
-                  </svg>
+              <Link key={n.href} href={n.href} aria-label="Create a coin" className="flex flex-col items-center gap-0.5 py-0.5 text-[0.6875rem] font-bold text-[#ff6b1a]">
+                <span className="create-orb relative w-10 h-10 rounded-full grid place-items-center">
+                  <span className="create-ring absolute -inset-[4px] rounded-full" aria-hidden="true" />
+                  <span className="relative w-10 h-10 rounded-full grid place-items-center text-white" style={{ background: "linear-gradient(135deg,#ff8a3d,#ff6b1a)" }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 6 V18 M6 12 H18" />
+                    </svg>
+                  </span>
                 </span>
                 Create
               </Link>
