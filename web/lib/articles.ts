@@ -26,6 +26,7 @@ import { W2_ARTICLES_D } from "./articles-w2d";
 import { ELYSIUM_ARTICLES } from "./articles-elysium";
 import { W3_ARTICLES_A } from "./articles-w3a";
 import { W3_ARTICLES_B } from "./articles-w3b";
+import { W3_ARTICLES_C } from "./articles-w3c";
 
 export type Block =
   | { h2: string }
@@ -205,6 +206,7 @@ const LIST: Article[] = IS_TESTNET
       // week 3 (Nov 15): questions right before and after a trade or a launch
       ...W3_ARTICLES_A,
       ...W3_ARTICLES_B,
+      ...W3_ARTICLES_C,
       // Elysium (Hyperliquid L2) guides, ahead of its Nov 9 mainnet
       ...ELYSIUM_ARTICLES,
       // the Data tab's guides (whales, Fear & Greed, funding): on both networks
