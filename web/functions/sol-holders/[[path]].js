@@ -38,6 +38,7 @@ async function count(node, mint) {
   const owners = new Set();
   for (const program of PROGRAMS) {
     const r = await fetch(node, {
+      signal: AbortSignal.timeout(20_000),
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -70,7 +71,15 @@ async function count(node, mint) {
   return owners.size;
 }
 
-export async function onRequestGet({ request, params, env, waitUntil }) {
+export async function onRequestGet(ctx) {
+  try {
+    return await handle(ctx);
+  } catch (e) {
+    return json({ error: "failed", why: String(e && e.message ? e.message : e).slice(0, 160) }, 500);
+  }
+}
+
+async function handle({ request, params, env, waitUntil }) {
   const mint = Array.isArray(params.path) ? params.path[0] : params.path;
   if (!mint || !B58.test(mint)) return json({ error: "bad mint" }, 400);
   const cache = caches.default;
