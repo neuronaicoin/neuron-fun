@@ -23,7 +23,7 @@ type Live = { scanned: number; smart: number; buys: Buy[]; scans: Scan[]; trends
 const FEATURES = [
   { href: V6 ? "/create/" : "/race/launch/", icon: "🚀", title: "Launch", sub: "Free, one tap" },
   { href: "/explore/", icon: "🔥", title: "Trade", sub: "Meme coins" },
-  { href: "/spot/", icon: "💎", title: "Spot", sub: "Top coins" },
+  { href: "/market/", icon: "💎", title: "Spot", sub: "Top coins" },
   { href: "/futures/", icon: "⚡", title: "Futures", sub: "Long or short" },
 ];
 
@@ -154,7 +154,7 @@ export function Hero() {
             >
               🚀 Launch a coin
             </Link>
-            <Link href="/spot/" className="h-14 px-7 rounded-2xl bg-ink text-mist font-display font-extrabold text-[1.0625rem] grid place-items-center hover:opacity-90">
+            <Link href="/market/" className="h-14 px-7 rounded-2xl bg-ink text-mist font-display font-extrabold text-[1.0625rem] grid place-items-center hover:opacity-90">
               📈 Start trading
             </Link>
           </div>

@@ -14,6 +14,7 @@ import { SellAmount, sellRaw } from "./sellamount";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { useWallet } from "./wallet";
+import { ConnectButton } from "./chrome";
 import { useSolSigner } from "./usesolsigner";
 import { toast } from "./alerts";
 import { usdcAbi } from "@/lib/abis";
@@ -389,14 +390,20 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
           {ownFee.nextBps !== null && ownFee.inSec !== null ? ` · ${ownFee.nextBps / 100}% in ${ownFee.inSec}s` : ""}
         </p>
       )}
-      <button
-        type="button"
-        disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n)}
-        onClick={() => void go()}
-        className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
-      >
-        {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
-      </button>
+      {!w.address ? (
+        <div className="mt-3">
+          <ConnectButton full />
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n)}
+          onClick={() => void go()}
+          className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+        >
+          {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
+        </button>
+      )}
       {error && <p className="mt-2 text-[0.8125rem] text-danger break-words">{error}</p>}
       <p className="text-[0.6875rem] text-ink-3 mt-2">
         {side === "buy"

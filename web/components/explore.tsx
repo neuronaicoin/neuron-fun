@@ -404,7 +404,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             ) : chain === "elysium" ? (
               <div className="flex flex-wrap justify-center gap-2 mt-4">
                 <Link href="/elysium/" className="inline-flex h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">See Elysium coins</Link>
-                <Link href="/race/launch/" className="inline-flex h-11 px-6 rounded-xl border border-line font-semibold items-center">Create a coin</Link>
+                <Link href="/race/launch/?chain=elysium" className="inline-flex h-11 px-6 rounded-xl border border-line font-semibold items-center">Create a coin</Link>
               </div>
             ) : (
               <Link href="/race/launch/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>

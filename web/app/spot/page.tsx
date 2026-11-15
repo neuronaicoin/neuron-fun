@@ -28,6 +28,11 @@ function SpotPage() {
   const desk = useSpotDesk();
 
   useEffect(() => {
+    // no coin picked (/spot/ on its own): the market list is where spot coins are chosen
+    if (!want) {
+      window.location.replace("/market/");
+      return;
+    }
     let alive = true;
     const load = () =>
       fetchHlSpot()

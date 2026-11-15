@@ -5,6 +5,7 @@ import { BotSafety } from "./botsafety";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
+import { ConnectButton } from "./chrome";
 import { toast } from "./alerts";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
@@ -509,14 +510,20 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
                   : "—"}
             </b>
           </div>
-          <button
-            type="button"
-            disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
-            onClick={() => void go()}
-            className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
-          >
-            {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
-          </button>
+          {!address ? (
+            <div className="mt-3">
+              <ConnectButton full />
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!live || !address || !quote || !!busy || (side === "sell" && (held ?? 0n) === 0n)}
+              onClick={() => void go()}
+              className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+            >
+              {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
+            </button>
+          )}
           {error && <p className="mt-2 text-[0.8125rem] text-danger">{error}</p>}
           {IS_TESTNET && (
             <p className="mt-3 rounded-xl bg-emerald-soft border border-emerald/40 p-3 text-[0.8125rem]">Test version: prices and charts are live; trading these coins opens at mainnet.</p>

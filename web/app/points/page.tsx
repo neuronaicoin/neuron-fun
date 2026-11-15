@@ -128,8 +128,8 @@ export default function PointsPage() {
       <Link href="/compete/" className="mt-4 flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 hover:border-emerald/60">
         <span className="text-[1.5rem]" aria-hidden="true">🏆</span>
         <span className="min-w-0 flex-1">
-          <b className="block text-[0.9375rem]">Win up to $10,000</b>
-          <span className="block text-[0.8125rem] text-ink-3">Launch coins on sasa. The creator with the most volume in 30 days wins.</span>
+          <b className="block text-[0.9375rem]">Win up to $100,000</b>
+          <span className="block text-[0.8125rem] text-ink-3">Launch coins on sasa. The creator with the most volume by Nov 25 wins.</span>
         </span>
         <span className="text-emerald-dark font-bold shrink-0">→</span>
       </Link>

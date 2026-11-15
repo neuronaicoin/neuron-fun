@@ -186,12 +186,12 @@ export default function MarketPage() {
           <p className="p-6 text-center text-ink-3">{q ? "No coin by that name." : "The list is being prepared. Check back in a few minutes."}</p>
         ) : (
           <ul className="divide-y divide-line">
-            {list.slice(0, shown).map((c) => {
+            {list.slice(0, shown).map((c, i) => {
               const net = c.top ? extNetwork(c.top.network) : null;
               const cls = "w-full text-left grid grid-cols-[1.75rem_minmax(0,1fr)_auto] sm:grid-cols-[2.5rem_minmax(0,1fr)_7rem_5rem_5rem_7rem_6.5rem] gap-3 items-center px-4 py-3 hover:bg-paper";
               const body = (
                 <>
-                  <span className="text-[0.8125rem] text-ink-3 tabular-nums">{c.rank ?? ""}</span>
+                  <span className="text-[0.8125rem] text-ink-3 tabular-nums">{i + 1}</span>
                   <span className="flex items-center gap-3 min-w-0">
                     {c.image ? (
                       // eslint-disable-next-line @next/next/no-img-element

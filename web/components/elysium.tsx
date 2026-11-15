@@ -376,108 +376,120 @@ function ElysiumHomeInner() {
         </p>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-2 sm:gap-3">
-        <Step
-          n={1}
-          done={!!w.address}
-          title={w.address ? "Logged in" : "Log in"}
-          text={w.address ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}` : "Email, Google or any wallet"}
+      {!test && (
+        <Link
+          href="/race/launch/?chain=elysium"
+          className="h-13 min-h-[3.25rem] rounded-2xl bg-emerald text-on-accent font-bold text-[1.0625rem] grid place-items-center hover:opacity-90"
         >
-          {!w.address && (
-            <span className="shrink-0 sm:hidden">
-              <ConnectButton />
-            </span>
-          )}
-        </Step>
-        {test && (
-          <Step
-            n={2}
-            done={hype !== null && hype > 0n}
-            title="Get test HYPE"
-            text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : `${FAUCET_RULE} No HYPE? On mainnet you start with your USDC.`}
-          >
-            <span className="shrink-0 flex flex-col sm:flex-row gap-1.5">
-              {w.address && !(hype !== null && hype > 0n) && <CopyAddress address={w.address} />}
-              <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="h-8 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.75rem] grid place-items-center whitespace-nowrap">
-                Faucet ↗
-              </a>
-            </span>
-          </Step>
-        )}
-        {!test && (
-          <Step n={2} done={hype !== null && hype >= HYPE_GAS_FLOOR} title="Have some HYPE" text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} HYPE` : "Comes from your cash by itself when you launch or buy"} />
-        )}
-        <Step n={3} title="Launch your coin" text="Name, ticker, picture. Live in seconds." />
-      </div>
-      {!w.address && (
-        <div className="hidden sm:block">
-          <ConnectButton full />
-        </div>
-      )}
-      <HypeTopup hype={hype} onDone={loadBal} />
-
-      {test && (
-        <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
-          <span className="text-[1.25rem]" aria-hidden="true">🪂</span>
-          <span className="min-w-0 flex-1 text-ink-2">
-            <b className="text-ink">Earn sasa airdrop points on testnet:</b> 100 for your first launch, 50 a launch (3 a day), 10 a trade (10 a day).
-          </span>
-          <span className="text-emerald font-bold shrink-0">→</span>
+          Create a coin on Elysium
         </Link>
       )}
-
-      <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-3">
-        <h2 className="font-display font-bold text-[1.125rem] sm:text-[1.25rem]">{test ? "Create a test coin" : "Create a coin"}</h2>
-        <div className="grid grid-cols-[1.4fr_1fr] gap-2 sm:gap-3">
-          <input value={name} onChange={(e) => setName(e.target.value.slice(0, 32))} placeholder="Name" className="h-12 px-3.5 rounded-xl border border-line bg-paper min-w-0" />
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10))} placeholder="TICKER" className="h-12 px-3.5 rounded-xl border border-line bg-paper uppercase min-w-0" />
-        </div>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What's the story? (optional)" rows={2} className="px-3.5 py-2.5 rounded-xl border border-line bg-paper" />
-        <div className="flex items-center gap-3">
-          {logo ? <img src={logo} alt="" className="w-14 h-14 rounded-xl object-cover border border-line" /> : <div className="w-14 h-14 rounded-xl border border-dashed border-line grid place-items-center text-ink-3 text-[1.25rem]">+</div>}
-          <label className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center cursor-pointer">
-            {logo ? "Change picture" : "Add a picture"}
-            <input
-              type="file"
-              accept="image/*,.gif"
-              className="hidden"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (f) setLogo(await fileToBigLogo(f).catch(() => ""));
-              }}
-            />
-          </label>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap text-[0.875rem]">
-          <span>First buy</span>
-          {["0", "0.001", "0.005"].map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setBuy(v)}
-              className={"h-9 px-3 rounded-lg font-bold text-[0.8125rem] " + (buy === v ? "border border-emerald text-emerald bg-emerald-soft" : "border border-line")}
+      {test && (
+        <>
+        <div className="grid sm:grid-cols-3 gap-2 sm:gap-3">
+          <Step
+            n={1}
+            done={!!w.address}
+            title={w.address ? "Logged in" : "Log in"}
+            text={w.address ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}` : "Email, Google or any wallet"}
+          >
+            {!w.address && (
+              <span className="shrink-0 sm:hidden">
+                <ConnectButton />
+              </span>
+            )}
+          </Step>
+          {test && (
+            <Step
+              n={2}
+              done={hype !== null && hype > 0n}
+              title="Get test HYPE"
+              text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : `${FAUCET_RULE} No HYPE? On mainnet you start with your USDC.`}
             >
-              {v}
-            </button>
-          ))}
-          <input
-            value={buy}
-            onChange={(e) => setBuy(e.target.value.replace(/[^0-9.]/g, ""))}
-            inputMode="decimal"
-            aria-label="First buy"
-            className="hidden sm:block w-24 h-9 px-2.5 rounded-lg border border-line bg-paper text-right"
-          />
-          <span className="text-ink-3">{unit}</span>
+              <span className="shrink-0 flex flex-col sm:flex-row gap-1.5">
+                {w.address && !(hype !== null && hype > 0n) && <CopyAddress address={w.address} />}
+                <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="h-8 px-3 rounded-lg border border-emerald text-emerald font-bold text-[0.75rem] grid place-items-center whitespace-nowrap">
+                  Faucet ↗
+                </a>
+              </span>
+            </Step>
+          )}
+          {!test && (
+            <Step n={2} done={hype !== null && hype >= HYPE_GAS_FLOOR} title="Have some HYPE" text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} HYPE` : "Comes from your cash by itself when you launch or buy"} />
+          )}
+          <Step n={3} title="Launch your coin" text="Name, ticker, picture. Live in seconds." />
         </div>
-        <button type="button" disabled={!!busy} onClick={launch} className="mt-1 h-13 min-h-[3.25rem] rounded-xl bg-emerald text-on-accent font-bold text-[1rem] disabled:opacity-60">
-          {busy || (test ? "Launch on Elysium testnet" : "Launch on Elysium")}
-        </button>
-        {hype !== null && (
-          <p className="text-center text-[0.75rem] text-ink-3">
-            You have {fmtHype(hype)} {unit} · network fee about 0.0006
-          </p>
+        {!w.address && (
+          <div className="hidden sm:block">
+            <ConnectButton full />
+          </div>
         )}
-      </div>
+        <HypeTopup hype={hype} onDone={loadBal} />
+
+        {test && (
+          <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
+            <span className="text-[1.25rem]" aria-hidden="true">🪂</span>
+            <span className="min-w-0 flex-1 text-ink-2">
+              <b className="text-ink">Earn sasa airdrop points on testnet:</b> 100 for your first launch, 50 a launch (3 a day), 10 a trade (10 a day).
+            </span>
+            <span className="text-emerald font-bold shrink-0">→</span>
+          </Link>
+        )}
+
+        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-3">
+          <h2 className="font-display font-bold text-[1.125rem] sm:text-[1.25rem]">{test ? "Create a test coin" : "Create a coin"}</h2>
+          <div className="grid grid-cols-[1.4fr_1fr] gap-2 sm:gap-3">
+            <input value={name} onChange={(e) => setName(e.target.value.slice(0, 32))} placeholder="Name" className="h-12 px-3.5 rounded-xl border border-line bg-paper min-w-0" />
+            <input value={symbol} onChange={(e) => setSymbol(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10))} placeholder="TICKER" className="h-12 px-3.5 rounded-xl border border-line bg-paper uppercase min-w-0" />
+          </div>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What's the story? (optional)" rows={2} className="px-3.5 py-2.5 rounded-xl border border-line bg-paper" />
+          <div className="flex items-center gap-3">
+            {logo ? <img src={logo} alt="" className="w-14 h-14 rounded-xl object-cover border border-line" /> : <div className="w-14 h-14 rounded-xl border border-dashed border-line grid place-items-center text-ink-3 text-[1.25rem]">+</div>}
+            <label className="h-10 px-4 rounded-xl border border-line font-semibold text-[0.875rem] flex items-center cursor-pointer">
+              {logo ? "Change picture" : "Add a picture"}
+              <input
+                type="file"
+                accept="image/*,.gif"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setLogo(await fileToBigLogo(f).catch(() => ""));
+                }}
+              />
+            </label>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap text-[0.875rem]">
+            <span>First buy</span>
+            {["0", "0.001", "0.005"].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setBuy(v)}
+                className={"h-9 px-3 rounded-lg font-bold text-[0.8125rem] " + (buy === v ? "border border-emerald text-emerald bg-emerald-soft" : "border border-line")}
+              >
+                {v}
+              </button>
+            ))}
+            <input
+              value={buy}
+              onChange={(e) => setBuy(e.target.value.replace(/[^0-9.]/g, ""))}
+              inputMode="decimal"
+              aria-label="First buy"
+              className="hidden sm:block w-24 h-9 px-2.5 rounded-lg border border-line bg-paper text-right"
+            />
+            <span className="text-ink-3">{unit}</span>
+          </div>
+          <button type="button" disabled={!!busy} onClick={launch} className="mt-1 h-13 min-h-[3.25rem] rounded-xl bg-emerald text-on-accent font-bold text-[1rem] disabled:opacity-60">
+            {busy || (test ? "Launch on Elysium testnet" : "Launch on Elysium")}
+          </button>
+          {hype !== null && (
+            <p className="text-center text-[0.75rem] text-ink-3">
+              You have {fmtHype(hype)} {unit} · network fee about 0.0006
+            </p>
+          )}
+        </div>
+        </>
+      )}
 
       <div className="flex flex-col gap-2">
         <h2 className="font-display font-bold text-[1.125rem] flex items-baseline justify-between gap-3">

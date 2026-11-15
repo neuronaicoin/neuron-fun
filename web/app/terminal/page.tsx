@@ -95,9 +95,16 @@ function Terminal() {
   }, [query]);
 
   // Default to the first coin in the list.
+  // Default to the top coin of the list as shown (it can be another DEX's coin), so the chart and
+  // trade box are never left empty.
   useEffect(() => {
-    if (!selected && coins && coins.length) setSelected(coins[0].id);
-  }, [coins, selected]);
+    if (selected || !coins) return;
+    if (MERGED_SORTS.has(sort)) {
+      if (ext === null) return;
+      const top = rankMerged(coins, ext, sort, ethUsd)[0];
+      if (top) setSelected(top.kind === "ext" ? extKey(top.coin) : top.coin.id);
+    } else if (coins.length) setSelected(coins[0].id);
+  }, [coins, ext, sort, ethUsd, selected]);
 
   const loadCoin = useCallback(async () => {
     if (!selected) return;

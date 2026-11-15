@@ -127,6 +127,14 @@ export default function RaceLaunchPage() {
   const [aiOpen, setAiOpen] = useState(false);
   // Trend Radar: a tapped theme becomes the AI's topic.
   const [aiSeed, setAiSeed] = useState<{ text: string; n: number } | null>(null);
+  // opened from the Elysium page (/race/launch/?chain=elysium): Elysium is picked already
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("chain") === "elysium") setEly(true);
+    } catch {
+      /* no chain */
+    }
+  }, []);
   // opened from the bot's Trend Radar (/race/launch/?theme=…): the AI starts on that theme
   useEffect(() => {
     try {
@@ -876,7 +884,9 @@ export default function RaceLaunchPage() {
         </div>
 
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">
-          {onSolana ? (
+          {onSolana && !w.address ? (
+            <ConnectButton />
+          ) : onSolana ? (
             <SolanaLaunchBox
               name={name.trim()}
               symbol={sym}

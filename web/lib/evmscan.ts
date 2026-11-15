@@ -74,10 +74,59 @@ function finish(name: string | null, symbol: string | null, items: [string, bool
   };
 }
 
+const gNum = (v: unknown) => (v === undefined || v === null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+const gFrac = (v: number | null) => (v === null ? null : v > 1 ? v / 100 : v);
+const gFlag = (v: unknown) => (v === undefined || v === null || v === "" ? null : String(v) === "1");
+const BURN = /^0x0{36}(dead|0000)$/i;
+type GHolder = { address?: string; percent?: string; is_locked?: number | string; is_contract?: number | string };
+
+/** The same facts edge/bot-api.js (evmScan) reads, fetched by the browser straight from GoPlus. */
+async function goplusDirect(chainId: number, a: string): Promise<GoPlus | null> {
+  try {
+    const r = await fetch(`https://api.gopluslabs.io/api/v1/token_security/${chainId}?contract_addresses=${a}`, { headers: { accept: "application/json" } });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { result?: Record<string, Record<string, unknown>> };
+    const t = j?.result?.[a];
+    if (!t) return null;
+    const holders = (Array.isArray(t.holders) ? t.holders : []) as GHolder[];
+    const people = holders.filter((h) => String(h.is_locked) !== "1" && String(h.is_contract) !== "1" && !BURN.test(String(h.address || "")));
+    const top10 = people.slice(0, 10).reduce((sum, h) => sum + (gNum(h.percent) ?? 0), 0);
+    const lp = (Array.isArray(t.lp_holders) ? t.lp_holders : []) as GHolder[];
+    const lpSum = lp.length ? lp.filter((h) => String(h.is_locked) === "1" || BURN.test(String(h.address || ""))).reduce((x, h) => x + (gNum(h.percent) ?? 0), 0) : null;
+    const owner = String(t.owner_address || "").toLowerCase();
+    return {
+      name: typeof t.token_name === "string" ? t.token_name : null,
+      symbol: typeof t.token_symbol === "string" ? t.token_symbol : null,
+      honeypot: gFlag(t.is_honeypot),
+      cannotSellAll: gFlag(t.cannot_sell_all),
+      buyTax: gFrac(gNum(t.buy_tax)),
+      sellTax: gFrac(gNum(t.sell_tax)),
+      taxChangeable: gFlag(t.slippage_modifiable),
+      mintable: gFlag(t.is_mintable),
+      ownerRenounced: owner === "" ? null : /^0x0{40}$|^0x0{36}dead$/.test(owner),
+      hiddenOwner: gFlag(t.hidden_owner),
+      takeBackOwnership: gFlag(t.can_take_back_ownership),
+      pausable: gFlag(t.transfer_pausable),
+      blacklist: gFlag(t.is_blacklisted),
+      openSource: gFlag(t.is_open_source),
+      holderCount: gNum(t.holder_count),
+      top10: holders.length ? gFrac(top10) : null,
+      creatorPct: gFrac(gNum(t.creator_percent)),
+      lpLocked: lpSum === null ? null : Math.min(1, gFrac(lpSum) ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function goplusScan(chain: ScanChain, address: string): Promise<ScanResult | null> {
-  const r = await fetch(`/api/bot/evmscan?c=${chain.chainId}&a=${address.toLowerCase()}`);
-  if (!r.ok) return null;
-  const { token: t } = (await r.json()) as { token: GoPlus | null };
+  let t: GoPlus | null = null;
+  try {
+    const r = await fetch(`/api/bot/evmscan?c=${chain.chainId}&a=${address.toLowerCase()}`);
+    if (r.ok) t = ((await r.json()) as { token: GoPlus | null }).token;
+  } catch {}
+  // GoPlus often turns away the server's shared address: ask it from the browser instead
+  if (!t) t = await goplusDirect(chain.chainId, address.toLowerCase());
   if (!t) return null;
   const tax = Math.max(t.buyTax ?? 0, t.sellTax ?? 0);
   const items: [string, boolean | null][] = [
