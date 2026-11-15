@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { RaceActivity } from "@/components/activity24";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
@@ -210,6 +211,8 @@ function RacePage() {
             <Fact label="Trades" value={trades.toLocaleString("en-US")} />
             <Fact label={solo ? "Raised" : "In the race"} value={compactUsd(coin.totalUsd ?? coin.lanes.reduce((s, l) => s + laneUsd(l), 0))} />
           </div>
+
+          <RaceActivity coinId={coin.id} chainId={chartChain} />
 
           {coin.feeMode === 1 && (coin.winner || solo) && <RaceBuyback chain={coin.winner ?? coin.lanes[0].chain} coin={coin.coin} />}
 

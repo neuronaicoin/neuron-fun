@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
+import { ExtActivity } from "./activity24";
 import { toast } from "./alerts";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
@@ -219,6 +220,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             </section>
           )}
 
+          <ExtActivity network={coin.network} address={coin.address} pool={pool} />
           {pool && <ExtTradesList coin={coin} rows={tradeRows} />}
           {!market && <TokenCheck coin={coin} />}
           {/* other DEXs' coins: the server's search section says all this and more (components/coinseo.tsx) */}
