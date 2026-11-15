@@ -261,6 +261,46 @@ export function elysium() {
   ];
 }
 
+// sasa itself: launch, trade, spot, futures, whales, the trap scan, the contest. Text only, no
+// made-up numbers (the bot posts on its own). Every line has its own hashtag set; fresh() keeps a
+// line from coming back for 7 days, so the timeline doesn't repeat itself.
+export function promo() {
+  return [
+    ["p1", `made a coin in the time it took my coffee to cool down ☕\n\nname, picture, one tap. it's live on several chains at once\n\n👉 ${LINK}\n\n#Memecoin #CryptoTrading #Base #BNB #Web3 #sasa`],
+    ["p2", `the WHALES bought something 4 minutes ago. you'll read about it tomorrow\n\nor you can watch it happen live 👀\n\n👉 ${LINK}\n\n#WhaleAlert #SmartMoney #Crypto #OnChain #Altcoins #Degens`],
+    ["p3", `long BTC. short ETH. buy the meme. launch your own coin\n\nsame app, same balance, logged in with just an email\n\n👉 ${LINK}\n\n#Bitcoin #Futures #CryptoTrading #Ethereum #Memecoins #DeFi`],
+    ["p4", `stop aping into coins you haven't checked\n\npaste any contract on sasa, see if it's a TRAP before you buy. free\n\n👉 ${LINK}\n\n#CryptoSafety #Rugpull #DYOR #Memecoin #Solana #Crypto`],
+    ["p5", `honest question: why are you still launching on ONE chain?\n\none launch on sasa = your coin on Base, BNB, Robinhood and Arc together 🚀\n\n👉 ${LINK}\n\n#Base #BNBChain #RobinhoodChain #Arc #Memecoins #LaunchPad`],
+    ["p6", `$100,000. one creator. coins launched on sasa\n\nthe contest is still open and most people haven't even tried 👀\n\n👉 ${LINK}\n\n#CryptoContest #Memecoin #Airdrop #Web3 #Altseason #sasa`],
+    ["p7", `no seed phrase. no bridge. no "add network" popup\n\nlog in with email, pay in dollars, trade. that's it\n\n👉 ${LINK}\n\n#CryptoTrading #Web3 #DeFi #Onboarding #Altcoins #USDC`],
+    ["p8", `your coin makes money while you sleep 😴\n\ncreators on sasa get a cut of every trade on their coin. FOREVER\n\n👉 ${LINK}\n\n#PassiveIncome #Memecoin #CryptoGems #Creators #Web3 #Pump`],
+    ["p9", `everyone has a meme coin idea in their notes app\n\nyou're one tap away from it being real. do it tonight 👀\n\n👉 ${LINK}\n\n#Memecoins #Crypto #100x #LaunchPad #GEM #Degens`],
+    ["p10", `the market dumped and your bags are red?\n\nsome people went SHORT and are smiling. futures on sasa, from your USDC balance\n\n👉 ${LINK}\n\n#Futures #ShortSelling #Bitcoin #CryptoTrading #Leverage #BTC`],
+    ["p11", `thousands of coins. every chain. one search box\n\nfind it, check it's not a trap, buy it. 3 taps\n\n👉 ${LINK}\n\n#Altcoins #CryptoGems #DEX #Solana #Base #CryptoTrading`],
+    ["p12", `the wallets that called the last 3 pumps are buying again right now 🐋\n\nsee exactly what they buy on sasa\n\n👉 ${LINK}\n\n#SmartMoney #Whales #CopyTrading #Crypto #Altseason #OnChain`],
+    ["p13", `gm. what are we launching today? 🚀\n\ndrop the name below, the best one might actually go live 👀\n\n👉 ${LINK}\n\n#GM #Memecoin #CryptoCommunity #Web3 #LaunchPad #Degens`],
+    ["p14", `TSLA. NVDA. GOLD. OIL\n\ngo long or short on stocks and commodities with crypto, 24/7. even when Wall Street sleeps\n\n👉 ${LINK}\n\n#Stocks #Gold #Oil #Tesla #NVDA #Trading`],
+    ["p15", `your friend made 10x on a coin he found on a random tuesday\n\nhe probably saw the WHALES buy it first 👀\n\n👉 ${LINK}\n\n#WhaleWatching #Crypto #100x #Memecoins #SmartMoney #Altcoins`],
+    ["p16", `4 chains race. the winner takes ALL the liquidity\n\nthat's how a coin launches on sasa. 5 minutes, then it's on the chain that won 🏁\n\n👉 ${LINK}\n\n#ChainRace #Memecoin #Base #BNB #Crypto #LaunchPad`],
+    ["p17", `copy the traders who are actually winning\n\nfollow them on sasa, get pinged when they buy, one tap to buy too\n\n👉 ${LINK}\n\n#CopyTrading #CryptoTrading #SmartMoney #Altcoins #DeFi #Traders`],
+    ["p18", `will BTC be higher in an hour? you probably have an opinion\n\nput it to work: predictions on sasa, YES or NO, from $1\n\n👉 ${LINK}\n\n#Bitcoin #Predictions #BTC #CryptoTrading #PredictionMarkets #Crypto`],
+    ["p19", `launching a coin used to need a dev, a wallet and a whole weekend\n\nnow it needs an email and 30 seconds. welcome to sasa\n\n👉 ${LINK}\n\n#Memecoins #NoCode #Web3 #Crypto #Builders #LaunchPad`],
+    ["p20", `rug pulls are getting smarter. so is our scanner 🛡️\n\nhoneypot, hidden tax, dev holding half? sasa tells you BEFORE you buy\n\n👉 ${LINK}\n\n#Honeypot #RugPull #CryptoSafety #DYOR #Memecoin #BSC`],
+    ["p21", `the best traders keep everything in one place. memes, spot, futures\n\none dollar balance, all of it, on sasa\n\n👉 ${LINK}\n\n#CryptoTrading #Spot #Futures #Portfolio #USDC #Altcoins`],
+    ["p22", `most coins die in a day. some go 100x in a week\n\nthe difference is usually who bought EARLY. watch them live 🐋\n\n👉 ${LINK}\n\n#EarlyBird #Memecoins #Whales #CryptoGems #100x #OnChain`],
+    ["p23", `ok but imagine your coin trending while you're at work 👀\n\nlaunch it now, share the link, let it run\n\n👉 ${LINK}\n\n#Trending #Memecoin #Crypto #Pump #Viral #Web3`],
+    ["p24", `you don't need to hold SOL, ETH and BNB to trade on all of them\n\njust dollars. sasa handles the rest behind the scenes\n\n👉 ${LINK}\n\n#MultiChain #Solana #Ethereum #BNB #CryptoTrading #USDC`],
+    ["p25", `which chain wins the next race: Base, BNB, Robinhood or Arc? 🏁\n\nreply with your pick. then go watch one live\n\n👉 ${LINK}\n\n#Base #BNBChain #RobinhoodChain #Arc #CryptoPoll #Memecoins`],
+    ["p26", `bought the top again? same 😅\n\nnext time check what the smart wallets are doing first. it's free on sasa\n\n👉 ${LINK}\n\n#CryptoMemes #SmartMoney #Altcoins #CryptoTrading #Whales #Degens`],
+    ["p27", `SOL is moving and you're on the sidelines?\n\nlong it, short it, or buy the memes riding it. all from one app\n\n👉 ${LINK}\n\n#Solana #SOL #Futures #Memecoins #CryptoTrading #Altseason`],
+    ["p28", `free to launch. free to check. pay only when you trade\n\nthat's the whole deal on sasa 🤝\n\n👉 ${LINK}\n\n#Crypto #Memecoin #LaunchPad #DeFi #Web3 #Transparency`],
+    ["p29", `the next coin everyone talks about hasn't been launched yet\n\nwhy not yours? 🚀\n\n👉 ${LINK}\n\n#Memecoins #NextBigThing #Crypto #100x #CryptoGems #Pump`],
+    ["p30", `3am and the market's wild? sasa doesn't sleep either\n\nlive WHALE buys, live races, live charts. come see\n\n👉 ${LINK}\n\n#CryptoNeverSleeps #Whales #Altcoins #CryptoTrading #NightTrader #Crypto`],
+    ["p31", `you can launch a coin on sasa with a picture and a name\n\nor let the AI make the whole thing from one sentence 🤖\n\n👉 ${LINK}\n\n#AI #Memecoin #AIAgents #Crypto #LaunchPad #Web3`],
+    ["p32", `still trading memes on 4 different sites with 4 different wallets?\n\nthere's an easier way 👀\n\n👉 ${LINK}\n\n#CryptoTrading #DEX #Memecoins #Altcoins #Solana #Base`],
+  ];
+}
+
 export function result(r, underlying) {
   const right = Math.round((r.yesWon ? r.yes : 1 - r.yes) * 100);
   const W = r.yesWon ? "YES" : "NO";

@@ -47,6 +47,9 @@ export const ELYSIUM_TESTNET: ElysiumNet = {
   testnet: true,
 };
 
+/** sasa's Elysium mainnet doorway (functions/ely-rpc): the first node that answers properly. */
+export const ELY_PROXY = "https://sasapad.fun/ely-rpc";
+
 type Fill = { chainId: number | null; rpc: string | null; explorer: string | null; launcher: string | null; router: string | null; whype: string | null; pass: string | null; start?: number | null; smoke?: string | null };
 const fill = MAINNET_FILL as Fill;
 const isAddr = (a: string | null): a is Address => !!a && /^0x[0-9a-fA-F]{40}$/.test(a);
@@ -59,7 +62,9 @@ export const ELYSIUM_MAINNET: ElysiumNet | null =
           id: fill.chainId,
           name: "Elysium",
           nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
-          rpcUrls: { default: { http: [fill.rpc] } },
+          // sasa's own doorway first (functions/ely-rpc: falls back across nodes when the public one
+          // rate-limits), then the public node itself
+          rpcUrls: { default: { http: [ELY_PROXY, fill.rpc] } },
           ...(fill.explorer ? { blockExplorers: { default: { name: "Elysium explorer", url: fill.explorer } } } : {}),
         }),
         launcher: getAddress(fill.launcher),

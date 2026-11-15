@@ -597,29 +597,29 @@ export const ELYSIUM_SLOTS = [
   "elysium", "elysium2", "elysium3", "elysium4", "elysium5", "elysium6", "elysium7", "elysium8",
   "elysium9", "elysium10", "elysium11", "elysium12", "elysium13", "elysium14", "elysium15", "elysium16",
 ];
+// Nov 15, 2026: the timeline is no longer Elysium-only. ~16 posts a day: sasa itself (launch,
+// trade, spot, futures, whales, the trap scan, the contest; one shared pool of lines, see promo())
+// mixed with the live-data posts that pull replies (fear & greed, a poll, predictions, movers).
+export const PROMO_SLOTS = ["promo", "promo2", "promo3", "promo4", "promo5", "promo6", "promo7", "promo8"];
 export const PLAN = [
-  // morning: every 30 minutes, 05:00–11:00 (Türkiye time)
-  { kind: "elysium", at: "05:00" },
-  { kind: "elysium2", at: "05:30" },
-  { kind: "elysium3", at: "06:00" },
-  { kind: "elysium4", at: "06:30" },
-  { kind: "spot", at: "07:00" }, // classic
-  { kind: "elysium5", at: "07:30" },
-  { kind: "elysium6", at: "08:00" },
-  { kind: "elysium7", at: "08:30" },
-  { kind: "elysium8", at: "09:00" },
-  { kind: "meme", at: "09:30" }, // classic
-  { kind: "elysium9", at: "10:00" },
-  { kind: "elysium10", at: "10:30" },
-  { kind: "elysium11", at: "11:00" },
-  // evening: the rest, spread across 15:00–22:00 (Türkiye time)
-  { kind: "elysium12", at: "15:00" },
-  { kind: "stock", at: "16:10" }, // classic
-  { kind: "elysium13", at: "17:20" },
-  { kind: "elysium14", at: "18:30" },
-  { kind: "recap", at: "19:40" }, // classic
-  { kind: "elysium15", at: "20:50" },
-  { kind: "elysium16", at: "22:00" },
+  // morning (Türkiye time)
+  { kind: "promo", at: "07:00" },
+  { kind: "fear", at: "08:10" },
+  { kind: "promo2", at: "09:00" },
+  { kind: "spot", at: "10:00" },
+  { kind: "promo3", at: "11:00" },
+  { kind: "meme", at: "12:10" },
+  // afternoon and the US session
+  { kind: "promo4", at: "13:30" },
+  { kind: "poll", at: "14:40" },
+  { kind: "promo5", at: "15:40" },
+  { kind: "stock", at: "16:40" },
+  { kind: "predict", at: "17:40" },
+  { kind: "promo6", at: "18:40" },
+  { kind: "biggest", at: "19:40" },
+  { kind: "promo7", at: "20:40" },
+  { kind: "recap", at: "21:40" },
+  { kind: "promo8", at: "22:40" },
 ];
 const TR = 3 * 3600e3;
 
@@ -636,6 +636,17 @@ export function slotTime(kind, at, now = Date.now()) {
 /** One of `list` ([id, text]) not used for this kind in the last 7 days: { text, tpl }. */
 async function fresh(pool, kind, list) {
   const { rows } = await pool.query(`select meta->>'tpl' as tpl from xbot_posts where kind = $1 and posted_at > now() - interval '7 days' and meta ? 'tpl'`, [kind]).catch(() => ({ rows: [] }));
+  const used = new Set(rows.map((r) => r.tpl));
+  const left = list.filter(([id]) => !used.has(id));
+  const [tpl, text] = (left.length ? left : list)[Math.floor(Math.random() * (left.length || list.length))];
+  return { text, tpl };
+}
+
+/** Like fresh(), but dedups across every promo* slot together (one shared pool of lines, 7 days). */
+async function freshPromo(pool, list) {
+  const { rows } = await pool
+    .query(`select meta->>'tpl' as tpl from xbot_posts where kind like 'promo%' and posted_at > now() - interval '7 days' and meta ? 'tpl'`)
+    .catch(() => ({ rows: [] }));
   const used = new Set(rows.map((r) => r.tpl));
   const left = list.filter(([id]) => !used.has(id));
   const [tpl, text] = (left.length ? left : list)[Math.floor(Math.random() * (left.length || list.length))];
@@ -729,6 +740,12 @@ function makers(pool) {
       const w = await freshElysium(pool, say.elysium());
       return { ref: `el:${today}:${kind}`, text: w.text, meta: { tpl: w.tpl } };
     };
+  // sasa itself: the account's main beat now (launch, trade, spot, futures, whales, safety).
+  for (const kind of PROMO_SLOTS)
+    m[kind] = async () => {
+      const w = await freshPromo(pool, say.promo());
+      return { ref: `po:${today}:${kind}`, text: w.text, meta: { tpl: w.tpl } };
+    };
   return m;
 }
 
@@ -740,8 +757,8 @@ export async function xbotLoop(pool, log) {
   if (!keys.apiKey || !keys.apiSecret || !keys.accessToken || !keys.accessSecret) return;
   const dry = process.env.XBOT_DRY === "1";
   const minUsd = Number(process.env.XBOT_MIN_USD ?? "1000000");
-  // Default 0 so the timeline stays ~90% Elysium; raise XBOT_WHALES_PER_DAY to bring whale alerts back.
-  const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "0");
+  // Big whale moves come back (they get the most replies); XBOT_WHALES_PER_DAY overrides.
+  const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "3");
   const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "6");
   await pool.query(SQL);
   log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day + up to ${whalesPerDay} whale moves of ${money(minUsd)}+`);

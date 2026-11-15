@@ -98,7 +98,7 @@ export default function Page() {
               </Link>
             </div>
           ) : testnetClosed() ? (
-            <p className="mt-5 rounded-2xl bg-paper border border-line px-4 py-3 text-[0.875rem]">The testnet pass is closed. The mainnet Day-1 Pass opens on November 9.</p>
+            <p className="mt-5 rounded-2xl bg-paper border border-line px-4 py-3 text-[0.875rem]">The testnet pass is closed. The mainnet Day-1 Pass opens with Elysium mainnet on sasa.</p>
           ) : !open ? (
             <p className="mt-5 rounded-2xl bg-paper border border-line px-4 py-3 text-[0.875rem]">Minting has ended.</p>
           ) : (
@@ -112,7 +112,7 @@ export default function Page() {
                   <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="text-emerald font-semibold">
                     Faucet →
                   </a>{" "}
-                  No HYPE? The mainnet pass opens Nov 9.
+                  No HYPE? The mainnet pass opens with Elysium mainnet on sasa.
                 </p>
               )}
             </div>

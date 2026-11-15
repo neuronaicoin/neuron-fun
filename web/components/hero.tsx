@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * The first screen of sasapad.fun: what sasa is in one line, two big ways in (launch a coin, see
- * what the WHALES buy) and a live box from sasa Bot (/api/bot/live) so the page is never still.
- * The contest, Elysium and sasa Bot bands sit under it as one slim row.
+ * The first screen of sasapad.fun: what sasa is in one line, the four things you can do (launch,
+ * trade, spot, futures), two big ways in and a live box from sasa Bot (/api/bot/live) so the page
+ * is never still. The contest, futures and safety-check bands sit under it as one slim row.
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -19,6 +19,13 @@ type Buy = { id: number; at: string; wallet: string; mint: string; symbol: strin
 type Scan = { mint: string; symbol: string | null; at: string; score: number | null; passed: boolean; why: string | null };
 type Theme = { theme: string; n1: number; prev: number };
 type Live = { scanned: number; smart: number; buys: Buy[]; scans: Scan[]; trends: Theme[]; at: string };
+
+const FEATURES = [
+  { href: V6 ? "/create/" : "/race/launch/", icon: "🚀", title: "Launch", sub: "Free, one tap" },
+  { href: "/explore/", icon: "🔥", title: "Trade", sub: "Meme coins" },
+  { href: "/spot/", icon: "💎", title: "Spot", sub: "Top coins" },
+  { href: "/futures/", icon: "⚡", title: "Futures", sub: "Long or short" },
+];
 
 type Row = { key: string; badge: string; text: string; sub: string; right: string; tone: "up" | "dn" | "hot" };
 
@@ -107,7 +114,7 @@ export function Hero() {
   const chains = [
     ...(solanaFor(address) ? ["Solana"] : []),
     ...RACE_CHAINS.map((c) => c.short),
-    ...(ELYSIUM_LISTED ? [ELYSIUM.testnet ? "Elysium · Nov 9" : "Elysium"] : []),
+    ...(ELYSIUM_LISTED && !ELYSIUM.testnet ? ["Elysium"] : []),
   ].filter((c, i, a) => a.indexOf(c) === i);
   return (
     <div className="px-4 sm:px-6 pt-3 sm:pt-5">
@@ -116,13 +123,23 @@ export function Hero() {
         style={{ background: "radial-gradient(120% 140% at 100% 0%, rgba(255,107,26,.22) 0%, rgba(255,107,26,.06) 45%, transparent 100%)" }}
       >
         <div>
-          <h1 className="font-display font-black text-[2.125rem] sm:text-[3.25rem] leading-[1.05] tracking-tight">
-            Launch a coin on <span className="text-[#FF6B1A]">Elysium</span> in one tap.<br />
-            Trade what the <span className="text-[#FF6B1A]">WHALES</span> buy.
+          <h1 className="font-display font-black text-[2.125rem] sm:text-[2.75rem] xl:text-[3.25rem] leading-[1.05] tracking-tight">
+            Launch your coin in <span className="text-[#FF6B1A] whitespace-nowrap">30 seconds</span>.<br />
+            Trade it like the <span className="text-[#FF6B1A]">WHALES</span>.
           </h1>
           <p className="mt-3 text-ink-2 text-[1rem] sm:text-[1.0625rem] leading-relaxed max-w-xl">
-            No wallet needed: log in with email, pay with dollars. Check any coin for traps before you buy.
+            Launch a coin on several chains at once, trade thousands of meme coins, buy spot or go long and short with futures. Email login, one dollar balance, no wallet setup.
           </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 max-w-xl">
+            {FEATURES.map((f) => (
+              <Link key={f.href} href={f.href} className="rounded-2xl bg-surface border border-line px-3 py-2.5 hover:border-[#FF6B1A] transition-colors min-w-0">
+                <span className="block text-[0.9375rem] font-extrabold truncate">
+                  {f.icon} {f.title}
+                </span>
+                <span className="block text-[0.75rem] text-ink-2 truncate">{f.sub}</span>
+              </Link>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-1.5 mt-3.5">
             {chains.map((c) => (
               <span key={c} className="text-[0.75rem] font-bold px-2.5 py-1 rounded-full bg-surface border border-line">
@@ -137,8 +154,8 @@ export function Hero() {
             >
               🚀 Launch a coin
             </Link>
-            <Link href="/bot/" className="h-14 px-7 rounded-2xl bg-ink text-mist font-display font-extrabold text-[1.0625rem] grid place-items-center hover:opacity-90">
-              🐋 See what WHALES buy
+            <Link href="/spot/" className="h-14 px-7 rounded-2xl bg-ink text-mist font-display font-extrabold text-[1.0625rem] grid place-items-center hover:opacity-90">
+              📈 Start trading
             </Link>
           </div>
         </div>
@@ -148,7 +165,7 @@ export function Hero() {
   );
 }
 
-/** The contest, Elysium and sasa Bot as one slim row under the hero. */
+/** The contest, futures and the safety check as one slim row under the hero. */
 export function HeroStrip() {
   const pill = "min-w-0 flex-1 rounded-2xl px-3.5 py-3 text-[0.8125rem] font-bold truncate hover:brightness-105";
   return (
@@ -156,11 +173,9 @@ export function HeroStrip() {
       <Link href="/compete/" className={pill + " text-[#1A130D]"} style={{ background: "linear-gradient(90deg,#FF6B1A,#FFB020)" }}>
         🏆 Win up to $100,000 · launch a coin
       </Link>
-      {ELYSIUM_LISTED && (
-        <Link href="/elysium/" className={pill} style={{ background: "#0f3b3a", color: "#e8f6fa" }}>
-          {ELYSIUM.testnet ? "🧪 Elysium testnet: free airdrop points" : "🔥 Elysium is live: 3x points this week"}
-        </Link>
-      )}
+      <Link href="/futures/" className={pill} style={{ background: "#0f0b08", color: "#fff4ec" }}>
+        ⚡ Long or short BTC, ETH, SOL · futures
+      </Link>
       <Link href="/scan/" className={pill + " bg-surface border border-line"}>
         🛡️ Is it safe? Check any coin
       </Link>

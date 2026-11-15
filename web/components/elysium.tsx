@@ -52,7 +52,7 @@ function Gate({ children }: { children: React.ReactNode }) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.5rem]">The testnet is closed</h1>
-        <p className="text-ink-2 mt-2">Thanks for testing. Your points are saved. Elysium mainnet opens on sasa on November 9: real coins, 3x points the first week.</p>
+        <p className="text-ink-2 mt-2">Thanks for testing. Your points are saved. Elysium mainnet is opening on sasa: real coins, launched the same way.</p>
         <Link href="/points/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">
           See your points
         </Link>
@@ -62,7 +62,7 @@ function Gate({ children }: { children: React.ReactNode }) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.5rem]">Elysium is coming</h1>
-        <p className="text-ink-2 mt-2">Launch and trade Elysium coins straight from your USDC balance, from November 9.</p>
+        <p className="text-ink-2 mt-2">Launch and trade Elysium coins straight from your USDC balance.</p>
         <Link href="/learn/what-is-elysium/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">
           What is Elysium?
         </Link>
@@ -82,7 +82,7 @@ function TestnetBand() {
     >
       <span className="shrink-0 text-[0.625rem] font-black tracking-[0.12em] px-2 py-1 rounded-md bg-[#ffc23d] text-[#1a1410]">TESTNET</span>
       <span>
-        Free test HYPE only. Nothing here has real value. Mainnet opens <b>Nov 9</b>.{" "}
+        Free test HYPE only. Nothing here has real value.{" "}
         <Link href="/learn/what-is-elysium/" className="text-[#ffb27a] font-semibold whitespace-nowrap">
           What is Elysium? →
         </Link>
@@ -163,7 +163,7 @@ function LaunchWeek({ day1 }: { day1: { count: number } | null }) {
   if (ELYSIUM.testnet)
     return (
       <div className="rounded-2xl border border-[#ffc23d]/50 bg-[#ffc23d]/10 px-4 py-3 text-[0.8125rem] sm:text-[0.875rem] text-ink-2 leading-snug">
-        <b className="text-ink">Mainnet week one (from Nov 9):</b> every launch and trade earns <b className="text-ink">{BOOST_X}x points</b> for {BOOST_DAYS} days ({BOOST_X * 2}x with a Day-1 Pass), and the first {DAY1_COINS} coins get a permanent <Day1Badge />
+        <b className="text-ink">Mainnet week one:</b> every launch and trade earns <b className="text-ink">{BOOST_X}x points</b> for {BOOST_DAYS} days ({BOOST_X * 2}x with a Day-1 Pass), and the first {DAY1_COINS} coins get a permanent <Day1Badge />
       </div>
     );
   const live = boostLive();
@@ -382,7 +382,7 @@ function ElysiumHomeInner() {
             n={2}
             done={hype !== null && hype > 0n}
             title="Get test HYPE"
-            text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : `${FAUCET_RULE} No HYPE? Wait for mainnet on Nov 9: you'll start with your USDC.`}
+            text={hype !== null && hype > 0n ? `You have ${fmtHype(hype)} test HYPE` : `${FAUCET_RULE} No HYPE? On mainnet you start with your USDC.`}
           >
             <span className="shrink-0 flex flex-col sm:flex-row gap-1.5">
               {w.address && !(hype !== null && hype > 0n) && <CopyAddress address={w.address} />}
@@ -693,7 +693,7 @@ function ElysiumCoinInner({ address }: { address: string }) {
             <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="text-emerald font-semibold">
               Faucet ↗
             </a>{" "}
-            No HYPE? Mainnet opens Nov 9, with your USDC.
+            No HYPE? On mainnet you start with your USDC.
           </p>
         )}
       </div>

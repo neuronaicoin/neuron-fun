@@ -373,7 +373,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           <div className="mx-4 sm:mx-6 mt-5 text-center py-12 border border-dashed border-line rounded-xl">
             <p className="text-ink-2">
               {chain === "elysium"
-                ? "Elysium coins will be listed here soon."
+                ? "Elysium coins launched on sasa are on the Elysium page."
                 : filtered
                 ? "No coins match these filters."
                 : search
@@ -399,6 +399,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
               >
                 Clear filters
               </button>
+            ) : chain === "elysium" ? (
+              <div className="flex flex-wrap justify-center gap-2 mt-4">
+                <Link href="/elysium/" className="inline-flex h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">See Elysium coins</Link>
+                <Link href="/race/launch/" className="inline-flex h-11 px-6 rounded-xl border border-line font-semibold items-center">Create a coin</Link>
+              </div>
             ) : (
               <Link href="/race/launch/" className="inline-flex mt-4 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Create a coin</Link>
             )}

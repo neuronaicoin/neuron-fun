@@ -721,7 +721,7 @@ export default function RaceLaunchPage() {
                 </span>
                 <span className="text-[0.8125rem] text-ink-2 leading-snug">
                   {ELYSIUM.testnet
-                    ? "Free practice with test HYPE, nothing has real value. Opens on its own page. Real launches from Nov 9."
+                    ? "Free practice with test HYPE, nothing has real value. Opens on its own page."
                     : "The home of new coins on Elysium — fast, cheap, and tradable everywhere. Opens on its own page."}
                 </span>
               </Link>

@@ -1343,6 +1343,14 @@ export async function sniperLoop(pool, log) {
     if (conn && subAmm !== null) await within(conn.removeOnLogsListener(subAmm).catch(() => {}), 5000);
     sub = null;
     subAmm = null;
+    // web3.js retries a websocket forever (max_reconnects: Infinity): an old connection left open
+    // keeps knocking on the node next to the new one, until the node answers every knock with 429.
+    // Close it for good before opening the next one.
+    if (conn) {
+      try {
+        conn._rpcWebSocket?.close();
+      } catch {}
+    }
     conn = new web3.Connection(rpc, { commitment: "confirmed", wsEndpoint: rpc.replace(/^http/, "ws") });
     sub = conn.onLogs(
       new web3.PublicKey(PUMP),
@@ -1397,12 +1405,22 @@ export async function sniperLoop(pool, log) {
   log("bot test: watching pump.fun live");
 
   // a quiet feed for a minute means the connection dropped: open a new one
+  // Repeated quiet spells (the node refusing us) wait longer each time, up to 10 minutes,
+  // so a rate-limited node gets room to recover instead of a new socket every minute.
+  let quietRuns = 0;
+  let nextTry = 0;
   for (let n = 0; ; n++) {
     await sleep(30_000);
     if (Date.now() - lastEvent > 60_000) {
-      log("bot test: feed quiet for a minute, reconnecting");
-      await within(connect(), 20_000).catch((e) => log(`bot test: reconnect failed: ${e.message}`));
-      lastEvent = Date.now();
+      if (Date.now() >= nextTry) {
+        quietRuns++;
+        log(`bot test: feed quiet for a minute, reconnecting (try ${quietRuns})`);
+        await within(connect(), 20_000).catch((e) => log(`bot test: reconnect failed: ${e.message}`));
+        nextTry = Date.now() + Math.min(10 * 60_000, 60_000 * 2 ** Math.min(quietRuns - 1, 4));
+      }
+    } else {
+      quietRuns = 0;
+      nextTry = 0;
     }
     if (n % 20 === 0) {
       const ls = late.size();
