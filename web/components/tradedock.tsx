@@ -26,10 +26,10 @@ export function TradeDock({ symbol, render, canBuy = true }: { symbol: string; r
       <div className="h-20 lg:hidden" aria-hidden="true" />
       <div className="lg:hidden fixed inset-x-0 z-30 px-3 pb-2 pt-2 bg-mist/95 backdrop-blur border-t border-line" style={{ bottom: "calc(58px + env(safe-area-inset-bottom, 0px))" }}>
         <div className="grid grid-cols-2 gap-2 max-w-lg mx-auto">
-          <button type="button" data-haptic-strong disabled={!canBuy} onClick={() => setSide("buy")} className="h-12 rounded-2xl bg-up text-on-accent text-[1rem] font-bold disabled:opacity-40">
+          <button type="button" data-haptic-strong disabled={!canBuy} onClick={() => setSide("buy")} className="btn-buy h-12 rounded-2xl text-[1rem] font-bold disabled:opacity-40">
             Buy
           </button>
-          <button type="button" data-haptic-strong onClick={() => setSide("sell")} className="h-12 rounded-2xl bg-danger text-white text-[1rem] font-bold">
+          <button type="button" data-haptic-strong onClick={() => setSide("sell")} className="btn-sell h-12 rounded-2xl text-[1rem] font-bold">
             Sell
           </button>
         </div>

@@ -591,7 +591,7 @@ export function RaceTradeBox({
               onClick={viaBase ? submitViaBase : submit}
               disabled={busy || !valid}
               className={
-                "h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold text-white disabled:opacity-50 " + (side === "buy" ? "bg-up" : "bg-danger")
+                "h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold text-white disabled:opacity-50 " + (side === "buy" ? "btn-buy" : "btn-sell")
               }
             >
               {busy ? (step ?? "Working…") : side === "buy" ? `Buy ${coin.symbol}` : `Sell ${coin.symbol}`}
@@ -729,7 +729,7 @@ function SellPanel(p: {
           type="button"
           onClick={p.onSell}
           disabled={p.selling || legs === null || (!sellable.some((l) => share(l.coins, bps) > 0n) && !(moving.length > 0 && pct === 100))}
-          className="h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold text-white bg-danger disabled:opacity-50"
+          className="h-13 min-h-[3.25rem] rounded-full text-[1.0625rem] font-bold btn-sell disabled:opacity-50"
         >
           {p.selling ? "Selling…" : legs !== null && !sellable.length ? (moving.length ? (pct === 100 ? "Sell all when they arrive" : "On the way to the winner") : `No ${coin.symbol} to sell`) : `Sell ${pct === 100 ? "all" : `${pct}%`}`}
         </button>

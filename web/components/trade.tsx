@@ -710,7 +710,7 @@ export function QuickTrade({
             type="button"
             onClick={submit}
             disabled={!!busy || amount === 0n || notEnough || !!lock || (!ethUsd && side === "buy")}
-            className={"w-full h-14 rounded-2xl text-[1rem] font-bold disabled:opacity-40 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+            className={"w-full h-14 rounded-2xl text-[1rem] font-bold disabled:opacity-40 " + (side === "buy" ? "btn-buy" : "btn-sell")}
           >
             {busy ||
               (lock === "paused"

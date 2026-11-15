@@ -399,7 +399,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
           type="button"
           disabled={!w.address || !!busy || raw <= 0n || (side === "sell" && (held ?? 0n) === 0n)}
           onClick={() => void go()}
-          className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "bg-up text-on-accent" : "bg-danger text-white")}
+          className={"mt-3 w-full h-13 rounded-2xl font-bold text-[1rem] disabled:opacity-50 " + (side === "buy" ? "btn-buy" : "btn-sell")}
         >
           {busy || (side === "buy" ? `Buy $${coin.symbol}` : `Sell $${coin.symbol}`)}
         </button>
