@@ -270,6 +270,18 @@ function ElysiumHomeInner() {
   const [hype, setHype] = useState<bigint | null>(null);
   const test = ELYSIUM.testnet;
   const unit = test ? "test HYPE" : "HYPE";
+  // picked "Elysium" on Create a coin: bring the name, ticker and story over
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const n = q.get("name");
+      const t = q.get("symbol");
+      const d = q.get("desc");
+      if (n) setName(n.slice(0, 32));
+      if (t) setSymbol(t.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10));
+      if (d) setDescription(d.slice(0, 280));
+    } catch {}
+  }, []);
 
   const load = useCallback(() => {
     fetchElysiumCoins()
@@ -410,16 +422,6 @@ function ElysiumHomeInner() {
           <span className="text-[1.25rem]" aria-hidden="true">🪂</span>
           <span className="min-w-0 flex-1 text-ink-2">
             <b className="text-ink">Earn sasa airdrop points on testnet:</b> 100 for your first launch, 50 a launch (3 a day), 10 a trade (10 a day).
-          </span>
-          <span className="text-emerald font-bold shrink-0">→</span>
-        </Link>
-      )}
-
-      {ELYSIUM_PASS && (
-        <Link href="/pass/" className="rounded-2xl border border-mint/40 bg-warn-bg/50 px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
-          <span className="text-[1.25rem]" aria-hidden="true">🎟️</span>
-          <span className="min-w-0 flex-1 text-ink-2">
-            <b className="text-ink">Mint your free Day-1 Pass</b> and earn 2x points on every launch and trade here.
           </span>
           <span className="text-emerald font-bold shrink-0">→</span>
         </Link>

@@ -704,29 +704,7 @@ export default function RaceLaunchPage() {
           )}
 
           <div className="flex flex-col gap-2">
-            {ELYSIUM_LISTED && !onSolana && (
-              <Link
-                href="/elysium/"
-                className="rounded-2xl border-2 border-mint bg-emerald-soft px-4 py-3.5 flex flex-col gap-1.5 min-w-0"
-              >
-                <span className="flex items-center gap-2 text-[1rem] font-bold text-ink">
-                  <span className="w-3 h-3 rounded-full shrink-0 bg-[#2e8b7a]" />
-                  Launch on Elysium
-                  {ELYSIUM.testnet ? (
-                    <span className="text-[0.625rem] font-black tracking-[0.1em] px-1.5 py-0.5 rounded bg-[#ffc23d] text-[#1a1410]">TESTNET</span>
-                  ) : (
-                    <span className="text-[0.625rem] font-black tracking-[0.1em] px-1.5 py-0.5 rounded bg-emerald text-on-accent">LIVE</span>
-                  )}
-                  <span className="ml-auto text-emerald" aria-hidden="true">→</span>
-                </span>
-                <span className="text-[0.8125rem] text-ink-2 leading-snug">
-                  {ELYSIUM.testnet
-                    ? "Free practice with test HYPE, nothing has real value. Opens on its own page."
-                    : "The home of new coins on Elysium — fast, cheap, and tradable everywhere. Opens on its own page."}
-                </span>
-              </Link>
-            )}
-            <span className="text-[0.8125rem] text-ink-3">{ELYSIUM_LISTED ? "Or pick a race chain" : "Your chain"}</span>
+            <span className="text-[0.8125rem] text-ink-3">Your chain</span>
             <div className="grid grid-cols-2 gap-2">
               {CHAIN_ORDER.flatMap((c) => {
                 const on = !onSolana && chains.includes(c.chainId);
@@ -749,6 +727,29 @@ export default function RaceLaunchPage() {
                     {on && <span className="ml-auto text-[0.8125rem]" aria-hidden="true">✓</span>}
                   </button>
                 );
+                // Elysium sits after the last race chain (Arc): its launches run on their own page,
+                // so the tile carries the name, ticker and story over there
+                if (c === CHAIN_ORDER[CHAIN_ORDER.length - 1] && ELYSIUM_LISTED && !ELYSIUM.testnet)
+                  return [
+                    tile,
+                    <button
+                      key="elysium"
+                      type="button"
+                      onClick={() => {
+                        const q = new URLSearchParams();
+                        if (name.trim()) q.set("name", name.trim());
+                        if (symbol.trim()) q.set("symbol", symbol.trim());
+                        if (description.trim()) q.set("desc", description.trim());
+                        const qs = q.toString();
+                        window.location.href = `/elysium/${qs ? `?${qs}` : ""}`;
+                      }}
+                      className="h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 border border-line"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#2e8b7a" }} />
+                      <span className="truncate">Elysium</span>
+                      <span className="ml-auto text-[0.625rem] font-black tracking-[0.08em] px-1.5 py-0.5 rounded bg-emerald text-on-accent">NEW</span>
+                    </button>,
+                  ];
                 // Solana sits right after Robinhood (for people who see it yet)
                 if (c.short !== "Robinhood" || !solOk) return [tile];
                 return [
