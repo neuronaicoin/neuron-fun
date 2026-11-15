@@ -44,12 +44,21 @@ async function count(node, mint) {
         jsonrpc: "2.0",
         id: 1,
         method: "getProgramAccounts",
-        params: [program, { encoding: "base64", dataSlice: { offset: 32, length: 40 }, filters: [{ memcmp: { offset: 0, bytes: mint } }] }],
+        params: [
+          program,
+          {
+            encoding: "base64",
+            dataSlice: { offset: 32, length: 40 },
+            filters: program === PROGRAMS[0] ? [{ dataSize: 165 }, { memcmp: { offset: 0, bytes: mint } }] : [{ memcmp: { offset: 0, bytes: mint } }],
+          },
+        ],
       }),
     });
-    if (!r.ok) return null;
     const j = await r.json().catch(() => null);
-    if (!j || j.error || !Array.isArray(j.result)) return null;
+    if (!r.ok || !j || j.error || !Array.isArray(j.result)) {
+      count.why = `${r.status} ${String(j?.error?.message ?? "").slice(0, 120)}`;
+      return null;
+    }
     for (const a of j.result) {
       const b = b64(a?.account?.data?.[0] ?? "");
       if (b.length < 40) continue;
@@ -79,5 +88,5 @@ export async function onRequestGet({ request, params, env, waitUntil }) {
       return res;
     }
   }
-  return json({ error: "node busy" }, 502);
+  return json({ error: "node busy", why: count.why ?? "" }, 503);
 }
