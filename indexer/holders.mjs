@@ -4,8 +4,6 @@
 //
 //   sasa race coins   every minute, exact: wallets with a balance (balances, kept by race.mjs),
 //                     minus pools, vaults and sasa's own contracts.
-//   sasa Solana coins every 2 minutes, exact: token accounts of the mint with a balance, counted
-//                     by owner, through the site's /sol-holders (sasa's own Solana node).
 //   other coins       the busiest coins from other DEXs, in turn, from GeckoTerminal's token info
 //                     (holders.count; GeckoTerminal itself refreshes it about once a day, so these
 //                     rarely show a 15-minute change). One call every HOLDERS_GAP_MS (20 s).
@@ -101,7 +99,11 @@ async function extList(pool) {
      ) x where coalesce(v, 0) >= 20000 order by v desc nulls last limit $1`,
     [EXT_COINS]
   );
-  return rows;
+  // Solana coins launched on sasa too, first (sasa's node refuses to count token accounts, so
+  // these come from GeckoTerminal like the rest)
+  const sasa = await sasaSolMints(pool).catch(() => []);
+  const seen = new Set(sasa);
+  return [...sasa.map((m) => ({ network: "solana", address: m })), ...rows.filter((r) => !seen.has(r.address))];
 }
 
 async function sasaSolMints(pool) {
@@ -163,7 +165,6 @@ export async function holdersLoop(pool, log) {
   let list = [];
   let i = 0;
   let lastRace = 0;
-  let lastSol = 0;
   let lastList = 0;
   let lastPrune = 0;
   let saved = 0;
@@ -172,11 +173,6 @@ export async function holdersLoop(pool, log) {
     if (now - lastRace >= 60_000) {
       lastRace = now;
       await raceLap(pool, skip).catch((e) => log(`holders: race coins: ${e.message}`));
-    }
-    if (now - lastSol >= 120_000) {
-      lastSol = now;
-      const n = await solLap(pool).catch((e) => (log(`holders: sasa Solana coins: ${e.message}`), 0));
-      if (!n && !lastPrune) log("holders: no holder counts for sasa Solana coins yet (/sol-holders)");
     }
     if (now - lastPrune >= 3600_000) {
       lastPrune = now;
