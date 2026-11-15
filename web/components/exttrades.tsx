@@ -105,6 +105,8 @@ const usd = (v: number) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : v >= 1 ? 
 /** The list under the chart: buy / sell, dollars, who, when (each opens on the explorer). */
 export function ExtTradesList({ coin, rows }: { coin: ExtCoin; rows: ExtTrade[] | null }) {
   const mine = useMine(coin);
+  // the latest 5 trades first; "Load more" shows more
+  const [shown, setShown] = useState(5);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 15_000);
@@ -123,8 +125,9 @@ export function ExtTradesList({ coin, rows }: { coin: ExtCoin; rows: ExtTrade[] 
       ) : rows.length === 0 ? (
         <p className="mt-3 text-[0.875rem] text-ink-3">No trades in the last 24 hours.</p>
       ) : (
+        <>
         <ul className="mt-2 divide-y divide-line">
-          {rows.slice(0, 30).map((r) => {
+          {rows.slice(0, Math.min(shown, 50)).map((r) => {
             const me = mine.has(r.trader.toLowerCase());
             const row = (
               <>
@@ -150,6 +153,12 @@ export function ExtTradesList({ coin, rows }: { coin: ExtCoin; rows: ExtTrade[] 
             );
           })}
         </ul>
+        {Math.min(rows.length, 50) > Math.min(shown, 50) && (
+            <button type="button" onClick={() => setShown((n) => n + 10)} className="mt-2 w-full h-10 rounded-xl border border-line text-[0.875rem] font-semibold text-ink hover:bg-night">
+              Load more
+            </button>
+          )}
+        </>
       )}
     </section>
   );

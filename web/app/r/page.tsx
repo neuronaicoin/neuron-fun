@@ -362,6 +362,8 @@ function LaneRow({ lane, max, coin, phase, now }: { lane: RaceLane; max: number;
 function Activity({ coin, lane, supply }: { coin: RaceCoin; lane: RaceLane | undefined; supply: number }) {
   const [tab, setTab] = useState<"pnl" | "trades" | "holders">("pnl");
   const [trades, setTrades] = useState<RaceTrade[] | null>(null);
+  // the latest 5 trades first; "Load more" shows more
+  const [shownT, setShownT] = useState(5);
   const [holders, setHolders] = useState<RaceHolder[] | null>(null);
   const holderLane = coin.winner ? coin.lanes.find((l) => l.chain.chainId === coin.winner!.chainId) : lane;
   // the page refreshes the coin every few seconds: key the holders on the chain, not the object
@@ -422,8 +424,9 @@ function Activity({ coin, lane, supply }: { coin: RaceCoin; lane: RaceLane | und
         ) : trades.length === 0 ? (
           <p className="py-6 text-ink-3 text-[0.875rem]">No trades yet.</p>
         ) : (
+          <>
           <ul className="divide-y divide-line">
-            {trades.map((t) => (
+            {trades.slice(0, shownT).map((t) => (
               <li key={`${t.chain.chainId}:${t.txHash}:${t.logIndex}`}>
                 <a
                   href={raceExplorerTx(t.chain, t.txHash)}
@@ -443,6 +446,12 @@ function Activity({ coin, lane, supply }: { coin: RaceCoin; lane: RaceLane | und
               </li>
             ))}
           </ul>
+          {trades.length > shownT && (
+            <button type="button" onClick={() => setShownT((n) => n + 20)} className="mt-2 w-full h-10 rounded-xl border border-line text-[0.875rem] font-semibold text-ink hover:bg-night">
+              Load more
+            </button>
+          )}
+          </>
         )
       ) : holders === null ? (
         <Skeleton className="h-40 mt-3" />
