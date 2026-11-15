@@ -164,12 +164,15 @@ export function RaceActivity({ coinId, chainId }: { coinId: string; chainId: num
 /** DexScreener's chain names for the networks sasa lists. */
 const DS_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana", robinhood: "robinhood", arc: "arc" };
 
+type DsKey = "m5" | "h1" | "h6" | "h24";
+/** DexScreener names its windows m5 / h1 / h6 / h24. */
+const DS_KEY: Record<Win, DsKey> = { "5m": "m5", "1h": "h1", "6h": "h6", "24h": "h24" };
 type DsPair = {
   pairAddress?: string;
   liquidity?: { usd?: number };
-  priceChange?: Partial<Record<Win, number>>;
-  txns?: Partial<Record<Win, { buys?: number; sells?: number }>>;
-  volume?: Partial<Record<Win, number>>;
+  priceChange?: Partial<Record<DsKey, number>>;
+  txns?: Partial<Record<DsKey, { buys?: number; sells?: number }>>;
+  volume?: Partial<Record<DsKey, number>>;
 };
 
 /** A coin from another DEX: DexScreener's numbers for its pool (or its biggest pool). */
@@ -200,15 +203,16 @@ export function ExtActivity({ network, address, pool }: { network: string; addre
     if (!pair) return null;
     const out = {} as All;
     for (const w of WINS) {
-      const tx = pair.txns?.[w.k];
-      const c = pair.priceChange?.[w.k];
+      const key = DS_KEY[w.k];
+      const tx = pair.txns?.[key];
+      const c = pair.priceChange?.[key];
       out[w.k] = {
         change: typeof c === "number" ? c : null,
         buys: tx?.buys ?? 0,
         sells: tx?.sells ?? 0,
         buyVol: null,
         sellVol: null,
-        vol: typeof pair.volume?.[w.k] === "number" ? (pair.volume![w.k] as number) : null,
+        vol: typeof pair.volume?.[key] === "number" ? (pair.volume![key] as number) : null,
         buyers: null,
         sellers: null,
       };

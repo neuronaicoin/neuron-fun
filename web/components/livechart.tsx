@@ -698,3 +698,35 @@ function fullTime(t: number): string {
   const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   return today ? time : `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${time}`;
 }
+
+/**
+ * The latest buys and sells as a see-through feed over the chart's left side: newest on top
+ * and strongest, older ones fading. Only BUY / SELL and the amount (no wallets). It never
+ * takes taps, so the chart under it works as usual.
+ */
+export function TradeTape({ trades, max = 5 }: { trades?: LiveTrade[]; max?: number }) {
+  const rows = (trades ?? [])
+    .filter((t) => t.usd > 0)
+    .sort((a, b) => b.t - a.t)
+    .slice(0, max);
+  if (!rows.length) return null;
+  const amt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${v >= 100 ? Math.round(v) : v.toFixed(2)}`);
+  return (
+    <div className="pointer-events-none absolute left-3 sm:left-4 top-[34%] z-[5] flex flex-col gap-1" aria-hidden="true">
+      {rows.map((t, i) => (
+        <div
+          key={t.id}
+          className={
+            "tape-in flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[0.6875rem] sm:text-[0.75rem] font-mono font-bold backdrop-blur-[2px] " +
+            (t.buy ? "bg-up/15 text-up" : "bg-danger/15 text-danger")
+          }
+          style={{ opacity: Math.max(0.18, 1 - i * 0.2) }}
+        >
+          <span>{t.buy ? "BUY" : "SELL"}</span>
+          <span className="text-ink">{amt(t.usd)}</span>
+          {t.who === "dev" && <span className="text-[0.625rem] px-1 rounded bg-ink text-paper">DEV</span>}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ProChart } from "./perpschart";
-import { LiveChart, type LiveRange, type LiveTrade } from "./livechart";
+import { LiveChart, TradeTape, type LiveRange, type LiveTrade } from "./livechart";
 import { fetchRaceCandles, fetchRaceTrades, fmtPrice, type RaceCandle } from "@/lib/race";
 import { useWallet } from "./wallet";
 import { useFollowing, useProfiles } from "@/lib/social";
@@ -214,6 +214,7 @@ export function PriceChart({
           { label: "1W", frame: 14400, span: 604800 },
         ];
     return (
+      <div className="relative min-w-0">
       <LiveChart
         key={k === 1 ? "price" : "mc"}
         cacheKey={`${cacheKey}:${k === 1 ? "price" : `mc${Number(k.toPrecision(3))}`}`}
@@ -231,6 +232,8 @@ export function PriceChart({
         toolbarStart={valueToggle}
         toolbarEnd={viewButton(true)}
       />
+      <TradeTape trades={trades} />
+      </div>
     );
   }
   return (

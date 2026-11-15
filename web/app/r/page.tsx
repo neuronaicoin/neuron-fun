@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { RaceActivity } from "@/components/activity24";
+import { SellCheck } from "@/components/sellcheck";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
@@ -213,6 +214,8 @@ function RacePage() {
           </div>
 
           <RaceActivity coinId={coin.id} chainId={chartChain} />
+
+          <SellCheck poolUsd={lane ? lane.poolUsd : null} mcap={mcap} />
 
           {coin.feeMode === 1 && (coin.winner || solo) && <RaceBuyback chain={coin.winner ?? coin.lanes[0].chain} coin={coin.coin} />}
 

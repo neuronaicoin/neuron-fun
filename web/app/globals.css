@@ -428,3 +428,8 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .guest-show { display: none !important; }
 html.is-guest .guest-show { display: inline-flex !important; }
 html.is-guest .guest-hide { display: none !important; }
+
+/* chart trade feed (components/livechart.tsx TradeTape): each new row slides in from the left */
+@keyframes tape-in { from { transform: translateX(-10px); opacity: 0; } }
+.tape-in { animation: tape-in .35s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tape-in { animation: none; } }
