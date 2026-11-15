@@ -271,7 +271,7 @@ export function promo() {
     ["p3", `long BTC. short ETH. buy the meme. launch your own coin\n\nsame app, same balance, logged in with just an email\n\n👉 ${LINK}\n\n#Bitcoin #Futures #CryptoTrading #Ethereum #Memecoins #DeFi`],
     ["p4", `stop aping into coins you haven't checked\n\npaste any contract on sasa, see if it's a TRAP before you buy. free\n\n👉 ${LINK}\n\n#CryptoSafety #Rugpull #DYOR #Memecoin #Solana #Crypto`],
     ["p5", `honest question: why are you still launching on ONE chain?\n\none launch on sasa = your coin on Base, BNB, Robinhood and Arc together 🚀\n\n👉 ${LINK}\n\n#Base #BNBChain #RobinhoodChain #Arc #Memecoins #LaunchPad`],
-    ["p6", `$100,000. one creator. coins launched on sasa\n\nthe contest is still open and most people haven't even tried 👀\n\n👉 ${LINK}\n\n#CryptoContest #Memecoin #Airdrop #Web3 #Altseason #sasa`],
+    ["p6", `$100,000. one creator. coins launched on sasa\n\nthe contest is still open and most people haven't even tried 👀\n\n👉 ${LINK}\n\n#CryptoContest #Memecoin #Web3 #Altseason #sasa #Creators`],
     ["p7", `no seed phrase. no bridge. no "add network" popup\n\nlog in with email, pay in dollars, trade. that's it\n\n👉 ${LINK}\n\n#CryptoTrading #Web3 #DeFi #Onboarding #Altcoins #USDC`],
     ["p8", `your coin makes money while you sleep 😴\n\ncreators on sasa get a cut of every trade on their coin. FOREVER\n\n👉 ${LINK}\n\n#PassiveIncome #Memecoin #CryptoGems #Creators #Web3 #Pump`],
     ["p9", `everyone has a meme coin idea in their notes app\n\nyou're one tap away from it being real. do it tonight 👀\n\n👉 ${LINK}\n\n#Memecoins #Crypto #100x #LaunchPad #GEM #Degens`],
@@ -298,6 +298,17 @@ export function promo() {
     ["p30", `3am and the market's wild? sasa doesn't sleep either\n\nlive WHALE buys, live races, live charts. come see\n\n👉 ${LINK}\n\n#CryptoNeverSleeps #Whales #Altcoins #CryptoTrading #NightTrader #Crypto`],
     ["p31", `you can launch a coin on sasa with a picture and a name\n\nor let the AI make the whole thing from one sentence 🤖\n\n👉 ${LINK}\n\n#AI #Memecoin #AIAgents #Crypto #LaunchPad #Web3`],
     ["p32", `still trading memes on 4 different sites with 4 different wallets?\n\nthere's an easier way 👀\n\n👉 ${LINK}\n\n#CryptoTrading #DEX #Memecoins #Altcoins #Solana #Base`],
+    // the 60% creator program (rewards/creator.mjs): half of all promo posts come from these
+    ["c1", `launch a coin. get it past $10K. keep it there 1 hour\n\nfrom then on 60% of the fees on EVERY trade are yours. paid daily in USDC 💸\n\n👉 ${LINK}\n\n#Memecoin #Solana #Creators #PassiveIncome #Base #CryptoTrading`],
+    ["c2", `most coins pay their dev once: when he sells\n\non sasa your coin pays you every day it trades. 60% of the fees once it holds $10K for an hour\n\n👉 ${LINK}\n\n#Memecoins #Solana #DevLife #CryptoGems #Web3 #BNB`],
+    ["c3", `$10K market cap is the line\n\nhold it 1 hour → 60% of every buy and sell's fee goes to the creator. drops below? normal split until it holds again\n\n👉 ${LINK}\n\n#Memecoin #MarketCap #Creators #Base #RobinhoodChain #Arc`],
+    ["c4", `quick math 🧮\n\nyour coin does $100K volume a day on sasa. you get 60% of the trading fees on all of it. every single day\n\nnow go launch one 👀\n\n👉 ${LINK}\n\n#Memecoins #Solana #PassiveIncome #CryptoTrading #Degens #100x`],
+    ["c5", `stop rugging. start earning\n\nkeep your coin alive above $10K and you take 60% of its fees, paid in USDC every day. the longer it lives, the more you make\n\n👉 ${LINK}\n\n#Memecoin #NoRug #Creators #Solana #Base #Web3`],
+    ["c6", `creators: what % of your coin's fees do you actually see? 🤔\n\non sasa: 60%. on EVERY trade. once your coin holds $10K for an hour\n\n👉 ${LINK}\n\n#Memecoins #Creators #Solana #BNBChain #CryptoTrading #LaunchPad`],
+    ["c7", `you don't need a team. you don't need a VC\n\nyou need a coin people trade. hold $10K for an hour on sasa and 60% of every trade's fee is yours\n\n👉 ${LINK}\n\n#Memecoin #Builders #Solana #Base #Web3 #CryptoGems`],
+    ["c8", `email login. pay in USDC. coin live in 30 seconds\n\npass $10K, hold it an hour, earn 60% of EVERY trade's fee. Solana, Base, BNB, Robinhood, Arc\n\n👉 ${LINK}\n\n#Memecoins #Solana #Base #BNB #RobinhoodChain #USDC`],
+    ["c9", `your community trades your coin all day\n\nshouldn't you get paid for it? on sasa you do. 60% of the fees once it's above $10K for an hour 💸\n\n👉 ${LINK}\n\n#Memecoin #Community #Creators #Solana #CryptoTrading #Web3`],
+    ["c10", `the bigger your coin gets, the bigger your daily payout\n\n60% of every trade's fee to the creator, from $10K market cap held 1 hour. only on sasa\n\n👉 ${LINK}\n\n#Memecoins #Solana #Base #PassiveIncome #Creators #Degens`],
   ];
 }
 

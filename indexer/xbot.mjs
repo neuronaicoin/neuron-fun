@@ -644,8 +644,12 @@ async function fresh(pool, kind, list) {
 
 /** Like fresh(), but dedups across every promo* slot together (one shared pool of lines, 7 days). */
 async function freshPromo(pool, list) {
+  // half the promo posts are about the 60% creator program (lines c1…), repeated after 2 days;
+  // the rest the general lines, each once a week
+  const c60 = Math.random() < 0.5 && list.some(([id]) => id.startsWith("c"));
+  list = list.filter(([id]) => id.startsWith("c") === c60);
   const { rows } = await pool
-    .query(`select meta->>'tpl' as tpl from xbot_posts where kind like 'promo%' and posted_at > now() - interval '7 days' and meta ? 'tpl'`)
+    .query(`select meta->>'tpl' as tpl from xbot_posts where kind like 'promo%' and posted_at > now() - interval '${c60 ? 2 : 7} days' and meta ? 'tpl'`)
     .catch(() => ({ rows: [] }));
   const used = new Set(rows.map((r) => r.tpl));
   const left = list.filter(([id]) => !used.has(id));
