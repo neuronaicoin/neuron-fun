@@ -23,6 +23,8 @@ import { CreatorBonusBanner } from "@/components/creatorbonus";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { TopWins } from "@/components/topwins";
+import { HolderCount } from "@/components/holderlive";
+import { extHolderKey, fetchHolderLive, raceHolderKey, type HolderLive } from "@/lib/holderlive";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
 // Trending is ranked by 24h volume for everyone (see lib/rank.ts).
@@ -164,7 +166,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
     void load();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 60_000);
+    }, 20_000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -218,6 +220,23 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
   const racing = coins?.filter((c) => !c.graduatedOn) ?? [];
   const rows = [...raceRows.slice(0, shown).map((r) => raceRow(r, supplies.get(r.id))), ...visible.map((r) => toRow(r, ethUsd))];
+  // live holder counts (and their 15-minute change) for the cards on screen, every 30 seconds
+  const hkeys = rows.map((r) => r.hkey ?? "").filter(Boolean).join(",");
+  const [holders, setHolders] = useState<Map<string, HolderLive>>(new Map());
+  useEffect(() => {
+    if (!hkeys) return;
+    let alive = true;
+    const load = () =>
+      fetchHolderLive(hkeys.split(","))
+        .then((m) => alive && setHolders(m))
+        .catch(() => {});
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [hkeys]);
   const loading = (!coins && !error) || (raceTab && races === null);
   const moreLoading = !!coins && (growing || (ext === null && !!extSort));
 
@@ -353,7 +372,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         {/* Every screen: a grid of coin cards (2 columns on phones, up to 5 on wide screens). */}
         <ul className="ex-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 min-[380px]:gap-3 md:gap-4 px-4 sm:px-6 pt-3.5 md:pt-4">
           {loading && Array.from({ length: 10 }, (_, i) => <CardSkeleton key={i} />)}
-          {rows.map((r) => <CoinCard key={r.key} r={r} />)}
+          {rows.map((r) => <CoinCard key={r.key} r={r} live={r.hkey ? holders.get(r.hkey) : undefined} />)}
           {moreLoading && Array.from({ length: 4 }, (_, i) => <CardSkeleton key={`m${i}`} />)}
         </ul>
 
@@ -465,6 +484,8 @@ type Row = {
   where: string | null;
   /** Race coins: "Racing" or "Won on Base". */
   badge?: string;
+  /** Key for live holder counts (lib/holderlive.ts). */
+  hkey?: string;
 };
 
 const raceVol = (r: RaceCoin) => r.lanes.reduce((s, l) => s + l.volumeUsd, 0);
@@ -478,6 +499,7 @@ function raceRow(r: RaceCoin, supply = RACE_SUPPLY): Row {
   const decided = phase === "decided";
   return {
     key: `race:${r.id}`,
+    hkey: raceHolderKey(r.id),
     href: raceHref(r.id),
     name: r.name,
     symbol: r.symbol,
@@ -523,6 +545,7 @@ function toRow(r: Ranked, ethUsd: number | null): Row {
   const c = r.coin;
   return {
     key: `${c.network}:${c.address}`,
+    hkey: extHolderKey(c.network, c.address),
     href: extHref(c),
     name: c.name,
     symbol: c.symbol,
@@ -613,8 +636,19 @@ function isNew(iso: string | null) {
   return !!iso && Date.now() - new Date(iso).getTime() < 15 * 60_000;
 }
 
-function CoinCard({ r }: { r: Row }) {
+function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
   const onCurve = r.progress !== null && !r.graduated && !r.graduating;
+  // a short green / red flash on the market cap when it moves
+  const lastMc = useRef<number | null>(r.mc);
+  const [mcFlash, setMcFlash] = useState("");
+  useEffect(() => {
+    const was = lastMc.current;
+    lastMc.current = r.mc;
+    if (was === null || r.mc === null || was === r.mc) return;
+    setMcFlash(r.mc > was ? "flash-up" : "flash-down");
+    const t = setTimeout(() => setMcFlash(""), 900);
+    return () => clearTimeout(t);
+  }, [r.mc]);
   const pct = r.progress === null ? 0 : Math.min(99, Math.floor(r.progress * 100));
   return (
     <li className="min-w-0">
@@ -624,6 +658,12 @@ function CoinCard({ r }: { r: Row }) {
           {(r.graduated || r.graduating || r.badge) && (
             <span className="absolute left-2 bottom-2 h-[22px] px-2 rounded-md bg-black/60 text-white text-[0.6875rem] font-semibold flex items-center max-w-[calc(100%-1rem)] truncate">
               {r.badge ?? (r.graduated ? "Graduated" : "Graduating")}
+            </span>
+          )}
+          {live && (
+            <span className="absolute left-2 top-2 h-[22px] px-1.5 rounded-md bg-black/65 text-white text-[0.6875rem] font-semibold font-mono flex items-center gap-1 max-w-[calc(100%-1rem)]">
+              <span aria-hidden="true">👥</span>
+              <HolderCount live={live} compact />
             </span>
           )}
           {isNew(r.since) && (
@@ -636,7 +676,7 @@ function CoinCard({ r }: { r: Row }) {
             {r.symbol} · {age(r.since)}
           </span>
           <span className="flex items-baseline justify-between gap-1.5 mt-1.5 font-mono">
-            <span className="font-bold text-[1rem] tracking-tight truncate">{compactUsd(r.mc)}</span>
+            <span className={"font-bold text-[1rem] tracking-tight truncate rounded px-0.5 -mx-0.5 " + mcFlash}>{compactUsd(r.mc)}</span>
             <span className="text-[0.8125rem] font-semibold shrink-0">
               <Change v={r.change} />
             </span>

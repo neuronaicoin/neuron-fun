@@ -8,6 +8,8 @@ import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
 import { ExtActivity } from "./activity24";
 import { SellCheck } from "./sellcheck";
+import { HolderBox } from "./holderlive";
+import { extHolderKey } from "@/lib/holderlive";
 import { toast } from "./alerts";
 import { clientFor } from "@/lib/data";
 import { friendlyError } from "@/lib/format";
@@ -222,6 +224,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           )}
 
           <ExtActivity network={coin.network} address={coin.address} pool={pool} />
+          <HolderBox holderKey={extHolderKey(coin.network, coin.address)} />
           <SellCheck poolUsd={coin.liqUsd ? coin.liqUsd / 2 : null} mcap={coin.mcapUsd} />
           {pool && <ExtTradesList coin={coin} rows={tradeRows} />}
           {!market && <TokenCheck coin={coin} />}

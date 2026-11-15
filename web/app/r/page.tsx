@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { RaceActivity } from "@/components/activity24";
 import { SellCheck } from "@/components/sellcheck";
+import { HolderBox } from "@/components/holderlive";
+import { raceHolderKey } from "@/lib/holderlive";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CoinAvatar, Skeleton, timeAgo } from "@/components/coins";
@@ -214,6 +216,8 @@ function RacePage() {
           </div>
 
           <RaceActivity coinId={coin.id} chainId={chartChain} />
+
+          <HolderBox holderKey={raceHolderKey(coin.id)} />
 
           <SellCheck poolUsd={lane ? lane.poolUsd : null} mcap={mcap} />
 
