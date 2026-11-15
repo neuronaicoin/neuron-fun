@@ -18,6 +18,7 @@ import { AutoSweep } from "./autosweep";
 import { SocialSync } from "./social";
 import { RefCapture } from "./refcapture";
 import { installHaptics } from "@/lib/haptics";
+import { ELYSIUM_OPEN } from "@/lib/elysium";
 
 export function LogoMark({ size = 32 }: { size?: number }) {
   return <SasaMark size={size} />;
@@ -319,7 +320,7 @@ const MORE_ALL = [
   { href: "/bot/", label: "🤖 sasa Bot · NEW", note: "WHALES, traps and trends, live" },
   { href: "/scan/", label: "🛡️ Is it safe? · NEW", note: "Free rug check for any coin" },
   { href: "/pass/", label: "🎟️ Day-1 Pass · FREE", note: "Free NFT on Elysium, 2x points" },
-  { href: "/elysium/", label: "Elysium testnet · NEW", note: "Practice a launch free with test HYPE" },
+  { href: "/elysium/", label: "Elysium · NEW", note: "Launch and trade Elysium coins" },
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
   { href: "/terminal/", label: "Terminal", note: "Live trading", tablet: true },
   { href: "/predict/", label: "Predict", note: "Yes or no on prices, matches and rates" },
@@ -333,7 +334,8 @@ const MORE_ALL = [
   { href: "/how-it-works/", label: "How it works", note: "sasa in 2 minutes" },
   { href: "/help/", label: "Help", note: "Answers, or write to us" },
 ] as const;
-const MORE = MORE_ALL.filter((m) => V6 || !V6_ONLY.has(m.href)).map((m) =>
+// Elysium and its Day-1 Pass show once sasa is live on Elysium mainnet (the testnet closed Nov 8)
+const MORE = MORE_ALL.filter((m) => (V6 || !V6_ONLY.has(m.href)) && (ELYSIUM_OPEN || (m.href !== "/elysium/" && m.href !== "/pass/"))).map((m) =>
   !V6 && m.href === "/stats/" ? { ...m, note: "Races, volume, winners" } : m
 );
 

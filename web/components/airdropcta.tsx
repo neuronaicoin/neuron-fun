@@ -51,6 +51,7 @@ export function BotBanner() {
  * sasa points (indexer/elysiumtest.mjs). Shown while the testnet is open to everyone.
  */
 export function ElysiumBanner() {
+  // the public testnet closed on Nov 8, 2026: no more testnet call (ELYSIUM_LISTED is false then)
   if (!ELYSIUM_LISTED || !ELYSIUM.testnet) return null;
   return (
     <div className="px-4 sm:px-6 pt-2">
