@@ -97,5 +97,6 @@ export async function onRequest(ctx) {
     }
   }
   console.error("ely-rpc: no node answered", last);
-  return fail(502, "Elysium is busy. Try again in a moment.", Array.isArray(body) ? null : body.id ?? null);
+  // 200 with a JSON-RPC error: Cloudflare swaps a 502 from a function for its own HTML page
+  return fail(200, "Elysium is busy. Try again in a moment.", Array.isArray(body) ? null : body.id ?? null);
 }

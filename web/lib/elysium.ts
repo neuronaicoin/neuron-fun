@@ -11,7 +11,7 @@
  * filled, the whole site uses Elysium mainnet and every TESTNET label goes away; until then it's
  * the public testnet.
  */
-import { createPublicClient, defineChain, encodeFunctionData, getAddress, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
+import { createPublicClient, defineChain, encodeFunctionData, fallback, getAddress, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import type { Call } from "./tx";
 import { SOLANA_TEAM } from "./solana";
 import MAINNET_FILL from "./elysium-mainnet.json";
@@ -62,9 +62,9 @@ export const ELYSIUM_MAINNET: ElysiumNet | null =
           id: fill.chainId,
           name: "Elysium",
           nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
-          // sasa's own doorway first (functions/ely-rpc: falls back across nodes when the public one
-          // rate-limits), then the public node itself
-          rpcUrls: { default: { http: [ELY_PROXY, fill.rpc] } },
+          // the public node first (it limits per network address, so each visitor gets their own
+          // share), then sasa's doorway (functions/ely-rpc) when it says no
+          rpcUrls: { default: { http: [fill.rpc, ELY_PROXY] } },
           ...(fill.explorer ? { blockExplorers: { default: { name: "Elysium explorer", url: fill.explorer } } } : {}),
         }),
         launcher: getAddress(fill.launcher),
@@ -133,7 +133,13 @@ export const elysiumHref = (coin: string) => `/x/?n=${ELYSIUM_NETWORK}&a=${coin}
 
 let client: PublicClient | null = null;
 export function elysiumClient(): PublicClient {
-  if (!client) client = createPublicClient({ chain: ELYSIUM.chain, transport: http(undefined, { retryCount: 3, timeout: 10_000, batch: true }), pollingInterval: 300 }) as PublicClient;
+  if (!client) {
+    const opts = { retryCount: 2, timeout: 10_000, batch: true } as const;
+    const urls: readonly string[] = ELYSIUM.chain.rpcUrls.default.http;
+    // mainnet: the public node, then sasa's doorway if it refuses or times out
+    const transport = urls.length > 1 ? fallback(urls.map((u: string) => http(u, opts))) : http(undefined, opts);
+    client = createPublicClient({ chain: ELYSIUM.chain, transport, pollingInterval: 300 }) as PublicClient;
+  }
   return client;
 }
 
