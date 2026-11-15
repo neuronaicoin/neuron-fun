@@ -297,10 +297,12 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 type="button"
                 aria-pressed={chain === "elysium"}
                 onClick={() => setChain("elysium")}
-                className={"shrink-0 h-8 px-3.5 rounded-lg text-[0.9375rem] font-extrabold whitespace-nowrap flex items-center gap-1.5 text-white hover:brightness-110 " + (chain === "elysium" ? "ring-2 ring-white/80" : "")}
-                style={{ background: "linear-gradient(90deg,#0f3b3a,#1b6b78)" }}
+                className={
+                  "shrink-0 h-8 px-3 rounded-lg text-[0.875rem] whitespace-nowrap flex items-center gap-1.5 " +
+                  (chain === "elysium" ? "bg-night-2 text-ink font-bold" : "text-ink font-semibold hover:bg-night-2")
+                }
               >
-                <span className="w-2 h-2 rounded-full bg-white/90 shrink-0" aria-hidden="true" />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "#2e8b7a" }} aria-hidden="true" />
                 Elysium
               </button>
             )}

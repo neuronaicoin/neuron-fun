@@ -40,7 +40,7 @@ import {
   boostLive,
   elysiumDay1,
 } from "@/lib/elysium";
-import { addHype, elysiumTopupReady, HYPE_GAS_FLOOR, HYPE_TOPUPS } from "@/lib/elysiumgas";
+import { addHype, elysiumTopupReady, HYPE_GAS_FLOOR, HYPE_TOPUPS, quoteHype } from "@/lib/elysiumgas";
 
 const SLIPPAGE_BPS = 500;
 const fmtNum = (n: number) =>
@@ -415,7 +415,6 @@ function ElysiumHomeInner() {
         </div>
       )}
       <HypeTopup hype={hype} onDone={loadBal} />
-      <LaunchWeek day1={day1} />
 
       {test && (
         <Link href="/points/" className="rounded-2xl border border-emerald/40 bg-emerald-soft px-4 py-3 flex items-center gap-3 text-[0.8125rem] sm:text-[0.875rem]">
@@ -704,5 +703,95 @@ function ElysiumCoinInner({ address }: { address: string }) {
         Contract {coin.address} · Pool {coin.pool}
       </div>
     </div>
+  );
+}
+
+/**
+ * Elysium on "Create a coin" (app/race/launch): the same form as every other chain, launched
+ * right there. The first buy is in dollars like elsewhere: it and the network fee come from the
+ * user's cash as HYPE (Relay), then one transaction makes the coin, its locked pool and the buy.
+ */
+export function ElysiumLaunchBox(p: {
+  name: string;
+  symbol: string;
+  description: string;
+  logo: string;
+  socials: { x: string; telegram: string; website: string };
+  firstBuy: string;
+  problem: string;
+}) {
+  const w = useWallet();
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const usd = Number(p.firstBuy || "0");
+  const problem = p.problem || (!p.logo ? "Add a picture." : !Number.isFinite(usd) || usd < 0 ? "The first buy isn't a number." : "");
+
+  async function launch() {
+    setError("");
+    try {
+      if (!w.address) throw new Error("Log in first.");
+      if (problem) throw new Error(problem);
+      const user = w.address as Address;
+      const fee = await elysiumLaunchFee();
+      // the dollars of the first buy, in HYPE (what the cash buys right now, minus a little room)
+      let first = 0n;
+      if (usd > 0) {
+        setBusy("Pricing your first buy…");
+        const q = await quoteHype(user, { usd });
+        first = (BigInt(q.outRaw) * 97n) / 100n;
+      }
+      const need = first + fee + HYPE_GAS_FLOOR;
+      const now = await elysiumHypeBalance(user).catch(() => 0n);
+      if (now < need) {
+        if (!elysiumTopupReady()) throw new Error("Not enough HYPE for this launch.");
+        const got = await addHype({ user, hypeOut: need - now, send: w.send, onStep: setBusy });
+        if (got === null) throw new Error("Your HYPE is still on its way. Tap Create again in a few seconds.");
+      }
+      setBusy("Saving the picture…");
+      const info = await uploadElysiumInfo({
+        name: p.name,
+        symbol: p.symbol,
+        description: p.description,
+        image: p.logo,
+        twitter: p.socials.x || undefined,
+        telegram: p.socials.telegram || undefined,
+        website: p.socials.website || undefined,
+      });
+      setBusy("Confirm in your wallet…");
+      const tx = await (w.embedded ? w.sendOwnGas : w.send)(ELYSIUM.chain, [launchCall({ name: p.name, symbol: p.symbol, uri: info.uri, firstBuyWei: first, launchFeeWei: fee })], setBusy);
+      const coin = await launchedCoin(tx);
+      toast("Your coin is live on Elysium ✓");
+      if (coin) window.location.href = elysiumHref(coin) + "&new=1";
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (!w.address) return <ConnectButton />;
+  return (
+    <>
+      <div className="flex items-center gap-3">
+        <span className="w-9 h-9 rounded-full grid place-items-center shrink-0" style={{ background: "#2e8b7a" }}>
+          <span className="w-3 h-3 rounded-full bg-white" />
+        </span>
+        <div className="min-w-0">
+          <div className="font-semibold text-[1rem]">Elysium</div>
+          <div className="text-[0.8125rem] text-ink-3">Paid from your Cash, in one step</div>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => void launch()}
+        disabled={!!busy || !!problem}
+        className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
+      >
+        {busy || "Create on Elysium"}
+      </button>
+      {problem && !busy && <p className="text-[0.8125rem] text-ink-2 text-center">{problem}</p>}
+      {error && <p className="text-[0.8125rem] text-danger text-center break-words">{error}</p>}
+      <p className="text-[0.75rem] text-ink-3 text-center">Your coin goes live with its whole supply in a locked pool, and your first buy lands before anyone else.</p>
+    </>
   );
 }

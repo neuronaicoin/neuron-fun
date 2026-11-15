@@ -26,6 +26,7 @@ import { solanaFor } from "@/lib/solana";
 import { ELYSIUM, ELYSIUM_LISTED } from "@/lib/elysium";
 import { SolanaMark } from "@/components/solanamoney";
 import { SolanaLaunchBox } from "@/components/solanalaunch";
+import { ElysiumLaunchBox } from "@/components/elysium";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -110,6 +111,10 @@ export default function RaceLaunchPage() {
   const [solo, setSolo] = useState(false);
   const solOk = solanaFor(w.address);
   const onSolana = solo && solOk;
+  // Elysium: launched right here too (components/elysium.tsx ElysiumLaunchBox), one chain, no race
+  const [ely, setEly] = useState(false);
+  const onEly = ely && ELYSIUM_LISTED && !ELYSIUM.testnet && !onSolana;
+  const onSolo = onSolana || onEly;
   const [description, setDescription] = useState("");
   const [socials, setSocials] = useState<LinkDraft>(EMPTY_DRAFT);
   const [socialsOpen, setSocialsOpen] = useState(false);
@@ -223,6 +228,8 @@ export default function RaceLaunchPage() {
     ? formProblem
     : onSolana
       ? "Creating on Solana."
+      : onEly
+        ? "Creating on Elysium."
       : picked.length < 1
           ? "Pick at least one chain."
           : links && !chainsLinked(chains, links)
@@ -707,15 +714,16 @@ export default function RaceLaunchPage() {
             <span className="text-[0.8125rem] text-ink-3">Your chain</span>
             <div className="grid grid-cols-2 gap-2">
               {CHAIN_ORDER.flatMap((c) => {
-                const on = !onSolana && chains.includes(c.chainId);
+                const on = !onSolo && chains.includes(c.chainId);
                 const tile = (
                   <button
                     key={c.chainId}
                     type="button"
                     onClick={() => {
-                      if (onSolana) {
-                        // from Solana back to the race chains: start with the one tapped
+                      if (onSolo) {
+                        // from Solana / Elysium back to the race chains: start with the one tapped
                         setSolo(false);
+                        setEly(false);
                         setChains([c.chainId]);
                       } else toggle(c.chainId);
                     }}
@@ -736,18 +744,19 @@ export default function RaceLaunchPage() {
                       key="elysium"
                       type="button"
                       onClick={() => {
-                        const q = new URLSearchParams();
-                        if (name.trim()) q.set("name", name.trim());
-                        if (symbol.trim()) q.set("symbol", symbol.trim());
-                        if (description.trim()) q.set("desc", description.trim());
-                        const qs = q.toString();
-                        window.location.href = `/elysium/${qs ? `?${qs}` : ""}`;
+                        setSolo(false);
+                        setEly((v) => !v);
                       }}
-                      className="h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 border border-line"
+                      aria-pressed={onEly}
+                      className={"h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 " + (onEly ? "border-2 border-ink" : "border border-line")}
                     >
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#2e8b7a" }} />
                       <span className="truncate">Elysium</span>
-                      <span className="ml-auto text-[0.625rem] font-black tracking-[0.08em] px-1.5 py-0.5 rounded bg-emerald text-on-accent">NEW</span>
+                      {onEly ? (
+                        <span className="ml-auto text-[0.8125rem]" aria-hidden="true">✓</span>
+                      ) : (
+                        <span className="ml-auto text-[0.625rem] font-black tracking-[0.08em] px-1.5 py-0.5 rounded bg-emerald text-on-accent">NEW</span>
+                      )}
                     </button>,
                   ];
                 // Solana sits right after Robinhood (for people who see it yet)
@@ -757,7 +766,10 @@ export default function RaceLaunchPage() {
                   <button
                     key="solana"
                     type="button"
-                    onClick={() => setSolo((v) => !v)}
+                    onClick={() => {
+                      setEly(false);
+                      setSolo((v) => !v);
+                    }}
                     aria-pressed={onSolana}
                     className={"h-11 rounded-xl px-3 flex items-center gap-2 text-[0.9375rem] font-semibold text-ink min-w-0 " + (onSolana ? "border-2 border-ink" : "border border-line")}
                   >
@@ -770,6 +782,8 @@ export default function RaceLaunchPage() {
             </div>
             {onSolana ? (
               <p className="text-[0.8125rem] text-ink-2">Your coin goes live on Solana and shows up on DexScreener, GMGN and every Solana app at once.</p>
+            ) : onEly ? (
+              <p className="text-[0.8125rem] text-ink-2">Your coin goes live on Elysium in one transaction, with its whole supply in a locked pool. Paid from your cash, no HYPE needed.</p>
             ) : chains.length < CHAIN_ORDER.length ? (
               <div className="rounded-2xl border border-emerald/40 bg-emerald-soft p-3 sm:p-4 flex flex-col gap-2">
                 <span className="font-bold text-[0.9375rem] text-ink">🏁 Want more buyers? Race it on 4 chains</span>
@@ -795,7 +809,7 @@ export default function RaceLaunchPage() {
             )}
           </div>
 
-          {!onSolana && (
+          {!onSolo && (
           <div className="flex flex-col gap-2">
             <span className="text-[0.8125rem] text-ink-3">Trading fees</span>
             <div className="grid grid-cols-2 gap-2">
@@ -819,7 +833,7 @@ export default function RaceLaunchPage() {
           )}
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[0.8125rem] text-ink-3">{onSolana ? "Your first buy (USDC)" : "Your first buy, in total (USDC)"}</span>
+            <span className="text-[0.8125rem] text-ink-3">{onSolo ? "Your first buy (USDC)" : "Your first buy, in total (USDC)"}</span>
             <div className="grid grid-cols-3 gap-2">
               {["10", "50", "100"].map((v) => (
                 <button
@@ -844,12 +858,14 @@ export default function RaceLaunchPage() {
                 className={input + " pl-8"}
               />
             </label>
-            {!onSolana && Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
+            {!onSolo && Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
               <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more, so your coin starts with some weight.</span>
             )}
             <span className="text-[0.8125rem] text-ink-3">
               {onSolana
                 ? "Bought on Solana right as your coin goes live."
+                : onEly
+                ? "Bought on Elysium right as your coin goes live."
                 : picked.length > 0 && perChainN > 0
                 ? picked.length === 1
                   ? `$${perChain} on ${picked[0].short}.`
@@ -867,6 +883,16 @@ export default function RaceLaunchPage() {
               description={description.trim()}
               logo={logo}
               logoFile={logoFile}
+              socials={socials}
+              firstBuy={firstBuy}
+              problem={formProblem}
+            />
+          ) : onEly ? (
+            <ElysiumLaunchBox
+              name={name.trim()}
+              symbol={sym}
+              description={description.trim()}
+              logo={logo}
               socials={socials}
               firstBuy={firstBuy}
               problem={formProblem}
@@ -945,7 +971,7 @@ export default function RaceLaunchPage() {
             </ul>
           )}
 
-          {viaBase && !onSolana && (
+          {viaBase && !onSolo && (
             <>
               <button
                 type="button"
@@ -963,7 +989,7 @@ export default function RaceLaunchPage() {
             </>
           )}
 
-          {w.address && !w.embedded && !onSolana && (
+          {w.address && !w.embedded && !onSolo && (
             <>
               <button
                 type="button"
@@ -980,7 +1006,7 @@ export default function RaceLaunchPage() {
               </p>
             </>
           )}
-          {!onSolana && (
+          {!onSolo && (
             <Link href="/race/" className="text-[0.8125rem] text-ink-3 underline self-center">
               How the race works
             </Link>

@@ -174,7 +174,18 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark" | null>(null);
   useEffect(() => {
-    setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
+    // a page that had to re-render from scratch (React error #418) loses the attribute the
+    // head script set: put the saved choice back, so nobody is thrown into the phone's dark mode
+    let cur = document.documentElement.getAttribute("data-theme");
+    if (cur !== "dark" && cur !== "light") {
+      try {
+        cur = localStorage.getItem("sasa-theme") === "dark" ? "dark" : "light";
+      } catch {
+        cur = "light";
+      }
+      document.documentElement.setAttribute("data-theme", cur);
+    }
+    setTheme(cur === "dark" ? "dark" : "light");
   }, []);
   const flip = () => {
     const next = theme === "light" ? "dark" : "light";
