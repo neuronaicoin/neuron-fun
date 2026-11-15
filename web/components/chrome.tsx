@@ -253,6 +253,7 @@ const NAV_ALL = [
   { href: "/bot/", label: "Bot", from: "lg" },
   { href: "/predict/", label: "Predict", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
+  { href: "/chat/", label: "Chat", from: "xl" },
   { href: "/me/", label: "You", from: "xl" },
   // in "More" on computers too: a short, calm top bar
   { href: "/traders/", label: "Traders", from: "never" },
@@ -483,17 +484,31 @@ export function BottomNav() {
     <nav ref={navRef} aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-paper border-t border-line pt-1.5" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)" }}>
       {more && <MoreSheet onClose={() => setMore(false)} />}
       <div className="grid grid-cols-6">
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/" && n.href !== "/terminal/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
+            n.href === "/race/launch/" ? (
+              <Link key={n.href} href={n.href} aria-label="Create a coin" className="flex flex-col items-center gap-0.5 pb-1 -mt-3 text-[0.6875rem] font-bold text-[#ff6b1a]">
+                <span
+                  className="w-11 h-11 rounded-2xl grid place-items-center text-white shadow-[0_6px_16px_-4px_rgba(255,107,26,.6)]"
+                  style={{ background: "linear-gradient(135deg,#ff8a3d,#ff6b1a)" }}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                    <path d="M12 6 V18 M6 12 H18" />
+                  </svg>
+                </span>
+                Create
+              </Link>
+            ) : (
             <Link
               key={n.href}
               href={n.href}
               className={"flex flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-medium " + (active ? "text-ink" : "text-ink-3")}
             >
               <NavIcon name={n.label} />
-              {n.label === "Create a coin" ? "Create" : n.label === "Terminal" ? "Trade" : n.label}
+              {n.label}
             </Link>
+            )
           );
         })}
         <button
@@ -544,6 +559,13 @@ function NavIcon({ name }: { name: string }) {
       <svg {...common}>
         <circle cx="12" cy="8" r="4" />
         <path d="M4 21 c1.5 -4 4.5 -6 8 -6 s6.5 2 8 6" />
+      </svg>
+    );
+  if (name === "Chat")
+    return (
+      <svg {...common}>
+        <path d="M4 5.5 h16 a1.5 1.5 0 0 1 1.5 1.5 v9 a1.5 1.5 0 0 1 -1.5 1.5 H10 l-4.5 3.5 V17.5 H4 a1.5 1.5 0 0 1 -1.5 -1.5 V7 A1.5 1.5 0 0 1 4 5.5 Z" />
+        <path d="M7.5 10 H16.5 M7.5 13.5 H13" />
       </svg>
     );
   if (name === "Create a coin")

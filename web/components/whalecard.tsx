@@ -88,7 +88,7 @@ export function WhaleCard() {
   }, [shown]);
 
   // not over the admin pages or the create form
-  if (!shown || path.startsWith("/admin") || path.startsWith("/race/launch")) return null;
+  if (!shown || path.startsWith("/admin") || path.startsWith("/race/launch") || path.startsWith("/chat")) return null;
   const href = shown.kind === "sasa" ? raceHref(shown.coin) : extHref({ network: shown.net, address: shown.coin });
   return (
     <div className="fixed left-1/2 -translate-x-1/2 top-[4.25rem] sm:top-[4.75rem] z-40 w-[min(26rem,calc(100vw-1.5rem))] pointer-events-none">

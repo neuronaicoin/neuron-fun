@@ -453,3 +453,8 @@ html.is-guest .guest-hide { display: none !important; }
 .btn-buy:disabled::after, .btn-sell:disabled::after { animation: none; opacity: 0; }
 @keyframes btn-shine { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(120%); } }
 @media (prefers-reduced-motion: reduce) { .btn-buy::after, .btn-sell::after { animation: none; opacity: 0; } }
+
+/* sasa Chat: new messages slide in softly. */
+@keyframes chat-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.chat-in { animation: chat-in .25s ease-out; }
+@media (prefers-reduced-motion: reduce) { .chat-in { animation: none; } }
