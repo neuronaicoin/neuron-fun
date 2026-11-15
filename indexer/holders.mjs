@@ -4,9 +4,11 @@
 //
 //   sasa race coins   every minute, exact: wallets with a balance (balances, kept by race.mjs),
 //                     minus pools, vaults and sasa's own contracts.
-//   other coins       the busiest coins from other DEXs plus every Solana coin launched on sasa,
-//                     in turn, from GeckoTerminal's token info (holders.count). One call every
-//                     HOLDERS_GAP_MS (8 s: ~7 a minute), so each coin is read every ~10 minutes.
+//   sasa Solana coins every 2 minutes, exact: token accounts of the mint with a balance, counted
+//                     by owner, from SOLANA_RPC_URL (getProgramAccounts on both token programs).
+//   other coins       the busiest coins from other DEXs, in turn, from GeckoTerminal's token info
+//                     (holders.count; GeckoTerminal itself refreshes it about once a day, so these
+//                     rarely show a 15-minute change). One call every HOLDERS_GAP_MS (20 s).
 //                     GeckoTerminal's free limit is shared with markets.mjs and whalefeed.mjs.
 //
 // Keys: "race:<coin id>", "<network>:<address>" (EVM addresses lowercase, Solana as is).
@@ -15,8 +17,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const GT = "https://api.geckoterminal.com/api/v2";
-const GAP = Number(process.env.HOLDERS_GAP_MS ?? "8000");
-const EXT_COINS = Number(process.env.HOLDERS_EXT_COINS ?? "70");
+const GAP = Number(process.env.HOLDERS_GAP_MS ?? "20000");
+const SOL_RPC = process.env.SOLANA_RPC_URL || "";
+const TOKEN_PROGRAMS = ["TokenkegQfeZyiNwAJbNbGKPFXCWuBdf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"];
+const EXT_COINS = Number(process.env.HOLDERS_EXT_COINS ?? "60");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SQL = `
@@ -98,18 +102,65 @@ async function extList(pool) {
      ) x where coalesce(v, 0) >= 20000 order by v desc nulls last limit $1`,
     [EXT_COINS]
   );
-  // Solana coins launched on sasa: always, however small
-  const sasa = await pool
-    .query(`select mint as address from sol_coins where status = 'live' and created_at > now() - interval '30 days' order by created_at desc limit 60`)
-    .then((r) => r.rows.map((x) => ({ network: "solana", address: x.address })))
-    .catch(() => []);
-  const seen = new Set();
-  return [...sasa, ...rows].filter((c) => {
-    const k = `${c.network}:${c.address}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  return rows;
+}
+
+async function sasaSolMints(pool) {
+  const { rows } = await pool.query(
+    `select mint from sol_coins where status = 'live' and created_at > now() - interval '30 days' order by created_at desc limit 80`
+  );
+  return rows.map((r) => r.mint);
+}
+
+/** Wallets holding a Solana mint (balance above zero), counted by owner. null when the RPC can't say. */
+async function solHolders(mint) {
+  const owners = new Set();
+  for (const program of TOKEN_PROGRAMS) {
+    const r = await fetch(SOL_RPC, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getProgramAccounts",
+        params: [program, { encoding: "base64", dataSlice: { offset: 32, length: 40 }, filters: [{ memcmp: { offset: 0, bytes: mint } }] }],
+      }),
+      signal: AbortSignal.timeout(20_000),
+    }).catch(() => null);
+    if (!r || !r.ok) return null;
+    const j = await r.json().catch(() => null);
+    if (!j || j.error || !Array.isArray(j.result)) return null;
+    for (const a of j.result) {
+      const b = Buffer.from(a?.account?.data?.[0] ?? "", "base64");
+      if (b.length < 40) continue;
+      if (b.readBigUInt64LE(32) > 0n) owners.add(b.subarray(0, 32).toString("hex"));
+    }
+  }
+  return owners.size;
+}
+
+async function solLap(pool) {
+  if (!SOL_RPC) return 0;
+  const mints = await sasaSolMints(pool).catch(() => []);
+  let n = 0;
+  for (const mint of mints) {
+    const count = await solHolders(mint);
+    if (count !== null && count > 0) {
+      await pool
+        .query(
+          `insert into holder_snaps (key, holders)
+           select $1, $2 where not exists (
+             select 1 from (select holders, at from holder_snaps where key = $1 order by at desc limit 1) l
+             where l.holders = $2 and l.at > now() - interval '5 minutes')
+           on conflict do nothing`,
+          [`solana:${mint}`, count]
+        )
+        .catch(() => {});
+      n++;
+    }
+    await sleep(300);
+  }
+  return n;
 }
 
 async function readHolders(c) {
@@ -131,6 +182,7 @@ export async function holdersLoop(pool, log) {
   let list = [];
   let i = 0;
   let lastRace = 0;
+  let lastSol = 0;
   let lastList = 0;
   let lastPrune = 0;
   let saved = 0;
@@ -139,6 +191,12 @@ export async function holdersLoop(pool, log) {
     if (now - lastRace >= 60_000) {
       lastRace = now;
       await raceLap(pool, skip).catch((e) => log(`holders: race coins: ${e.message}`));
+    }
+    if (now - lastSol >= 120_000) {
+      lastSol = now;
+      const n = await solLap(pool).catch((e) => (log(`holders: sasa Solana coins: ${e.message}`), 0));
+      if (!SOL_RPC && !lastPrune) log("holders: SOLANA_RPC_URL not set, sasa Solana coins skipped");
+      void n;
     }
     if (now - lastPrune >= 3600_000) {
       lastPrune = now;
