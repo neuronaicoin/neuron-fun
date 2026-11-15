@@ -39,6 +39,12 @@ function noPool(k: string) {
 }
 
 async function gtGet(url: string): Promise<Response | null> {
+  // first the shared copy on sasa's own address (functions/gt: one answer for every visitor,
+  // so the chart opens at once); if that can't answer, GeckoTerminal itself as before
+  if (typeof window !== "undefined" && url.startsWith(GT)) {
+    const viaUs = await fetch("/gt" + url.slice(GT.length), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8_000) }).catch(() => null);
+    if (viaUs && (viaUs.ok || viaUs.status === 404)) return viaUs;
+  }
   // the free API allows about 30 calls a minute: when it says "too many", wait and ask again
   let r: Response | null = null;
   for (let i = 0; i < 3; i++) {

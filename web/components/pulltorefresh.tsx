@@ -21,6 +21,18 @@ function blocked(t: EventTarget | null): boolean {
   return false;
 }
 
+const SOFT_EVENT = "sasa:soft-refresh";
+
+/** A page's own refresh for pull-to-refresh (instead of reloading the whole page). */
+export function onSoftRefresh(fn: () => void): () => void {
+  const h = (e: Event) => {
+    (e as CustomEvent<{ handled: boolean }>).detail.handled = true;
+    fn();
+  };
+  window.addEventListener(SOFT_EVENT, h);
+  return () => window.removeEventListener(SOFT_EVENT, h);
+}
+
 export function PullToRefresh() {
   const [pull, setPull] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -51,7 +63,16 @@ export function PullToRefresh() {
       if (cur.current >= TRIGGER) {
         setBusy(true);
         setPull(TRIGGER);
-        window.location.reload();
+        // a page that can refresh its own numbers does it in place (no flash of empty boxes);
+        // every other page reloads as before
+        const ev = new CustomEvent(SOFT_EVENT, { detail: { handled: false } });
+        window.dispatchEvent(ev);
+        if ((ev as CustomEvent<{ handled: boolean }>).detail.handled) {
+          setTimeout(() => {
+            setBusy(false);
+            setPull(0);
+          }, 900);
+        } else window.location.reload();
       } else setPull(0);
       cur.current = 0;
     };

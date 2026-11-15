@@ -7,6 +7,7 @@
 import { TransitBanner } from "@/components/transitbanner";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { onSoftRefresh } from "@/components/pulltorefresh";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinCard, Skeleton, SkeletonRows } from "@/components/coins";
@@ -71,8 +72,17 @@ export default function MePage() {
     setData(null);
     void load();
     const t = setInterval(() => document.visibilityState === "visible" && void load(), 20_000);
-    return () => clearInterval(t);
-  }, [load]);
+    // pull-to-refresh on phones: new numbers in place, nothing blinks
+    const off = onSoftRefresh(() => {
+      void load();
+      if (address && RACE_CHAINS.length) fetchRaceCoins(50, { creator: address }).then(setMyRaces).catch(() => {});
+      if (address && solanaFor(address)) fetchSasaSolCoins(50, "", address).then(setMySol).catch(() => {});
+    });
+    return () => {
+      clearInterval(t);
+      off();
+    };
+  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ethUsd = data?.prices?.ETH ?? p?.ethUsd ?? null;
   const names = useMemo(

@@ -36,7 +36,9 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
       fetchSasaSolCoins(6)
         .then((l) => {
           if (!alive) return;
-          const listed = l.filter((c) => Date.now() - (Date.parse(c.poolCreated ?? "") || 0) < 86_400_000);
+          // every recent sasa launch on Solana (newest first), not only the last 24 hours: the
+          // strip mixes them with the finished races by launch time below
+          const listed = l;
           // this device's launch shows at once, before the keeper has listed it for everyone
           const mine = justLaunchedList()
             .filter((j) => !listed.some((c) => c.address === j.address))
@@ -113,12 +115,13 @@ export function LiveRaces({ fallback }: { fallback?: ReactNode }) {
         <>
           <h3 className="text-[0.8125rem] font-semibold text-ink-3 mt-1">Just finished</h3>
           <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 snap-x">
-            {sol.map((c) => (
-              <SolCard key={c.address} coin={c} />
-            ))}
-            {done.map((r) => (
-              <DoneCard key={r.id} race={r} />
-            ))}
+            {[
+              ...sol.map((c) => ({ at: Date.parse(c.poolCreated ?? "") || 0, el: <SolCard key={c.address} coin={c} /> })),
+              ...done.map((r) => ({ at: r.launchedAt, el: <DoneCard key={r.id} race={r} /> })),
+            ]
+              .sort((a, b) => b.at - a.at)
+              .slice(0, 8)
+              .map((x) => x.el)}
           </div>
         </>
       )}
