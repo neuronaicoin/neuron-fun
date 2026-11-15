@@ -733,7 +733,12 @@ export function ElysiumLaunchBox(p: {
   problem: string;
 }) {
   const w = useWallet();
-  const [busy, setBusy] = useState("");
+  const [busy, setBusyState] = useState("");
+  const step = useRef("");
+  const setBusy = (m: string) => {
+    if (m) step.current = m;
+    setBusyState(m);
+  };
   const [error, setError] = useState("");
   const usd = Number(p.firstBuy || "0");
   const problem = p.problem || (!p.logo ? "Add a picture." : !Number.isFinite(usd) || usd < 0 ? "The first buy isn't a number." : "");
@@ -776,6 +781,15 @@ export function ElysiumLaunchBox(p: {
       if (coin) window.location.href = elysiumHref(coin) + "&new=1";
     } catch (e) {
       setError(friendlyError(e));
+      // the full reason, kept for sasa's admins (bot page → launch errors), like Solana's
+      try {
+        const raw = String((e as { shortMessage?: string; details?: string; message?: string })?.details ?? "") + " | " + String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? e);
+        void fetch("/api/sol/error", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind: "elysium", step: step.current || "start", error: raw.slice(0, 780) }),
+        }).catch(() => {});
+      } catch {}
     } finally {
       setBusy("");
     }

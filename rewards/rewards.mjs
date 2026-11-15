@@ -48,6 +48,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { ordersLoop } from "./orders.mjs";
 import lz4 from "lz4js";
 import { buildPerpLedger, buildUsdLedger, builderAccountUsd, payUsd, reconcileUsd } from "./usd.mjs";
+import { buildCreatorLedger, ensureCreatorTables } from "./creator.mjs";
 import { FUND_DEFAULTS, claimRelayFees, convertToBase, sweepSurplus } from "./fund.mjs";
 
 const env = (k, d) => {
@@ -138,6 +139,12 @@ const SASA_TREASURY = env("TREASURY_WALLET", "0x3C4E66b4B4DDD1F6348aD5fDfAE7e60A
 const KEEP_USD = Number(env("KEEP_USD", "100"));
 const REWARD_CHAIN_IDS = env("REWARD_CHAIN_IDS", "8453,4663,5042,56").split(",").map((x) => Number(x.trim())).filter(Boolean);
 const HL_BUILDER = process.env.HL_BUILDER || "";
+// creator bonus (creator.mjs): on unless CREATOR_BONUS=false
+const CREATOR_ON = env("CREATOR_BONUS", "true") !== "false";
+const CREATOR_MC_USD = Number(env("CREATOR_MC_USD", "10000"));
+const CREATOR_HOLD_MIN = Number(env("CREATOR_HOLD_MIN", "60"));
+const CREATOR_FROM = env("CREATOR_FROM", "2026-11-15T13:30:00Z");
+let creatorReady = false;
 
 // ------------------------------------------------------------------ prices
 
@@ -442,6 +449,26 @@ async function main() {
           chainIds: REWARD_CHAIN_IDS,
         });
         if (u.race || u.ext) log(`ledger: +${u.race} race, +${u.ext} other-DEX rewards (dollars)`);
+        // creator bonus: 60% of the fees to the creator once a coin holds $10K for an hour (creator.mjs)
+        if (CREATOR_ON) {
+          try {
+            if (!creatorReady) {
+              await ensureCreatorTables(pool);
+              creatorReady = true;
+            }
+            const cb = await buildCreatorLedger(pool, {
+              chainIds: REWARD_CHAIN_IDS,
+              thresholdUsd: CREATOR_MC_USD,
+              holdMin: CREATOR_HOLD_MIN,
+              from: CREATOR_FROM,
+              log,
+            });
+            if (cb.race || cb.sol) log(`ledger: +${cb.race} race, +${cb.sol} Solana creator bonuses (dollars)`);
+          } catch (e) {
+            log(`creator bonus: ${e.message}`);
+            await alert("rewards", "creator-bonus", `creator bonus (60% above $10K): ${e.message}`);
+          }
+        }
         lastLedger = Date.now();
       }
       if (HL_BUILDER && Date.now() - lastPerp > 10 * 60_000) {

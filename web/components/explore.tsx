@@ -19,6 +19,7 @@ import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
 import { RaceBanner } from "@/components/racepromo";
 import { LiveRaces } from "@/components/liveraces";
 import { BotBanner, ElysiumBanner } from "@/components/airdropcta";
+import { CreatorBonusBanner } from "@/components/creatorbonus";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { TopWins } from "@/components/topwins";
@@ -231,9 +232,9 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       {/* sasapad.fun for people who aren't logged in: the hero (one line, two buttons, live box).
           Logged in (or coming back logged in) and on /explore/: the bands, straight to the coins. */}
       {withLanding && !me && !restoring ? (
-        <div className="max-w-7xl mx-auto"><Hero /><HeroStrip /></div>
+        <div className="max-w-7xl mx-auto"><Hero /><div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div><HeroStrip /></div>
       ) : (
-        <div className="max-w-7xl mx-auto"><ElysiumBanner /><BotBanner /></div>
+        <div className="max-w-7xl mx-auto"><div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div><ElysiumBanner /><BotBanner /></div>
       )}
       <div className="max-w-7xl mx-auto"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>

@@ -15,6 +15,7 @@ import { followOnX, postOnX } from "@/components/share";
 import { Skeleton, usd } from "@/components/coins";
 import { fetchPrices } from "@/lib/price";
 import { displayName, profileHref, useProfiles, type Profile } from "@/lib/social";
+import { CreatorBonusCard } from "@/components/creatorbonus";
 import { fetchAirdropBoard, fetchMyAirdrop, fetchRewards, type Airdrop, type AirdropRow, type Rewards } from "@/lib/points";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -89,7 +90,7 @@ export default function PointsPage() {
         <p className="relative text-[0.8125rem] text-ink-3">💸 Earn with sasa</p>
         <h1 className="relative font-display font-bold text-[1.625rem] sm:text-[2.25rem] leading-[1.1] tracking-tight mt-1">Create coins. Invite friends. Earn real USDC.</h1>
         <p className="relative text-ink-2 mt-2 max-w-[58ch] text-[0.9375rem]">
-          No token, no airdrop, no points to wait for. You earn from real trading fees: on the coins you create and on your friends&apos; trades, plus the creator competition.
+          No token, no airdrop, no points to wait for. You earn from real trading fees: 60% of the fees of a coin you launch once it holds $10K for an hour, 25% of sasa&apos;s fees on your friends&apos; trades, plus the creator competition.
         </p>
 
         <ol className="relative grid sm:grid-cols-3 gap-2.5 mt-5">
@@ -167,6 +168,8 @@ export default function PointsPage() {
           )}
         </section>
 
+        <div className="flex flex-col gap-4 min-w-0">
+        <CreatorBonusCard address={me} />
         {/* Invites */}
         <section id="invite" className="scroll-mt-24 rounded-xl border border-line p-4 sm:p-5 bg-surface" aria-label="Invite friends">
           <h2 className="font-display font-bold text-[1.125rem]">Invite friends</h2>
@@ -209,6 +212,7 @@ export default function PointsPage() {
             <p className="text-[0.875rem] text-ink-3 mt-3">Log in to get your invite link.</p>
           )}
         </section>
+        </div>
       </div>
 
       <p className="text-[0.75rem] text-ink-3 mt-5 max-w-[80ch]">

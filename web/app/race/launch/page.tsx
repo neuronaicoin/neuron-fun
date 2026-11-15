@@ -27,6 +27,7 @@ import { ELYSIUM, ELYSIUM_LISTED } from "@/lib/elysium";
 import { SolanaMark } from "@/components/solanamoney";
 import { SolanaLaunchBox } from "@/components/solanalaunch";
 import { ElysiumLaunchBox } from "@/components/elysium";
+import { CreatorBonusNote } from "@/components/creatorbonus";
 
 /**
  * sasa v7: launch a coin into the five-minute race. The coin is opened on each picked chain in
@@ -559,6 +560,8 @@ export default function RaceLaunchPage() {
         <h1 className="text-[1.75rem] sm:text-[2.25rem] font-extrabold tracking-tight">Create your coin on multiple chains</h1>
         <p className="text-ink-2 text-[0.9375rem]">Your coin goes live on every chain you pick. After 5 minutes, the chain with the most money wins and the whole coin moves there.</p>
       </div>
+
+      <CreatorBonusNote />
 
       {draft && !busy && (
         <div className="rounded-2xl border border-line bg-night p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
