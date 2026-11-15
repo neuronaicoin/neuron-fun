@@ -53,7 +53,7 @@ export async function submit(urls, log) {
 
 async function sitemapUrls() {
   const out = [];
-  for (const path of ["/sitemap.xml", "/forum/sitemap.xml"]) {
+  for (const path of ["/sitemap.xml", "/forum/sitemap.xml", "/sitemap-coins.xml", "/sitemap-races.xml", "/sitemap-market.xml", "/sitemap-days.xml"]) {
     try {
       const r = await fetch(`${SITE}${path}`, { signal: AbortSignal.timeout(20_000) });
       if (!r.ok) continue;
