@@ -1,4 +1,5 @@
 "use client";
+import { DepositSheet } from "@/components/money";
 import { track } from "@/lib/track";
 
 import Link from "next/link";
@@ -121,7 +122,9 @@ export default function RaceLaunchPage() {
   const [socialsOpen, setSocialsOpen] = useState(false);
   const [feeMode, setFeeMode] = useState<0 | 1>(0);
   // Robinhood alone by default (cheapest, one undivided pool); the 4-chain race is one tap away
-  const [chains, setChains] = useState<number[]>(() => [(RACE_CHAINS.find((c) => c.short === "Robinhood") ?? RACE_CHAINS[0]).chainId]);
+  const [chains, setChains] = useState<number[]>(() => [(RACE_CHAINS.find((c) => c.short === "Base") ?? RACE_CHAINS[0]).chainId]);
+  // "Add USDC": brings dollars from any chain or token (Relay), for a wallet that is short
+  const [addMoney, setAddMoney] = useState(false);
   const [firstBuy, setFirstBuy] = useState("10");
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
@@ -968,6 +971,11 @@ export default function RaceLaunchPage() {
                     )}
                     {short && st?.state !== "working" && (
                       <div className="flex gap-3 pl-[1.125rem] text-[0.8125rem]">
+                        {!c.faucet && /USDC/.test(short) && (
+                          <button type="button" onClick={() => setAddMoney(true)} className="text-emerald-dark font-semibold underline">
+                            Add money from any chain
+                          </button>
+                        )}
                         {c.faucet && /USDC/.test(short) && (
                           <button type="button" onClick={() => void faucet(c)} className="text-emerald-dark font-semibold underline">
                             Get $100 test USDC
@@ -1021,6 +1029,7 @@ export default function RaceLaunchPage() {
               </p>
             </>
           )}
+          {addMoney && <DepositSheet onClose={() => { setAddMoney(false); void readFunds(); }} />}
           {!onSolo && (
             <Link href="/race/" className="text-[0.8125rem] text-ink-3 underline self-center">
               How the race works
