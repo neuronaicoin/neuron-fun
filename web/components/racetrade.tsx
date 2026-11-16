@@ -88,7 +88,10 @@ export function RaceTradeBox({
   // sasa accounts (email login) on mainnet: dollars stay on Base; other chains go through Across
   const home = homeChain();
   const emailMain = w.embedded && !IS_TESTNET;
-  const viaBase = emailMain && crossReady(chain);
+  // browser wallets with no dollars on this chain: buy with USDC on Base (Across brings it here)
+  const crossWallet =
+    !w.embedded && !!w.address && !IS_TESTNET && !!home && home.chainId !== chain.chainId && crossReady(chain) && side === "buy" && usdBal !== null && usdBal < 1_000_000n * 10n ** BigInt(Math.max(0, usdDec - 6));
+  const viaBase = (emailMain && crossReady(chain)) || crossWallet;
   const atHome = emailMain && !!home && home.chainId === chain.chainId;
   const [homeBal, setHomeBal] = useState<bigint | null>(null);
   const [homeDec, setHomeDec] = useState<number>(6);
@@ -96,8 +99,8 @@ export function RaceTradeBox({
   const pending = useSyncExternalStore(onPending, pendingList, () => EMPTY_PENDING);
   const mine = pending.filter((p) => (p.kind === "buy" && p.chainId === chain.chainId && p.coin?.toLowerCase() === coin.coin.toLowerCase()) || p.kind === "home");
   useEffect(() => {
-    if (emailMain) watchPending();
-  }, [emailMain]);
+    if (viaBase) watchPending();
+  }, [viaBase]);
 
   const refresh = useCallback(async (): Promise<{ usd: bigint; coin: bigint } | null> => {
     if (!w.address) {
@@ -161,7 +164,7 @@ export function RaceTradeBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingBuys.length, w.address, chain.chainId]);
 
-  const senders = (): Senders => ({ user: w.address as Address, sendHome: w.send, sendThere: w.sendOwnGas });
+  const senders = (): Senders => ({ user: w.address as Address, sendHome: w.send, sendThere: w.embedded ? w.sendOwnGas : w.send });
 
   /** Buy / sell for a sasa account on a chain other than Base: dollars from and back to Base. */
   const submitViaBase = async () => {
