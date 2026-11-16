@@ -4,6 +4,7 @@ import { SellAmount, sellRaw } from "./sellamount";
 import { BotSafety } from "./botsafety";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
+import { AmountPad } from "@/components/amountpad";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
 import { ExtActivity } from "./activity24";
@@ -179,7 +180,22 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 />
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {/* phones: the market cap big and the change under it; volume and liquidity in one quiet line */}
+            <div className="sm:hidden mt-4 flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-display font-extrabold text-[2.125rem] leading-none tabular-nums tracking-tight">{money(coin.mcapUsd)}</div>
+                <div className="mt-1.5 text-[0.875rem] font-semibold tabular-nums">
+                  <span className={ch === null ? "text-ink-3" : ch >= 0 ? "text-up" : "text-danger"}>{ch === null ? "—" : `${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%`}</span>
+                  <span className="text-ink-3 font-medium"> 24h · market cap</span>
+                </div>
+              </div>
+              <div className="shrink-0 text-right text-[0.75rem] text-ink-3 leading-relaxed font-mono">
+                <div>{price(coin.priceUsd)}</div>
+                <div>Vol {money(coin.vol24h)}</div>
+                <div>Liq {money(coin.liqUsd)}</div>
+              </div>
+            </div>
+            <div className="mt-4 hidden sm:grid grid-cols-5 gap-2">
               {kpis.map(([k, v, cls]) => (
                 <div key={k} className="rounded-xl sm:rounded-2xl border border-line bg-paper px-2.5 py-1.5 sm:p-3 min-w-0 flex items-baseline justify-between gap-1.5 sm:block">
                   <div className="text-[0.6875rem] text-ink-3 shrink-0">{k}</div>
@@ -485,6 +501,10 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
         <>
           {side === "buy" ? (
             <>
+              {bare ? (
+                <AmountPad value={usd} onChange={setUsd} />
+              ) : (
+              <>
               <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">
                 <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
                 <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Amount" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem] placeholder:text-ink-3" />
@@ -496,6 +516,8 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
                   </button>
                 ))}
               </div>
+              </>
+              )}
             </>
           ) : (
             <SellAmount

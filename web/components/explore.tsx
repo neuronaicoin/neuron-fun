@@ -24,6 +24,8 @@ import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { TopWins } from "@/components/topwins";
 import { HolderCount } from "@/components/holderlive";
+import { openMoney, useMoney } from "@/lib/portfolio";
+import { rememberCoin } from "@/lib/coincache";
 import { extHolderKey, fetchHolderLive, raceHolderKey, type HolderLive } from "@/lib/holderlive";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
@@ -253,9 +255,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       {withLanding && !me && !restoring ? (
         <div className="max-w-7xl mx-auto"><Hero /><div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div><HeroStrip /></div>
       ) : (
-        <div className="max-w-7xl mx-auto"><div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div><ElysiumBanner /><BotBanner /></div>
+        <div className="max-w-7xl mx-auto">
+          {/* phones: balance and Deposit first, like a wallet app; the promo bands live on bigger screens */}
+          {me && <BalanceBar />}
+          <div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div>
+          <div className="hidden sm:block"><ElysiumBanner /><BotBanner /></div>
+        </div>
       )}
-      <div className="max-w-7xl mx-auto"><LiveRaces fallback={<RaceBanner />} /></div>
+      <div className="max-w-7xl mx-auto hidden sm:block"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
         <div className="px-4 sm:px-6 pt-4 sm:pt-6 flex items-center gap-3">
@@ -370,7 +377,13 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         )}
 
         {/* Every screen: a grid of coin cards (2 columns on phones, up to 5 on wide screens). */}
-        <ul className="ex-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 min-[380px]:gap-3 md:gap-4 px-4 sm:px-6 pt-3.5 md:pt-4">
+        {/* Phones: one clean row per coin (picture, name, market cap, change). */}
+        <ul className="sm:hidden px-4 pt-2" aria-label="Coins">
+          {loading && Array.from({ length: 10 }, (_, i) => <RowSkeleton key={i} />)}
+          {rows.map((r) => <CoinRow key={r.key} r={r} />)}
+          {moreLoading && Array.from({ length: 3 }, (_, i) => <RowSkeleton key={`m${i}`} />)}
+        </ul>
+        <ul className="ex-grid hidden sm:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 min-[380px]:gap-3 md:gap-4 px-4 sm:px-6 pt-3.5 md:pt-4">
           {loading && Array.from({ length: 10 }, (_, i) => <CardSkeleton key={i} />)}
           {rows.map((r) => <CoinCard key={r.key} r={r} live={r.hkey ? holders.get(r.hkey) : undefined} />)}
           {moreLoading && Array.from({ length: 4 }, (_, i) => <CardSkeleton key={`m${i}`} />)}
@@ -652,7 +665,7 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
   const pct = r.progress === null ? 0 : Math.min(99, Math.floor(r.progress * 100));
   return (
     <li className="min-w-0">
-      <Link href={r.href} className="ex-card group flex flex-col h-full min-w-0 rounded-[14px] border border-line bg-surface overflow-hidden">
+      <Link href={r.href} onClick={() => remember(r)} className="ex-card group flex flex-col h-full min-w-0 rounded-[14px] border border-line bg-surface overflow-hidden">
         <span className="relative block aspect-square bg-night overflow-hidden">
           <CardArt r={r} />
           {(r.graduated || r.graduating || r.badge) && (
@@ -701,6 +714,98 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
           </span>
         </span>
       </Link>
+    </li>
+  );
+}
+
+/** What the coin page can show at once, before its own data arrives (lib/coincache.ts). */
+function remember(r: Row) {
+  rememberCoin(r.href, { name: r.name, symbol: r.symbol, image: r.image, mc: r.mc, change: r.change, where: r.where });
+}
+
+/** Phones: balance and Deposit at the top of the home screen. */
+function BalanceBar() {
+  const { portfolio: p } = useMoney();
+  const total = p?.totalUsd ?? null;
+  const day = p?.dayUsd ?? 0;
+  const [whole, cents] = total === null ? ["$—", ""] : (() => {
+    const t = total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const i = t.lastIndexOf(".");
+    return ["$" + t.slice(0, i), t.slice(i)];
+  })();
+  return (
+    <div className="sm:hidden px-4 pt-4 flex items-center justify-between gap-3">
+      <button type="button" onClick={() => openMoney({ kind: "portfolio" })} className="min-w-0 text-left">
+        <span className="block font-display font-extrabold text-[2rem] leading-none tracking-tight tabular-nums">
+          {whole}
+          <span className="text-ink-3">{cents}</span>
+        </span>
+        <span className={"block mt-1 text-[0.8125rem] font-semibold tabular-nums " + (day > 0.005 ? "text-up" : day < -0.005 ? "text-danger" : "text-ink-3")}>
+          {total === null ? "\u00a0" : `${day >= 0 ? "+" : "-"}$${Math.abs(day).toFixed(2)}`} <span className="text-ink-3 font-medium">24h</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => openMoney({ kind: "deposit" })}
+        className="shrink-0 h-12 px-7 rounded-2xl bg-emerald text-on-accent font-bold text-[1rem] active:scale-[0.97] transition-transform"
+      >
+        Deposit
+      </button>
+    </div>
+  );
+}
+
+/** Phones: a coin as one row, big picture, name and market cap, change on the right. */
+function CoinRow({ r }: { r: Row }) {
+  const lastMc = useRef<number | null>(r.mc);
+  const [mcFlash, setMcFlash] = useState("");
+  useEffect(() => {
+    const was = lastMc.current;
+    lastMc.current = r.mc;
+    if (was === null || r.mc === null || was === r.mc) return;
+    setMcFlash(r.mc > was ? "flash-up" : "flash-down");
+    const t = setTimeout(() => setMcFlash(""), 900);
+    return () => clearTimeout(t);
+  }, [r.mc]);
+  return (
+    <li>
+      <Link href={r.href} onClick={() => remember(r)} className="flex items-center gap-3 py-2.5 active:opacity-70">
+        <span className="relative shrink-0 w-12 h-12 rounded-full overflow-hidden bg-night">
+          <CardArt r={r} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 min-w-0">
+            <b className="font-semibold text-[1rem] truncate">{r.name}</b>
+            {isNew(r.since) && <span className="shrink-0 px-1.5 rounded bg-emerald-soft text-emerald text-[0.625rem] font-bold">NEW</span>}
+          </span>
+          <span className="block text-[0.8125rem] text-ink-3 truncate">
+            {r.symbol}
+            {r.where ? ` · ${r.where}` : ""} · {age(r.since)}
+          </span>
+        </span>
+        <span className="shrink-0 text-right font-mono">
+          <span className={"block font-bold text-[1rem] tabular-nums rounded px-0.5 -mx-0.5 " + mcFlash}>{compactUsd(r.mc)}</span>
+          <span className="block text-[0.8125rem] font-semibold tabular-nums">
+            <Change v={r.change} />
+          </span>
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function RowSkeleton() {
+  return (
+    <li className="flex items-center gap-3 py-2.5" aria-hidden="true">
+      <span className="shimmer shrink-0 w-12 h-12 rounded-full" />
+      <span className="flex-1 grid gap-1.5">
+        <span className="shimmer h-4 w-1/2 rounded" />
+        <span className="shimmer h-3 w-1/3 rounded" />
+      </span>
+      <span className="grid gap-1.5 justify-items-end">
+        <span className="shimmer h-4 w-14 rounded" />
+        <span className="shimmer h-3 w-10 rounded" />
+      </span>
     </li>
   );
 }

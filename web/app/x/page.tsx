@@ -8,6 +8,7 @@ import { extAddressOk, extNetwork, fetchExtCoin, isSolExt, type ExtCoin } from "
 import { ExtCoinView } from "@/components/extcoin";
 import { dropStrayCoinSeo } from "@/components/coinseo";
 import { ElysiumCoinPage } from "@/components/elysium";
+import { PeekLoading } from "@/components/peek";
 
 export default function Page() {
   return (
@@ -102,7 +103,7 @@ function ExtCoinPage() {
         <Link href="/explore/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Back to coins</Link>
       </div>
     );
-  if (coin === undefined) return <div className="max-w-6xl mx-auto px-4 py-10"><div className="shimmer h-40 rounded-3xl" /></div>;
+  if (coin === undefined) return <PeekLoading />;
   return <ExtCoinView coin={coin} />;
 }
 

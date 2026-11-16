@@ -469,3 +469,8 @@ html.is-guest .guest-hide { display: none !important; }
 .create-orb { box-shadow: 0 4px 14px -4px rgba(255,107,26,.65); }
 @keyframes create-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .create-ring { animation: none; } }
+
+/* Page changes (app/template.tsx): a quick, soft fade-in (opacity only: a transform would move fixed bars) so moving around feels like an app. */
+.page-in { animation: page-in 0.18s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .page-in { animation: none; } }

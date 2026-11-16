@@ -13,6 +13,7 @@
 import { SellAmount, sellRaw } from "./sellamount";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
+import { AmountPad } from "@/components/amountpad";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
 import { useSolSigner } from "./usesolsigner";
@@ -355,6 +356,10 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       </div>
       {side === "buy" ? (
         <>
+          {bare ? (
+            <AmountPad value={usd} onChange={setUsd} />
+          ) : (
+          <>
           <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">
             <span className="text-ink-3 text-[1.375rem] mr-1">$</span>
             <input value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Amount" aria-label="Amount in USDC" className="flex-1 min-w-0 bg-transparent outline-none text-[1.25rem] placeholder:text-ink-3" />
@@ -366,6 +371,8 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
               </button>
             ))}
           </div>
+          </>
+          )}
         </>
       ) : (
         <SellAmount usd={sellUsd} setUsd={setSellUsd} pct={pct} setPct={setPct} heldTokens={held === null ? null : Number(held) / 1e6} priceUsd={coin.priceUsd ?? null} symbol={coin.symbol} />
