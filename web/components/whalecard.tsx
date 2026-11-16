@@ -17,6 +17,8 @@ import { RACE_CHAINS, raceHref } from "@/lib/race";
 type W = { kind: "ext" | "sasa"; net: string; coin: string; tx: string; t: number; buy: boolean; usd: number; symbol: string | null; name: string | null; image: string | null };
 
 const SHOW_MS = 4_000;
+/** At most one card this often: a calm screen, not a stream of pop-ups. */
+const GAP_MS = 45_000;
 const SEEN_KEY = "sasa-whales-seen";
 
 const amt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${(v / 1e3).toFixed(1)}K`);
@@ -32,6 +34,7 @@ export function WhaleCard() {
   const queue = useRef<W[]>([]);
   const seen = useRef<Set<string>>(new Set());
   const openedAt = useRef(Date.now() - 15 * 60_000);
+  const lastAt = useRef(0);
 
   useEffect(() => {
     try {
@@ -81,14 +84,20 @@ export function WhaleCard() {
       return () => clearTimeout(t);
     }
     const t = setInterval(() => {
-      const next = queue.current.shift();
-      if (next) setShown(next);
+      if (Date.now() - lastAt.current < GAP_MS) return;
+      const next = queue.current.pop();
+      // only the newest one shows; older ones are dropped
+      queue.current = [];
+      if (next) {
+        lastAt.current = Date.now();
+        setShown(next);
+      }
     }, 1_000);
     return () => clearInterval(t);
   }, [shown]);
 
-  // not over the admin pages or the create form
-  if (!shown || path.startsWith("/admin") || path.startsWith("/race/launch") || path.startsWith("/chat")) return null;
+  // not over the admin pages, the create form, chat, or a coin page someone is reading
+  if (!shown || /^\/(admin|race\/launch|chat|x|r|coin|me)(\/|$)/.test(path)) return null;
   const href = shown.kind === "sasa" ? raceHref(shown.coin) : extHref({ network: shown.net, address: shown.coin });
   return (
     <div className="fixed left-1/2 -translate-x-1/2 top-[4.25rem] sm:top-[4.75rem] z-40 w-[min(26rem,calc(100vw-1.5rem))] pointer-events-none">
