@@ -113,13 +113,14 @@ end $$;
 revoke all on function ext_archive_sync() from public;
 grant execute on function ext_archive_sync() to service_role;
 
--- What pages may show: never a bad coin. "indexed" = worth a place in search results: seen in
--- the last 90 days, or a coin that once reached a $1M market cap.
+-- What pages may show: never a bad coin. "indexed" = worth a place in search results: a coin that
+-- once reached a $1M market cap (Nov 2026: tens of thousands of small coin pages read as thin,
+-- mass-made content to Google and held the whole site back; only the coins people search for).
 create or replace view ext_archive_pages as
   select network, chain_id, address, name, symbol, image, pool, dex, pool_created, first_seen, last_seen,
          price_usd, mcap_usd, liq_usd, vol_24h, peak_mcap, peak_vol, peak_liq, buy_tax, sell_tax, mintable,
          top10, x_handle,
-         (last_seen > now() - interval '90 days' or coalesce(peak_mcap, 0) >= 1000000) as indexed
+         (coalesce(peak_mcap, 0) >= 1000000) as indexed
   from ext_archive
   where not bad;
 grant select on ext_archive_pages to anon, authenticated;
@@ -139,7 +140,7 @@ language sql stable security definer set search_path = public as $$
   where p_chunk between 0 and 100000
     and id >= p_chunk::bigint * 40000 and id < (p_chunk::bigint + 1) * 40000
     and not bad
-    and (last_seen > now() - interval '90 days' or coalesce(peak_mcap, 0) >= 1000000)
+    and coalesce(peak_mcap, 0) >= 1000000
 $$;
 revoke all on function ext_sitemap_chunks(), ext_sitemap_chunk(integer) from public;
 grant execute on function ext_sitemap_chunks(), ext_sitemap_chunk(integer) to anon, authenticated, service_role;
