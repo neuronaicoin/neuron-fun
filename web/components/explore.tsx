@@ -286,6 +286,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         </div>
         <AddressJump query={query} />
 
+        <SasaLaunches solToo={!!solChip} />
         <div className="px-4 sm:px-6">
           <BoostedRow />
           <AlmostThere coins={racing} />
@@ -715,6 +716,61 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
         </span>
       </Link>
     </li>
+  );
+}
+
+/** "Launched on sasa": the newest coins launched here (every chain, Solana too), on every tab. */
+function SasaLaunches({ solToo }: { solToo: boolean }) {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const [races, sol] = await Promise.all([
+        fetchRaceCoins(12).catch(() => [] as RaceCoin[]),
+        solToo ? fetchSasaSolCoins(12).catch(() => [] as ExtCoin[]) : Promise.resolve([] as ExtCoin[]),
+      ]);
+      const supplies = await Promise.all(races.map((r) => coinSupply(r).catch(() => RACE_SUPPLY)));
+      const all = [
+        ...races.map((r, i) => raceRow(r, supplies[i])),
+        ...sol.map((c) => ({ ...toRow({ kind: "ext", coin: c } as Ranked, null), where: "Solana" })),
+      ].sort((a, b) => (Date.parse(b.since ?? "") || 0) - (Date.parse(a.since ?? "") || 0));
+      if (alive) setRows(all.slice(0, 16));
+    };
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [solToo]);
+  if (!rows?.length) return null;
+  return (
+    <section aria-label="Launched on sasa" className="pt-4">
+      <div className="px-4 sm:px-6 flex items-baseline justify-between gap-2">
+        <h2 className="font-display font-bold text-[1.0625rem]">🚀 Launched on sasa</h2>
+        <Link href="/race/launch/" className="text-[0.8125rem] font-semibold text-emerald">Launch yours →</Link>
+      </div>
+      <div className="mt-2.5 flex gap-2.5 overflow-x-auto no-scrollbar px-4 sm:px-6 snap-x">
+        {rows.map((r) => (
+          <Link
+            key={r.key}
+            href={r.href}
+            onClick={() => remember(r)}
+            className="snap-start shrink-0 w-[8.5rem] rounded-2xl border border-line bg-surface p-2.5 active:scale-[0.98] transition-transform"
+          >
+            <span className="relative block w-11 h-11 rounded-full overflow-hidden bg-night">
+              <CardArt r={r} />
+            </span>
+            <b className="block mt-2 font-semibold text-[0.875rem] truncate">{r.name}</b>
+            <span className="block text-[0.6875rem] text-ink-3 truncate">
+              {r.where ? `${r.where} · ` : ""}
+              {age(r.since)}
+            </span>
+            <span className="block mt-1 font-mono font-bold text-[0.875rem] tabular-nums">{compactUsd(r.mc)}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
