@@ -845,8 +845,8 @@ export default function RaceLaunchPage() {
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[0.8125rem] text-ink-3">{onSolo ? "Your first buy (USDC)" : "Your first buy, in total (USDC)"}</span>
-            <div className="grid grid-cols-3 gap-2">
-              {["10", "50", "100"].map((v) => (
+            <div className={"grid gap-2 " + (onSolana ? "grid-cols-4" : "grid-cols-3")}>
+              {(onSolana ? ["0", "10", "50", "100"] : ["10", "50", "100"]).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -874,7 +874,9 @@ export default function RaceLaunchPage() {
             )}
             <span className="text-[0.8125rem] text-ink-3">
               {onSolana
-                ? "Bought on Solana right as your coin goes live."
+                ? buyN > 0
+                  ? "Bought on Solana right as your coin goes live."
+                  : "No first buy: you only pay the small launch cost."
                 : onEly
                 ? "Bought on Elysium right as your coin goes live."
                 : picked.length > 0 && perChainN > 0

@@ -79,6 +79,9 @@ export function SolanaLaunchBox(p: {
     if (step) stepRef.current = step;
   }, [step]);
   const [error, setError] = useState("");
+  // not enough Cash: the Solana wallet to send SOL to instead (a launch uses SOL already there first)
+  const [topUp, setTopUp] = useState<{ address: string; usd: number } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
   // the launch party: confetti once, when the coin is live
   const [party, setParty] = useState(true);
@@ -149,14 +152,18 @@ export function SolanaLaunchBox(p: {
     }).catch(async (e) => {
       const cash = await cashNow().catch(() => null);
       const need = (usdBuy > 0 ? usdBuy : 0) + 5;
-      if (cash !== null && Number(cash) / 1e6 < need)
+      if (cash !== null && Number(cash) / 1e6 < need) {
+        setTopUp({ address: to, usd: need });
         throw new Error(`Not enough Cash: this launch needs about $${need.toFixed(0)} and you have $${(Number(cash) / 1e6).toFixed(2)}. Add money or lower the first buy.`);
+      }
       throw e;
     });
     const cash = await cashNow();
     // email accounts pay Base's network fee from the same dollars: a few cents of room
-    if (cash < BigInt(q.inRaw || "0") + (w.embedded ? 50_000n : 0n))
+    if (cash < BigInt(q.inRaw || "0") + (w.embedded ? 50_000n : 0n)) {
+      setTopUp({ address: to, usd: q.inUsd + 0.05 });
       throw new Error(`This needs about $${(q.inUsd + 0.05).toFixed(2)} in your Cash. Add money or lower the first buy.`);
+    }
     await w.send(BASE.chain, quoteCalls(q, BASE), (m) => setStep(m));
     afterTrade();
     setStep("Moving your dollars to Solana…");
@@ -176,6 +183,7 @@ export function SolanaLaunchBox(p: {
     lock.current = true;
     setBusy(true);
     setError("");
+    setTopUp(null);
     // the coin about to go on chain: kept on this device before it's sent, so a closed tab or a
     // failure half-way still offers "Finish" (the 50/50 split) afterwards
     let sent: Pending | null = null;
@@ -224,8 +232,10 @@ export function SolanaLaunchBox(p: {
               .readContract({ address: BASE.usdc, abi: usdcAbi, functionName: "balanceOf", args: [w.address as Address] })
               .then((v) => Number(v as bigint) / 1e6)
               .catch(() => null);
-            if (cash !== null && cash < usdBuy + 5)
+            if (cash !== null && cash < usdBuy + 5) {
+              setTopUp({ address: s.address, usd: usdBuy + 5 });
               throw new Error(`Not enough Cash: this launch needs about $${(usdBuy + 5).toFixed(0)} and you have $${cash.toFixed(2)}. Add money or lower the first buy.`);
+            }
             throw e;
           });
           buyLamports = BigInt(probe.outRaw || "0");
@@ -414,9 +424,35 @@ export function SolanaLaunchBox(p: {
       </button>
       {problem && !busy && <p className="text-[0.8125rem] text-ink-2 text-center">{problem}</p>}
       {error && <p className="text-[0.8125rem] text-danger text-center break-words">{error}</p>}
+      {topUp && !busy && (
+        <div className="rounded-2xl border border-line bg-night p-3 flex flex-col gap-2 text-[0.8125rem] min-w-0">
+          <b>Or pay with SOL</b>
+          <span className="text-ink-2">
+            Send about ${Math.ceil(topUp.usd)} of SOL to your Solana wallet below, then press Create again. The launch uses the SOL already there first.
+          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <code className="flex-1 min-w-0 truncate rounded-lg bg-surface border border-line px-2 py-1.5 text-[0.75rem]">{topUp.address}</code>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(topUp.address).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+              className="h-8 px-3 rounded-full bg-ink text-paper font-semibold shrink-0"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          {usdBuy > 0 && <span className="text-ink-3">Tip: set the first buy to $0 and a launch costs only about $5.</span>}
+        </div>
+      )}
       {!busy && !problem && (
         <p className="text-[0.75rem] text-ink-3 text-center">
-          {usdBuy > 0 ? `About $${(usdBuy + 5).toFixed(0)} from your Cash with the launch costs.` : "About $5 from your Cash for the launch costs."}
+          {usdBuy > 0
+            ? `About $${(usdBuy + 5).toFixed(0)} with the launch costs, from SOL in your Solana wallet or your Cash.`
+            : "About $5 for the launch costs, from SOL in your Solana wallet or your Cash."}
         </p>
       )}
     </div>
