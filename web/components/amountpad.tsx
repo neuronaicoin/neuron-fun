@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef } from "react";
+
 /**
  * Phones: the buy amount as a big number with a keypad under it, like a payments app.
  * No keyboard pops up and covers the sheet; quick amounts sit right above the keys.
@@ -16,8 +18,13 @@ export function AmountPad({
   presets?: number[];
 }) {
   const amount = Number(value) || 0;
+  // a prefilled or quick amount: the first key typed starts a new number (like a calculator)
+  const fresh = useRef(true);
   function press(k: (typeof KEYS)[number]) {
-    if (k === "del") return onChange(value.slice(0, -1));
+    const wasFresh = fresh.current;
+    fresh.current = false;
+    if (k === "del") return onChange(wasFresh ? "" : value.slice(0, -1));
+    if (wasFresh) return onChange(k === "." ? "0." : k);
     if (k === ".") {
       if (value.includes(".")) return;
       return onChange((value || "0") + ".");
@@ -50,7 +57,10 @@ export function AmountPad({
             key={v}
             type="button"
             aria-pressed={amount === v}
-            onClick={() => onChange(String(v))}
+            onClick={() => {
+              fresh.current = true;
+              onChange(String(v));
+            }}
             className={"h-11 rounded-xl font-bold text-[0.9375rem] active:scale-[0.96] transition-transform " + (amount === v ? "bg-emerald-soft text-emerald" : "bg-paper text-ink")}
           >
             ${v}

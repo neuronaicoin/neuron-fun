@@ -1,4 +1,5 @@
 "use client";
+import { AmountPad } from "@/components/amountpad";
 
 import { afterTrade } from "@/lib/portfolio";
 import { showToast } from "@/lib/toast";
@@ -201,6 +202,8 @@ export function RaceTradeBox({
       const t = String((e as Error)?.message ?? "") + JSON.stringify(e ?? {}, (_k, v) => (typeof v === "bigint" ? String(v) : v));
       const text = /RaceLostPoolShut/.test(t) ? "This chain lost the race and its pool is closed." : friendlyError(e);
       setMsg({ ok: false, text });
+      if (!/rejected|denied|cancel/i.test(t))
+        void fetch("/api/sol/error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: w.embedded ? "trade-email" : "trade-wallet", step: `${side} via base ${chain.short}`, error: String((e as Error)?.message ?? e).slice(0, 800) }) }).catch(() => {});
       showToast({ kind: "error", title: side === "buy" ? "Buy didn't go through" : "Sell didn't go through", body: text }, 7_000);
     } finally {
       setBusy(false);
@@ -516,6 +519,9 @@ export function RaceTradeBox({
                 </span>
               )}
             </div>
+            {bare && side === "buy" ? (
+              <AmountPad value={amount} onChange={setAmount} presets={QUICK_BUY} />
+            ) : (
             <div className="flex items-center gap-2 min-w-0">
               {side === "buy" && <span className="text-[2rem] font-bold text-ink-3 leading-none">$</span>}
               <input
@@ -528,9 +534,10 @@ export function RaceTradeBox({
                 className="w-full min-w-0 bg-transparent outline-none text-[2rem] font-bold leading-none tabular-nums text-ink"
               />
             </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className={"grid grid-cols-4 gap-2" + (bare && side === "buy" ? " hidden" : "")}>
             {side === "buy"
               ? QUICK_BUY.map((v) => (
                   <button
