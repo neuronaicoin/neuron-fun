@@ -1332,75 +1332,108 @@ export async function sniperLoop(pool, log) {
     else break; // oldest first
   }, 1000);
 
-  // the feed: every pump.fun transaction, over the node's websocket
-  let conn = null;
-  let sub = null;
-  let subAmm = null;
-  // a dead websocket can leave these waiting forever: give up on the old listeners after 5 s
+  // the feed: every pump.fun transaction, over the node's websocket.
+  // A plain websocket, not web3.js's subscriptions: when web3.js's socket drops it tries to
+  // unsubscribe forever on the dead socket, logging an error each time, until the process runs
+  // out of memory (that took the indexer down at night). Here a dropped socket is simply thrown
+  // away and a new one opened.
+  const WebSocket = require("ws");
+  let ws = null;
+  const handlers = new Map(); // subscription id -> handler
+  const onPump = (l, ctx) => {
+    if (l.err) return;
+    lastEvent = Date.now();
+    for (const line of l.logs) {
+      if (!line.startsWith("Program data: ")) continue;
+      const e = decodeEvent(line.slice(14));
+      if (!e) continue;
+      events++;
+      if (e.kind === "create") onCreate(e, ctx.slot);
+      else if (e.kind === "trade") onTrade(e, ctx.slot);
+      else if (e.kind === "migrated") {
+        // its PumpSwap pool, when priced in SOL: its trades are followed from now on
+        if (!e.quote || e.quote === WSOL_HEX || /^0+$/.test(e.quote)) late.migrated(e.mint, e.pool);
+      }
+      else if (e.kind === "complete") {
+        const c = coins.get(e.mint);
+        if (c?.entryMc && !c.result) c.result = "win"; // moved to its pool: well above any take profit
+      }
+    }
+  };
+  // PumpSwap: prices of coins that graduated while watched (SNIPER_AMM=0 switches it off)
+  const onAmm = (l) => {
+    if (l.err) return;
+    for (const line of l.logs) {
+      if (!line.startsWith("Program data: ")) continue;
+      const e = decodeAmm(line.slice(14));
+      if (!e) continue;
+      const mc = ammMc(e.base, e.quote, solUsd);
+      const mint = late.poolTrade(e, mc);
+      if (mint) {
+        smartPrice(mint, mc);
+        if (e.buy) smartBuy(e.user, mint, e.sol, mc);
+      }
+      const c = mint ? coins.get(mint) : null;
+      if (c) poolPrice(c, mc);
+    }
+  };
+  let wsErrors = 0;
   const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
   const connect = async () => {
-    if (conn && sub !== null) await within(conn.removeOnLogsListener(sub).catch(() => {}), 5000);
-    if (conn && subAmm !== null) await within(conn.removeOnLogsListener(subAmm).catch(() => {}), 5000);
-    sub = null;
-    subAmm = null;
-    // web3.js retries a websocket forever (max_reconnects: Infinity): an old connection left open
-    // keeps knocking on the node next to the new one, until the node answers every knock with 429.
-    // Close it for good before opening the next one.
-    if (conn) {
+    if (ws) {
       try {
-        conn._rpcWebSocket?.close();
+        ws.removeAllListeners();
+        ws.on("error", () => {});
+        ws.terminate();
       } catch {}
+      ws = null;
     }
-    conn = new web3.Connection(rpc, { commitment: "confirmed", wsEndpoint: rpc.replace(/^http/, "ws") });
-    sub = conn.onLogs(
-      new web3.PublicKey(PUMP),
-      (l, ctx) => {
-        if (l.err) return;
-        lastEvent = Date.now();
-        for (const line of l.logs) {
-          if (!line.startsWith("Program data: ")) continue;
-          const e = decodeEvent(line.slice(14));
-          if (!e) continue;
-          events++;
-          if (e.kind === "create") onCreate(e, ctx.slot);
-          else if (e.kind === "trade") onTrade(e, ctx.slot);
-          else if (e.kind === "migrated") {
-            // its PumpSwap pool, when priced in SOL: its trades are followed from now on
-            if (!e.quote || e.quote === WSOL_HEX || /^0+$/.test(e.quote)) late.migrated(e.mint, e.pool);
-          }
-          else if (e.kind === "complete") {
-            const c = coins.get(e.mint);
-            if (c?.entryMc && !c.result) c.result = "win"; // moved to its pool: well above any take profit
-          }
-        }
-      },
-      "confirmed"
-    );
-    // PumpSwap: prices of coins that graduated while watched (SNIPER_AMM=0 switches it off)
-    subAmm =
-      process.env.SNIPER_AMM === "0"
-        ? null
-        : conn.onLogs(
-            new web3.PublicKey(PUMP_AMM),
-            (l) => {
-              if (l.err) return;
-              for (const line of l.logs) {
-                if (!line.startsWith("Program data: ")) continue;
-                const e = decodeAmm(line.slice(14));
-                if (!e) continue;
-                const mc = ammMc(e.base, e.quote, solUsd);
-                const mint = late.poolTrade(e, mc);
-                if (mint) {
-                  smartPrice(mint, mc);
-                  if (e.buy) smartBuy(e.user, mint, e.sol, mc);
-                }
-                const c = mint ? coins.get(mint) : null;
-                if (c) poolPrice(c, mc);
-              }
-            },
-            "confirmed"
-          );
+    handlers.clear();
+    const sock = new WebSocket(rpc.replace(/^http/, "ws"), { handshakeTimeout: 15_000, maxPayload: 16 * 1024 * 1024 });
+    ws = sock;
+    const pending = new Map(); // request id -> handler
+    sock.on("open", () => {
+      const subs = [[1, PUMP, onPump]];
+      if (process.env.SNIPER_AMM !== "0") subs.push([2, PUMP_AMM, onAmm]);
+      for (const [id, program, h] of subs) {
+        pending.set(id, h);
+        sock.send(JSON.stringify({ jsonrpc: "2.0", id, method: "logsSubscribe", params: [{ mentions: [program] }, { commitment: "confirmed" }] }));
+      }
+    });
+    sock.on("message", (buf) => {
+      let m;
+      try {
+        m = JSON.parse(buf.toString());
+      } catch {
+        return;
+      }
+      if (m.id !== undefined && pending.has(m.id)) {
+        if (m.result !== undefined) handlers.set(m.result, pending.get(m.id));
+        else if (wsErrors++ < 5) log(`bot test: subscribe refused: ${JSON.stringify(m.error ?? m).slice(0, 160)}`);
+        pending.delete(m.id);
+        return;
+      }
+      if (m.method !== "logsNotification") return;
+      const h = handlers.get(m.params?.subscription);
+      const v = m.params?.result;
+      if (h && v?.value) {
+        try {
+          h(v.value, v.context ?? {});
+        } catch {}
+      }
+    });
+    // errors and closes are only noted (a few times); the quiet-feed check below reconnects
+    sock.on("error", (e) => {
+      if (wsErrors++ < 5) log(`bot test: websocket error: ${String(e?.message ?? e).slice(0, 120)}`);
+    });
+    sock.on("close", () => {});
   };
+  // keep the socket alive through proxies
+  setInterval(() => {
+    try {
+      if (ws && ws.readyState === 1) ws.ping();
+    } catch {}
+  }, 30_000).unref?.();
   await connect();
   log("bot test: watching pump.fun live");
 
@@ -1415,6 +1448,7 @@ export async function sniperLoop(pool, log) {
       if (Date.now() >= nextTry) {
         quietRuns++;
         log(`bot test: feed quiet for a minute, reconnecting (try ${quietRuns})`);
+        wsErrors = 0;
         await within(connect(), 20_000).catch((e) => log(`bot test: reconnect failed: ${e.message}`));
         nextTry = Date.now() + Math.min(10 * 60_000, 60_000 * 2 ** Math.min(quietRuns - 1, 4));
       }
