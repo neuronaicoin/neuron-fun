@@ -198,11 +198,14 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
 
           {pool && (
             <section className="sm:rounded-3xl sm:border sm:border-line sm:bg-surface sm:p-5 min-w-0">
+              <ChartOrDex network={coin.network} pool={pool} skip={!!curvePool}>
+              {(onRows) => (
               <PriceChart
                 bleed
                 cacheKey={`ext:${coin.network}:${pool}`}
                 load={(frame) =>
                   fetchExtCandles(coin.network, pool, coin.address, frame)
+                    .then((rows) => (onRows(rows.length), rows), (e) => (onRows(-1), Promise.reject(e)))
                     .catch((e) => {
                       if (!curvePool) throw e;
                       return [];
@@ -220,6 +223,8 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 since={coin.poolCreated ? Date.parse(coin.poolCreated) || undefined : undefined}
                 trades={liveTrades}
               />
+              )}
+              </ChartOrDex>
             </section>
           )}
 
@@ -548,4 +553,56 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
       )}
     </aside>
   );
+}
+
+
+/**
+ * Our own chart for another DEX's coin (GeckoTerminal candles), and if they don't arrive within
+ * 6 seconds (GeckoTerminal's free limit is often used up), DexScreener's chart of the same pool
+ * instead, so the page never sits on "Loading the chart…".
+ */
+const DS_EMBED_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana" };
+function ChartOrDex({
+  network,
+  pool,
+  skip,
+  children,
+}: {
+  network: string;
+  pool: string;
+  skip: boolean;
+  children: (onRows: (n: number) => void) => React.ReactNode;
+}) {
+  const chain = DS_EMBED_CHAIN[network];
+  const [state, setState] = useState<"wait" | "ok" | "dex">("wait");
+  const got = useRef(false);
+  useEffect(() => {
+    got.current = false;
+    setState("wait");
+    if (skip || !chain) return;
+    const t = setTimeout(() => {
+      if (!got.current) setState("dex");
+    }, 6_000);
+    return () => clearTimeout(t);
+  }, [network, pool, skip, chain]);
+  const onRows = useCallback(
+    (n: number) => {
+      if (n > 0) {
+        got.current = true;
+        setState((s) => (s === "dex" ? s : "ok"));
+      } else if (n < 0 && !got.current && !skip && chain) setState("dex");
+    },
+    [skip, chain]
+  );
+  if (state === "dex" && chain) {
+    const dark = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark";
+    const src = `https://dexscreener.com/${chain}/${pool}?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=${dark ? "dark" : "light"}&theme=${dark ? "dark" : "light"}&chartStyle=1&chartType=usd&interval=15`;
+    return (
+      <div className="w-full">
+        <iframe title="Chart" src={src} className="w-full h-[420px] sm:h-[480px] rounded-2xl border-0 bg-paper" loading="eager" />
+        <p className="mt-1.5 text-[0.6875rem] text-ink-3">Chart by DexScreener</p>
+      </div>
+    );
+  }
+  return <>{children(onRows)}</>;
 }
