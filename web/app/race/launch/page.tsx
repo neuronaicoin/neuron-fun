@@ -5,7 +5,7 @@ import { track } from "@/lib/track";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatUnits, keccak256, parseUnits, toHex, type Address, type Hex } from "viem";
+import { formatUnits, keccak256, parseUnits, toHex, type Address, type Hex, type LocalAccount } from "viem";
 import { NO_ANSWER, SENT_UNCONFIRMED, useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
 import { CoinAvatar } from "@/components/coins";
@@ -178,7 +178,29 @@ export default function RaceLaunchPage() {
   const picked = useMemo(() => RACE_CHAINS.filter((c) => chains.includes(c.chainId)), [chains]);
   // email accounts on mainnet launch everything from their dollars on Base
   const home = homeChain();
-  const viaBase = w.embedded && !IS_TESTNET && !!home;
+  // Browser wallets launching on another chain too: the same single Base step (USDC on Base pays
+  // for every chain through Across); the wallet signs each chain's launch, then sends one batch on Base
+  const crossWallet = !w.embedded && !!w.address && !IS_TESTNET && !!home && picked.some((c) => c.chainId !== home.chainId);
+  const viaBase = (w.embedded && !IS_TESTNET && !!home) || crossWallet;
+  /** The browser wallet as a signer for the launch messages: one signature at a time, each on its
+   * own chain (wallets refuse a signature for a chain they are not on). */
+  const walletSigner = useMemo((): LocalAccount | null => {
+    if (w.embedded || !w.address) return null;
+    const me = w.address as Address;
+    let queue: Promise<unknown> = Promise.resolve();
+    const signTypedData = (td: { domain?: { chainId?: number | bigint } } & Record<string, unknown>) => {
+      const run = queue.then(async () => {
+        const id = Number(td.domain?.chainId ?? 0);
+        const chain = RACE_CHAINS.find((c) => c.chain.id === id)?.chain ?? home?.chain;
+        if (!chain) throw new Error("Unknown chain for this signature.");
+        await w.switchTo(chain);
+        return w.walletClient(chain).signTypedData({ account: me, ...(td as Record<string, unknown>) } as never);
+      });
+      queue = run.catch(() => {});
+      return run;
+    };
+    return { address: me, type: "local", source: "custom", publicKey: "0x", signTypedData } as unknown as LocalAccount;
+  }, [w.embedded, w.address, w.switchTo, w.walletClient, home]);
 
   // What the wallet has on each picked chain, and each factory's minimum first buy.
   const readFunds = useCallback(async () => {
@@ -256,6 +278,7 @@ export default function RaceLaunchPage() {
   const homeFunds = home ? funds[home.chainId] : undefined;
   const viaBaseShort = (): string | null => {
     if (!viaBase || !homeFunds) return null;
+    if (!w.embedded && homeFunds.gas === 0n) return "No ETH on Base for the network fee. Add a little ETH on Base.";
     const closed = picked.find((c) => home && c.chainId !== home.chainId && !crossReady(c));
     if (closed) return `${closed.short} isn't open to email accounts yet. Untick it.`;
     const have = Number(formatUnits(homeFunds.usd, homeFunds.usdDec));
@@ -302,7 +325,8 @@ export default function RaceLaunchPage() {
    */
   const runViaBase = async (d: Draft, ready?: LaunchPlan) => {
     const home = homeChain();
-    if (!w.address || !home || !w.embeddedSigner || busy) return;
+    const signer = w.embeddedSigner ?? walletSigner;
+    if (!w.address || !home || !signer || busy) return;
     setBusy(true);
     setError("");
     saveDraft(d);
@@ -326,7 +350,7 @@ export default function RaceLaunchPage() {
       }
       const plan = ready ?? await planLaunch({
         user: me,
-        signer: w.embeddedSigner,
+        signer,
         home,
         picked: order,
         d: { ...d },
@@ -345,7 +369,7 @@ export default function RaceLaunchPage() {
         setDraft(next);
         d = next;
         try {
-          tx = await sendLaunch({ s: { user: me, sendHome: w.send, sendThere: w.sendOwnGas }, home, plan, onStep: (m) => order.forEach((c) => !live.has(c.chainId) && set(c.chainId, { state: "working", note: m })) });
+          tx = await sendLaunch({ s: { user: me, sendHome: w.send, sendThere: w.embedded ? w.sendOwnGas : w.send }, home, plan, onStep: (m) => order.forEach((c) => !live.has(c.chainId) && set(c.chainId, { state: "working", note: m })) });
         } catch (e) {
           const m = String((e as Error)?.message ?? "");
           // surely not sent: forget it, so Continue can send it again
@@ -1005,14 +1029,21 @@ export default function RaceLaunchPage() {
                 {busy ? "Creating…" : `Create on ${picked.length} chain${picked.length === 1 ? "" : "s"}`}
               </button>
               {(problem || viaBaseShort()) && <p className="text-[0.8125rem] text-ink-2 text-center">{problem || viaBaseShort()}</p>}
+              {!problem && /USDC/.test(viaBaseShort() ?? "") && (
+                <button type="button" onClick={() => setAddMoney(true)} className="text-[0.8125rem] text-emerald-dark font-semibold underline self-center">
+                  Add money from any chain
+                </button>
+              )}
               {error && <p className="text-[0.8125rem] text-danger text-center">{error}</p>}
               <p className="text-[0.75rem] text-ink-3 text-center">
-                About ${viaBaseTotal.toFixed(2)} from your balance on Base, in one step.
+                {w.embedded
+                  ? `About $${viaBaseTotal.toFixed(2)} from your balance on Base, in one step.`
+                  : `About $${viaBaseTotal.toFixed(2)} USDC from your wallet on Base. Your wallet asks you to sign once per chain, then confirm on Base.`}
               </p>
             </>
           )}
 
-          {w.address && !w.embedded && !onSolo && (
+          {w.address && !w.embedded && !onSolo && !viaBase && (
             <>
               <button
                 type="button"
