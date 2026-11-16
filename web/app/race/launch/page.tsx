@@ -101,6 +101,17 @@ const cleanSym = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(
 /** The chain picker's order: Robinhood first, then the rest as listed. */
 const CHAIN_ORDER = [...RACE_CHAINS].sort((a, b) => (b.short === "Robinhood" ? 1 : 0) - (a.short === "Robinhood" ? 1 : 0));
 
+/** Every failed launch reaches sasa's error log (Supabase sol_launch_errors), so it can be fixed fast. */
+function reportLaunchError(kind: string, step: string, e: unknown) {
+  try {
+    const m = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? e);
+    if (/rejected|denied/i.test(m)) return; // the user said no in their wallet
+    void fetch("/api/sol/error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, step: step.slice(0, 80), error: m.slice(0, 800) }) }).catch(() => {});
+  } catch {
+    /* never stands in the way */
+  }
+}
+
 export default function RaceLaunchPage() {
   const w = useWallet();
   const router = useRouter();
@@ -420,6 +431,7 @@ export default function RaceLaunchPage() {
     } catch (e) {
       setBusy(false);
       setError(friendlyError(e));
+      reportLaunchError(w.embedded ? "evm-email" : "evm-wallet", `via base: ${order.map((c) => c.short).join("+")}`, e);
       order.forEach((c) => setStatus((s) => (s[c.chainId]?.state === "working" ? { ...s, [c.chainId]: { state: "error", note: friendlyError(e) } } : s)));
     }
   };
@@ -500,6 +512,7 @@ export default function RaceLaunchPage() {
       } catch (e) {
         failed = true;
         set({ state: "error", note: friendlyError(e) });
+        reportLaunchError("evm-direct", c.short, e);
         break;
       }
     }
