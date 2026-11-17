@@ -124,7 +124,7 @@ export function Hero() {
       >
         <div>
           <h1 className="font-display font-black text-[2.125rem] sm:text-[2.75rem] xl:text-[3.25rem] leading-[1.05] tracking-tight">
-            Launch your coin in <span className="text-[#FF6B1A] whitespace-nowrap">30 seconds</span>.<br />
+            Launch your coin in <span className="text-[#FF6B1A] whitespace-nowrap">a minute</span>.<br />
             Trade it like the <span className="text-[#FF6B1A]">WHALES</span>.
           </h1>
           <p className="mt-3 text-ink-2 text-[1rem] sm:text-[1.0625rem] leading-relaxed max-w-xl">
