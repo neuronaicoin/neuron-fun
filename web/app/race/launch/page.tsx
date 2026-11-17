@@ -597,8 +597,8 @@ export default function RaceLaunchPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-12 flex flex-col gap-5 min-w-0">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[1.75rem] sm:text-[2.25rem] font-extrabold tracking-tight">Create your coin on multiple chains</h1>
-        <p className="text-ink-2 text-[0.9375rem]">Your coin goes live on every chain you pick. After 5 minutes, the chain with the most money wins and the whole coin moves there.</p>
+        <h1 className="text-[1.75rem] sm:text-[2.25rem] font-extrabold tracking-tight">Launch your coin in a minute</h1>
+        <p className="text-ink-2 text-[0.9375rem]">Name, picture, pick a chain, make your first buy. Your coin is live and tradable right away.</p>
       </div>
 
       <CreatorBonusNote />
