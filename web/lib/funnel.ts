@@ -102,9 +102,11 @@ export function startFunnel() {
     let scan: ReturnType<typeof setTimeout> | null = null;
     const look = () => {
       scan = null;
-      document.querySelectorAll(".text-danger").forEach((n) => {
+      document.querySelectorAll(".text-danger, [role=alert]").forEach((n) => {
+        // red trade rows, prices and % changes are not errors: only messages outside lists
+        if ((n as HTMLElement).closest("li, tr, table, ul, ol, a, button")) return;
         const t = (n as HTMLElement).innerText?.replace(/\s+/g, " ").trim();
-        if (!t || t.length < 8 || !/[a-z]{3,}.*\s.*[a-z]{2,}/i.test(t) || /^[−+\-]?[$\d.,%KMB ]+$/.test(t) || seenErr.has(t)) return;
+        if (!t || t.length < 12 || !/[a-z]{3,}.*\s.*[a-z]{2,}/i.test(t) || /^[−+\-]?[$\d.,%KMB ]+$/.test(t) || seenErr.has(t)) return;
         seenErr.add(t);
         funnel("error_shown", t);
       });
