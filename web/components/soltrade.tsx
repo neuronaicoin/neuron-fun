@@ -56,6 +56,8 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  // a heads-up when a buy can't be priced for a coin that trades through a route (not its curve)
+  const [hint, setHint] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusyState] = useState("");
   const stepNow = useRef(""); // the last step shown, for the error report
@@ -131,6 +133,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   useEffect(() => {
     setQuote(null);
     setError("");
+    setHint("");
     if (!w.address || !sol.address || raw <= 0n) return;
     const ctrl = new AbortController();
     const t = setTimeout(() => {
@@ -146,7 +149,23 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
             );
       // only a preview: when it can't be priced the estimate shows instead (a coin on its launch
       // curve is traded on the curve itself, which a route can't always price)
-      q.then(setQuote).catch(() => {});
+      q.then(setQuote).catch(async (e: unknown) => {
+        if (side !== "buy" || ctrl.signal.aborted) return;
+        const msg = String((e as { message?: string })?.message ?? e);
+        const small = /too small|minimum|below/i.test(msg);
+        const noRoute = /route|liquidity|no quote|not available|unsupported/i.test(msg);
+        if (!small && !noRoute) return;
+        try {
+          const L = await import("@/lib/sollaunch");
+          const D = await import("@/lib/soldbc");
+          if (await L.onCurve(mint)) return;
+          if (await D.dbcActive(mint)) return;
+        } catch {
+          return;
+        }
+        if (ctrl.signal.aborted) return;
+        setHint(small ? "This amount is below the minimum for this coin. Try a larger amount." : "This coin has too little liquidity to buy right now.");
+      });
     }, 400);
     return () => {
       clearTimeout(t);
@@ -412,6 +431,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
         </button>
       )}
       {error && <p className="mt-2 text-[0.8125rem] text-danger break-words">{error}</p>}
+      {!error && hint && !busy && <p className="mt-2 text-[0.8125rem] text-ink-2 break-words">{hint}</p>}
       <p className="text-[0.6875rem] text-ink-3 mt-2">
         {side === "buy"
           ? "Paid with your USDC. The coin goes to your Solana wallet."
