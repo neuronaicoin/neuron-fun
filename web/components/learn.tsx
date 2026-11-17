@@ -15,8 +15,8 @@ export function LearnHeader() {
         </a>
         <nav className="flex items-center gap-2 text-[0.875rem]">
           <Link href="/learn/" className="h-9 px-3 rounded-full flex items-center font-semibold text-ink-2 hover:text-ink">Learn</Link>
-          <a href={X_URL} target="_blank" rel="noreferrer" className="h-9 px-4 rounded-full border border-line flex items-center font-semibold hover:border-emerald">
-            Follow on X
+          <a href="/race/launch/" className="h-9 px-4 rounded-full bg-[#ff6b1a] text-white flex items-center font-bold">
+            Launch a coin
           </a>
         </nav>
       </div>

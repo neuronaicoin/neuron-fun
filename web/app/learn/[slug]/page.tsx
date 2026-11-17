@@ -47,11 +47,23 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
           <p className="text-[0.875rem] text-ink-3 mt-4 font-mono">
             {a.readMin} min read · Updated {new Date(a.updated).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
           </p>
+          {!IS_TESTNET && (
+            <div className="mt-8 rounded-2xl border border-line bg-surface p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+              <p className="flex-1 text-[0.9375rem] text-ink-2">
+                <b className="text-ink">Launch your own coin on sasa in a minute.</b> Keep it above $10K market cap for an hour and you earn 60% of its trading fees.
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <Link href="/race/launch/" className="inline-flex h-11 px-5 rounded-full bg-[#ff6b1a] text-white font-bold items-center">Launch a coin</Link>
+                <Link href="/explore/" className="inline-flex h-11 px-5 rounded-full border border-line font-semibold items-center">Trade</Link>
+              </div>
+            </div>
+          )}
           {a.takeaways && a.takeaways.length > 0 && (
             <div className="mt-8">
               <Takeaways items={a.takeaways} />
             </div>
           )}
+
           <div className="mt-8">
             <ArticleBody blocks={a.body} />
           </div>
@@ -84,15 +96,22 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
           </p>
           {!IS_TESTNET && (
             <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[0.875rem] font-semibold">
-              <Link href="/create/" className="text-emerald">Launch a coin</Link>
+              <Link href="/race/launch/" className="text-emerald">Launch a coin</Link>
               <Link href="/explore/" className="text-emerald">Explore coins</Link>
               <a href="/top/" className="text-emerald">Top meme coins today</a>
               <a href="/day/" className="text-emerald">Daily archive</a>
             </div>
           )}
-          <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="inline-flex mt-5 h-12 px-6 rounded-full bg-ink text-on-accent font-bold items-center">
-            Follow @sasapadfun
-          </a>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {!IS_TESTNET && (
+              <Link href="/race/launch/" className="inline-flex h-12 px-6 rounded-full bg-[#ff6b1a] text-white font-bold items-center">
+                Launch a coin
+              </Link>
+            )}
+            <a href="https://x.com/sasapadfun" target="_blank" rel="noreferrer" className="inline-flex h-12 px-6 rounded-full border border-line font-semibold items-center">
+              Follow @sasapadfun
+            </a>
+          </div>
         </section>
 
         <section className="mt-12" aria-labelledby="more">
