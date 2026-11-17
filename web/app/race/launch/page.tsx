@@ -930,7 +930,11 @@ export default function RaceLaunchPage() {
 
         <aside className="rounded-3xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 min-w-0 lg:sticky lg:top-20">
           {onSolana && !w.address ? (
-            <ConnectButton />
+            <div className="flex flex-col gap-2">
+              <p className="text-[0.875rem] font-semibold text-ink">Log in to launch your coin</p>
+              <p className="text-[0.8125rem] text-ink-2">Free with email or Google, no wallet setup, about 30 seconds.</p>
+              <ConnectButton full />
+            </div>
           ) : onSolana ? (
             <SolanaLaunchBox
               name={name.trim()}
@@ -953,7 +957,11 @@ export default function RaceLaunchPage() {
               problem={formProblem}
             />
           ) : !w.address ? (
-            <ConnectButton />
+            <div className="flex flex-col gap-2">
+              <p className="text-[0.875rem] font-semibold text-ink">Log in to launch your coin</p>
+              <p className="text-[0.8125rem] text-ink-2">Free with email or Google, no wallet setup, about 30 seconds.</p>
+              <ConnectButton full />
+            </div>
           ) : w.embedded && !viaBase ? (
             IS_TESTNET ? <p className="text-[0.8125rem] text-ink-3">Testnet: create with a browser wallet.</p> : null
           ) : viaBase ? (
