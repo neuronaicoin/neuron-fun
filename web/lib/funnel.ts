@@ -121,7 +121,10 @@ export function startFunnel() {
       funnel("js_error", `promise: ${String((r && (r.message || r)) || "").slice(0, 170)}`);
     });
 
+    let leftAt = 0;
     const leave = () => {
+      if (Date.now() - leftAt < 2000) return;
+      leftAt = Date.now();
       funnel("leave", `${Math.round((Date.now() - started) / 1000)}s`);
       send(true);
     };
