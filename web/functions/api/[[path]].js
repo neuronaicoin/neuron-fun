@@ -544,7 +544,7 @@ export async function onRequest(ctx) {
     if (parts[0] === "session" && parts.length === 1 && method === "POST") return await session(env, request, body);
 
     // the public sasa Bot page's live feed (edge/bot-api.js): anyone, no sign-in
-    if (parts[0] === "bot" && (parts[1] === "live" || parts[1] === "scan" || parts[1] === "evmscan") && parts.length === 2 && method === "GET") return await botRoute(env, null, parts, method, url);
+    if (parts[0] === "bot" && (parts[1] === "live" || parts[1] === "scan" || parts[1] === "evmscan") && parts.length === 2 && method === "GET") return await botRoute(env, null, parts, method, url, ctx);
 
     // the site's own anonymous visit log (lib/funnel.ts): what visitors do and where they stop
     if (parts[0] === "f" && parts.length === 1 && method === "POST") return await funnelLog(env, request, body);

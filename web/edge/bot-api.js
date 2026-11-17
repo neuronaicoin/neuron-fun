@@ -87,33 +87,50 @@ export function scanOf(s) {
 }
 
 /** The public page's data, cached a few seconds at the edge (one database call per few seconds). */
-async function live(env) {
+async function live(env, ctx) {
+  // Served from the edge cache straight away; when the copy is older than a few seconds it is
+  // refreshed in the background, so a visitor never waits on the slow database call.
   const cache = typeof caches !== "undefined" ? caches.default : null;
-  const key = new Request("https://sasapad.fun/__cache/bot-live-v1");
-  if (cache) {
-    const hit = await cache.match(key);
-    if (hit) return hit;
-  }
-  const [pub, futures] = await Promise.all([
-    db(env, "rpc/bot_public", { method: "POST", body: "{}" }).catch(() => null),
-    db(env, "whale_moves_pub?select=id,address,coin,kind,side,usd,px,lev,t,rank,name&usd=gte.25000&order=t.desc&limit=24").catch(() => null),
-  ]);
-  const p = pub || {};
-  const body = {
-    scanned: p.scanned ?? 0,
-    traps: p.traps ?? 0,
-    smart: p.smart ?? 0,
-    scans: (p.scans ?? []).map(scanOf),
-    buys: p.buys ?? [],
-    trends: p.trends ?? [],
-    futures: futures ?? [],
-    at: new Date().toISOString(),
+  const key = new Request("https://sasapad.fun/__cache/bot-live-v2");
+  const out = (text) =>
+    new Response(text, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=4" } });
+  const build = async () => {
+    const [pub, futures] = await Promise.all([
+      db(env, "rpc/bot_public", { method: "POST", body: "{}" }).catch(() => null),
+      db(env, "whale_moves_pub?select=id,address,coin,kind,side,usd,px,lev,t,rank,name&usd=gte.25000&order=t.desc&limit=24").catch(() => null),
+    ]);
+    const p = pub || {};
+    const text = JSON.stringify({
+      scanned: p.scanned ?? 0,
+      traps: p.traps ?? 0,
+      smart: p.smart ?? 0,
+      scans: (p.scans ?? []).map(scanOf),
+      buys: p.buys ?? [],
+      trends: p.trends ?? [],
+      futures: futures ?? [],
+      at: new Date().toISOString(),
+    });
+    if (cache && pub) {
+      const stored = new Response(text, {
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=900", "x-made": String(Date.now()) },
+      });
+      await cache.put(key, stored).catch(() => {});
+    }
+    return text;
   };
-  const res = new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=4" },
-  });
-  if (cache) await cache.put(key, res.clone()).catch(() => {});
-  return res;
+  if (cache) {
+    const hit = await cache.match(key).catch(() => null);
+    if (hit) {
+      const made = Number(hit.headers.get("x-made")) || 0;
+      const text = await hit.text();
+      if (Date.now() - made > 5000) {
+        const job = build().catch(() => {});
+        if (ctx && ctx.waitUntil) ctx.waitUntil(job);
+      }
+      return out(text);
+    }
+  }
+  return out(await build());
 }
 
 /** One coin's scan (a Solana coin page's safety box), or null when the bot never scanned it. */
@@ -191,9 +208,9 @@ async function evmScan(url) {
   return res;
 }
 
-export async function botRoute(env, me, parts, method, url) {
+export async function botRoute(env, me, parts, method, url, ctx) {
   if (parts.length === 2 && parts[1] === "evmscan" && method === "GET") return evmScan(url);
-  if (parts.length === 2 && parts[1] === "live" && method === "GET") return live(env);
+  if (parts.length === 2 && parts[1] === "live" && method === "GET") return live(env, ctx);
   if (parts.length === 2 && parts[1] === "scan" && method === "GET") return scanOne(env, url);
   const who = String(me || "").toLowerCase();
   if (!SASA_ADMINS.includes(who) && !admins(env).includes(who)) return json({ error: "Not found." }, 404);
