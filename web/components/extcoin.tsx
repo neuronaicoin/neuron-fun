@@ -210,6 +210,11 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 </div>
               ))}
             </div>
+            {!coin.quietSince && coin.liqUsd === 0 && (
+              <p className="mt-3 rounded-xl bg-paper border border-line px-3 py-2 text-[0.8125rem] text-ink-2">
+                The pool shows no liquidity right now, so these numbers may be out of date and buying or selling may not go through.
+              </p>
+            )}
             {coin.quietSince && (
               <p className="mt-3 rounded-xl bg-paper border border-line px-3 py-2 text-[0.8125rem] text-ink-2">
                 Not actively traded right now. These numbers are from {new Date(coin.quietSince).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}, the last time it was.
