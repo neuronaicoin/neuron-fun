@@ -318,7 +318,7 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
         void fetch("/api/sol/error", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ step: stepNow.current, error: `${String(err?.message ?? e)}${logs ? ` || ${logs}` : ""}`.slice(0, 800), mint, creator: sol.address, kind: side }),
+          body: JSON.stringify({ step: `${stepNow.current} · ${side === "buy" ? `$${amount}` : `${pct}%`}`.slice(0, 120), error: `${String(err?.message ?? e)}${logs ? ` || ${logs}` : ""}`.slice(0, 800), mint, creator: sol.address, kind: side }),
         }).catch(() => {});
       } catch {
         /* never stands in the way */
