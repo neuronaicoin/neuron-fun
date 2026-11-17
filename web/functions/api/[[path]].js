@@ -173,8 +173,11 @@ const TAP_STEPS = [
   ["launch", /\b(launch|create (a )?coin)\b/i],
 ];
 /** Admin: what visitors did (funnel_events, lib/funnel.ts), summed up for the admin page. */
+// the same wallets the admin page lets in (app/admin/page.tsx isAdmin)
+const FUNNEL_ADMINS = ["0xe0ba5905940d748b23dc01266aa884e2391cca2f", "0x3c4e66b4b4ddd1f6348ad5fdfae7e60ac35aca6f", "0xf4bc1b22e117a621e1118d09f7bb015c685a9617"];
 async function funnelStats(env, me, url) {
-  if (!admins(env).includes(me)) return fail(403, "Admins only.");
+  const who = String(me || "").toLowerCase();
+  if (!FUNNEL_ADMINS.includes(who) && !admins(env).includes(who)) return fail(403, "Admins only.");
   const hours = Math.min(168, Math.max(1, Number(url.searchParams.get("h")) || 24));
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
   const { data } = await sb(env, `funnel_events?select=sid,vid,ev,path,detail,who,ua,country,at&at=gte.${since}&order=at.asc&limit=20000`);
