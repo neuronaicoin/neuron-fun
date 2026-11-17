@@ -133,6 +133,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           {market ? "← Market" : "← All coins"}
         </Link>
       )}
+      {backLink && <Newcomer symbol={coin.symbol} />}
       <div className={(backLink ? "mt-3 " : "") + "grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] items-start"}>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
           <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
@@ -627,4 +628,25 @@ function ChartOrDex({
     );
   }
   return <>{children(onRows)}</>;
+}
+
+/** A visitor who never signed in (came from Google, ChatGPT, X…): what they can do here, at once. */
+function Newcomer({ symbol }: { symbol: string }) {
+  const { address, restoring, hintAddress } = useWallet();
+  if (address || restoring || hintAddress) return null;
+  return (
+    <div className="mt-3 rounded-2xl border border-[#ff6b1a]/40 bg-[#ff6b1a]/10 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <p className="flex-1 text-[0.875rem] text-ink-2">
+        <b className="text-ink">Buy ${symbol} in two taps.</b> Sign in free with email or your wallet, add USDC, done. Or launch your own coin and earn 60% of its trading fees.
+      </p>
+      <div className="flex gap-2 shrink-0 items-center">
+        <div className="min-w-[8rem]">
+          <ConnectButton full />
+        </div>
+        <Link href="/race/launch/" className="h-11 px-4 rounded-xl border border-line font-semibold inline-flex items-center whitespace-nowrap">
+          Launch a coin
+        </Link>
+      </div>
+    </div>
+  );
 }
