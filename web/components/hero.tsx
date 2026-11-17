@@ -21,7 +21,7 @@ type Theme = { theme: string; n1: number; prev: number };
 type Live = { scanned: number; smart: number; buys: Buy[]; scans: Scan[]; trends: Theme[]; at: string };
 
 const FEATURES = [
-  { href: V6 ? "/create/" : "/race/launch/", icon: "🚀", title: "Launch", sub: "Free, one tap" },
+  { href: V6 ? "/create/" : "/race/launch/", icon: "🚀", title: "Launch", sub: "Your coin in a minute" },
   { href: "/explore/", icon: "🔥", title: "Trade", sub: "Meme coins" },
   { href: "/market/", icon: "💎", title: "Spot", sub: "Top coins" },
   { href: "/futures/", icon: "⚡", title: "Futures", sub: "Long or short" },
