@@ -107,6 +107,8 @@ export function startFunnel() {
         if ((n as HTMLElement).closest("li, tr, table, ul, ol, a, button")) return;
         const t = (n as HTMLElement).innerText?.replace(/\s+/g, " ").trim();
         if (!t || t.length < 12 || !/[a-z]{3,}.*\s.*[a-z]{2,}/i.test(t) || /^[−+\-]?[$\d.,%KMB ]+$/.test(t) || seenErr.has(t)) return;
+        // short labels with a number (a red trade row, "Sell $120", or the same translated by the browser) are not errors
+        if (/\d/.test(t) && t.split(" ").length <= 4) return;
         seenErr.add(t);
         funnel("error_shown", t);
       });
