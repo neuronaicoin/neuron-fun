@@ -34,7 +34,7 @@ export function WhaleCard() {
   const queue = useRef<W[]>([]);
   const seen = useRef<Set<string>>(new Set());
   const openedAt = useRef(Date.now() - 15 * 60_000);
-  const lastAt = useRef(0);
+  const lastAt = useRef(Date.now()); // the first one waits too: never over the top of a page that just opened
 
   useEffect(() => {
     try {
