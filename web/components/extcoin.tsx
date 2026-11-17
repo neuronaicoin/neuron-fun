@@ -7,6 +7,7 @@ import { erc20Abi, type Address, type Hex } from "viem";
 import { AmountPad } from "@/components/amountpad";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
+import { SignInToBuy } from "./signintobuy";
 import { ExtActivity } from "./activity24";
 import { SellCheck } from "./sellcheck";
 import { HolderBox } from "./holderlive";
@@ -508,7 +509,10 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
           {side === "buy" ? (
             <>
               {bare ? (
-                <AmountPad value={usd} onChange={setUsd} />
+                <>
+                  {!address && <SignInToBuy symbol={coin.symbol} />}
+                  <AmountPad value={usd} onChange={setUsd} />
+                </>
               ) : (
               <>
               <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">

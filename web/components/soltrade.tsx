@@ -16,6 +16,7 @@ import type { Address } from "viem";
 import { AmountPad } from "@/components/amountpad";
 import { useWallet } from "./wallet";
 import { ConnectButton } from "./chrome";
+import { SignInToBuy } from "./signintobuy";
 import { useSolSigner } from "./usesolsigner";
 import { toast } from "./alerts";
 import { usdcAbi } from "@/lib/abis";
@@ -376,7 +377,10 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
       {side === "buy" ? (
         <>
           {bare ? (
-            <AmountPad value={usd} onChange={setUsd} />
+            <>
+              {!w.address && <SignInToBuy symbol={coin.symbol} />}
+              <AmountPad value={usd} onChange={setUsd} />
+            </>
           ) : (
           <>
           <label className="mt-4 flex items-center h-14 rounded-2xl border border-line bg-paper px-4 focus-within:border-ink-3">
