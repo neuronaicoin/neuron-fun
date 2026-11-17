@@ -69,6 +69,9 @@ export function ContractAddress({
       return;
     }
     toast("Contract address copied");
+    try {
+      window.dispatchEvent(new Event("sasa:ca-copied"));
+    } catch {}
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 1500);
