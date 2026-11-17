@@ -163,6 +163,26 @@ async function readBody(request, limit = 8192) {
 
 // ------------------------------------------------------------------ routes
 
+/** Anonymous visit steps (lib/funnel.ts): a random visit id, the page, what was tapped or shown.
+ * No sign-in; limited per network address so nobody can flood it. */
+async function funnelLog(env, request, body) {
+  if (!(await underLimit(env, request, "funnel", 1500))) return json({ ok: false });
+  const c = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, n);
+  const sid = c(body?.sid, 40);
+  if (!/^[a-z0-9]{8,40}$/i.test(sid)) return json({ ok: false });
+  const vid = /^[a-z0-9]{8,40}$/i.test(String(body?.vid || "")) ? String(body.vid) : null;
+  const who = /^0x[0-9a-f]{40}$/i.test(String(body?.who || "")) ? String(body.who).toLowerCase() : null;
+  const ua = c(request.headers.get("user-agent"), 160) || null;
+  const country = c(request.headers.get("cf-ipcountry"), 4) || null;
+  const evs = Array.isArray(body?.events) ? body.events.slice(0, 40) : [];
+  const rows = evs
+    .map((e) => ({ sid, vid, who, ua, country, ev: c(e?.ev, 20), path: c(e?.path, 120) || null, detail: c(e?.detail, 200) || null, at: new Date(Math.min(Date.now(), Number(e?.t) || Date.now())).toISOString() }))
+    .filter((r) => r.ev);
+  if (rows.length) await sb(env, "funnel_events", { method: "POST", body: rows, prefer: "return=minimal" }).catch(() => null);
+  return json({ ok: true });
+}
+
+
 /** A daily count per network address (ai.sql's ai_take). true while under `limit`; true too if
  * the counter can't be reached (a missing table must not lock everyone out). */
 async function underLimit(env, request, kind, limit) {
@@ -445,6 +465,9 @@ export async function onRequest(ctx) {
 
     // the public sasa Bot page's live feed (edge/bot-api.js): anyone, no sign-in
     if (parts[0] === "bot" && (parts[1] === "live" || parts[1] === "scan" || parts[1] === "evmscan") && parts.length === 2 && method === "GET") return await botRoute(env, null, parts, method, url);
+
+    // the site's own anonymous visit log (lib/funnel.ts): what visitors do and where they stop
+    if (parts[0] === "f" && parts.length === 1 && method === "POST") return await funnelLog(env, request, body);
 
     // trades of other DEXs' coins: checked on chain and with Relay, so no sign-in needed
     if (parts[0] === "exttrade" && parts.length === 1 && method === "POST") return await extTradeRoute(env, body);

@@ -1,3 +1,4 @@
+import { funnel } from "./funnel";
 /**
  * Google Analytics events for the things that matter (Analytics → Admin → Events → mark them as
  * key events): sign_up (an address seen for the first time on this device), login, launch_coin,
@@ -7,6 +8,7 @@
 type Gtag = (cmd: "event", name: string, params?: Record<string, string | number>) => void;
 
 export function track(name: "sign_up" | "login" | "launch_coin" | "buy" | "sell", params: Record<string, string | number> = {}) {
+  funnel(`ok_${name}`, Object.entries(params).map(([k, v]) => `${k}=${v}`).join(" "));
   try {
     const g = (window as unknown as { gtag?: Gtag }).gtag;
     g?.("event", name, { page: window.location.pathname, ...params });

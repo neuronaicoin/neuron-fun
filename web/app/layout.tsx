@@ -1,3 +1,4 @@
+import { FunnelTracker } from "@/components/funneltracker";
 import { WhaleCard } from "@/components/whalecard";
 import type { Metadata, Viewport } from "next";
 // Two self-hosted fonts (no Google request): Sora for headings and numbers, Instrument Sans for text.
@@ -115,6 +116,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Header />
           </div>
           <WhaleCard />
+          <FunnelTracker />
           {/* At least a screen tall: the footer never sits mid-page and then jumps down when data arrives (layout shift). */}
           <main className="flex-1 w-full min-h-[100dvh]">{children}</main>
           <div className="app-chrome">

@@ -18,7 +18,7 @@ export default function Privacy() {
         <li><b>Sign-in details</b> if you sign in with email or Google: handled by our wallet provider; we receive your wallet address and, for email sign-in, your email.</li>
         <li><b>What you choose to add</b>: profile name, picture, bio, links, comments, forum posts, race chat messages, watchlist, alerts and messages to support.</li>
         <li><b>Support requests</b>: your name, email and message, your wallet address if you are signed in, and a one-way scrambled form of your IP address to stop spam.</li>
-        <li><b>Basic usage data</b>: pages visited, device type and how you found sasa, measured with Google Analytics with its advertising features turned off, to keep sasa working and improve it. In the EU, UK and Switzerland it sets no analytics cookies.</li>
+        <li><b>Basic usage data</b>: pages visited, device type and how you found sasa, measured with Google Analytics with its advertising features turned off and with our own anonymous visit log (a random visit id, the pages opened, the buttons tapped and any error shown; never what you type), to keep sasa working and improve it. In the EU, UK and Switzerland it sets no analytics cookies.</li>
         <li><b>Push notifications</b>: if you turn them on, a technical address your browser gives us to send them.</li>
       </ul>
 
