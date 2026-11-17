@@ -15,6 +15,7 @@ import { autoAnywhere } from "@/lib/auto";
 import { useChainSupply } from "@/lib/usesupply";
 import { useWallet } from "@/components/wallet";
 import { ConnectButton } from "@/components/chrome";
+import { SignInToBuy } from "@/components/signintobuy";
 import { call } from "@/lib/tx";
 import { friendlyError } from "@/lib/format";
 import { signalTrade } from "@/lib/live";
@@ -520,7 +521,10 @@ export function RaceTradeBox({
               )}
             </div>
             {bare && side === "buy" ? (
-              <AmountPad value={amount} onChange={setAmount} presets={QUICK_BUY} />
+              <>
+                {!w.address && <SignInToBuy symbol={coin.symbol} />}
+                <AmountPad value={amount} onChange={setAmount} presets={QUICK_BUY} />
+              </>
             ) : (
             <div className="flex items-center gap-2 min-w-0">
               {side === "buy" && <span className="text-[2rem] font-bold text-ink-3 leading-none">$</span>}
