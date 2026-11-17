@@ -163,6 +163,83 @@ async function readBody(request, limit = 8192) {
 
 // ------------------------------------------------------------------ routes
 
+
+const BOT_UA = /bot|crawl|spider|headless|lighthouse|preview|facebookexternalhit|embedly|slurp|python|curl|wget/i;
+const TAP_STEPS = [
+  ["login", /\b(log ?in|sign ?in|sign ?up|connect|continue with)\b/i],
+  ["deposit", /\b(deposit|add (cash|money|funds)|fund)\b/i],
+  ["buy", /\bbuy\b/i],
+  ["sell", /\bsell\b/i],
+  ["launch", /\b(launch|create (a )?coin)\b/i],
+];
+/** Admin: what visitors did (funnel_events, lib/funnel.ts), summed up for the admin page. */
+async function funnelStats(env, me, url) {
+  if (!admins(env).includes(me)) return fail(403, "Admins only.");
+  const hours = Math.min(168, Math.max(1, Number(url.searchParams.get("h")) || 24));
+  const since = new Date(Date.now() - hours * 3600_000).toISOString();
+  const { data } = await sb(env, `funnel_events?select=sid,vid,ev,path,detail,who,ua,country,at&at=gte.${since}&order=at.asc&limit=20000`);
+  const rows = (Array.isArray(data) ? data : []).filter((r) => !BOT_UA.test(r.ua || ""));
+  const visits = new Map();
+  for (const r of rows) {
+    let v = visits.get(r.sid);
+    if (!v) visits.set(r.sid, (v = { sid: r.sid, vid: r.vid, who: null, country: r.country, mobile: /Mobi|Android|iPhone/i.test(r.ua || ""), start: r.at, end: r.at, land: "", from: "", isNew: false, steps: new Set(), done: new Set(), errors: [], last: "", events: [] }));
+    v.end = r.at;
+    if (r.who) v.who = r.who;
+    if (r.ev === "land") {
+      v.land = r.path || "";
+      v.isNew = /^new/.test(r.detail || "");
+      const m = /from:([^\s·]+)/.exec(r.detail || "");
+      v.from = m ? m[1] : "direct";
+      const u = /utm_source=([^&\s·]+)/.exec(r.detail || "");
+      if (u) v.from = `${v.from} (${u[1]})`;
+    }
+    if (r.ev === "tap" || r.ev === "link") for (const [k, re] of TAP_STEPS) if (re.test(r.detail || "")) v.steps.add(k);
+    if (r.ev.startsWith("ok_")) v.done.add(r.ev.slice(3));
+    if (r.ev === "error_shown" || r.ev === "js_error" || (r.ev === "toast" && /fail|error|couldn|can't|cannot|not enough|reject|denied|too small|isn't available/i.test(r.detail || ""))) v.errors.push(`${r.path || ""}: ${r.detail || ""}`);
+    if (r.ev !== "leave") v.last = r.path || v.last;
+    if (v.events.length < 60) v.events.push({ t: r.at, ev: r.ev, path: r.path, detail: r.detail });
+  }
+  const list = [...visits.values()];
+  const count = (f) => list.filter(f).length;
+  const tally = (arr) => {
+    const m = new Map();
+    for (const x of arr) if (x) m.set(x, (m.get(x) || 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, n]) => ({ k, n }));
+  };
+  const secs = list.map((v) => (Date.parse(v.end) - Date.parse(v.start)) / 1000).sort((a, b) => a - b);
+  return json({
+    hours,
+    visits: list.length,
+    devices: new Set(list.map((v) => v.vid)).size,
+    newVisits: count((v) => v.isNew),
+    mobile: count((v) => v.mobile),
+    bounced: count((v) => v.events.filter((e) => e.ev === "page").length <= 1 && v.steps.size === 0),
+    medianSeconds: secs.length ? Math.round(secs[Math.floor(secs.length / 2)]) : 0,
+    funnel: {
+      visited: list.length,
+      openedCoin: count((v) => v.events.some((e) => e.ev === "page" && /^\/(x|race|coin)\//.test(e.path || ""))),
+      tappedLogin: count((v) => v.steps.has("login")),
+      loggedIn: count((v) => v.done.has("login") || v.done.has("sign_up") || !!v.who),
+      tappedDeposit: count((v) => v.steps.has("deposit")),
+      tappedBuy: count((v) => v.steps.has("buy")),
+      bought: count((v) => v.done.has("buy")),
+      tappedSell: count((v) => v.steps.has("sell")),
+      sold: count((v) => v.done.has("sell")),
+      tappedLaunch: count((v) => v.steps.has("launch")),
+      launched: count((v) => v.done.has("launch_coin")),
+    },
+    from: tally(list.map((v) => v.from || "direct")),
+    landing: tally(list.map((v) => v.land)),
+    exits: tally(list.map((v) => v.last)),
+    countries: tally(list.map((v) => v.country)),
+    errors: tally(list.flatMap((v) => v.errors.map((e) => e.slice(0, 160)))),
+    recent: list
+      .slice(-40)
+      .reverse()
+      .map((v) => ({ start: v.start, seconds: Math.round((Date.parse(v.end) - Date.parse(v.start)) / 1000), mobile: v.mobile, isNew: v.isNew, from: v.from, country: v.country, who: v.who, steps: [...v.steps], done: [...v.done], errors: v.errors.slice(0, 3), events: v.events })),
+  });
+}
+
 /** Anonymous visit steps (lib/funnel.ts): a random visit id, the page, what was tapped or shown.
  * No sign-in; limited per network address so nobody can flood it. */
 async function funnelLog(env, request, body) {
@@ -479,6 +556,7 @@ export async function onRequest(ctx) {
     // Solana launches: checked on chain by the keeper, so signed out works too
     if (parts[0] === "sol") return await solRoute(env, request, me, parts, method, body, { sb, underLimit });
     if (!me) return fail(401, "Please sign in again.");
+    if (parts[0] === "fstats" && parts.length === 1 && method === "GET") return await funnelStats(env, me, url);
     if (parts[0] === "help") return await adminHelp(env, me, parts, method, body, url);
 
     if (parts[0] === "alerts") {

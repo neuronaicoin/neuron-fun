@@ -20,6 +20,7 @@ import { fetchPrices } from "@/lib/price";
 import { readSafety, refreshSafety, type Safety } from "@/lib/safety";
 import { call } from "@/lib/tx";
 import { HelpInbox } from "@/components/helpinbox";
+import { FunnelPanel } from "@/components/funnelpanel";
 import { MoneyPanel } from "@/components/moneypanel";
 import { SolFeesPanel } from "@/components/solfees";
 import { ElysiumFeesPanel, RaceFeesPanel } from "@/components/chainfees";
@@ -164,6 +165,8 @@ export default function AdminPage() {
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-10">
       {isAdmin && (
         <div className="mb-8">
+          <FunnelPanel />
+          <div className="mt-8" />
           <MoneyPanel />
           <div className="mt-5">
             <SolFeesPanel />
