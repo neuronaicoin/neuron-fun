@@ -114,6 +114,11 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
       alive = false;
     };
   }, [coin.sasa, coin.network, coin.address]);
+  // the tab and share title: the coin, not just "Coin"
+  useEffect(() => {
+    if (!backLink) return;
+    document.title = `${coin.name} ($${coin.symbol}) price, chart and buy · sasa`;
+  }, [backLink, coin.name, coin.symbol]);
   const pool = coin.pool ?? curvePool;
   // who bought and sold: the list under the chart, and the same trades on the chart
   const tradeRows = useExtTrades(pool === coin.pool ? coin : { ...coin, pool }, curvePool);
