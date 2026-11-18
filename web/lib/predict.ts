@@ -41,6 +41,9 @@ export type PredictOutcome = {
   raw: string;
   /** What it is about, for a hashtag: "BTC", "LAL", "Fed". */
   tag: string;
+  /** "Will X be above a price at a time?" markets: the Hyperliquid perp it follows ("BTC") and the price. */
+  under?: string;
+  target?: number;
 };
 
 /** A question with several answers (a price range, a match winner): one row per answer. */
@@ -236,11 +239,13 @@ export function boardOf(meta: Meta, mids: Record<string, string>, templates: Map
     let title: string;
     let label = o.name;
     let expiry: number | null = null;
+    let round: { under: string; target: number } | null = null;
     if (spec.class === "priceBinary" && spec.underlying && spec.targetPrice) {
       expiry = expiryMs(spec.expiry);
       tab = "price";
       title = `${spec.underlying} above ${priceText(spec.targetPrice)}${expiry ? ` ${whenText(expiry)}` : ""}?`;
       label = "";
+      round = { under: spec.underlying, target: Number(spec.targetPrice) };
     } else if (qspec.class === "priceBucket" && qspec.underlying) {
       expiry = expiryMs(qspec.expiry);
       tab = "price";
@@ -259,6 +264,7 @@ export function boardOf(meta: Meta, mids: Record<string, string>, templates: Map
       if (id === "binaryPrice" && perp && (all.threshold ?? all.targetPrice)) {
         title = `${perp} above ${priceText(all.threshold ?? all.targetPrice)}${expiry ? ` ${whenText(expiry)}` : ""}?`;
         label = "";
+        round = { under: perp, target: Number(all.threshold ?? all.targetPrice) };
       } else if (id === "priceTouch" && perp && (all.target ?? all.threshold)) {
         title = `${perp} touches ${priceText(all.target ?? all.threshold)}${expiry ? ` by ${whenText(expiry)}` : ""}?`;
         label = "";
@@ -296,6 +302,7 @@ export function boardOf(meta: Meta, mids: Record<string, string>, templates: Map
       sides: [sideOf(o, 0, all), sideOf(o, 1, all)],
       quote,
       tradable: /usdc/i.test(quote) || quote === "" || quote === "0",
+      ...(round && Number.isFinite(round.target) && round.target > 0 ? round : {}),
       raw: `${q ? `Q ${q.name} | ${q.description} || ` : ""}${o.name} | ${o.description} | sides: ${(o.sideSpecs ?? []).map((x) => x.name).join(", ")} | quote: ${quote}`,
     });
   }

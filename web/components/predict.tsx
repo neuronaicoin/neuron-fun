@@ -14,8 +14,11 @@ import { showToast } from "@/lib/toast";
 import { postOnX } from "./share";
 import { PERPS_TRADING, geoExempt, perpsAllowedHere } from "@/lib/perps";
 import { usePerpsTrade } from "@/lib/perpstrade";
+import { RoundCard, lastPrice, saveEntry } from "./predictround";
 import {
+  PREDICT_FEE_TENTHS_BP,
   PREDICT_MIN,
+  bestOf,
   fetchPredict,
   fetchPredictWallet,
   type PredictBoard,
@@ -60,7 +63,11 @@ function useNow(every = 1000) {
   return now;
 }
 
-type Pick = { o: PredictOutcome; side: 0 | 1 };
+type Pick = { o: PredictOutcome; side: 0 | 1; usd?: number };
+/** A live price round (shown with a chart): main Hyperliquid perps with a target and an end time. */
+const isRound = (o: PredictOutcome) => !!(o.under && o.target && o.expiry && !o.under.includes(":"));
+/** "Up" / "Down" on price rounds, the market's own words elsewhere. */
+const sideName = (o: PredictOutcome, i: 0 | 1) => (isRound(o) && /^(yes|no)$/i.test(o.sides[i].name) ? (i === 0 ? "Up" : "Down") : o.sides[i].name);
 
 const SITE = "https://sasapad.fun";
 function shareOutcome(o: PredictOutcome, title: string) {
@@ -219,9 +226,13 @@ export function PredictScreen() {
             </p>
           ) : (
             <>
-              {singles.map((o) => (
-                <SingleCard key={o.outcome} o={o} now={now} hot={hot === o.outcome} onPick={(side) => setPick({ o, side })} />
-              ))}
+              {singles.map((o) =>
+                isRound(o) ? (
+                  <RoundCard key={o.outcome} o={o} now={now} hot={hot === o.outcome} onBet={(side, usd) => setPick({ o, side, usd })} share={() => shareOutcome(o, o.title)} />
+                ) : (
+                  <SingleCard key={o.outcome} o={o} now={now} hot={hot === o.outcome} onPick={(side) => setPick({ o, side })} />
+                )
+              )}
               {groups.map((g) => (
                 <GroupCard key={g.question} g={g} now={now} hot={g.answers.some((a) => a.outcome === hot)} onPick={(o, side) => setPick({ o, side })} />
               ))}
@@ -315,20 +326,36 @@ function GroupCard({ g, now, onPick, hot }: { g: PredictGroup; now: number; onPi
 function BuySheet({ pick, onSide, onClose, trade }: { pick: Pick; onSide: (s: 0 | 1) => void; onClose: () => void; trade: ReturnType<typeof usePerpsTrade> }) {
   const w = useWallet();
   const { o, side } = pick;
-  const [amount, setAmount] = useState("25");
+  const [amount, setAmount] = useState(String(pick.usd ?? 25));
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const p = o.sides[side].price;
+  // the estimate uses the real best offer for this side (what a buy pays now), the mid until it loads
+  const [ask, setAsk] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setAsk(null);
+    void bestOf(o.sides[side].coin)
+      .then((b) => alive && setAsk(b.ask))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [o.sides, side]);
+  const p = ask ?? o.sides[side].price;
   const n = Number(amount);
   const shares = p && n > 0 ? Math.floor(n / p) : 0;
+  const cost = shares * (p ?? 0) * (1 + PREDICT_FEE_TENTHS_BP / 100_000);
   const title = o.label && o.label !== o.title && !o.title.includes(o.label) ? `${o.title} · ${o.label}` : o.title;
   const buy = async () => {
     setBusy(true);
     setErr(null);
     try {
       const r = await trade.predictBuy(o, side, n, setStep);
-      showToast({ kind: "buy", title: `Bought ${r.shares} ${o.sides[side].name}`, body: `${title} · pays $${r.shares.toLocaleString("en-US")} if it comes true` });
+      // the dot on the round's chart: where the coin's price was when you got in
+      const at = isRound(o) ? lastPrice(o.under) : null;
+      if (at) saveEntry({ outcome: o.outcome, side, t: Date.now(), p: at, usd: n });
+      showToast({ kind: "buy", title: `Bought ${r.shares} ${sideName(o, side)}`, body: `${title} · pays $${r.shares.toLocaleString("en-US")} if it comes true` });
       onClose();
     } catch (e) {
       setErr(friendlyError(e));
@@ -354,14 +381,14 @@ function BuySheet({ pick, onSide, onClose, trade }: { pick: Pick; onSide: (s: 0 
                 (side === i ? (i === 0 ? "ring-2 ring-up" : "ring-2 ring-danger") : "")
               }
             >
-              {o.sides[i].name} {cents(o.sides[i].price)}
+              {sideName(o, i)} {cents(o.sides[i].price)}
             </button>
           ))}
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] text-ink-3">Amount (USDC)</span>
           <div className="grid grid-cols-4 gap-2">
-            {["10", "25", "50", "100"].map((v) => (
+            {["15", "25", "50", "100"].map((v) => (
               <button
                 key={v}
                 type="button"
@@ -386,9 +413,9 @@ function BuySheet({ pick, onSide, onClose, trade }: { pick: Pick; onSide: (s: 0 
         </div>
         {shares > 0 && (
           <div>
-            <div className="text-[0.8125rem] text-ink-3">If {o.sides[side].name} comes true, you get about</div>
+            <div className="text-[0.8125rem] text-ink-3">If {sideName(o, side)} is right, you get about</div>
             <div className="font-display font-bold text-[1.5rem]">
-              {usd(shares)} <span className="text-up text-[1rem]">+{usd(Math.max(0, shares - n))}</span>
+              {usd(shares)} <span className="text-up text-[1rem]">+{usd(Math.max(0, shares - cost))}</span>
             </div>
             <div className="text-[0.75rem] text-ink-3">You can sell anytime before it ends.</div>
           </div>
@@ -405,7 +432,7 @@ function BuySheet({ pick, onSide, onClose, trade }: { pick: Pick; onSide: (s: 0 
             onClick={() => void buy()}
             className="h-13 min-h-[3.25rem] rounded-full bg-emerald text-on-accent font-bold text-[1.0625rem] disabled:opacity-50"
           >
-            {busy ? (step ?? "Working…") : `Buy ${o.sides[side].name} for $${n > 0 ? n : 0}`}
+            {busy ? (step ?? "Working…") : `Buy ${sideName(o, side)} for $${n > 0 ? n : 0}`}
           </button>
         )}
         <p className="text-[0.75rem] text-ink-3 text-center">Paid from your balance. Predictions can lose all you put in.</p>
@@ -468,7 +495,7 @@ function Mine({ user, mine, byOutcome, trade }: { user: string | null; mine: Pre
                 <div className="flex-1 min-w-0">
                   <div className="text-[0.875rem] font-semibold truncate">{o ? (o.label && !o.title.includes(o.label) ? `${o.title} · ${o.label}` : o.title) : `Prediction ${h.outcome}`}</div>
                   <div className="text-[0.75rem] text-ink-3">
-                    {h.shares.toLocaleString("en-US")} {o?.sides[h.side].name ?? (h.side === 0 ? "Yes" : "No")}
+                    {h.shares.toLocaleString("en-US")} {o ? sideName(o, h.side) : h.side === 0 ? "Yes" : "No"}
                     {h.cost > 0 ? ` · paid ${usd(h.cost)}` : ""}
                   </div>
                 </div>
