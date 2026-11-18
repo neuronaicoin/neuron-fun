@@ -48,7 +48,7 @@ export function PauseBanner() {
 }
 
 export function ConnectButton({ full = false }: { full?: boolean }) {
-  const { address, restoring, hintAddress, wallets, connecting, connect, loginWithEmail } = useWallet();
+  const { address, restoring, hintAddress, wallets, connecting, connect, loginWithEmail, prepareLogin } = useWallet();
   const [sheet, setSheet] = useState<"none" | "pick">("none");
   const [error, setError] = useState("");
   const base =
@@ -80,6 +80,7 @@ export function ConnectButton({ full = false }: { full?: boolean }) {
       onClick={() => {
         setError("");
         setSheet("pick");
+        prepareLogin();
       }}
     >
       {connecting ? "Connecting…" : "Log in"}

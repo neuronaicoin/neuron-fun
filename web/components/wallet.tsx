@@ -122,6 +122,8 @@ type WalletState = {
   email: string | null;
   /** Opens the email / Google login. */
   loginWithEmail: () => void;
+  /** Starts downloading the email/Google login code (when the Log in sheet opens), so it's ready by the tap. */
+  prepareLogin: () => void;
   /**
    * Sends one or more calls on `chain` and returns the last transaction hash
    * once mined. Browser wallets confirm each call; email users send them as
@@ -230,8 +232,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, []);
 
-  // Load the login code once the page is idle, so returning users stay signed in.
+  // Load the login code once the page is idle, but only for someone who has signed in
+  // on this device before (our hint or Privy's own saved session), so they stay signed in.
+  // A first-time visitor doesn't download it until they tap Log in (loginWithEmail).
   useEffect(() => {
+    let returning = !!readHint();
+    try {
+      for (let i = 0; !returning && i < localStorage.length; i++) {
+        if ((localStorage.key(i) ?? "").startsWith("privy:")) returning = true;
+      }
+    } catch {
+      returning = true; // can't tell: keep the old behaviour
+    }
+    if (!returning) return;
     const start = () => setLoadPrivy(true);
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
     if (w.requestIdleCallback) w.requestIdleCallback(start);
@@ -398,6 +411,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setLoadPrivy(true);
     setLoginRequests((n) => n + 1);
   }, []);
+  const prepareLogin = useCallback(() => setLoadPrivy(true), []);
 
   const send = useCallback(
     async (chain: Chain, calls: Call[], onStep?: (msg: string) => void): Promise<Hex> => {
@@ -589,13 +603,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       embedded,
       email: embedded ? (privy?.email ?? null) : null,
       loginWithEmail,
+      prepareLogin,
       send,
       signMessage,
       sendOwnGas,
       embeddedSigner: embedded ? (privy?.signer ?? null) : null,
       solana: embedded ? privySol : null,
     }),
-    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, privySol, loginWithEmail, send, signMessage, sendOwnGas, restoring, hint]
+    [address, embeddedAddress, active, chainId, wallets, connecting, connect, disconnectAll, switchTo, walletClient, embedded, privy, privySol, loginWithEmail, prepareLogin, send, signMessage, sendOwnGas, restoring, hint]
   );
 
   return (
