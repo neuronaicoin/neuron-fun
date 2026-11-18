@@ -31,6 +31,8 @@ import { extHolderKey, fetchHolderLive, raceHolderKey, type HolderLive } from "@
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
 // Trending: new and rising meme coins first, every chain mixed (indexer/memes.sql, lib/rank.ts).
+// Races older than this drop out of the "New" tab (they still show under Racing and Winners).
+const NEW_RACE_MAX_AGE = 2 * 24 * 3600_000;
 const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
 
 /** Explore tabs: v6 sorts on testnet; on mainnet the race tabs replace the bonding-curve ones. */
@@ -201,7 +203,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   // race coins first (on a chain, only races that run there), then the rest
   const raceRows = useMemo(() => {
     const l = (races ?? []).filter(
-      (r) => (chain === "all" || r.lanes.some((ln) => ln.state !== 3 && ln.chain.key === RACE_KEY[chain])) && !(tab !== "new" && r.lanes.length === 1)
+      (r) =>
+        (chain === "all" || r.lanes.some((ln) => ln.state !== 3 && ln.chain.key === RACE_KEY[chain])) &&
+        !(tab !== "new" && r.lanes.length === 1) &&
+        // "New" means new: weeks-old races don't sit above coins born today
+        !(tab === "new" && Date.now() - r.launchedAt > NEW_RACE_MAX_AGE)
     );
     return minVol > 0 || minLiq > 0 ? l.filter((r) => raceVol(r) >= minVol && raceLiq(r) >= minLiq) : l;
   }, [races, chain, minVol, minLiq, tab]);
