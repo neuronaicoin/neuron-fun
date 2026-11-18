@@ -797,7 +797,7 @@ export async function xbotLoop(pool, log) {
   const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "3");
   const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "6");
   await pool.query(SQL);
-  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day + up to ${whalesPerDay} whale moves of ${money(minUsd)}+`);
+  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day (11 feature threads + 2 single posts, nothing else)`);
 
   /** Posts a thread: each post with its card, each one a reply to the one before. Returns the ids. */
   const postThread = async (posts) => {
@@ -864,7 +864,7 @@ export async function xbotLoop(pool, log) {
       const replies = n("followup") + n("result");
 
       // follow-ups under our own posts (not counted in the 10)
-      if (replies < repliesPerDay && inWindow(now)) {
+      if (false && replies < repliesPerDay && inWindow(now)) { // off since Nov 18: threads + 2 singles only
         const f = await nextFollowup(pool).catch(() => null);
         if (f) {
           await pool.query(`update xbot_posts set done = true where id = $1`, [f.post.id]);
@@ -887,7 +887,7 @@ export async function xbotLoop(pool, log) {
       // at least 20 minutes between our own posts
       if (now - lastAny >= 20 * 60e3) {
         let post = null;
-        if (n("whale") < whalesPerDay && inWindow(now)) {
+        if (false && n("whale") < whalesPerDay && inWindow(now)) { // off since Nov 18: threads + 2 singles only
           const w = await nextWhale(pool, minUsd);
           if (w) {
             const t = await fresh(pool, "whale", say.whale(w, w));
