@@ -100,7 +100,12 @@ function ExtCoinPage() {
       <div className="max-w-xl mx-auto px-4 py-16 text-center">
         <h1 className="font-display font-bold text-[1.5rem]">Coin not found</h1>
         <p className="text-ink-2 mt-2">We don&apos;t have this coin. We only list coins that really traded and passed the token check.</p>
-        <Link href="/explore/" className="inline-flex mt-5 h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Back to coins</Link>
+        <div className="mt-5 flex flex-wrap gap-2 justify-center">
+          {["base", "bsc", "eth"].includes(network) && /^0x[0-9a-f]{40}$/.test(address) && (
+            <Link href={`/scan/?n=${network}&a=${address}`} className="inline-flex h-11 px-6 rounded-xl bg-emerald text-on-accent font-semibold items-center">Check if it&apos;s safe</Link>
+          )}
+          <Link href="/explore/" className={"inline-flex h-11 px-6 rounded-xl font-semibold items-center " + (["base", "bsc", "eth"].includes(network) && /^0x[0-9a-f]{40}$/.test(address) ? "border border-line bg-paper" : "bg-emerald text-on-accent")}>Back to coins</Link>
+        </div>
       </div>
     );
   if (coin === undefined) return <PeekLoading />;
