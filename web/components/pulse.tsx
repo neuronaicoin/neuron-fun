@@ -129,9 +129,32 @@ function nodesOf(d: PulseData | null, lite: boolean): PNode[] {
 
 // ------------------------------------------------------------------ the reactor (canvas)
 
-type Burst = { key: NodeKey; n: number };
+/** A real event on a node. Whale moves carry what happened (for the phone pop-ups and the money flow). */
+type Burst = { key: NodeKey; n: number; text?: string; usd?: number; out?: boolean; color?: string };
 
-function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; compact?: boolean }) {
+/** Digits that roll like an odometer when the value changes (phones; instant on desktop). */
+function Roll({ text, className }: { text: string; className?: string }) {
+  const chars = text.split("");
+  return (
+    <b className={className} aria-label={text}>
+      <span aria-hidden="true">
+        {chars.map((ch, i) => {
+          const k = chars.length - i; // keyed from the right, so digits keep their place
+          if (ch < "0" || ch > "9") return <span key={k}>{ch}</span>;
+          return (
+            <span key={k} className="pz-rd">
+              <span style={{ transform: `translateY(${-Number(ch) * 1.15}em)` }}>
+                {"0123456789".split("").map((dgt) => <span key={dgt}>{dgt}</span>)}
+              </span>
+            </span>
+          );
+        })}
+      </span>
+    </b>
+  );
+}
+
+function Reactor({ nodes, bursts, compact, ls }: { nodes: PNode[]; bursts: Burst[]; compact?: boolean; ls?: number | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const chipRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const nodesRef = useRef(nodes);
@@ -146,23 +169,79 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
   focusRef.current = focus;
   const posRef = useRef<{ x: number; y: number }[]>([]);
   const rRef = useRef(0);
+  const lsRef = useRef<number | null>(null);
+  lsRef.current = ls ?? null;
+
+  // Phones: a small window pops up over a node when something happens there, then closes.
+  // At most two open at once; the rest wait in line (whales first).
+  type Pop = { text: string; on: boolean; big: boolean; id: number };
+  const [pops, setPops] = useState<Partial<Record<NodeKey, Pop>>>({});
+  const popRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const openRef = useRef<{ key: NodeKey; until: number }[]>([]);
+  const waitRef = useRef<{ key: NodeKey; text: string; big: boolean }[]>([]);
+  const lastPop = useRef<Partial<Record<NodeKey, number>>>({});
+  const lastText = useRef<Partial<Record<NodeKey, string>>>({});
+  const popId = useRef(0);
+  const popFn = useRef<(key: NodeKey, text: string, o?: { big?: boolean; force?: boolean }) => void>(() => {});
+  popFn.current = (key, text, o = {}) => {
+    if (!labelsRef.current) return;
+    const now = Date.now();
+    openRef.current = openRef.current.filter((x) => x.until > now);
+    const open = openRef.current.find((x) => x.key === key);
+    if (!open && !o.force && !o.big && now - (lastPop.current[key] ?? 0) < 5000) return;
+    if (!open && openRef.current.length >= 2) {
+      waitRef.current = waitRef.current.filter((x) => x.key !== key);
+      const item = { key, text, big: !!o.big };
+      if (key === "whales") waitRef.current.unshift(item);
+      else waitRef.current.push(item);
+      waitRef.current = waitRef.current.slice(0, 3);
+      return;
+    }
+    lastPop.current[key] = now;
+    lastText.current[key] = text;
+    const dur = o.big ? 3800 : 2600;
+    if (open) open.until = now + dur;
+    else openRef.current.push({ key, until: now + dur });
+    const id = ++popId.current;
+    setPops((p) => ({ ...p, [key]: { text, on: true, big: !!o.big, id } }));
+    const i = nodesRef.current.findIndex((n) => n.key === key);
+    if (i >= 0) setFocus(i);
+    setTimeout(() => {
+      const still = openRef.current.find((x) => x.key === key);
+      if (still && still.until > Date.now() + 50) return; // kept open by a newer event
+      openRef.current = openRef.current.filter((x) => x.key !== key);
+      setPops((p) => (p[key]?.id === id ? { ...p, [key]: { ...p[key]!, on: false } } : p));
+      const next = waitRef.current.shift();
+      if (next) setTimeout(() => popFn.current(next.key, next.text, { big: next.big, force: true }), 300);
+    }, dur);
+  };
 
   useEffect(() => {
     queue.current.push(...bursts);
-    // a new whale move: the spotlight jumps to the whale node
-    if (labelsRef.current && bursts.some((b) => b.key === "whales")) {
-      const i = nodesRef.current.findIndex((n) => n.key === "whales");
-      if (i >= 0) {
-        setFocus(i);
-        setTick((t) => t + 1);
+    if (!labelsRef.current) return;
+    for (const b of bursts) {
+      if (b.key === "whales") {
+        popFn.current("whales", `🐋 ${b.text ?? nodesRef.current.find((n) => n.key === "whales")?.text ?? ""}`, { big: (b.usd ?? 0) >= 50_000, force: true });
+        continue;
       }
+      // other nodes: only when their number actually changed
+      const n = nodesRef.current.find((x) => x.key === b.key);
+      if (n && n.text !== lastText.current[b.key]) popFn.current(b.key, n.text);
     }
   }, [bursts]);
 
+  // quiet moments: the nodes take turns showing their live number
   useEffect(() => {
+    let k = 0;
     const t = setInterval(() => {
-      if (labelsRef.current) setFocus((f) => (f + 1) % Math.max(1, nodesRef.current.length));
-    }, 3000);
+      if (!labelsRef.current || document.hidden) return;
+      const now = Date.now();
+      if (openRef.current.some((x) => x.until > now) || waitRef.current.length) return;
+      const ns = nodesRef.current;
+      if (!ns.length) return;
+      const n = ns[k++ % ns.length];
+      popFn.current(n.key, n.key === "whales" ? `🐋 ${n.text}` : n.text, { force: true });
+    }, 3200);
     return () => clearInterval(t);
   }, [tick]);
 
@@ -189,8 +268,12 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
     const NS = small ? 70 : 140;
     const strands = Array.from({ length: NS }, () => ({ w: 0.6 + R() * 1.6, dr: R() - 0.5, tilt: (R() - 0.5) * 0.5, ph: R() * 6.28, sp: 0.1 + R() * 0.25 }));
     const stars = Array.from({ length: small ? 70 : 150 }, () => [R(), R(), R()]);
-    const parts: { i: number; t: number; sp: number; o: number; big: boolean }[] = [];
+    const parts: { i: number; t: number; sp: number; o: number; big: boolean; col?: string; out?: boolean; comet?: number }[] = [];
     const glow: number[] = [];
+    // phones: a heartbeat in the core, shock rings from it, and waves for the big whales
+    let beat = 0;
+    const rings: { t: number }[] = [];
+    const waves: { x: number; y: number; t: number; col: string }[] = [];
     const ST = [[255, 107, 26], [255, 79, 216], [166, 107, 255], [77, 163, 255], [46, 230, 160], [255, 210, 77], [255, 107, 26]];
     const hue = (t: number) => {
       t = (((t % 1) + 1) % 1) * 6;
@@ -271,6 +354,18 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
         const i = ns.findIndex((n) => n.key === b.key);
         if (i < 0) continue;
         glow[i] = 1;
+        if (lab && b.key === "whales" && b.usd) {
+          // money flow: a comet from the whale node into the core (money in) or out of it (money out),
+          // sized by the trade; the core beats; a big trade sends a wave across the card
+          const col = b.color ?? ns[i].color;
+          const size = Math.min(4, Math.max(0, Math.log10(Math.max(b.usd, 100)) - 2));
+          parts.push({ i, t: 0, sp: 0.011, o: 0, big: true, col, out: b.out, comet: 3 + size * 1.5 });
+          for (let k = 0; k < 6 + size * 3; k++) parts.push({ i, t: R() * 0.2, sp: 0.008 + R() * 0.01, o: (R() - 0.5) * S * 0.16, big: false, col, out: b.out });
+          beat = 1;
+          rings.push({ t: 0 });
+          if (b.usd >= 50_000) waves.push({ x: pos[i][0], y: pos[i][1], t: 0, col });
+          continue;
+        }
         for (let k = 0; k < Math.min(60, 10 + b.n * 8); k++) parts.push({ i, t: R() * 0.15, sp: 0.006 + R() * 0.012, o: (R() - 0.5) * S * 0.14, big: true });
       }
       if (parts.length < (small ? 90 : 180) && R() < 0.5) parts.push({ i: (R() * ns.length) | 0, t: 0, sp: 0.004 + R() * 0.008, o: (R() - 0.5) * S * 0.1, big: false });
@@ -292,10 +387,26 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
         p.t += p.sp;
         if (p.t >= 1 || !pos[p.i]) { parts.splice(k, 1); continue; }
         const q = pos[p.i];
-        const x = q[0] + (cx - q[0]) * p.t + p.o * Math.sin(p.t * 3);
-        const y = q[1] + (cy - q[1]) * p.t - Math.sin(p.t * 3.14) * S * 0.18;
-        ctx.fillStyle = ns[p.i].color;
-        ctx.globalAlpha = 1 - p.t;
+        const at = (t: number) => {
+          const u = p.out ? 1 - t : t; // money out runs from the core to the node
+          return [q[0] + (cx - q[0]) * u + p.o * Math.sin(u * 3), q[1] + (cy - q[1]) * u - Math.sin(u * 3.14) * S * 0.18];
+        };
+        ctx.fillStyle = p.col ?? ns[p.i].color;
+        if (p.comet) {
+          for (let j = 7; j >= 0; j--) {
+            const tt = p.t - j * 0.022;
+            if (tt < 0) continue;
+            const [x, y] = at(tt);
+            ctx.globalAlpha = (1 - j / 8) * (p.t > 0.85 ? (1 - p.t) / 0.15 : 1);
+            ctx.beginPath();
+            ctx.arc(x, y, p.comet * (1 - j / 10) * dpr, 0, 6.28);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+          continue;
+        }
+        const [x, y] = at(p.t);
+        ctx.globalAlpha = p.out ? Math.min(1, p.t * 3) * (1 - p.t * 0.5) : 1 - p.t;
         ctx.beginPath();
         ctx.arc(x, y, (p.big ? 3.2 : 2.1) * dpr, 0, 6.28);
         ctx.fill();
@@ -303,9 +414,51 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
       }
       ctx.globalCompositeOperation = "source-over";
       const kick = Math.max(0, ...glow.filter((x) => x !== undefined));
-      const cr = S * 0.17 * (1 + Math.sin(T * 0.003) * 0.03 + kick * 0.06);
+      const cr = S * 0.17 * (1 + Math.sin(T * 0.003) * 0.03 + kick * 0.06 + (lab ? beat * 0.14 : 0));
+      beat *= 0.93;
+      // phones: the core's glow leans green when whales are mostly long, red when mostly short
+      let hc = [255, 140, 60];
+      const lsv = lsRef.current;
+      if (lab && lsv !== null && Number.isFinite(lsv)) {
+        const to = lsv >= 0.5 ? [46, 230, 160] : [255, 77, 109];
+        const a = Math.min(1, Math.abs(lsv - 0.5) * 2.4) * 0.55;
+        hc = hc.map((v, k) => Math.round(v + (to[k] - v) * a));
+      }
+      if (lab) {
+        for (let k = rings.length - 1; k >= 0; k--) {
+          const rg = rings[k];
+          rg.t += 0.02;
+          if (rg.t >= 1) { rings.splice(k, 1); continue; }
+          ctx.strokeStyle = `rgba(${hc.join(",")},${0.55 * (1 - rg.t)})`;
+          ctx.lineWidth = (3 - rg.t * 2) * dpr;
+          ctx.beginPath();
+          ctx.arc(cx, cy, cr * (1.1 + rg.t * 2.2), 0, 6.28);
+          ctx.stroke();
+        }
+        for (let k = waves.length - 1; k >= 0; k--) {
+          const wv = waves[k];
+          wv.t += 0.011;
+          if (wv.t >= 1) { waves.splice(k, 1); continue; }
+          if (wv.t < 0.25) {
+            ctx.fillStyle = wv.col;
+            ctx.globalAlpha = 0.1 * (1 - wv.t / 0.25);
+            ctx.fillRect(0, 0, W, H);
+          }
+          ctx.strokeStyle = wv.col;
+          for (let j = 0; j < 2; j++) {
+            const tt = wv.t - j * 0.12;
+            if (tt <= 0) continue;
+            ctx.globalAlpha = 0.6 * (1 - tt);
+            ctx.lineWidth = (4 - tt * 3) * dpr;
+            ctx.beginPath();
+            ctx.arc(wv.x, wv.y, tt * Math.hypot(W, H) * 0.9, 0, 6.28);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
       const halo = ctx.createRadialGradient(cx, cy, cr * 0.6, cx, cy, cr * 2.6);
-      halo.addColorStop(0, `rgba(255,140,60,${0.5 + kick * 0.3})`);
+      halo.addColorStop(0, `rgba(${hc.join(",")},${0.5 + kick * 0.3 + (lab ? beat * 0.2 : 0)})`);
       halo.addColorStop(1, "rgba(255,107,26,0)");
       ctx.fillStyle = halo;
       ctx.beginPath();
@@ -325,6 +478,7 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("sasa", cx, cy + cr * 0.04);
+      const boxes: number[][] = [];
       pos.forEach((p, i) => {
         const n = ns[i], r = S * (small ? 0.075 : 0.058), gl = glow[i] ?? 0;
         const gg = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r * (2.6 + gl * 2));
@@ -372,6 +526,23 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
           ctx.globalCompositeOperation = mode;
         }
         glow[i] = gl * 0.965;
+        const pe = popRefs.current[i];
+        if (pe && lab) {
+          // above the node; under its name when there is no room above (top edge, the numbers)
+          const x = p[0] / dpr, y = p[1] / dpr, rr = r / dpr;
+          const pw = pe.offsetWidth, ph = pe.offsetHeight, CW = W / dpr;
+          const left = Math.min(Math.max(6, x - pw / 2), CW - pw - 6);
+          const up = y - rr * 1.55 - ph - 8, down = y + rr * 1.45 + 24;
+          // two windows open at once never sit on top of each other
+          const hits = (t: number) => boxes.reduce((s, b) => s + Math.max(0, Math.min(left + pw, b[0] + b[2]) - Math.max(left, b[0]) + 4) * Math.max(0, Math.min(t + ph, b[1] + b[3]) - Math.max(t, b[1]) + 4), 0);
+          const cand = up < 62 ? [down, up] : [up, down];
+          const top = hits(cand[0]) <= hits(cand[1]) || cand[1] === up ? cand[0] : cand[1];
+          const below = top === down;
+          if (pe.classList.contains("on")) boxes.push([left, top, pw, ph]);
+          pe.style.transform = `translate(${left}px, ${top}px)`;
+          pe.style.setProperty("--ax", `${Math.min(Math.max(14, x - left), pw - 14)}px`);
+          pe.dataset.b = below ? "1" : "";
+        }
         const chip = chipRefs.current[i];
         if (chip) {
           const right = Math.cos(p[2]) > 0;
@@ -398,20 +569,33 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
     const hit = posRef.current.findIndex((p) => Math.hypot(p.x - x, p.y - y) < rRef.current * 2.2);
     if (hit >= 0) {
       e.stopPropagation();
-      setFocus(hit);
+      const n = nodesRef.current[hit];
+      if (n) popFn.current(n.key, n.key === "whales" ? `🐋 ${n.text}` : n.text, { force: true });
       setTick((t) => t + 1);
     }
   };
-  const fn = nodes.length ? nodes[focus % nodes.length] : null;
 
   return (
     <>
       <canvas ref={ref} className="pz-canvas" aria-hidden="true" onClick={onTap} />
-      {fn && (
-        <Link href={fn.href} className="pz-spot pz-mono" style={{ ["--c" as string]: fn.color }}>
-          <small>{fn.name}</small> {fn.text}
-        </Link>
-      )}
+      <div className="pz-pops">
+        {nodes.map((n, i) => {
+          const pp = pops[n.key];
+          return (
+            <Link
+              key={n.key}
+              href={n.href}
+              ref={(el) => { popRefs.current[i] = el; }}
+              className={`pz-pop pz-mono${pp?.on ? " on" : ""}${pp?.big ? " big" : ""}`}
+              style={{ ["--c" as string]: n.color }}
+              tabIndex={pp?.on ? 0 : -1}
+              aria-hidden={!pp?.on}
+            >
+              <small>{pp?.big ? "BIG WHALE" : n.name}</small> {pp?.text ?? n.text}
+            </Link>
+          );
+        })}
+      </div>
       <div className="pz-chips">
         {nodes.map((n, i) => (
           <Link key={n.key} href={n.href} ref={(el) => { chipRefs.current[i] = el; }} className="pz-chip" style={{ ["--c" as string]: n.color }}>
@@ -429,7 +613,18 @@ function useBursts(fresh: WhaleMove[], mids: Record<string, number>) {
   const [bursts, setBursts] = useState<Burst[]>([]);
   const last = useRef<Record<string, number>>({});
   useEffect(() => {
-    if (fresh.length) setBursts(fresh.map((w) => ({ key: "whales" as NodeKey, n: Math.min(5, Math.max(1, Math.round(Math.log10(Math.max(w.usd, 1e4)) - 3))) })));
+    if (fresh.length)
+      setBursts(
+        fresh.map((w) => ({
+          key: "whales" as NodeKey,
+          n: Math.min(5, Math.max(1, Math.round(Math.log10(Math.max(w.usd, 1e4)) - 3))),
+          text: `${coinOf(w.coin)} ${moveTag(w)} ${compactUsd(w.usd)}`,
+          usd: w.usd,
+          // money in: a new or added long; money out: shorts, cuts and closes
+          out: !(w.kind !== "close" && w.kind !== "cut" && w.side === "long"),
+          color: moveColor(w),
+        })),
+      );
   }, [fresh]);
   useEffect(() => {
     const out: Burst[] = [];
@@ -617,10 +812,10 @@ export function PulseDesk() {
         </div>
 
         <div className="pz-panel pz-reactor">
-          <Reactor nodes={nodes} bursts={bursts} />
+          <Reactor nodes={nodes} bursts={bursts} ls={d?.longShare} />
           <div className="pz-ph pz-over"><span className="pz-dot" /><b>The Pulse</b>&nbsp;· every whale, every tick, live</div>
-          <div className="pz-big"><small>BTC</small><b className="pz-mono">{price(btcNow)}</b><i className={`pz-mono ${tone(btcChg)}`}>{pct(btcChg)}</i></div>
-          <div className="pz-big2"><small>FEAR / GREED</small><b className="pz-mono">{d?.fg?.score ?? "—"}</b><i>{d?.fg?.label ?? ""}</i></div>
+          <div className="pz-big"><small>BTC</small><Roll className="pz-mono" text={price(btcNow)} /><i className={`pz-mono ${tone(btcChg)}`}>{pct(btcChg)}</i></div>
+          <div className="pz-big2"><small>FEAR / GREED</small><Roll className="pz-mono" text={String(d?.fg?.score ?? "—")} /><i>{d?.fg?.label ?? ""}</i></div>
           <div className="pz-hud pz-mono">
             <div><small>WHALES LONG</small><b className={d?.longShare != null ? (d.longShare >= 0.5 ? "pz-up" : "pz-dn") : ""}>{d?.longShare != null ? `${Math.round(d.longShare * 100)}%` : "—"}</b></div>
             <div><small>AVG FUNDING</small><b>{d ? `${pct(fundingYear(d.avgFunding), 1)}/yr` : "—"}</b></div>
@@ -723,15 +918,15 @@ export function PulseStrip() {
       }}
     >
       <style>{CSS}</style>
-      <Reactor nodes={nodes} bursts={bursts} compact />
-      <div className="pz-big"><small>BTC</small><b className="pz-mono">{price(btcNow)}</b><i className={`pz-mono ${tone(chg)}`}>{pct(chg)}</i></div>
-      <div className="pz-big2"><small>FEAR / GREED</small><b className="pz-mono">{data?.fg?.score ?? "—"}</b><i>{data?.fg?.label ?? ""}</i></div>
+      <Reactor nodes={nodes} bursts={bursts} compact ls={data?.longShare} />
+      <div className="pz-big"><small>BTC</small><Roll className="pz-mono" text={price(btcNow)} /><i className={`pz-mono ${tone(chg)}`}>{pct(chg)}</i></div>
+      <div className="pz-big2"><small>FEAR / GREED</small><Roll className="pz-mono" text={String(data?.fg?.score ?? "—")} /><i>{data?.fg?.label ?? ""}</i></div>
       <div className="pz-badge">NEW · sasa PULSE</div>
       {ls !== null && (
-        <div className="pz-ls pz-mono">
+        <div className="pz-sls pz-mono">
           <div>
-            <span className="pz-up">WHALES {ls}% LONG</span>
-            <span className="pz-dn">{100 - ls}% SHORT</span>
+            <span className="pz-up">WHALES <Roll text={`${ls}%`} /> LONG</span>
+            <span className="pz-dn"><Roll text={`${100 - ls}%`} /> SHORT</span>
           </div>
           <div className="pz-ls-bar">
             <i style={{ width: `${ls}%` }} />
@@ -766,10 +961,22 @@ const CSS = `
 .pz-chips{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .pz-chip{position:absolute;left:0;top:0;pointer-events:auto;background:#0a0a12e6;border:1px solid var(--c);border-radius:7px;padding:4px 9px;font-size:10.5px;white-space:nowrap;font-family:"IBM Plex Mono",ui-monospace,monospace;transition:box-shadow .3s;will-change:transform}
 .pz-chip small{display:block;font-size:8.5px;letter-spacing:.12em;color:var(--c);font-weight:700}
-.pz-spot{display:none;position:absolute;z-index:3;left:12px;right:12px;bottom:52px;background:#0a0a12ee;border:1px solid var(--c);border-radius:999px;padding:8px 12px;font-size:11.5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 0 18px -6px var(--c)}
-.pz-spot small{color:var(--c);font-weight:700;letter-spacing:.1em;font-size:10px}
-.pz-ls{position:absolute;left:14px;bottom:64px;width:280px;z-index:2;pointer-events:none;font-size:10.5px;font-weight:700}
-.pz-ls>div:first-child{display:flex;justify-content:space-between;margin-bottom:4px}
+.pz-pops{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+.pz-pop{display:none;position:absolute;left:0;top:0;pointer-events:none;background:#0b0b14f2;border:1px solid var(--c);border-radius:10px;padding:6px 10px;font-size:11.5px;font-weight:600;white-space:nowrap;max-width:calc(100% - 12px);box-shadow:0 0 22px -6px var(--c),0 6px 18px rgba(0,0,0,.55);opacity:0;transition:opacity .45s;transform-origin:var(--ax,50%) 100%;will-change:transform,opacity}
+.pz-pop[data-b="1"]{transform-origin:var(--ax,50%) 0}
+.pz-pop small{color:var(--c);font-weight:800;letter-spacing:.1em;font-size:9.5px;margin-right:2px}
+.pz-pop::after{content:"";position:absolute;left:var(--ax,50%);bottom:-6px;width:10px;height:10px;margin-left:-5px;background:#0b0b14;border-right:1px solid var(--c);border-bottom:1px solid var(--c);transform:rotate(45deg)}
+.pz-pop[data-b="1"]::after{bottom:auto;top:-6px;transform:rotate(225deg)}
+.pz-pop.on{opacity:1;pointer-events:auto;animation:pz-pop .45s cubic-bezier(.2,1.6,.4,1)}
+.pz-pop.big{font-size:13px;padding:8px 12px;box-shadow:0 0 36px -2px var(--c),0 6px 18px rgba(0,0,0,.55)}
+@keyframes pz-pop{0%{opacity:0;scale:.55}100%{opacity:1;scale:1}}
+.pz-rd{display:inline-block;height:1.15em;line-height:1.15em;overflow:hidden;vertical-align:top}
+.pz-rd>span{display:flex;flex-direction:column;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+.pz-rd>span>span{display:block;height:1.15em;line-height:1.15em}
+@media (min-width:821px){.pz-rd>span{transition:none}}
+@media (prefers-reduced-motion:reduce){.pz-rd>span{transition:none}.pz-pop.on{animation:none}}
+.pz-sls{position:absolute;left:14px;bottom:64px;width:280px;z-index:2;pointer-events:none;font-size:10.5px;font-weight:700}
+.pz-sls>div:first-child{display:flex;justify-content:space-between;margin-bottom:4px}
 .pz-ls-bar{height:6px;border-radius:99px;background:#ff4d6d;overflow:hidden}.pz-ls-bar i{display:block;height:100%;background:#2ee6a0;transition:width .6s}
 .pz-big,.pz-big2{position:absolute;top:30px;z-index:2;pointer-events:none}
 .pz-big{left:14px}.pz-big2{right:14px;text-align:right}
@@ -863,15 +1070,13 @@ const CSS = `
  .pz-agents>:nth-child(n+5){display:flex}.pz-ag{min-width:150px}
  .pz-main{display:flex;flex-direction:column}
  .pz-reactor{order:-1;height:440px;flex:none}
- .pz-reactor .pz-spot{bottom:58px}
  .pz-feed{display:grid;grid-template-columns:1fr 1fr;height:auto}.pz-fc{grid-template-columns:1fr auto}.pz-fc .pz-spark{display:none}
  .pz-big b,.pz-big2 b{font-size:19px}
  .pz-hud div:nth-child(3){display:none}.pz-hud div{padding:4px 8px}
  .pz-chip{display:none}
- .pz-spot{display:block}
+ .pz-pop{display:block}
  .pz-hud{top:auto;bottom:10px}
  .pz-strip .pz-wire{display:none}
- .pz-strip .pz-spot{left:14px;right:auto;bottom:16px;max-width:calc(100% - 220px)}
  .pz-bot{display:flex;flex-direction:column}.pz-bot>.pz-panel{min-height:200px}.pz-tapep{height:220px}
 }
 
@@ -884,8 +1089,7 @@ const CSS = `
 .pz-cta{position:absolute;right:14px;bottom:14px;z-index:2;background:#ff6b1a;color:#140600 !important;font-weight:800;font-size:13px;padding:10px 16px;border-radius:999px;box-shadow:0 0 24px -4px #ff6b1a;white-space:nowrap}
 @media (max-width:640px){
  .pz-strip{height:400px;border-radius:16px}
- .pz-strip .pz-spot{left:12px;right:12px;bottom:62px;max-width:none}
- .pz-ls{left:12px;right:12px;width:auto;bottom:108px}
+ .pz-sls{left:12px;right:12px;width:auto;bottom:66px}
  .pz-strip .pz-chip{display:none}
  .pz-strip .pz-big b,.pz-strip .pz-big2 b{font-size:18px}
  .pz-badge{top:16px;font-size:8.5px;padding:4px 8px}
