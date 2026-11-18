@@ -136,16 +136,17 @@ type Burst = { key: NodeKey; n: number; text?: string; usd?: number; out?: boole
 function Roll({ text, className }: { text: string; className?: string }) {
   const chars = text.split("");
   return (
-    <b className={className} aria-label={text}>
+    <b className={className}>
+      {/* the plain value for readers, search engines and copy-paste; the rolling digits are drawn
+          with CSS only, so no stray "0123456789" ends up in the page's text */}
+      <span className="pz-sr">{text}</span>
       <span aria-hidden="true">
         {chars.map((ch, i) => {
           const k = chars.length - i; // keyed from the right, so digits keep their place
-          if (ch < "0" || ch > "9") return <span key={k}>{ch}</span>;
+          if (ch < "0" || ch > "9") return <span key={k} className="pz-ch" data-c={ch} />;
           return (
             <span key={k} className="pz-rd">
-              <span style={{ transform: `translateY(${-Number(ch) * 1.15}em)` }}>
-                {"0123456789".split("").map((dgt) => <span key={dgt}>{dgt}</span>)}
-              </span>
+              <span style={{ transform: `translateY(${-Number(ch) * 1.15}em)` }} />
             </span>
           );
         })}
@@ -972,7 +973,9 @@ const CSS = `
 @keyframes pz-pop{0%{opacity:0;scale:.55}100%{opacity:1;scale:1}}
 .pz-rd{display:inline-block;height:1.15em;line-height:1.15em;overflow:hidden;vertical-align:top}
 .pz-rd>span{display:flex;flex-direction:column;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
-.pz-rd>span>span{display:block;height:1.15em;line-height:1.15em}
+.pz-rd>span::before{content:"0\\A 1\\A 2\\A 3\\A 4\\A 5\\A 6\\A 7\\A 8\\A 9";white-space:pre;display:block;line-height:1.15em}
+.pz-ch::before{content:attr(data-c)}
+.pz-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media (min-width:821px){.pz-rd>span{transition:none}}
 @media (prefers-reduced-motion:reduce){.pz-rd>span{transition:none}.pz-pop.on{animation:none}}
 .pz-sls{position:absolute;left:14px;bottom:64px;width:280px;z-index:2;pointer-events:none;font-size:10.5px;font-weight:700}

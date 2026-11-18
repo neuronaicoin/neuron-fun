@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { AmountPad } from "@/components/amountpad";
 import { useWallet } from "./wallet";
+import { takeQuickUsd, useQuickBuy } from "@/lib/quickbuy";
 import { ConnectButton } from "./chrome";
 import { SignInToBuy } from "./signintobuy";
 import { useSolSigner } from "./usesolsigner";
@@ -52,7 +53,13 @@ export function SolanaTradeBox({ coin, initialSide = "buy", bare = false }: { co
   const w = useWallet();
   const sol = useSolSigner();
   const [side, setSide] = useState<"buy" | "sell">(initialSide);
-  const [usd, setUsd] = useState("");
+  const [usd, setUsd] = useState(() => (initialSide === "buy" ? takeQuickUsd() : ""));
+  useQuickBuy(
+    useCallback((v: number) => {
+      setSide("buy");
+      setUsd(String(v));
+    }, [])
+  );
   const [sellUsd, setSellUsd] = useState("");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);

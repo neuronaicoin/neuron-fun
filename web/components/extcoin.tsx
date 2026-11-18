@@ -40,6 +40,7 @@ import { PriceChart } from "@/components/racechart";
 import { fetchExtCandles } from "@/lib/extchart";
 import { ExtTradesList, useExtLiveTrades, useExtTrades } from "@/components/exttrades";
 import { CoinSeoSlot } from "@/components/coinseo";
+import { quickBuy, takeQuickUsd, useQuickBuy } from "@/lib/quickbuy";
 
 const EXPLORER: Record<string, string> = {
   base: "https://basescan.org/token/",
@@ -139,7 +140,6 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           {market ? "← Market" : "← All coins"}
         </Link>
       )}
-      {backLink && <Newcomer symbol={coin.symbol} />}
       <div className={(backLink ? "mt-3 " : "") + "grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] items-start"}>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
           <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
@@ -222,6 +222,8 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             )}
           </section>
 
+          {backLink && !IS_TESTNET && !coin.quietSince && <QuickStart coin={coin} chain={net.label} />}
+
           {isSolExt(coin.network) && <BotSafety mint={coin.address} />}
 
           {pool && (
@@ -265,7 +267,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
           {market ? <AboutCoin coin={coin} chain={net.label} market={market} /> : <CoinSeoSlot network={coin.network} address={coin.address} />}
         </div>
         {/* desktop: the trade box in the right column; phones: the Buy / Sell bar below */}
-        <div className="hidden lg:block lg:sticky lg:top-20 self-start">{isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}</div>
+        <div id="trade-box" className="hidden lg:block lg:sticky lg:top-20 self-start scroll-mt-24">{isSolExt(coin.network) ? <SolanaTradeBox coin={coin} /> : <TradeBox coin={coin} />}</div>
       </div>
       <TradeDock symbol={coin.symbol} render={(side) => (isSolExt(coin.network) ? <SolanaTradeBox coin={coin} initialSide={side} bare /> : <TradeBox coin={coin} initialSide={side} bare />)} />
     </div>
@@ -371,7 +373,13 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
   const autoChain = autoForNetwork(coin.network);
   const canAuto = !IS_TESTNET && autoReady(autoChain);
   const [side, setSide] = useState<"buy" | "sell" | "auto">(initialSide);
-  const [usd, setUsd] = useState("");
+  const [usd, setUsd] = useState(() => (initialSide === "buy" ? takeQuickUsd() : ""));
+  useQuickBuy(
+    useCallback((v: number) => {
+      setSide("buy");
+      setUsd(String(v));
+    }, [])
+  );
   const [sellUsd, setSellUsd] = useState("");
   const [pct, setPct] = useState(100);
   const [held, setHeld] = useState<bigint | null>(null);
@@ -645,22 +653,50 @@ function ChartOrDex({
 }
 
 /** A visitor who never signed in (came from Google, ChatGPT, X…): what they can do here, at once. */
-function Newcomer({ symbol }: { symbol: string }) {
-  const { address, restoring, hintAddress } = useWallet();
-  if (address || restoring || hintAddress) return null;
+/** How old a pool is, in plain words ("5 hours", "3 days", "2 years"). */
+function ageWords(iso: string | null): string | null {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return null;
+  const h = Math.max(1, Math.round((Date.now() - t) / 3_600_000));
+  if (h < 48) return `${h} hour${h === 1 ? "" : "s"}`;
+  const d = Math.round(h / 24);
+  if (d < 60) return `${d} days`;
+  const m = Math.round(d / 30);
+  return m < 24 ? `${m} months` : `${Math.round(d / 365)} years`;
+}
+
+/**
+ * The coin at a glance, right under its name, and one big "Buy $10" (most visitors arrive from a
+ * search or an AI answer and want to know what this is and how to get some, before any chart).
+ */
+function QuickStart({ coin, chain }: { coin: ExtCoin; chain: string }) {
+  const age = ageWords(coin.poolCreated);
+  const buys = coin.buys24h ?? 0;
+  const sells = coin.sells24h ?? 0;
+  const facts = [
+    `${age ? `${age} old` : "A"} coin on ${chain}`,
+    coin.mcapUsd ? `${money(coin.mcapUsd)} market cap` : null,
+    coin.liqUsd ? `${money(coin.liqUsd)} in the pool` : null,
+    coin.vol24h ? `${money(coin.vol24h)} traded today` : null,
+    buys + sells > 0 ? `${buys.toLocaleString("en-US")} buys, ${sells.toLocaleString("en-US")} sells in 24h` : null,
+  ].filter(Boolean) as string[];
+  const taxKnown = coin.buyTax !== null || coin.sellTax !== null;
+  const noTax = taxKnown && !coin.buyTax && !coin.sellTax;
+  const go = () => {
+    quickBuy(10);
+    if (window.matchMedia("(min-width: 1024px)").matches) document.getElementById("trade-box")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
-    <div className="mt-3 rounded-2xl border border-[#ff6b1a]/40 bg-[#ff6b1a]/10 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-      <p className="flex-1 text-[0.875rem] text-ink-2">
-        <b className="text-ink">Buy ${symbol} in two taps.</b> Sign in free with email or your wallet, add USDC, done. Or launch your own coin and earn 60% of its trading fees.
+    <section className="rounded-3xl border border-emerald/30 bg-surface p-4 sm:p-5">
+      <h2 className="font-display font-bold text-[1.0625rem]">${coin.symbol} in 10 seconds</h2>
+      <p className="mt-1.5 text-[0.875rem] text-ink-2 leading-relaxed">
+        {facts.join(" · ")}
+        {noTax ? " · no buy or sell tax found" : ""}.
       </p>
-      <div className="flex gap-2 shrink-0 items-center">
-        <div className="min-w-[8rem]">
-          <ConnectButton full />
-        </div>
-        <Link href="/race/launch/" className="h-11 px-4 rounded-xl border border-line font-semibold inline-flex items-center whitespace-nowrap">
-          Launch a coin
-        </Link>
-      </div>
-    </div>
+      <button type="button" data-haptic-strong onClick={go} className="btn-buy mt-3 w-full h-12 rounded-2xl text-[1rem] font-bold">
+        Buy $10 of ${coin.symbol}
+      </button>
+      <p className="mt-2 text-center text-[0.75rem] text-ink-3">Pay with USDC. No gas coin, no bridge. Sell any time.</p>
+    </section>
   );
 }

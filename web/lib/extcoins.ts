@@ -117,9 +117,11 @@ export async function fetchExtCoins(
   filters: { minVol?: number; minLiq?: number } = {}
 ): Promise<ExtCoin[]> {
   const s = search.replace(/[%,()]/g, "").trim();
-  // Lists show coins trading right now; a search looks through the last 30 days.
   const sol = !!network && isSolExt(network);
-  let q = db.from(sol ? "sol_ext_coins" : s ? "ext_coins_all" : "ext_coins").select("*");
+  // Lists show meme coins trading right now with real liquidity, no tax and proven sells, new and
+  // rising ones first (views ext_memes / sol_ext_memes, indexer/memes.sql); a search looks
+  // through every coin of the last 30 days.
+  let q = db.from(sol ? (s ? "sol_ext_coins" : "sol_ext_memes") : s ? "ext_coins_all" : "ext_memes").select("*");
   if (network && !sol) q = q.eq("network", network);
   if (filters.minVol && filters.minVol > 0) q = q.gte("vol_24h", filters.minVol);
   if (filters.minLiq && filters.minLiq > 0) q = q.gte("liq_usd", filters.minLiq);
@@ -138,7 +140,12 @@ export async function fetchExtCoins(
           ? q.order("change_24h", { ascending: true, nullsFirst: false })
           : sort === "volume"
             ? q.order("vol_24h", { ascending: false, nullsFirst: false })
-          : q.order("trending_rank", { ascending: true, nullsFirst: false }).order("vol_24h", { ascending: false });
+          : s
+            ? q.order("trending_rank", { ascending: true, nullsFirst: false }).order("vol_24h", { ascending: false })
+            : network
+              ? q.order("hot", { ascending: false })
+              : // every chain: each chain's hottest, then each one's second… so no chain fills the list
+                q.order("mix", { ascending: true }).order("hot", { ascending: false });
   const [{ data, error }, ours] = await Promise.all([q.limit(Math.min(Math.max(1, limit), 500)), sol ? fetchSasaSolCoins(50, s) : Promise.resolve([])]);
   if (error) throw error;
   const list = ((data ?? []) as Record<string, unknown>[]).map(toExt);

@@ -30,8 +30,8 @@ import { rememberCoin } from "@/lib/coincache";
 import { extHolderKey, fetchHolderLive, raceHolderKey, type HolderLive } from "@/lib/holderlive";
 
 // Sorts that also apply to coins from other DEXs (the rest are about our curves).
-// Trending is ranked by 24h volume for everyone (see lib/rank.ts).
-const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "volume", gainers: "gainers", losers: "losers", new: "new" };
+// Trending: new and rising meme coins first, every chain mixed (indexer/memes.sql, lib/rank.ts).
+const EXT_SORT: Partial<Record<SortKey, ExtSort>> = { trending: "trending", gainers: "gainers", losers: "losers", new: "new" };
 
 /** Explore tabs: v6 sorts on testnet; on mainnet the race tabs replace the bonding-curve ones. */
 type Tab = SortKey | "racing" | "winners" | "ai";

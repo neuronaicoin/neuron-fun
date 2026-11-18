@@ -31,6 +31,14 @@ export function TradeDock({ symbol, render, canBuy = true }: { symbol: string; r
       if (t) clearTimeout(t);
     };
   }, [canBuy]);
+  // a "Buy $10" button on the page: phones open the Buy box (the amount is already in it)
+  useEffect(() => {
+    const on = () => {
+      if (canBuy && window.matchMedia("(max-width: 1023px)").matches) setSide("buy");
+    };
+    window.addEventListener("sasa:quickbuy", on);
+    return () => window.removeEventListener("sasa:quickbuy", on);
+  }, [canBuy]);
   // "…&buy=1" (from an alert's "Buy too") opens the Buy box right away on phones
   useEffect(() => {
     const q = new URLSearchParams(location.search);

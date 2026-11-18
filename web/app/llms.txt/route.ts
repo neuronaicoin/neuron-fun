@@ -46,11 +46,18 @@ X: https://x.com/sasapadfun
 - Creating a coin: a name, a ticker and a picture, or an AI designer that turns one sentence into a name, ticker, story and picture. The creator makes the first buy on each chain (at least $1 per chain) and pays a race fee of $0.50 per chain, which covers the network fees of running the race.
 - Each coin has a fixed supply of 1 billion, split evenly over its chains, no owner and no minting. Every coin trades in a DEX pool from its first second, so it shows up on DEX screeners right away.
 - Race pages show every chain's money side by side, the clock, the chart, trades and holders; finished races show the winner.
+- Coins can also be launched on Solana.
+- Creator earnings: when a coin launched on sasa holds a $10,000 market cap for 1 hour, 60% of its trading fees go to its creator, paid daily in USDC.
+- Coin lists only show meme coins that can really be traded: at least $30,000 of liquidity in the pool, no buy or sell tax, and real sells in the last 24 hours. Tokenized stocks and wash-traded coins are left out. New and rising coins come first.
+- Every coin page starts with the coin at a glance (age, market cap, liquidity, 24h volume, buys and sells) and a one-tap "Buy $10" button.
 - Fees are listed on the Help page: https://sasapad.fun/help/
 - Security review summary: https://sasapad.fun/security/
 
 ## Main pages
-- [Explore](https://sasapad.fun/explore/): live races, races that just finished, and trending, new and winning coins.
+- [Explore](https://sasapad.fun/explore/): live races, races that just finished, and trending, new and winning meme coins on Base, BNB Chain, Robinhood Chain, Arc, Ethereum and Solana.
+- [Pulse](https://sasapad.fun/pulse/): the whole crypto market on one live screen: top traders' (whales') latest positions, futures, tokenized stocks trading 24/7, prediction market odds, funding rates, the day's biggest gainers and losers, and fear & greed.
+- [Is it safe?](https://sasapad.fun/scan/): free rug check for any coin address (taxes, can it be sold, owner powers, top holders).
+- [Market](https://sasapad.fun/market/): the top 500 coins by market cap, each buyable with USDC.
 - [Create a coin](https://sasapad.fun/race/launch/): launch on one or several chains at once.
 - [Races](https://sasapad.fun/races/): every race by chain and by day, with the winners.
 - [Terminal](https://sasapad.fun/terminal/): live trading view for the busiest coins.

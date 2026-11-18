@@ -2,7 +2,7 @@
  * One fair ranking for coins launched on sasa and coins from every other DEX:
  * the same yardstick for both, so our own coins get no head start.
  *
- *   trending  24h trading volume in USD (what people are actually trading)
+ *   trending  other DEXs' coins in the server's order (new and rising first); ours by volume among them
  *   gainers   biggest 24h rise, among coins with at least $10K volume
  *   losers    biggest 24h fall, same volume bar
  *   new       newest first (launch time / pool creation)
@@ -29,7 +29,17 @@ export function rankMerged(ours: Coin[], ext: ExtCoin[], sort: SortKey, ethUsd: 
     ...ext.map((c) => ({ r: { kind: "ext" as const, coin: c }, vol: c.vol24h ?? 0, change: c.change24h, t: time(c.poolCreated) })),
   ];
   let out = all;
-  if (sort === "trending") out = [...all].sort((a, b) => b.vol - a.vol);
+  if (sort === "trending") {
+    // other DEXs' coins come ranked by the server (new and rising meme coins first, chains mixed:
+    // indexer/memes.sql); each of our coins goes in above the first of them with less volume
+    const ext = all.filter((x) => x.r.kind === "ext");
+    out = [...ext];
+    for (const o of all.filter((x) => x.r.kind === "ours").sort((a, b) => b.vol - a.vol)) {
+      const i = out.findIndex((x) => x.r.kind === "ext" && x.vol < o.vol);
+      if (i < 0) out.push(o);
+      else out.splice(i, 0, o);
+    }
+  }
   else if (sort === "gainers")
     out = all.filter((x) => x.vol >= MIN_MOVER_VOLUME_USD && x.change !== null && x.change > 0).sort((a, b) => (b.change ?? 0) - (a.change ?? 0));
   else if (sort === "losers")
