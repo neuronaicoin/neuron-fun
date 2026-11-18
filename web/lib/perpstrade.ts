@@ -91,6 +91,7 @@ export function hlError(e: unknown): Error {
   if (/builder fee has not been approved|builder/i.test(m) && /approv/i.test(m)) return new Error("Trading isn't approved yet. Try again to approve it.");
   if (/does not exist|user or api wallet/i.test(m)) return new Error("Your futures account isn't set up yet. Add money first.");
   if (/must deposit before/i.test(m)) return new Error("Your balance isn't on the trading account yet. Add money first, then try again.");
+  if (/invalid spot/i.test(m)) return new Error("This one just closed for trading (the round is ending). Pick a newer one.");
   if (/rejected|denied|user rejected/i.test(m)) return new Error("You cancelled it in your wallet.");
   return new Error(m.length > 160 ? `${m.slice(0, 160)}…` : m);
 }
