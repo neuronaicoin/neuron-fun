@@ -253,6 +253,7 @@ const NAV_ALL = [
   { href: "/terminal/", label: "Terminal", from: "lg" },
   { href: "/bot/", label: "Bot", from: "lg" },
   { href: "/predict/", label: "Predict", from: "lg" },
+  { href: "/pulse/", label: "Pulse", from: "lg" },
   { href: "/race/launch/", label: "Create a coin", from: "md" },
   { href: "/chat/", label: "Chat", from: "xl" },
   { href: "/me/", label: "You", from: "xl" },
@@ -329,6 +330,7 @@ export function Header() {
 // Everything that doesn't fit in the phone's bottom bar (or a tablet's top bar).
 // `tablet`: only listed on tablets (phones already have these in the bottom bar).
 const MORE_ALL = [
+  { href: "/pulse/", label: "🟠 sasa Pulse · NEW", note: "The whole market live: WHALES, futures, stocks, odds" },
   { href: "/bot/", label: "🤖 sasa Bot · NEW", note: "WHALES, traps and trends, live" },
   { href: "/scan/", label: "🛡️ Is it safe? · NEW", note: "Free rug check for any coin" },
   { href: "/market/", label: "Market", note: "Top coins, futures and market data", tablet: true },
@@ -486,7 +488,7 @@ export function BottomNav() {
       {more && <MoreSheet onClose={() => setMore(false)} />}
       {/* Create sits in the exact middle: two links on its left share the same width as three on its right */}
       <div className="grid items-end" style={{ gridTemplateColumns: "1.5fr 1.5fr 4.25rem 1fr 1fr 1fr" }}>
-        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/" && n.href !== "/terminal/").map((n) => {
+        {NAV.filter((n) => n.href !== "/stats/" && n.href !== "/forum/" && n.href !== "/traders/" && n.href !== "/copy/" && n.href !== "/predict/" && n.href !== "/bot/" && n.href !== "/terminal/" && n.href !== "/pulse/").map((n) => {
           const active = isActive(pathname, n.href);
           return (
             n.href === "/race/launch/" ? (

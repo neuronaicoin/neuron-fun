@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/play/`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/forum/`, changeFrequency: "hourly", priority: 0.8 },
     { url: `${SITE_URL}/explore/`, changeFrequency: "hourly", priority: 0.9 },
+    { url: `${SITE_URL}/pulse/`, changeFrequency: "hourly", priority: 0.8 },
     ...(V6 ? [{ url: `${SITE_URL}/traders/`, changeFrequency: "hourly" as const, priority: 0.7 }] : []),
     // Daily "top meme coins" lists (Cloudflare function, rebuilt every 30 minutes).
     { url: `${SITE_URL}/top/`, changeFrequency: "hourly", priority: 0.9 },

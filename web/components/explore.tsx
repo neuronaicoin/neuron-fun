@@ -22,6 +22,7 @@ import { BotBanner, ElysiumBanner } from "@/components/airdropcta";
 import { CreatorBonusBanner } from "@/components/creatorbonus";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
+import { PulseStrip } from "@/components/pulse";
 import { TopWins } from "@/components/topwins";
 import { HolderCount } from "@/components/holderlive";
 import { openMoney, useMoney } from "@/lib/portfolio";
@@ -262,6 +263,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           <div className="hidden sm:block"><ElysiumBanner /><BotBanner /></div>
         </div>
       )}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3"><PulseStrip /></div>
       <div className="max-w-7xl mx-auto hidden sm:block"><LiveRaces fallback={<RaceBanner />} /></div>
       <div className="max-w-7xl mx-auto"><TopWins /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
