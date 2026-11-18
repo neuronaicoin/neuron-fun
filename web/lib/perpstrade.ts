@@ -90,6 +90,7 @@ export function hlError(e: unknown): Error {
   if (/minimum value|min.*\$10/i.test(m)) return new Error("The smallest position is $10 (amount × leverage).");
   if (/builder fee has not been approved|builder/i.test(m) && /approv/i.test(m)) return new Error("Trading isn't approved yet. Try again to approve it.");
   if (/does not exist|user or api wallet/i.test(m)) return new Error("Your futures account isn't set up yet. Add money first.");
+  if (/must deposit before/i.test(m)) return new Error("Your balance isn't on the trading account yet. Add money first, then try again.");
   if (/rejected|denied|user rejected/i.test(m)) return new Error("You cancelled it in your wallet.");
   return new Error(m.length > 160 ? `${m.slice(0, 160)}…` : m);
 }
@@ -332,11 +333,15 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
       },
 
       async open(o, onStep) {
-        const ex = await ready(onStep);
+        if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
+        if (!user) throw new Error("Log in first.");
         const m = o.market;
         const buy = o.side === "long";
-        // the margin and the fee, brought over from the cash balance when futures holds less
+        // the margin and the fee, brought over from the cash balance when futures holds less. This
+        // comes before the one-time approvals: a brand-new account can't approve anything until
+        // money has landed on it ("Must deposit before performing actions").
         await fundFutures(o.margin + o.margin * o.lev * (HL_TAKER_FEE * (m.dex ? 2 : 1) + BUILDER_FEE) + 0.05, onStep);
+        const ex = await ready(onStep);
         if (m.dex) await builderDexReady(ex, onStep);
         try {
           onStep(`Setting ${o.lev}x…`);
@@ -453,7 +458,8 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
       async predictBuy(o, side, usd, onStep) {
         if (!o.tradable) throw new Error("This prediction can't be bought here yet.");
         const s = o.sides[side];
-        const ex = await ready(onStep, PREDICT_FEE_TENTHS_BP);
+        if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
+        if (!user) throw new Error("Log in first.");
         onStep("Getting the price…");
         const { ask } = await bestOf(s.coin);
         if (!ask) throw new Error(`No one is selling "${s.name}" right now. Try the other side or a moment later.`);
@@ -462,12 +468,20 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         const shares = Math.floor(usd / Number(px));
         if (shares * Number(px) < PREDICT_MIN) throw new Error(`The smallest prediction is $${PREDICT_MIN}.`);
         const cost = shares * Number(px);
+        // the money first (a brand-new account can't approve anything before it has some), then the approvals
+        const uni = await unified();
+        let need = 0;
+        if (!uni) {
+          const have = await predictCash();
+          if (have + 1e-6 < cost) {
+            need = Math.ceil((cost - have + 0.05) * 100) / 100;
+            await fundFutures(need, onStep);
+          }
+        }
+        const ex = await ready(onStep, PREDICT_FEE_TENTHS_BP);
         try {
-          if (!(await unified())) {
-            const have = await predictCash();
-            if (have + 1e-6 < cost) {
-              const need = Math.ceil((cost - have + 0.05) * 100) / 100;
-              await fundFutures(need, onStep);
+          if (need > 0) {
+            {
               onStep("Moving money to Predict…");
               await moveUsdc(ex, need, false);
               const until = Date.now() + 20_000;
@@ -511,7 +525,7 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
       async spotBuy(m, usd, onStep) {
         if (!PERPS_TRADING) throw new Error("Trading opens at mainnet.");
         if (!(usd >= SPOT_MIN)) throw new Error(`The smallest buy is $${SPOT_MIN}.`);
-        const ex = await ready(onStep, SPOT_FEE_TENTHS_BP);
+        if (!user) throw new Error("Log in first.");
         onStep("Getting the price…");
         const { ask } = await bestOf(m.coin);
         if (!ask) throw new Error(`No one is selling ${m.token} right now. Try again in a moment.`);
@@ -520,12 +534,20 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         const size = sizeString(usd / Number(px), m.szDecimals);
         if (!(Number(size) > 0) || Number(size) * Number(px) < SPOT_MIN) throw new Error(`The smallest buy is $${SPOT_MIN}.`);
         const cost = Number(size) * Number(px);
+        // the money first (a brand-new account can't approve anything before it has some), then the approvals
+        const uni = await unified();
+        let need = 0;
+        if (!uni) {
+          const have = await predictCash();
+          if (have + 1e-6 < cost) {
+            need = Math.ceil((cost - have + 0.05) * 100) / 100;
+            await fundFutures(need, onStep);
+          }
+        }
+        const ex = await ready(onStep, SPOT_FEE_TENTHS_BP);
         try {
-          if (!(await unified())) {
-            const have = await predictCash();
-            if (have + 1e-6 < cost) {
-              const need = Math.ceil((cost - have + 0.05) * 100) / 100;
-              await fundFutures(need, onStep);
+          if (need > 0) {
+            {
               onStep("Moving money to spot…");
               await moveUsdc(ex, need, false);
               const until = Date.now() + 20_000;
