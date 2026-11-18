@@ -11,6 +11,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/700.css";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { compactUsd } from "@/lib/format";
 import { fetchBook, fetchMids, fetchPulse, fetchTape, fundingYear, type PulseBook, type PulseData } from "@/lib/pulse";
@@ -136,10 +137,34 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
   const nodesRef = useRef(nodes);
   const queue = useRef<Burst[]>([]);
   nodesRef.current = nodes;
+  // Phones (the chips are hidden): a short name under every node, and a spotlight that walks
+  // the nodes every 3 s and shows that node's live number in one caption. A tap picks a node.
+  const labelsRef = useRef(false);
+  const [focus, setFocus] = useState(0);
+  const [tick, setTick] = useState(0);
+  const focusRef = useRef(0);
+  focusRef.current = focus;
+  const posRef = useRef<{ x: number; y: number }[]>([]);
+  const rRef = useRef(0);
 
   useEffect(() => {
     queue.current.push(...bursts);
+    // a new whale move: the spotlight jumps to the whale node
+    if (labelsRef.current && bursts.some((b) => b.key === "whales")) {
+      const i = nodesRef.current.findIndex((n) => n.key === "whales");
+      if (i >= 0) {
+        setFocus(i);
+        setTick((t) => t + 1);
+      }
+    }
   }, [bursts]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (labelsRef.current) setFocus((f) => (f + 1) % Math.max(1, nodesRef.current.length));
+    }, 3000);
+    return () => clearInterval(t);
+  }, [tick]);
 
   useEffect(() => {
     const cv = ref.current;
@@ -152,6 +177,8 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
     let W = 0, H = 0, dpr = 1, small = false;
     const size = () => {
       small = cv.clientWidth < 700;
+      const c0 = chipRefs.current[0];
+      labelsRef.current = c0 ? getComputedStyle(c0).display === "none" : small;
       dpr = Math.min(window.devicePixelRatio || 1, small ? 2 : 1.5);
       W = cv.width = Math.max(1, Math.round(cv.clientWidth * dpr));
       H = cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
@@ -233,6 +260,11 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
         const a = (i / ns.length) * 6.283 + T * 0.00012 - 1.2;
         return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, a];
       });
+      posRef.current = pos.map((p) => ({ x: p[0] / dpr, y: p[1] / dpr }));
+      rRef.current = (S * (small ? 0.075 : 0.058)) / dpr;
+      const lab = labelsRef.current;
+      const fi = focusRef.current % Math.max(1, ns.length);
+      if (lab) glow[fi] = Math.max(glow[fi] ?? 0, 0.55);
       // real events: a burst of light from that node into the core
       while (queue.current.length) {
         const b = queue.current.shift()!;
@@ -320,6 +352,25 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
         ctx.arc(p[0], p[1], r * 1.35 + Math.sin(T * 0.004 + i) * 3 * dpr + gl * r, 0, 6.28);
         ctx.stroke();
         ctx.globalAlpha = 1;
+        if (lab) {
+          const fs = Math.max(10.5 * dpr, r * 0.46);
+          ctx.font = `700 ${fs}px "IBM Plex Mono", ui-monospace, monospace`;
+          const tw = ctx.measureText(n.name).width;
+          const lx = Math.min(Math.max(p[0], tw / 2 + 4 * dpr), W - tw / 2 - 4 * dpr);
+          const ly = p[1] + r * 1.45 + fs * 0.75;
+          // a dark pill behind the name so it reads over the bright ring
+          const mode = ctx.globalCompositeOperation;
+          ctx.globalCompositeOperation = "source-over";
+          ctx.fillStyle = "rgba(7,7,11,.82)";
+          ctx.beginPath();
+          ctx.roundRect(lx - tw / 2 - 5 * dpr, ly - fs * 0.68, tw + 10 * dpr, fs * 1.36, fs * 0.68);
+          ctx.fill();
+          ctx.fillStyle = n.color;
+          ctx.globalAlpha = i === fi ? 1 : 0.85;
+          ctx.fillText(n.name, lx, ly);
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = mode;
+        }
         glow[i] = gl * 0.965;
         const chip = chipRefs.current[i];
         if (chip) {
@@ -340,9 +391,27 @@ function Reactor({ nodes, bursts, compact }: { nodes: PNode[]; bursts: Burst[]; 
     };
   }, [compact]);
 
+  const onTap = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!labelsRef.current) return;
+    const b = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - b.left, y = e.clientY - b.top;
+    const hit = posRef.current.findIndex((p) => Math.hypot(p.x - x, p.y - y) < rRef.current * 2.2);
+    if (hit >= 0) {
+      e.stopPropagation();
+      setFocus(hit);
+      setTick((t) => t + 1);
+    }
+  };
+  const fn = nodes.length ? nodes[focus % nodes.length] : null;
+
   return (
     <>
-      <canvas ref={ref} className="pz-canvas" aria-hidden="true" />
+      <canvas ref={ref} className="pz-canvas" aria-hidden="true" onClick={onTap} />
+      {fn && (
+        <Link href={fn.href} className="pz-spot pz-mono" style={{ ["--c" as string]: fn.color }}>
+          <small>{fn.name}</small> {fn.text}
+        </Link>
+      )}
       <div className="pz-chips">
         {nodes.map((n, i) => (
           <Link key={n.key} href={n.href} ref={(el) => { chipRefs.current[i] = el; }} className="pz-chip" style={{ ["--c" as string]: n.color }}>
@@ -642,13 +711,33 @@ export function PulseStrip() {
   const btcNow = mids.BTC ?? btc?.mark;
   const chg = btc && btcNow && btc.prevDay ? (btcNow / btc.prevDay - 1) * 100 : null;
   const w = fresh[0] ?? data?.whales[0];
+  const router = useRouter();
+  const ls = data?.longShare != null ? Math.round(data.longShare * 100) : null;
   return (
-    <div className="pz pz-strip">
+    // the whole card opens Pulse (links and a tapped node keep their own action)
+    <div
+      className="pz pz-strip"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a")) return;
+        router.push("/pulse/");
+      }}
+    >
       <style>{CSS}</style>
       <Reactor nodes={nodes} bursts={bursts} compact />
       <div className="pz-big"><small>BTC</small><b className="pz-mono">{price(btcNow)}</b><i className={`pz-mono ${tone(chg)}`}>{pct(chg)}</i></div>
       <div className="pz-big2"><small>FEAR / GREED</small><b className="pz-mono">{data?.fg?.score ?? "—"}</b><i>{data?.fg?.label ?? ""}</i></div>
       <div className="pz-badge">NEW · sasa PULSE</div>
+      {ls !== null && (
+        <div className="pz-ls pz-mono">
+          <div>
+            <span className="pz-up">WHALES {ls}% LONG</span>
+            <span className="pz-dn">{100 - ls}% SHORT</span>
+          </div>
+          <div className="pz-ls-bar">
+            <i style={{ width: `${ls}%` }} />
+          </div>
+        </div>
+      )}
       {w && (
         <Link href={`/data/whale/?a=${w.address}`} className="pz-wire pz-mono" style={{ ["--c" as string]: moveColor(w) }}>
           🐋 <b>WHALE {moveTag(w)} {coinOf(w.coin)} {compactUsd(w.usd)}</b>{w.lev ? ` · ${Math.round(w.lev)}x` : ""}
@@ -677,6 +766,11 @@ const CSS = `
 .pz-chips{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .pz-chip{position:absolute;left:0;top:0;pointer-events:auto;background:#0a0a12e6;border:1px solid var(--c);border-radius:7px;padding:4px 9px;font-size:10.5px;white-space:nowrap;font-family:"IBM Plex Mono",ui-monospace,monospace;transition:box-shadow .3s;will-change:transform}
 .pz-chip small{display:block;font-size:8.5px;letter-spacing:.12em;color:var(--c);font-weight:700}
+.pz-spot{display:none;position:absolute;z-index:3;left:12px;right:12px;bottom:52px;background:#0a0a12ee;border:1px solid var(--c);border-radius:999px;padding:8px 12px;font-size:11.5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 0 18px -6px var(--c)}
+.pz-spot small{color:var(--c);font-weight:700;letter-spacing:.1em;font-size:10px}
+.pz-ls{position:absolute;left:14px;bottom:64px;width:280px;z-index:2;pointer-events:none;font-size:10.5px;font-weight:700}
+.pz-ls>div:first-child{display:flex;justify-content:space-between;margin-bottom:4px}
+.pz-ls-bar{height:6px;border-radius:99px;background:#ff4d6d;overflow:hidden}.pz-ls-bar i{display:block;height:100%;background:#2ee6a0;transition:width .6s}
 .pz-big,.pz-big2{position:absolute;top:30px;z-index:2;pointer-events:none}
 .pz-big{left:14px}.pz-big2{right:14px;text-align:right}
 .pz-big small,.pz-big2 small{font-size:9px;color:var(--mut);letter-spacing:.14em;font-weight:700}
@@ -768,24 +862,30 @@ const CSS = `
  .pz-agents{display:flex;overflow-x:auto;gap:6px;height:58px;scrollbar-width:none;flex:none}.pz-agents::-webkit-scrollbar{display:none}
  .pz-agents>:nth-child(n+5){display:flex}.pz-ag{min-width:150px}
  .pz-main{display:flex;flex-direction:column}
- .pz-reactor{order:-1;height:360px;flex:none}
+ .pz-reactor{order:-1;height:440px;flex:none}
+ .pz-reactor .pz-spot{bottom:58px}
  .pz-feed{display:grid;grid-template-columns:1fr 1fr;height:auto}.pz-fc{grid-template-columns:1fr auto}.pz-fc .pz-spark{display:none}
  .pz-big b,.pz-big2 b{font-size:19px}
  .pz-hud div:nth-child(3){display:none}.pz-hud div{padding:4px 8px}
  .pz-chip{display:none}
+ .pz-spot{display:block}
  .pz-hud{top:auto;bottom:10px}
+ .pz-strip .pz-wire{display:none}
+ .pz-strip .pz-spot{left:14px;right:auto;bottom:16px;max-width:calc(100% - 220px)}
  .pz-bot{display:flex;flex-direction:column}.pz-bot>.pz-panel{min-height:200px}.pz-tapep{height:220px}
 }
 
 /* Explore strip */
-.pz-strip{position:relative;height:360px;border-radius:18px;overflow:hidden;background:var(--bg);border:1px solid #1d1d2a}
+.pz-strip{position:relative;height:360px;border-radius:18px;overflow:hidden;background:var(--bg);border:1px solid #1d1d2a;cursor:pointer}
 .pz-strip .pz-big,.pz-strip .pz-big2{top:14px}
 .pz-badge{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#ff6b1a;color:#140600;font-weight:800;font-size:10px;letter-spacing:.12em;padding:5px 10px;border-radius:999px;z-index:2;white-space:nowrap}
 .pz-wire{position:absolute;left:14px;bottom:16px;z-index:2;font-size:11.5px;background:#0a0a12e6;border:1px solid var(--c);border-radius:999px;padding:8px 12px;max-width:calc(100% - 220px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pz-wire b{color:#ffa04d}
 .pz-cta{position:absolute;right:14px;bottom:14px;z-index:2;background:#ff6b1a;color:#140600 !important;font-weight:800;font-size:13px;padding:10px 16px;border-radius:999px;box-shadow:0 0 24px -4px #ff6b1a;white-space:nowrap}
 @media (max-width:640px){
- .pz-strip{height:340px;border-radius:16px}
+ .pz-strip{height:400px;border-radius:16px}
+ .pz-strip .pz-spot{left:12px;right:12px;bottom:62px;max-width:none}
+ .pz-ls{left:12px;right:12px;width:auto;bottom:108px}
  .pz-strip .pz-chip{display:none}
  .pz-strip .pz-big b,.pz-strip .pz-big2 b{font-size:18px}
  .pz-badge{top:16px;font-size:8.5px;padding:4px 8px}
