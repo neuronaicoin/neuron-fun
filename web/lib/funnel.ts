@@ -117,7 +117,11 @@ export function startFunnel() {
       if (!scan) scan = setTimeout(look, 600);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
 
-    window.addEventListener("error", (e) => funnel("js_error", `${e.message || ""}`.slice(0, 180)));
+    // ResizeObserver loop notices are harmless browser noise and can fire hundreds of times a session
+    window.addEventListener("error", (e) => {
+      if (/ResizeObserver loop/i.test(e.message || "")) return;
+      funnel("js_error", `${e.message || ""}`.slice(0, 180));
+    });
     window.addEventListener("unhandledrejection", (e) => {
       const r = (e as PromiseRejectionEvent).reason;
       funnel("js_error", `promise: ${String((r && (r.message || r)) || "").slice(0, 170)}`);
