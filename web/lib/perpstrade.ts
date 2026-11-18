@@ -27,7 +27,7 @@ import { BUILDER_FEE, BUILDER_FEE_TENTHS_BP, HL_API, HL_TAKER_FEE, MIN_NOTIONAL,
 import { baseCashUsd, transitAdd, transitToCash } from "./transit";
 import { cashOf } from "./portfolio";
 import { SPOT_FEE_TENTHS_BP, SPOT_MIN, spotPrice, type HlSpot } from "./hlspot";
-import { PREDICT_FEE_TENTHS_BP, PREDICT_MIN, bestOf, fetchPredictWallet, type PredictHolding, type PredictOutcome } from "./predict";
+import { PREDICT_FEE_TENTHS_BP, PREDICT_MIN, askCovering, bestOf, fetchPredictWallet, type PredictHolding, type PredictOutcome } from "./predict";
 
 /** Hyperliquid's perps USDC, as Relay names it. */
 const HL_PERPS_USDC = "0x00000000000000000000000000000000";
@@ -464,14 +464,27 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         const { ask } = await bestOf(s.coin);
         if (!ask) throw new Error(`No one is selling "${s.name}" right now. Try the other side or a moment later.`);
         // a market order: up to 3% over the best offer, never past 0.999
-        const px = pricePx(ask * 1.03, true);
+        let px = pricePx(ask * 1.03, true);
         let shares = Math.floor(usd / Number(px));
         // rounding down to whole shares can leave a $10 buy just under the $10 minimum: take one share more
         if (shares * Number(px) < PREDICT_MIN && usd >= PREDICT_MIN) shares = Math.ceil(PREDICT_MIN / Number(px));
         if (shares * Number(px) < PREDICT_MIN) throw new Error(`The smallest prediction is $${PREDICT_MIN}.`);
-        const cost = shares * Number(px);
+        // thin books: reach as deep as the shares need (never more than 12% over the best offer)
+        const deep = await askCovering(s.coin, shares).catch(() => null);
+        if (deep && deep * 1.01 > Number(px) && deep <= ask * 1.12) px = pricePx(deep * 1.01, true);
         // the money first (a brand-new account can't approve anything before it has some), then the approvals
         const uni = await unified();
+        if (!uni && base) {
+          // asked for more than the balance can cover (the move to futures costs a little): buy what it can
+          const [pc, ff, cashRaw] = await Promise.all([predictCash(), futuresFree(), cashOf(base, user).catch(() => 0n)]);
+          const cash = Number(cashRaw) / 1e6;
+          const usable = pc + ff + (cash >= MIN_MOVE ? (cash - 0.25) / 1.02 : 0);
+          if (shares * Number(px) > usable) {
+            const fit = Math.floor((usable * 0.995) / Number(px));
+            if (fit * Number(px) >= PREDICT_MIN) shares = fit;
+          }
+        }
+        const cost = shares * Number(px);
         let need = 0;
         if (!uni) {
           const have = await predictCash();
@@ -499,7 +512,9 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
             if (!/could not immediately match|no resting orders/i.test(String((e as Error)?.message ?? e))) throw e;
             const again = (await bestOf(s.coin)).ask;
             if (!again) throw e;
-            res = await predictOrder(ex, { a: s.asset, b: true, p: pricePx(again * 1.03, true), s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
+            const reach = (await askCovering(s.coin, shares).catch(() => null)) ?? again;
+            const p2 = Math.min(Math.max(again * 1.03, reach * 1.01), again * 1.12, Number(px) * 1.08);
+            res = await predictOrder(ex, { a: s.asset, b: true, p: pricePx(p2, true), s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
           }
           const f = filledOf(res);
           onStep(null);

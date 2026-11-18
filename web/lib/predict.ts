@@ -359,6 +359,17 @@ export async function bestOf(coin: string): Promise<{ bid: number | null; ask: n
   return { bid: bid > 0 ? bid : null, ask: ask > 0 ? ask : null };
 }
 
+/** The ask price deep enough in the book to fill `shares` (null when the book can't fill them). */
+export async function askCovering(coin: string, shares: number): Promise<number | null> {
+  const r = await info<{ levels?: [{ px: string; sz: string }[], { px: string; sz: string }[]] }>({ type: "l2Book", coin });
+  let got = 0;
+  for (const l of r?.levels?.[1] ?? []) {
+    got += Number(l.sz) || 0;
+    if (got + 1e-9 >= shares) return Number(l.px) || null;
+  }
+  return null;
+}
+
 /** Smallest order Hyperliquid takes, in dollars. */
 export const PREDICT_MIN = 10;
 /** sasa's fee on a prediction (Hyperliquid builder fee, tenths of a basis point: 500 = 0.5%). */
