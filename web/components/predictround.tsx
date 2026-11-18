@@ -159,7 +159,9 @@ function payoff(usd: number, ask: number | null) {
   const shares = Math.floor(usd / ask);
   if (shares <= 0) return null;
   const cost = shares * ask * (1 + FEE);
-  return { shares, cost, win: shares - cost };
+  const win = shares - cost;
+  // a side priced at ~$1 has nothing left to win: say so instead of a negative number
+  return win >= 0.01 ? { shares, cost, win } : null;
 }
 
 export function RoundCard({ o, now, hot, onBet, share }: { o: PredictOutcome; now: number; hot?: boolean; onBet: (side: 0 | 1, usd: number) => void; share: () => void }) {
@@ -208,6 +210,7 @@ export function RoundCard({ o, now, hot, onBet, share }: { o: PredictOutcome; no
   const payUp = payoff(usd, asks[0]);
   const payDown = payoff(usd, asks[1]);
   const lose = Math.max(payUp?.cost ?? 0, payDown?.cost ?? 0);
+  const noGain = (i: 0 | 1) => asks[i] !== null && !(i === 0 ? payUp : payDown);
   const upColor = "var(--color-up, #12a150)";
   const downColor = "var(--color-danger, #e5484d)";
   const line = above === null ? "#9aa0a6" : above ? upColor : downColor;
@@ -290,7 +293,7 @@ export function RoundCard({ o, now, hot, onBet, share }: { o: PredictOutcome; no
               onClick={() => onBet(i, usd)}
               className={"h-12 rounded-2xl font-bold text-[1rem] text-white disabled:opacity-50 " + (i === 0 ? "bg-up" : "bg-danger")}
             >
-              {i === 0 ? "Up ▲" : "Down ▼"} <span className="font-semibold opacity-90 text-[0.875rem]">{asks[i] ? `${Math.round(asks[i]! * 100)}¢` : ""}</span>
+              {i === 0 ? "Up ▲" : "Down ▼"} <span className="font-semibold opacity-90 text-[0.875rem]">{asks[i] ? `${Math.min(99, Math.max(1, Math.round(asks[i]! * 100)))}¢` : ""}</span>
             </button>
           ))}
         </div>
@@ -299,6 +302,8 @@ export function RoundCard({ o, now, hot, onBet, share }: { o: PredictOutcome; no
             <>
               {payUp && <>Up right: win <b className="text-up">{money(payUp.win)}</b>. </>}
               {payDown && <>Down right: win <b className="text-danger">{money(payDown.win)}</b>. </>}
+              {noGain(0) && <>Up is priced near $1, little to win. </>}
+              {noGain(1) && <>Down is priced near $1, little to win. </>}
               Wrong: lose {money(lose)}. Live prices from Hyperliquid.
             </>
           ) : asks[0] === null && asks[1] === null ? (
