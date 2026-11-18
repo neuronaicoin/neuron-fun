@@ -90,6 +90,7 @@ export function LiveChart({
   toolbarStart,
   toolbarEnd,
   bleed = false,
+  since,
 }: {
   cacheKey: string;
   /** candles of one candle size (s), oldest first, values already in what is shown (MC or price) */
@@ -108,6 +109,8 @@ export function LiveChart({
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
   bleed?: boolean;
+  /** when the coin (or its pool) was created, ms: a coin younger than the range fills the chart */
+  since?: number;
 }) {
   const [range, setRange] = useState(() => (ranges.some((r) => r.label === defaultRange) ? defaultRange : ranges[0].label));
   const r = ranges.find((x) => x.label === range) ?? ranges[0];
@@ -200,10 +203,15 @@ export function LiveChart({
       s.fade = 0;
     }
     s.pts = rows;
-    const span = r.span ? r.span * 1000 : rows.length ? Math.max(60_000, Date.now() - rows[0].t) : 3_600_000;
+    let span = r.span ? r.span * 1000 : rows.length ? Math.max(60_000, Date.now() - rows[0].t) : 3_600_000;
+    // a coin younger than the range: fit the window to its age instead of squeezing the line at the right edge
+    if (r.span) {
+      const age = since && since > 0 ? Date.now() - since : r.span >= 604_800 && rows.length ? Date.now() - rows[0].t : NaN;
+      if (Number.isFinite(age) && age > 0 && age * 1.08 < span) span = Math.max(60_000, age * 1.08);
+    }
     s.spanTarget = span;
     if (!s.span) s.span = span;
-  }, [rows, r.span]);
+  }, [rows, r.span, since]);
 
   // trades of sasa's own coins: burst once per new trade (several at once: a bigger burst)
   useEffect(() => {

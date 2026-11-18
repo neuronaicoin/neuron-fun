@@ -229,6 +229,7 @@ export function PriceChart({
         emptyText={emptyText}
         onFail={onFail}
         bleed={bleed}
+        since={since}
         toolbarStart={valueToggle}
         toolbarEnd={viewButton(true)}
       />
