@@ -465,7 +465,9 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
         if (!ask) throw new Error(`No one is selling "${s.name}" right now. Try the other side or a moment later.`);
         // a market order: up to 3% over the best offer, never past 0.999
         const px = pricePx(ask * 1.03, true);
-        const shares = Math.floor(usd / Number(px));
+        let shares = Math.floor(usd / Number(px));
+        // rounding down to whole shares can leave a $10 buy just under the $10 minimum: take one share more
+        if (shares * Number(px) < PREDICT_MIN && usd >= PREDICT_MIN) shares = Math.ceil(PREDICT_MIN / Number(px));
         if (shares * Number(px) < PREDICT_MIN) throw new Error(`The smallest prediction is $${PREDICT_MIN}.`);
         const cost = shares * Number(px);
         // the money first (a brand-new account can't approve anything before it has some), then the approvals
