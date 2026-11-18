@@ -28,6 +28,8 @@ import { futuresCardSvg, futuresMarkets, predictCardSvg } from "./marketcards.mj
 import { fetchPredict } from "./predictboard.mjs";
 import * as card from "./xbotcards.mjs";
 import * as say from "./xbottext.mjs";
+import { FEATURE_IDS, buildSingle, buildThread } from "./xthreads.mjs";
+import { cardPng } from "./xthreadcards.mjs";
 
 const API = "https://api.x.com";
 const W = 1200;
@@ -601,26 +603,32 @@ export const ELYSIUM_SLOTS = [
 // trade, spot, futures, whales, the trap scan, the contest; one shared pool of lines, see promo())
 // mixed with the live-data posts that pull replies (fear & greed, a poll, predictions, movers).
 export const PROMO_SLOTS = ["promo", "promo2", "promo3", "promo4", "promo5", "promo6", "promo7", "promo8"];
+// Nov 18, 2026: the timeline is now feature THREADS. 11 threads a day, each one shows one sasa
+// feature in 6 posts with a 1600x900 card under every post (xthreads.mjs / xthreadcards.mjs), in
+// the busy windows 04:00–09:30 and 15:00–22:30 Türkiye time; in the middle of the day just two
+// single posts (11:00 and 13:00). Whale moves and their follow-ups only go out inside the windows.
+export const THREAD_SLOTS = ["th1", "th2", "th3", "th4", "th5", "th6", "th7", "th8", "th9", "th10", "th11"];
 export const PLAN = [
-  // morning (Türkiye time)
-  { kind: "promo", at: "07:00" },
-  { kind: "fear", at: "08:10" },
-  { kind: "promo2", at: "09:00" },
-  { kind: "spot", at: "10:00" },
-  { kind: "promo3", at: "11:00" },
-  { kind: "meme", at: "12:10" },
-  // afternoon and the US session
-  { kind: "promo4", at: "13:30" },
-  { kind: "poll", at: "14:40" },
-  { kind: "promo5", at: "15:40" },
-  { kind: "stock", at: "16:40" },
-  { kind: "predict", at: "17:40" },
-  { kind: "promo6", at: "18:40" },
-  { kind: "biggest", at: "19:40" },
-  { kind: "promo7", at: "20:40" },
-  { kind: "recap", at: "21:40" },
-  { kind: "promo8", at: "22:40" },
+  { kind: "th1", at: "04:10" },
+  { kind: "th2", at: "05:50" },
+  { kind: "th3", at: "07:30" },
+  { kind: "th4", at: "09:05" },
+  { kind: "single1", at: "11:00" },
+  { kind: "single2", at: "13:00" },
+  { kind: "th5", at: "15:10" },
+  { kind: "th6", at: "16:25" },
+  { kind: "th7", at: "17:40" },
+  { kind: "th8", at: "18:55" },
+  { kind: "th9", at: "20:10" },
+  { kind: "th10", at: "21:20" },
+  { kind: "th11", at: "22:15" },
 ];
+/** Inside the posting windows (Türkiye time 04:00–09:30 or 15:00–22:30)? */
+export function inWindow(now = Date.now()) {
+  const d = new Date(now + 3 * 3600e3);
+  const m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return (m >= 240 && m <= 570) || (m >= 900 && m <= 1350);
+}
 const TR = 3 * 3600e3;
 
 /** Today's time for a planned post (ms), moved by a fixed ±25 min for that day and kind. */
@@ -736,6 +744,30 @@ function makers(pool) {
       return { ref: `c:${today}`, text: w.text, meta: { tpl: w.tpl }, image: card.recapCard(top) };
     },
   };
+  // feature threads: the feature used longest ago (never used first), and its opener used longest ago
+  const nextFeature = async () => {
+    const { rows } = await pool
+      .query(`select meta->>'feature' as f, meta->>'hook' as h, max(posted_at) as t from xbot_posts where (kind like 'th%' or kind like 'single%') and meta ? 'feature' and posted_at > now() - interval '14 days' group by 1, 2`)
+      .catch(() => ({ rows: [] }));
+    const last = (f) => Math.max(0, ...rows.filter((r) => r.f === f).map((r) => new Date(r.t).getTime()));
+    const ids = [...FEATURE_IDS].sort(() => Math.random() - 0.5).sort((a, b) => last(a) - last(b));
+    const feature = ids[0];
+    const hookLast = (h) => Math.max(0, ...rows.filter((r) => r.f === feature && r.h === String(h)).map((r) => new Date(r.t).getTime()));
+    const hook = [0, 1, 2].sort(() => Math.random() - 0.5).sort((a, b) => hookLast(a) - hookLast(b))[0];
+    return { feature, hook };
+  };
+  for (const kind of THREAD_SLOTS)
+    m[kind] = async () => {
+      const { feature, hook } = await nextFeature();
+      const posts = buildThread(feature, hook);
+      return { ref: `th:${today}:${kind}`, text: posts[0].text, meta: { feature, hook: String(hook), tpl: `${feature}:${hook}` }, thread: posts };
+    };
+  for (const kind of ["single1", "single2"])
+    m[kind] = async () => {
+      const { feature } = await nextFeature();
+      const p = buildSingle(feature);
+      return { ref: `si:${today}:${kind}`, text: p.text, meta: { feature, hook: "single", tpl: `${feature}:single` }, image: cardPng(p.card) };
+    };
   // sasa on Elysium: the account's main beat. Every elysium* slot shares one pool of lines (text
   // only — no made-up numbers, since the bot posts on its own) and dedups across all of them over
   // 3 days (freshElysium), so the timeline never repeats a line even though most posts are Elysium.
@@ -767,15 +799,48 @@ export async function xbotLoop(pool, log) {
   await pool.query(SQL);
   log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day + up to ${whalesPerDay} whale moves of ${money(minUsd)}+`);
 
+  /** Posts a thread: each post with its card, each one a reply to the one before. Returns the ids. */
+  const postThread = async (posts) => {
+    const ids = [];
+    for (const p of posts) {
+      let id = null;
+      for (let tries = 0; tries < 2 && !id; tries++) {
+        try {
+          id = await postTweet(keys, { text: p.text, png: cardPng(p.card), replyTo: ids.length ? ids[ids.length - 1] : null });
+        } catch (e) {
+          log(`x bot: thread post ${ids.length + 1}: ${String(e.message).slice(0, 200)}`);
+          if (!ids.length) throw e; // the first post failed: nothing went out, try the slot again later
+          await sleep(60e3);
+        }
+      }
+      if (!id) break;
+      ids.push(String(id));
+      await sleep(20e3 + Math.random() * 20e3);
+    }
+    return ids;
+  };
   const send = async (post) => {
     if (dry) {
-      log(`x bot (dry) ${post.kind}: ${post.text.replace(/\n+/g, " / ")}`);
+      for (const p of post.thread || [post]) log(`x bot (dry) ${post.kind}: ${p.text.replace(/\n+/g, " / ")}`);
       await pool.query(`insert into xbot_posts (kind, ref, text, meta, post_id) values ($1, $2, $3, $4, 'dry') on conflict (ref) do nothing`, [post.kind, post.ref, post.text, post.meta ? JSON.stringify(post.meta) : null]);
       return;
     }
     // the row first: if X takes the post but the answer is lost, it is never posted twice
     const ins = await pool.query(`insert into xbot_posts (kind, ref, text, meta) values ($1, $2, $3, $4) on conflict (ref) do nothing returning id`, [post.kind, post.ref, post.text, post.meta ? JSON.stringify(post.meta) : null]);
     if (!ins.rowCount) return;
+    if (post.thread) {
+      let ids;
+      try {
+        ids = await postThread(post.thread);
+      } catch (e) {
+        // nothing went out: free the slot so it is tried again on the next pass
+        await pool.query(`delete from xbot_posts where id = $1`, [ins.rows[0].id]).catch(() => {});
+        throw e;
+      }
+      await pool.query(`update xbot_posts set post_id = $2, meta = coalesce(meta, '{}'::jsonb) || $3::jsonb where id = $1`, [ins.rows[0].id, ids[0] ?? null, JSON.stringify({ ids })]);
+      log(`x bot: posted ${post.kind} thread on ${post.meta?.feature} (${ids.length}/${post.thread.length} posts, ${ids[0]})`);
+      return;
+    }
     let id;
     try {
       id = await postTweet(keys, { text: post.text, png: post.image ?? (post.svg ? png(post.svg) : null), poll: post.poll, replyTo: post.replyTo });
@@ -799,7 +864,7 @@ export async function xbotLoop(pool, log) {
       const replies = n("followup") + n("result");
 
       // follow-ups under our own posts (not counted in the 10)
-      if (replies < repliesPerDay) {
+      if (replies < repliesPerDay && inWindow(now)) {
         const f = await nextFollowup(pool).catch(() => null);
         if (f) {
           await pool.query(`update xbot_posts set done = true where id = $1`, [f.post.id]);
@@ -822,7 +887,7 @@ export async function xbotLoop(pool, log) {
       // at least 20 minutes between our own posts
       if (now - lastAny >= 20 * 60e3) {
         let post = null;
-        if (n("whale") < whalesPerDay) {
+        if (n("whale") < whalesPerDay && inWindow(now)) {
           const w = await nextWhale(pool, minUsd);
           if (w) {
             const t = await fresh(pool, "whale", say.whale(w, w));
@@ -835,7 +900,7 @@ export async function xbotLoop(pool, log) {
           for (const p of PLAN) {
             if (n(p.kind) > 0) continue;
             const t = slotTime(p.kind, p.at, now);
-            if (now < t || now > t + 3 * 3600e3) continue;
+            if (now < t || now > t + 60 * 60e3) continue;
             const made = await make[p.kind]().catch((e) => (log(`x bot: ${p.kind}: ${String(e.message).slice(0, 150)}`), null));
             if (made) {
               post = { kind: p.kind, ...made };
