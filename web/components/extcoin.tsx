@@ -126,6 +126,8 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
   const tradeRows = useExtTrades(pool === coin.pool ? coin : { ...coin, pool }, curvePool);
   const liveTrades = useExtLiveTrades(coin, tradeRows);
   const ch = coin.change24h;
+  // a pool with next to nothing in it (pulled or drained): no one-tap buy, and a plain warning
+  const drained = coin.liqUsd !== null && coin.liqUsd < 1_000;
   const kpis: [string, string, string?][] = [
     ["Price", price(coin.priceUsd)],
     ["Market cap", money(coin.mcapUsd)],
@@ -210,9 +212,9 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
                 </div>
               ))}
             </div>
-            {!coin.quietSince && coin.liqUsd === 0 && (
+            {!coin.quietSince && drained && (
               <p className="mt-3 rounded-xl bg-paper border border-line px-3 py-2 text-[0.8125rem] text-ink-2">
-                The pool shows no liquidity right now, so these numbers may be out of date and buying or selling may not go through.
+                The pool has almost no liquidity right now ({money(coin.liqUsd ?? 0)}), so these numbers may be out of date and buying or selling may not go through.
               </p>
             )}
             {coin.quietSince && (
@@ -222,7 +224,7 @@ export function ExtCoinView({ coin, backLink = true, market }: { coin: ExtCoin; 
             )}
           </section>
 
-          {backLink && !IS_TESTNET && !coin.quietSince && <QuickStart coin={coin} chain={net.label} />}
+          {backLink && !IS_TESTNET && !coin.quietSince && !drained && <QuickStart coin={coin} chain={net.label} />}
 
           {isSolExt(coin.network) && <BotSafety mint={coin.address} />}
 
