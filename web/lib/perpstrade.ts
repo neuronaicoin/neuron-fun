@@ -491,7 +491,16 @@ export function makePerpsTrade(w: TradeDeps, after: () => Promise<void>): PerpsT
             }
           }
           onStep(`Buying ${s.name}…`);
-          const res = await predictOrder(ex, { a: s.asset, b: true, p: px, s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
+          let res;
+          try {
+            res = await predictOrder(ex, { a: s.asset, b: true, p: px, s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
+          } catch (e) {
+            // thin books move between quote and order: take a fresh price and try once more by itself
+            if (!/could not immediately match|no resting orders/i.test(String((e as Error)?.message ?? e))) throw e;
+            const again = (await bestOf(s.coin)).ask;
+            if (!again) throw e;
+            res = await predictOrder(ex, { a: s.asset, b: true, p: pricePx(again * 1.03, true), s: String(shares), r: false, t: { limit: { tif: "Ioc" } } });
+          }
           const f = filledOf(res);
           onStep(null);
           void after();
