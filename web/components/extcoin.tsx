@@ -328,7 +328,7 @@ function TokenCheck({ coin }: { coin: ExtCoin }) {
         { ok: (coin.buyTax ?? 0) <= 0.05 && (coin.sellTax ?? 0) <= 0.05, text: `Buy / sell tax: ${pct(coin.buyTax)} / ${pct(coin.sellTax)}` },
         { ok: coin.mintable === null ? null : !coin.mintable, text: coin.mintable ? "The owner can create new coins" : coin.mintable === false ? "The owner can't create new coins" : "Minting: unknown" },
         ...(coin.top10 !== null ? [{ ok: coin.top10 < 0.5, text: `Top 10 wallets hold ${pct(coin.top10)} of the supply` }] : []),
-        { ok: (coin.liqUsd ?? 0) >= 50_000, text: `Liquidity: ${money(coin.liqUsd)} in the pool` },
+        { ok: coin.liqUsd === null ? null : coin.liqUsd >= 50_000, text: coin.liqUsd === null ? "Liquidity: not reported for this pool" : `Liquidity: ${money(coin.liqUsd)} in the pool` },
       ]
     : [{ ok: null, text: "Our automatic check doesn't cover this chain yet. Coins that can't be sold are still hidden when we know about them." }];
   return (

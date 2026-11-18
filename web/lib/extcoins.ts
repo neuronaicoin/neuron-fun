@@ -85,7 +85,9 @@ export function toExt(r: Record<string, unknown>): ExtCoin {
     priceUsd: n(r.price_usd),
     // Market cap when it's known, otherwise the fully diluted value.
     mcapUsd: pos(r.mcap_usd) ?? pos(r.fdv_usd),
-    liqUsd: n(r.liq_usd),
+    // Some pools (e.g. Solana AMMs) come back with 0 liquidity while trading
+    // millions a day: that 0 is missing data, not an empty pool, so show it as unknown.
+    liqUsd: n(r.liq_usd) === 0 && (n(r.vol_24h) ?? 0) >= 10_000 ? null : n(r.liq_usd),
     vol24h: n(r.vol_24h),
     change1h: n(r.change_1h),
     // Over +10,000% in a day means the pool just opened (its first trade set a tiny
