@@ -615,10 +615,13 @@ export const PLAN = [
   { kind: "th4", at: "09:05" },
   { kind: "single1", at: "11:00" },
   { kind: "single2", at: "13:00" },
-  { kind: "hot1", at: "12:15" },
-  { kind: "hot2", at: "14:20" },
-  { kind: "hot3", at: "19:35" },
-  { kind: "hot4", at: "23:30" },
+  // Nov 19: what crypto X is talking about, in the evening window (17:30–21:45 TR) between threads.
+  // hot1/hot3 = trending coin that trades on sasa; hot2/hot4 = trend agent (xtrends.mjs) pick.
+  // Each falls back to the other kind when it has nothing.
+  { kind: "hot1", at: "18:15" },
+  { kind: "hot2", at: "19:30" },
+  { kind: "hot3", at: "20:45" },
+  { kind: "hot4", at: "21:45" },
   { kind: "th5", at: "15:10" },
   { kind: "th6", at: "16:25" },
   { kind: "th7", at: "17:40" },
@@ -683,6 +686,81 @@ async function freshElysium(pool, list) {
 const NETNAME = { base: "BASE", bsc: "BNB", eth: "ETHEREUM", solana: "SOLANA", arbitrum: "ARBITRUM", robinhood: "ROBINHOOD" };
 
 /** What each planned kind posts (null: nothing worth posting right now; tried again later). */
+// ------------------------------------------------------------------ trend agent posts (xtrends.mjs)
+const TREND_TAGS = { hack: "#CryptoNews #hack #security", people: "#CryptoNews #crypto", rules: "#CryptoNews #regulation", move: "#CryptoNews #markets", meme: "#memecoins #CryptoNews", news: "#CryptoNews #crypto" };
+const big$ = (v) => { v = Number(v) || 0; return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`; };
+const tickers = (t) => [...new Set((String(t).match(/\b(BTC|ETH|SOL|BNB|XRP|DOGE|HYPE|SUI|ADA|AVAX|LINK|TON|TRX|PEPE|SHIB|WIF|BONK)\b/g) || []))];
+const WORD_TAG = [[/bitcoin/i, "#Bitcoin"], [/ethereum|\bether\b/i, "#Ethereum"], [/solana/i, "#Solana"], [/binance|\bCZ\b/i, "#Binance"], [/\bbase\b/i, "#Base"], [/robinhood/i, "#Robinhood"], [/\bETF\b/, "#ETF"], [/\bSEC\b/, "#SEC"]];
+
+async function trendPost(pool, today) {
+  const { rows } = await pool.query(
+    `select * from x_trends t
+     where posted_at is null
+       and ((kind = 'news' and found_at > now() - interval '8 hours') or (kind = 'coin' and found_at > now() - interval '6 hours'))
+       and not exists (select 1 from xbot_posts p where p.ref = 't:' || t.id)
+       and not exists (select 1 from xbot_posts p where p.meta->>'key' = 't:' || t.kind || ':' || lower(t.title) and p.posted_at > now() - interval '3 days')
+     order by (case when kind = 'news' and score >= 7 then 100 else 0 end) + score desc, found_at desc limit 5`
+  ).catch(() => ({ rows: [] }));
+  for (const t of rows) {
+    const made = t.kind === "news" ? newsPost(t) : await coinTrendPost(pool, t);
+    if (made) return { ref: `t:${t.id}`, ...made, meta: { ...made.meta, trend: t.id, key: `t:${t.kind}:${String(t.title).toLowerCase()}` } };
+  }
+  return null;
+}
+
+function newsPost(t) {
+  const d = t.data || {};
+  const outlets = [t.source, ...(d.also || [])].slice(0, 3).join(", ");
+  const tk = tickers(t.title);
+  const tags = [...tk.map((x) => `#${x}`), ...WORD_TAG.filter(([re]) => re.test(t.title)).map(([, h]) => h), ...TREND_TAGS[d.tag || "news"].split(" ")];
+  const tagLine = [...new Set(tags)].slice(0, 6).join(" ");
+  const ang = {
+    hack: ["if you hold anything near this, check your wallet approvals today. stay safe out there", "another one. this is why we keep saying: don't sign what you don't understand"],
+    move: ["news like this moves price in minutes. on sasa you can go long or short with plain USDC 👇\nsasapad.fun/futures", "if you trade the news, sasa Futures lets you go LONG or SHORT with USDC in seconds 👇\nsasapad.fun/futures"],
+    meme: ["meme season never really sleeps. you can launch your own coin on sasa from $1 👇\nsasapad.fun", "new narrative, new memes. launch yours on sasa from $1 and earn 60% of its fees once it holds $10K 👇\nsasapad.fun"],
+  }[d.tag] || ["what's your take? bullish or bearish for the market 👇", "big one for crypto today. how are you trading it?"];
+  const open = pick(["🚨 ", "👀 ", "", "this is everywhere right now: "]);
+  const text = `${open}${t.title}\n\n(via ${outlets})\n\n${pick(ang)}\n\n${tagLine}`;
+  const image = cardPng({ type: "big", big: [d.tag === "hack" ? "SECURITY ALERT" : "CRYPTO RIGHT NOW", d.also?.length ? `${d.also.length + 1} outlets on it` : "on every timeline"], sub: String(t.title).slice(0, 110) });
+  return { text, image, meta: { tpl: `news:${d.tag || "news"}` } };
+}
+
+async function coinTrendPost(pool, t) {
+  const c = t.data || {};
+  const S = String(c.symbol || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 12);
+  if (!S) return null;
+  const ch = Number(c.change);
+  const chs = `${ch >= 0 ? "+" : ""}${Math.round(ch)}%`;
+  // where it trades on sasa: same name + symbol in our meme lists, else the futures list
+  const { rows } = await pool.query(
+    `select network, address from (
+       select network, address, name, symbol, vol_24h, liq_usd from ext_coins where seen_at > now() - interval '24 hours'
+       union all select 'solana', address, name, symbol, vol_24h, liq_usd from sol_ext_coins where seen_at > now() - interval '24 hours') x
+     where upper(symbol) = $1 and lower(name) = lower($2) and liq_usd >= 50000 order by vol_24h desc limit 1`,
+    [S, c.name]
+  ).catch(() => ({ rows: [] }));
+  let where = null, link = null;
+  if (rows[0]) { where = "spot"; link = `sasapad.fun/x/${rows[0].network}/${rows[0].address}/`; }
+  else {
+    const meta = await hl({ type: "meta" }).catch(() => null);
+    if (meta?.universe?.some((u) => u.name === S && !u.isDelisted)) { where = "futures"; link = "sasapad.fun/futures"; }
+  }
+  const cta = where === "spot"
+    ? pick([`you can buy it on sasa with plain USDC, no gas token 👇\n${link}`, `trade it on sasa with USDC, one tap 👇\n${link}`])
+    : where === "futures"
+      ? pick([`go LONG or SHORT $${S} on sasa Futures with USDC 👇\n${link}`, `think it keeps going? or fades? trade $${S} both ways on sasa 👇\n${link}`])
+      : pick([`not on sasa yet, but the next one could be yours. launch a coin from $1 👇\nsasapad.fun`, `want to be the next trending coin? launch yours on sasa from $1 👇\nsasapad.fun`]);
+  const head = pick([
+    `$${S} is the #${c.rank} most searched coin on CoinGecko right now 👀`,
+    `everyone is searching $${S} today. #${c.rank} on CoinGecko trending`,
+    `$${S} just hit CoinGecko trending (#${c.rank})`,
+  ]);
+  const stats = `${chs} in 24h${c.mcap ? `, ${big$(c.mcap)} market cap` : ""}`;
+  const text = `${head}\n\n${stats}\n\n${cta}\n\n#${S} #trending #crypto #altcoins${where === "spot" ? " #memecoins" : ""}`;
+  const image = cardPng({ type: "big", big: [`$${S}`, `#${c.rank} trending`, chs], sub: `${String(c.name).slice(0, 40)} is one of the most searched coins right now.` });
+  return { text, image, meta: { tpl: `coin:${where || "none"}`, symbol: S } };
+}
+
 function makers(pool) {
   const today = new Date(Date.now() + TR).toISOString().slice(0, 10);
   const m = {
@@ -767,8 +845,7 @@ function makers(pool) {
       return { ref: `th:${today}:${kind}`, text: posts[0].text, meta: { feature, hook: String(hook), tpl: `${feature}:${hook}` }, thread: posts };
     };
   // trending coins of the last 12 hours that trade on sasa: one coin per post, never the same coin twice in 3 days
-  for (const kind of ["hot1", "hot2", "hot3", "hot4"])
-    m[kind] = async () => {
+  const hotCoin = async () => {
       const { rows } = await pool.query(
         `select * from (
            select network, address, name, symbol, change_24h, vol_24h, liq_usd, coalesce(mcap_usd, fdv_usd) as mcap from ext_coins where seen_at > now() - interval '12 hours'
@@ -805,6 +882,11 @@ function makers(pool) {
       const image = cardPng({ type: "big", big: [`${vol} traded`, "in 24 hours", `buy $${S} with USDC`], sub: `${String(c.name).slice(0, 40)} on ${chain}, live on sasa. No gas token, no bridge.` });
       return { ref: `h:${c.network}:${c.address}:${today}`, text, meta: { tpl, network: c.network, address: c.address, symbol: S }, image };
     };
+  const trend = () => trendPost(pool, today);
+  m.hot1 = async () => (await hotCoin()) || (await trend());
+  m.hot3 = m.hot1;
+  m.hot2 = async () => (await trend()) || (await hotCoin());
+  m.hot4 = m.hot2;
   for (const kind of ["single1", "single2"])
     m[kind] = async () => {
       const { feature } = await nextFeature();
