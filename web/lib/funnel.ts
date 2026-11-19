@@ -118,13 +118,21 @@ export function startFunnel() {
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
 
     // ResizeObserver loop notices are harmless browser noise and can fire hundreds of times a session
+    // the same error is logged at most 3 times a session: one browser extension in a loop
+    // (Nov 19: "reading 'M_ID'", 250 rows in 2 minutes) must not fill the table
+    const errSeen = new Map<string, number>();
+    const jsErr = (m: string) => {
+      const n = (errSeen.get(m) || 0) + 1;
+      errSeen.set(m, n);
+      if (n <= 3) funnel("js_error", m);
+    };
     window.addEventListener("error", (e) => {
       if (/ResizeObserver loop/i.test(e.message || "")) return;
-      funnel("js_error", `${e.message || ""}`.slice(0, 180));
+      jsErr(`${e.message || ""}`.slice(0, 180));
     });
     window.addEventListener("unhandledrejection", (e) => {
       const r = (e as PromiseRejectionEvent).reason;
-      funnel("js_error", `promise: ${String((r && (r.message || r)) || "").slice(0, 170)}`);
+      jsErr(`promise: ${String((r && (r.message || r)) || "").slice(0, 170)}`);
     });
 
     let leftAt = 0;
