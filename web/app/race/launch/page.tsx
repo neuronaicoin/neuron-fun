@@ -88,8 +88,6 @@ function unlinkedText(ids: number[], links: Map<number, Set<number> | null>): st
     }
   return "";
 }
-/** Total first buy we suggest; smaller is allowed (down to the contracts' minimum) with a note. */
-const RECOMMENDED_BUY = 5;
 /** The total split evenly over `n` chains, rounded down to the cent: what each chain's first buy is. */
 const perChainOf = (total: string, n: number): string => {
   const t = Number(total);
@@ -136,7 +134,7 @@ export default function RaceLaunchPage() {
   const [chains, setChains] = useState<number[]>(() => [(RACE_CHAINS.find((c) => c.short === "Base") ?? RACE_CHAINS[0]).chainId]);
   // "Add USDC": brings dollars from any chain or token (Relay), for a wallet that is short
   const [addMoney, setAddMoney] = useState(false);
-  const [firstBuy, setFirstBuy] = useState("10");
+  const [firstBuy, setFirstBuy] = useState("1");
   const [picBusy, setPicBusy] = useState(false);
   const [picError, setPicError] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
@@ -885,8 +883,8 @@ export default function RaceLaunchPage() {
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[0.8125rem] text-ink-3">{onSolo ? "Your first buy (USDC)" : "Your first buy, in total (USDC)"}</span>
-            <div className={"grid gap-2 " + (onSolana ? "grid-cols-4" : "grid-cols-3")}>
-              {(onSolana ? ["0", "10", "50", "100"] : ["10", "50", "100"]).map((v) => (
+            <div className="grid gap-2 grid-cols-4">
+              {(onSolana ? ["0", "1", "10", "50"] : ["1", "5", "10", "50"]).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -909,8 +907,8 @@ export default function RaceLaunchPage() {
                 className={input + " pl-8"}
               />
             </label>
-            {!onSolo && Number.isFinite(buyN) && buyN > 0 && buyN < RECOMMENDED_BUY && perChainN >= minUsd && (
-              <span className="text-[0.8125rem] text-warn-ink">We recommend ${RECOMMENDED_BUY} or more, so your coin starts with some weight.</span>
+            {!onSolo && Number.isFinite(buyN) && buyN > 0 && perChainN >= minUsd && (
+              <span className="text-[0.8125rem] text-ink-3">Start from $1. A bigger first buy gives your coin more weight from the start.</span>
             )}
             <span className="text-[0.8125rem] text-ink-3">
               {onSolana
