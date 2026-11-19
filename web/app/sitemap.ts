@@ -13,6 +13,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/forum/`, changeFrequency: "hourly", priority: 0.8 },
     { url: `${SITE_URL}/explore/`, changeFrequency: "hourly", priority: 0.9 },
     { url: `${SITE_URL}/pulse/`, changeFrequency: "hourly", priority: 0.8 },
+    // the product pages people search for: launch, predict, futures, spot, market, terminal, bot
+    { url: `${SITE_URL}/race/launch/`, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/predict/`, changeFrequency: "hourly", priority: 0.9 },
+    { url: `${SITE_URL}/futures/`, changeFrequency: "hourly", priority: 0.8 },
+    { url: `${SITE_URL}/market/`, changeFrequency: "hourly", priority: 0.8 },
+    { url: `${SITE_URL}/terminal/`, changeFrequency: "hourly", priority: 0.7 },
+    { url: `${SITE_URL}/bot/`, changeFrequency: "weekly", priority: 0.7 },
     ...(V6 ? [{ url: `${SITE_URL}/traders/`, changeFrequency: "hourly" as const, priority: 0.7 }] : []),
     // Daily "top meme coins" lists (Cloudflare function, rebuilt every 30 minutes).
     { url: `${SITE_URL}/top/`, changeFrequency: "hourly", priority: 0.9 },
