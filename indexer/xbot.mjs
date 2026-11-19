@@ -615,6 +615,10 @@ export const PLAN = [
   { kind: "th4", at: "09:05" },
   { kind: "single1", at: "11:00" },
   { kind: "single2", at: "13:00" },
+  { kind: "hot1", at: "12:15" },
+  { kind: "hot2", at: "14:20" },
+  { kind: "hot3", at: "19:35" },
+  { kind: "hot4", at: "23:30" },
   { kind: "th5", at: "15:10" },
   { kind: "th6", at: "16:25" },
   { kind: "th7", at: "17:40" },
@@ -761,6 +765,45 @@ function makers(pool) {
       const { feature, hook } = await nextFeature();
       const posts = buildThread(feature, hook);
       return { ref: `th:${today}:${kind}`, text: posts[0].text, meta: { feature, hook: String(hook), tpl: `${feature}:${hook}` }, thread: posts };
+    };
+  // trending coins of the last 12 hours that trade on sasa: one coin per post, never the same coin twice in 3 days
+  for (const kind of ["hot1", "hot2", "hot3", "hot4"])
+    m[kind] = async () => {
+      const { rows } = await pool.query(
+        `select * from (
+           select network, address, name, symbol, change_24h, vol_24h, liq_usd, coalesce(mcap_usd, fdv_usd) as mcap from ext_coins where seen_at > now() - interval '12 hours'
+           union all
+           select 'solana', address, name, symbol, change_24h, vol_24h, liq_usd, coalesce(mcap_usd, fdv_usd) from sol_ext_coins where seen_at > now() - interval '12 hours'
+         ) c
+         where vol_24h >= 1000000 and liq_usd >= 100000 and coalesce(change_24h, 0) >= 15 and mcap >= 500000
+           and coalesce(name, '') <> '' and coalesce(symbol, '') <> ''
+           and not exists (select 1 from xbot_posts p where p.ref like 'h:' || c.network || ':' || c.address || '%' and p.posted_at > now() - interval '3 days')
+         order by vol_24h desc limit 1`
+      ).catch(() => ({ rows: [] }));
+      const c = rows[0];
+      if (!c) return null;
+      const S = String(c.symbol).replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 12);
+      if (!S) return null;
+      const NETS = { solana: "Solana", base: "Base", bsc: "BNB Chain", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
+      const TAGS = { solana: "#Solana", base: "#Base", bsc: "#BNBChain", eth: "#Ethereum", robinhood: "#RobinhoodChain", arc: "#Arc" };
+      const chain = NETS[c.network] || String(c.network);
+      const usd = (v) => { v = Number(v) || 0; return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`; };
+      const vol = usd(c.vol_24h), mc = usd(c.mcap), ch = `+${Math.round(Number(c.change_24h))}%`;
+      const link = `sasapad.fun/x/${c.network}/${c.address}/`;
+      const lines = [
+        ["h1", `$${S} did ${vol} in volume today on ${chain} 👀\n\nyou can BUY it on sasa with plain USDC. no gas token, no bridge, sell any time\n\nchart + buy 👇\n${link}`],
+        ["h2", `everyone's talking about $${S} today. ${ch} in 24h, ${mc} market cap\n\ngrab it on sasa with USDC, no need to touch ${chain} gas 👇\n${link}`],
+        ["h3", `${vol} traded in 24 hours. $${S} is one of the loudest memes on ${chain} right now\n\nbuy or sell it straight from sasa with USDC 👇\n${link}`],
+        ["h4", `missed $${S}? it's ${ch} today and still moving\n\nchart, holders and a one-tap USDC buy on sasa 👇\n${link}`],
+      ];
+      const { rows: used } = await pool.query(`select meta->>'tpl' as tpl from xbot_posts where kind like 'hot%' and posted_at > now() - interval '2 days'`).catch(() => ({ rows: [] }));
+      const seen = new Set(used.map((r) => r.tpl));
+      const left = lines.filter(([id]) => !seen.has(id));
+      const [tpl, body] = (left.length ? left : lines)[Math.floor(Math.random() * (left.length || lines.length))];
+      const tags = [`#${S}`, TAGS[c.network] || "#Crypto", "#memecoins", "#crypto", "#altcoins"].join(" ");
+      const text = `${body}\n\n${tags}`;
+      const image = cardPng({ type: "big", big: [`${vol} traded`, "in 24 hours", `buy $${S} with USDC`], sub: `${String(c.name).slice(0, 40)} on ${chain}, live on sasa. No gas token, no bridge.` });
+      return { ref: `h:${c.network}:${c.address}:${today}`, text, meta: { tpl, network: c.network, address: c.address, symbol: S }, image };
     };
   for (const kind of ["single1", "single2"])
     m[kind] = async () => {
