@@ -914,6 +914,7 @@ function makers(pool) {
            select 'solana', address, name, symbol, change_24h, vol_24h, liq_usd, coalesce(mcap_usd, fdv_usd) from sol_ext_coins where seen_at > now() - interval '12 hours'
          ) c
          where vol_24h >= 1000000 and liq_usd >= 100000 and coalesce(change_24h, 0) >= 15 and mcap >= 500000
+           and name !~* 'anthropic|claude|openai|nvidia|tesla|spacex|binance|coinbase|robinhood' -- memes named after real companies get mistaken for the stock
            and coalesce(name, '') <> '' and coalesce(symbol, '') <> ''
            and not exists (select 1 from xbot_posts p where p.ref like 'h:' || c.network || ':' || c.address || '%' and p.posted_at > now() - interval '3 days')
          order by vol_24h desc limit 1`
