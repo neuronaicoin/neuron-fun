@@ -736,7 +736,7 @@ async function coinTrendPost(pool, t) {
   const cta = where === "spot"
     ? pick([`you can buy it on sasa with plain USDC, no gas token 👇\n${link}`, `trade it on sasa with USDC, one tap 👇\n${link}`])
     : where === "futures"
-      ? pick([`go LONG or SHORT $${S} on sasa Futures with USDC 👇\n${link}`, `think it keeps going? or fades? trade $${S} both ways on sasa 👇\n${link}`])
+      ? pick([`go LONG or SHORT ${S} on sasa Futures with USDC 👇\n${link}`, `think it keeps going? or fades? trade it both ways on sasa 👇\n${link}`])
       : pick([`not on sasa yet, but the next one could be yours. launch a coin from $1 👇\nsasapad.fun`, `want to be the next trending coin? launch yours on sasa from $1 👇\nsasapad.fun`]);
   const head = pick([
     `$${S} is the #${c.rank} most searched coin on CoinGecko right now 👀`,
@@ -774,7 +774,7 @@ async function radarPost(pool, today, kind) {
      order by vol_24h / greatest(mc, 1) desc limit 3`
   ).catch(() => ({ rows: [] }));
   if (rows.length < 2) return null;
-  const lines = rows.map((c) => `$${tick(c.symbol)} · ${NETS2[c.network] || c.network} · ${k$(c.mc)} mc · ${k$(c.vol_24h)} vol · ${Math.round(c.change_1h) >= 0 ? "+" : ""}${Math.round(c.change_1h)}% 1h`);
+  const lines = rows.map((c) => `${tick(c.symbol)} · ${NETS2[c.network] || c.network} · ${k$(c.mc)} mc · ${k$(c.vol_24h)} vol · ${Math.round(c.change_1h) >= 0 ? "+" : ""}${Math.round(c.change_1h)}% 1h`);
   const head = pick([
     "sasa RADAR 🛰️ what's heating up right now\n\nsmall caps, volume way above market cap, more buyers than sellers:",
     "3 memes our RADAR just caught moving 👀\n\nall under $5M, all trading 2x+ their market cap today:",
