@@ -287,7 +287,8 @@ export function Header() {
       <div className="max-w-7xl mx-auto h-16 px-4 sm:px-6 flex items-center justify-between gap-3 lg:gap-4">
         <Link href="/explore/" className="flex items-center gap-2 text-ink shrink-0">
           <LogoMark size={32} />
-          <SasaWordmark height={21} />
+          {/* phones: just the mark, so the Follow-on-X button fits next to the others */}
+          <span className="hidden sm:inline-flex"><SasaWordmark height={21} /></span>
         </Link>
         <nav aria-label="Main" className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 text-[0.8125rem] lg:text-[0.875rem] xl:text-[0.9375rem] font-medium whitespace-nowrap min-w-0">
           {NAV.map((n) =>
@@ -318,6 +319,20 @@ export function Header() {
           <AutoSweep />
           <SocialSync />
           <RefCapture />
+          {/* Follow on X: on every page, phone and desktop (X followers are the growth goal) */}
+          <a
+            href="https://x.com/intent/follow?screen_name=sasapadfun"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Follow sasa on X"
+            title="Follow @sasapadfun on X"
+            className="h-10 shrink-0 rounded-xl border border-line text-ink hover:border-ink-3 flex items-center justify-center gap-1.5 w-10 sm:w-auto sm:px-3 text-[0.8125rem] font-semibold"
+          >
+            <span className="hidden sm:inline">Follow</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+          </a>
           <ThemeToggle />
           <HeaderBell />
           <ConnectButton />
