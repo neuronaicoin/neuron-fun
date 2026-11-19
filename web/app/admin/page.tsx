@@ -23,7 +23,7 @@ import { HelpInbox } from "@/components/helpinbox";
 import { FunnelPanel } from "@/components/funnelpanel";
 import { MoneyPanel } from "@/components/moneypanel";
 import { SolFeesPanel } from "@/components/solfees";
-import { ElysiumFeesPanel, RaceFeesPanel } from "@/components/chainfees";
+import { ElysiumFeesPanel, HyperliquidFeesPanel, RaceFeesPanel } from "@/components/chainfees";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -168,6 +168,9 @@ export default function AdminPage() {
           <FunnelPanel />
           <div className="mt-8" />
           <MoneyPanel />
+          <div className="mt-5">
+            <HyperliquidFeesPanel />
+          </div>
           <div className="mt-5">
             <SolFeesPanel />
           </div>

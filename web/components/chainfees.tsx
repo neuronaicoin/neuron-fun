@@ -13,6 +13,7 @@ import { formatUnits, parseAbi, type Address } from "viem";
 import { useWallet } from "./wallet";
 import { authedGet } from "@/lib/alerts";
 import { friendlyError } from "@/lib/format";
+import { HL_BUILDER } from "@/lib/config";
 import { fetchPrices } from "@/lib/price";
 import { RACE_CHAINS, raceHref } from "@/lib/race";
 import { ELYSIUM, elysiumClient, launcherAbi } from "@/lib/elysium";
@@ -213,6 +214,63 @@ export function ElysiumFeesPanel() {
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+/** sasa's builder fees on Hyperliquid (futures, spot and Predict orders), as Hyperliquid counts them. */
+export function HyperliquidFeesPanel() {
+  const [d, setD] = useState<{ total: number; unclaimed: number; claimed: number } | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const r = await fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "referral", user: HL_BUILDER }),
+      });
+      const j = (await r.json()) as { builderRewards?: string; unclaimedRewards?: string; claimedRewards?: string };
+      setD({ total: Number(j.builderRewards) || 0, unclaimed: Number(j.unclaimedRewards) || 0, claimed: Number(j.claimedRewards) || 0 });
+    } catch (e) {
+      setError(friendlyError(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const f = (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <section className="rounded-3xl border border-line bg-surface p-4 sm:p-6 flex flex-col gap-4 min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display font-bold text-[1.375rem]">Futures, Spot &amp; Predict</h2>
+          <p className="text-ink-3 text-[0.875rem]">sasa&apos;s fee on every Futures, Spot and Predict order, collected by Hyperliquid for sasa&apos;s builder address.</p>
+        </div>
+        <button type="button" onClick={() => void load()} className="h-9 px-4 rounded-full border border-line text-[0.875rem] shrink-0">
+          Refresh
+        </button>
+      </div>
+      {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-night p-3 sm:p-4 min-w-0">
+          <div className="text-[0.75rem] text-ink-3">Earned in total</div>
+          <div className="font-display font-bold text-[1.25rem] truncate">{d ? f(d.total) : "…"}</div>
+        </div>
+        <div className="rounded-2xl bg-night p-3 sm:p-4 min-w-0">
+          <div className="text-[0.75rem] text-ink-3">Ready to claim</div>
+          <div className="font-display font-bold text-[1.25rem] truncate">{d ? f(d.unclaimed) : "…"}</div>
+        </div>
+        <div className="rounded-2xl bg-night p-3 sm:p-4 min-w-0 col-span-2 lg:col-span-1">
+          <div className="text-[0.75rem] text-ink-3">Already claimed</div>
+          <div className="font-display font-bold text-[1.25rem] truncate">{d ? f(d.claimed) : "…"}</div>
+        </div>
+      </div>
+      <p className="text-[0.75rem] text-ink-3 truncate">Builder {HL_BUILDER.slice(0, 6)}…{HL_BUILDER.slice(-4)} · claim on app.hyperliquid.xyz → Referrals</p>
     </section>
   );
 }
