@@ -396,7 +396,17 @@ export async function marketsLoop(pool, log) {
   let networks = DEFAULT_NETWORKS;
   try {
     if (process.env.MARKETS_NETWORKS) networks = JSON.parse(process.env.MARKETS_NETWORKS);
-    else networks = [...DEFAULT_NETWORKS, ...(await discover(log))];
+    else {
+      // GeckoTerminal ids of the newer chains (checked Nov 19): used when discovery fails at startup
+      // (a rate limit then used to drop Robinhood and Arc from every list until the next restart)
+      const known = [
+        { id: "robinhood", chainId: 4663 },
+        { id: "arc", chainId: 5042 },
+      ];
+      const found = await discover(log).catch(() => []);
+      const extra = known.map((k) => found.find((f) => f.chainId === k.chainId) ?? k);
+      networks = [...DEFAULT_NETWORKS, ...extra.map(({ id, chainId }) => ({ id, chainId }))];
+    }
   } catch (e) {
     log(`markets: bad MARKETS_NETWORKS (${e.message}); using defaults`);
   }
