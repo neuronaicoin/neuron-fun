@@ -140,8 +140,9 @@ export async function scanTrends(pool, log) {
 /** Runs the scan now and then every 4 hours. */
 export async function trendLoop(pool, log) {
   if (process.env.XBOT_OFF === "1") return;
+  await new Promise((r) => setTimeout(r, 90e3)); // let the old instance's db connections close first
   for (;;) {
-    await scanTrends(pool, log).catch((e) => log(`x trends: ${String(e.message).slice(0, 200)}`));
-    await new Promise((r) => setTimeout(r, 4 * 3600e3));
+    const ok = await scanTrends(pool, log).then(() => true, (e) => (log(`x trends: ${String(e.message).slice(0, 200)}`), false));
+    await new Promise((r) => setTimeout(r, ok ? 4 * 3600e3 : 10 * 60e3)); // failed: try again in 10 min
   }
 }
