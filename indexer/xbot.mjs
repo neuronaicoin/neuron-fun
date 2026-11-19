@@ -609,26 +609,14 @@ export const PROMO_SLOTS = ["promo", "promo2", "promo3", "promo4", "promo5", "pr
 // single posts (11:00 and 13:00). Whale moves and their follow-ups only go out inside the windows.
 export const THREAD_SLOTS = ["th1", "th2", "th3", "th4", "th5", "th6", "th7", "th8", "th9", "th10", "th11"];
 export const PLAN = [
-  { kind: "th1", at: "04:10" },
-  { kind: "th2", at: "05:50" },
-  { kind: "th3", at: "07:30" },
-  { kind: "th4", at: "09:05" },
-  { kind: "single1", at: "11:00" },
-  { kind: "single2", at: "13:00" },
-  // Nov 19: what crypto X is talking about, in the evening window (17:30–21:45 TR) between threads.
-  // hot1/hot3 = trending coin that trades on sasa; hot2/hot4 = trend agent (xtrends.mjs) pick.
-  // Each falls back to the other kind when it has nothing.
-  { kind: "hot1", at: "18:15" },
-  { kind: "hot2", at: "19:30" },
-  { kind: "hot3", at: "20:45" },
-  { kind: "hot4", at: "21:45" },
-  { kind: "th5", at: "15:10" },
-  { kind: "th6", at: "16:25" },
-  { kind: "th7", at: "17:40" },
-  { kind: "th8", at: "18:55" },
-  { kind: "th9", at: "20:10" },
-  { kind: "th10", at: "21:20" },
-  { kind: "th11", at: "22:15" },
+  // Nov 19, 2026 (afternoon): fewer, better posts, when US + Europe are awake (Türkiye time).
+  // 70+ promo posts a day were losing followers. Now 6 a day: data people follow us for.
+  { kind: "radar1", at: "16:30" }, // RADAR: early-momentum memes (2-post thread, link in reply)
+  { kind: "hot1", at: "18:15" }, // trending coin that trades on sasa
+  { kind: "th6", at: "19:05" }, // one feature thread
+  { kind: "radar2", at: "20:10" },
+  { kind: "hot2", at: "21:15" }, // trend agent pick (news / CoinGecko trending)
+  { kind: "rres", at: "22:20" }, // RADAR result: a flagged coin that really ran (else nothing)
 ];
 /** Inside the posting windows (Türkiye time 04:00–09:30 or 15:00–22:30)? */
 export function inWindow(now = Date.now()) {
@@ -761,6 +749,79 @@ async function coinTrendPost(pool, t) {
   return { text, image, meta: { tpl: `coin:${where || "none"}`, symbol: S } };
 }
 
+// ------------------------------------------------------------------ sasa RADAR (Nov 19, 2026)
+// Early-momentum memes from our own coin lists, posted as a 2-post thread (no link in the first
+// post: X shows link posts to fewer people). radarResult posts the follow-up only when a coin we
+// flagged really ran (>= 1.5x market cap) — numbers straight from the lists, nothing made up.
+const NETS2 = { solana: "Solana", base: "Base", bsc: "BNB", eth: "Ethereum", robinhood: "Robinhood Chain", arc: "Arc" };
+const TAGS2 = { solana: "#Solana", base: "#Base", bsc: "#BNBChain", eth: "#Ethereum", robinhood: "#RobinhoodChain", arc: "#Arc" };
+const k$ = (v) => { v = Number(v) || 0; return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`; };
+const tick = (s) => String(s || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
+
+async function radarPost(pool, today, kind) {
+  const { rows } = await pool.query(
+    `select * from (
+       select network, address, name, symbol, coalesce(mcap_usd, fdv_usd) mc, liq_usd, vol_24h, change_1h, change_24h, buys_24h, sells_24h, pool_created, gp_mintable
+       from ext_coins where network in ('base', 'bsc', 'robinhood', 'arc') and seen_at > now() - interval '2 hours'
+       union all
+       select 'solana', address, name, symbol, coalesce(mcap_usd, fdv_usd), liq_usd, vol_24h, change_1h, change_24h, buys_24h, sells_24h, pool_created, gp_mintable
+       from sol_ext_coins where seen_at > now() - interval '2 hours') c
+     where pool_created > now() - interval '72 hours' and mc between 100000 and 5000000 and liq_usd >= 25000
+       and vol_24h >= 2 * mc and coalesce(change_1h, 0) > 0 and coalesce(change_24h, 0) < 3000
+       and buys_24h > sells_24h and coalesce(gp_mintable, false) = false
+       and coalesce(symbol, '') <> '' and name !~* 'anthropic|claude|openai|binance|coinbase|robinhood official'
+       and not exists (select 1 from xbot_posts p where p.kind like 'radar%' and p.posted_at > now() - interval '2 days' and p.meta->'coins' @> jsonb_build_array(jsonb_build_object('a', c.address)))
+     order by vol_24h / greatest(mc, 1) desc limit 3`
+  ).catch(() => ({ rows: [] }));
+  if (rows.length < 2) return null;
+  const lines = rows.map((c) => `$${tick(c.symbol)} · ${NETS2[c.network] || c.network} · ${k$(c.mc)} mc · ${k$(c.vol_24h)} vol · ${Math.round(c.change_1h) >= 0 ? "+" : ""}${Math.round(c.change_1h)}% 1h`);
+  const head = pick([
+    "sasa RADAR 🛰️ what's heating up right now\n\nsmall caps, volume way above market cap, more buyers than sellers:",
+    "3 memes our RADAR just caught moving 👀\n\nall under $5M, all trading 2x+ their market cap today:",
+    "early momentum check 🛰️\n\nthese are pulling serious volume for their size right now:",
+  ]);
+  const tail = pick(["we'll post how they did later. not advice, DYOR", "results thread later today. not financial advice", "watching these. we'll show the numbers later 👇"]);
+  const tags = [...new Set([...rows.map((c) => `#${tick(c.symbol)}`), ...rows.map((c) => TAGS2[c.network] || "#crypto"), "#memecoins", "#crypto"])].slice(0, 7).join(" ");
+  const text = `${head}\n\n${lines.join("\n")}\n\n${tail}\n\n${tags}`;
+  const card = { type: "big", big: ["sasa RADAR", ...rows.slice(0, 3).map((c) => `$${tick(c.symbol)} ${k$(c.mc)}`)], sub: "Early momentum: volume 2x+ market cap, more buys than sells." };
+  const link = `$${tick(rows[0].symbol)} chart + one-tap USDC buy on sasa 👇\nsasapad.fun/x/${rows[0].network}/${rows[0].address}/\n\nthe other ${rows.length - 1 === 1 ? "one is" : rows.length - 1 + " are"} on sasa too, just search the ticker`;
+  return {
+    ref: `rd:${today}:${kind}`,
+    text,
+    meta: { tpl: `radar:${kind}`, feature: "radar", coins: rows.map((c) => ({ a: c.address, n: c.network, s: tick(c.symbol), mc: Math.round(Number(c.mc)) })) },
+    thread: [{ text, card }, { text: link, card: { type: "big", big: ["buy any meme", "with USDC", "on sasa"], sub: "No gas token, no bridge. Solana, Base, BNB, Robinhood Chain, Arc." } }],
+  };
+}
+
+async function radarResult(pool, today) {
+  const { rows: posts } = await pool.query(
+    `select id, post_id, posted_at, meta from xbot_posts where kind like 'radar%' and post_id is not null
+     and posted_at between now() - interval '30 hours' and now() - interval '3 hours'
+     and not exists (select 1 from xbot_posts r where r.kind = 'rres' and r.meta->>'of' = xbot_posts.id::text)
+     order by posted_at desc limit 4`
+  ).catch(() => ({ rows: [] }));
+  for (const p of posts) {
+    let best = null;
+    for (const c of p.meta?.coins || []) {
+      const t = c.n === "solana" ? "sol_ext_coins" : "ext_coins";
+      const { rows } = await pool.query(`select coalesce(mcap_usd, fdv_usd) mc from ${t} where address = $1 and seen_at > now() - interval '3 hours' order by seen_at desc limit 1`, [c.a]).catch(() => ({ rows: [] }));
+      const now = Number(rows[0]?.mc || 0);
+      const x = c.mc ? now / c.mc : 0;
+      if (x >= 1.5 && (!best || x > best.x)) best = { ...c, now, x };
+    }
+    if (!best) continue;
+    const hours = Math.max(1, Math.round((Date.now() - new Date(p.posted_at).getTime()) / 3600e3));
+    const xs = best.x >= 10 ? Math.round(best.x) : best.x.toFixed(1);
+    const text = pick([
+      `RADAR check ✅\n\n$${best.s} was at ${k$(best.mc)} when we flagged it ${hours}h ago\n\nnow ${k$(best.now)}. that's ${xs}x\n\n#${best.s} #memecoins #crypto`,
+      `${hours} hours ago our RADAR caught $${best.s} at ${k$(best.mc)}\n\nit's ${k$(best.now)} now (${xs}x) 👀\n\nfollow for the next one\n\n#${best.s} #memecoins`,
+    ]);
+    const card = { type: "big", big: [`$${best.s}`, `${xs}x`, `in ${hours}h`], sub: `Flagged by sasa RADAR at ${k$(best.mc)}, now ${k$(best.now)}.` };
+    return { ref: `rr:${p.id}`, text, meta: { tpl: "rres", of: String(p.id), symbol: best.s, x: Number(best.x.toFixed(2)) }, image: cardPng(card), replyTo: p.post_id };
+  }
+  return null;
+}
+
 function makers(pool) {
   const today = new Date(Date.now() + TR).toISOString().slice(0, 10);
   const m = {
@@ -883,6 +944,9 @@ function makers(pool) {
       return { ref: `h:${c.network}:${c.address}:${today}`, text, meta: { tpl, network: c.network, address: c.address, symbol: S }, image };
     };
   const trend = () => trendPost(pool, today);
+  m.radar1 = async () => (await radarPost(pool, today, "radar1")) || (await hotCoin());
+  m.radar2 = async () => (await radarPost(pool, today, "radar2")) || (await trend());
+  m.rres = () => radarResult(pool, today);
   m.hot1 = async () => (await hotCoin()) || (await trend());
   m.hot3 = m.hot1;
   m.hot2 = async () => (await trend()) || (await hotCoin());
@@ -922,7 +986,7 @@ export async function xbotLoop(pool, log) {
   const whalesPerDay = Number(process.env.XBOT_WHALES_PER_DAY ?? "3");
   const repliesPerDay = Number(process.env.XBOT_REPLIES_PER_DAY ?? "6");
   await pool.query(SQL);
-  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day (11 feature threads + 2 single posts, nothing else)`);
+  log(`x bot: on${dry ? " (dry run: nothing is posted)" : ""}; ${PLAN.length} planned posts a day (radar, trending coins, 1 feature thread)`);
 
   /** Posts a thread: each post with its card, each one a reply to the one before. Returns the ids. */
   const postThread = async (posts) => {
@@ -931,7 +995,7 @@ export async function xbotLoop(pool, log) {
       let id = null;
       for (let tries = 0; tries < 2 && !id; tries++) {
         try {
-          id = await postTweet(keys, { text: p.text, png: cardPng(p.card), replyTo: ids.length ? ids[ids.length - 1] : null });
+          id = await postTweet(keys, { text: p.text, png: p.card ? cardPng(p.card) : null, replyTo: ids.length ? ids[ids.length - 1] : null });
         } catch (e) {
           log(`x bot: thread post ${ids.length + 1}: ${String(e.message).slice(0, 200)}`);
           if (!ids.length) throw e; // the first post failed: nothing went out, try the slot again later
