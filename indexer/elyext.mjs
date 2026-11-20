@@ -6,8 +6,7 @@
 //
 //   market      $30K+ in the pool, $10K+ traded in 24h, 20+ buys and 20+ sells in 24h,
 //               pool at least a day old, market cap $100K+, not a wrapped/staked HYPE or stablecoin
-//   explorer    not on Elysium's own token scan list (blocked transfers or taxed), 150+ holders,
-//               no single wallet (not a contract) holding over 20% of the supply
+//   (Elysium's explorer isn't read: it turns servers away, and sasa respects that)
 //   round trip  Relay prices a $20 buy from Base USDC and selling that back right away: the buy must
 //               keep 94%+ of its value and the sale bring back 88%+ of the $20
 //
@@ -23,7 +22,6 @@ const NETWORK = "ely"; // our id (GeckoTerminal and DexScreener call the chain "
 const CHAIN_ID = 99901;
 const GT = "https://api.geckoterminal.com/api/v2";
 const DS = "https://api.dexscreener.com";
-const EXPLORER = "https://elysium.kinetiq.xyz";
 const RELAY = "https://api.relay.link";
 const BASE_USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const PROBE_USER = "0x000000000000000000000000000000000000dEaD"; // a price question only, never a trade
@@ -36,8 +34,6 @@ export const RULES = {
   minSells: 20,
   minAgeH: 24,
   minMcap: 100_000,
-  minHolders: 150,
-  maxWalletPct: 20,
   minBuyKeep: 0.94,
   minRoundTrip: 0.88,
 };
@@ -48,25 +44,18 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// Some of these sites turn away requests that don't look like a browser, and all of them limit how
-// fast one address asks (HTTP 429): look like a browser and wait it out, longer each time.
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
-async function get(url, init = {}, as = "json") {
+// The free APIs limit how fast one address asks (HTTP 429): wait it out once, then give up for this round.
+async function getJson(url, init = {}) {
   for (let i = 0; ; i++) {
-    const r = await fetch(url, {
-      ...init,
-      headers: { "user-agent": UA, accept: as === "json" ? "application/json" : "text/html", "accept-language": "en-US,en;q=0.9", ...(init.headers || {}) },
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (r.ok) return as === "json" ? r.json() : r.text();
-    if ((r.status === 429 || r.status >= 500) && i < 3) {
-      await sleep([20_000, 45_000, 90_000][i]);
+    const r = await fetch(url, { ...init, headers: { accept: "application/json", ...(init.headers || {}) }, signal: AbortSignal.timeout(25_000) });
+    if (r.ok) return r.json();
+    if (r.status === 429 && i < 1) {
+      await sleep(30_000);
       continue;
     }
     throw new Error(`${r.status} ${url.split("?")[0]}`);
   }
 }
-const getJson = (url, init = {}) => get(url, init, "json");
 
 /** Wrapped, staked or liquid-staked HYPE and dollars: plumbing, not coins to list. Exported for tests. */
 export function notElyMeme(symbol, name) {
@@ -130,52 +119,6 @@ export function marketFail(r, now = Date.now()) {
   if (mc < RULES.minMcap || mc >= 1e9) return "market cap";
   if (!(r.price_usd > 0)) return "price";
   return "";
-}
-
-/**
- * The explorer's token page -> holders and the biggest single wallet (not a contract) in the top
- * 10. The page is server-rendered; the holder table follows the "Holder / Percentage / Quantity"
- * header. Returns null when the page can't be read (the coin then isn't listed). Exported for tests.
- */
-export function parseExplorer(html) {
-  const h = /Holders<span[^>]*>([\d,]+)<\/span>/.exec(html);
-  const holders = h ? Number(h[1].replace(/,/g, "")) : NaN;
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/g, "")
-    .replace(/<style[\s\S]*?<\/style>/g, "")
-    .replace(/<[^>]+>/g, "\n")
-    .replace(/&amp;/g, "&")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  let start = -1;
-  for (let i = 0; i < text.length - 2; i++)
-    if (text[i] === "Holder" && text[i + 1] === "Percentage" && text[i + 2] === "Quantity") {
-      start = i + 2;
-      break;
-    }
-  if (!Number.isFinite(holders) || start < 0) return null;
-  const rows = [];
-  let cur = null;
-  for (let i = start + 1; i < text.length && rows.length < 12; i++) {
-    const s = text[i];
-    if (/^\d{1,3}$/.test(s) && (!cur || cur.pct !== null)) {
-      if (cur) rows.push(cur);
-      cur = { rank: Number(s), contract: false, pct: null };
-      continue;
-    }
-    if (!cur) continue;
-    if (s === "Contract") cur.contract = true;
-    const m = /^([\d.]+)%$/.exec(s);
-    if (m && cur.pct === null) cur.pct = Number(m[1]);
-  }
-  if (cur) rows.push(cur);
-  // the table starts with a summary row (the whole supply); the real ranks start at 1 after it
-  if (rows.length > 1 && rows[1].rank === 1) rows.shift();
-  const top = rows.filter((r) => r.rank >= 1 && r.rank <= 10 && r.pct !== null);
-  if (top.length < Math.min(10, holders) * 0.5) return null;
-  const wallet = Math.max(0, ...top.filter((r) => !r.contract).map((r) => r.pct));
-  return { holders, wallet };
 }
 
 async function relayQuote(body) {
@@ -257,8 +200,6 @@ async function unlist(pool, address) {
   );
 }
 
-const explorerCache = new Map(); // address -> { at, v }
-
 export async function scanEly(pool, log) {
   const found = await candidates(log);
   const { rows: listed } = await pool.query(`select address from ext_tokens where network = $1 and seen_at > now() - interval '2 hours'`, [NETWORK]);
@@ -271,16 +212,6 @@ export async function scanEly(pool, log) {
     rows.push(...rowsFromPairs(pairs));
     await sleep(400);
   }
-  const flagged = new Set();
-  try {
-    const j = await getJson(`${EXPLORER}/api/explorer/mainnet/token-scans`);
-    for (const t of j?.tokens ?? []) if (t?.address) flagged.add(String(t.address).toLowerCase());
-  } catch (e) {
-    // without Elysium's scan list nothing new is listed this round, and nothing listed is refreshed
-    log(`ely coins: token scan list ${e.message}; skipping this round`);
-    return { checked: 0, listed: 0 };
-  }
-
   const have = new Set(rows.map((r) => r.address));
   for (const a of listed.map((r) => r.address)) if (!have.has(a)) await unlist(pool, a); // no market data: off the lists
 
@@ -288,19 +219,6 @@ export async function scanEly(pool, log) {
   const why = {};
   for (const r of rows) {
     let fail = marketFail(r);
-    if (!fail && flagged.has(r.address)) fail = "scan list";
-    if (!fail) {
-      let e = explorerCache.get(r.address);
-      if (!e || Date.now() - e.at > 3600e3) {
-        const html = await get(`${EXPLORER}/token/${r.address}`, {}, "html").catch(() => "");
-        e = { at: Date.now(), v: html ? parseExplorer(html) : null };
-        explorerCache.set(r.address, e);
-        await sleep(1500);
-      }
-      if (!e.v) fail = "explorer";
-      else if (e.v.holders < RULES.minHolders) fail = "holders";
-      else if (e.v.wallet > RULES.maxWalletPct) fail = "big wallet";
-    }
     if (!fail) {
       const t = await roundTrip(r.address).catch(() => ({ buyKeep: 0, back: 0 }));
       if (t.buyKeep < RULES.minBuyKeep) fail = "buy price";
@@ -315,7 +233,6 @@ export async function scanEly(pool, log) {
     await save(pool, r);
     ok++;
   }
-  if (explorerCache.size > 2000) explorerCache.clear();
   log(`ely coins: ${ok} listed of ${rows.length} checked (${Object.entries(why).map(([k, v]) => `${k} ${v}`).join(", ") || "none failed"})`);
   return { checked: rows.length, listed: ok };
 }

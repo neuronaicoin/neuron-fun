@@ -261,7 +261,7 @@ const NAV_ALL = [
   { href: "/traders/", label: "Traders", from: "never" },
   { href: "/copy/", label: "Copy", from: "never" },
   { href: "/forum/", label: "Forum", from: "never" },
-  { href: "/stats/", label: "Stats", from: "xl" },
+  { href: "/stats/", label: "Stats", from: "never" },
 ] as const;
 const NAV = NAV_ALL.filter((n) => V6 || !V6_ONLY.has(n.href));
 const SHOW_FROM = { md: "", lg: "hidden lg:inline", xl: "hidden xl:inline", never: "hidden" } as const;
@@ -326,9 +326,10 @@ export function Header() {
             rel="noreferrer"
             aria-label="Follow sasa on X"
             title="Follow @sasapadfun on X"
-            className="h-10 shrink-0 rounded-xl border border-line text-ink hover:border-ink-3 flex items-center justify-center gap-1.5 w-10 sm:w-auto sm:px-3 text-[0.8125rem] font-semibold"
+            className="h-10 shrink-0 rounded-xl border border-line text-ink hover:border-ink-3 flex items-center justify-center gap-1.5 w-10 sm:w-auto sm:px-3 md:w-10 md:px-0 text-[0.8125rem] font-semibold"
           >
-            <span className="hidden sm:inline">Follow</span>
+            {/* the word only on small screens: on computers the top bar's links need the room */}
+            <span className="hidden sm:inline md:hidden">Follow</span>
             <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
             </svg>
