@@ -162,7 +162,7 @@ export function RaceActivity({ coinId, chainId }: { coinId: string; chainId: num
 }
 
 /** DexScreener's chain names for the networks sasa lists. */
-const DS_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana", robinhood: "robinhood", arc: "arc" };
+const DS_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana", robinhood: "robinhood", arc: "arc", ely: "elysium" };
 
 type DsKey = "m5" | "h1" | "h6" | "h24";
 /** DexScreener names its windows m5 / h1 / h6 / h24. */

@@ -27,7 +27,7 @@ export type ExtHolding = {
   href: string;
 };
 
-const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042, eth: 1 };
+const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042, eth: 1, ely: 99901 };
 const CHAIN_NETWORK: Record<number, string> = Object.fromEntries(Object.entries(NETWORK_CHAIN).map(([n, c]) => [c, n]));
 
 type Seen = { network: string; address: string; name?: string; symbol?: string; image?: string | null; topId?: string | null };

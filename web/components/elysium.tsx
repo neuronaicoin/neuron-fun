@@ -40,6 +40,7 @@ import {
   boostLive,
   elysiumDay1,
 } from "@/lib/elysium";
+import { extHref, fetchExtCoins, money, type ExtCoin } from "@/lib/extcoins";
 import { addHype, elysiumTopupReady, HYPE_GAS_FLOOR, HYPE_TOPUPS, quoteHype } from "@/lib/elysiumgas";
 
 const SLIPPAGE_BPS = 500;
@@ -491,6 +492,8 @@ function ElysiumHomeInner() {
         </>
       )}
 
+      {!test && <ElysiumUsdcCoins />}
+
       <div className="flex flex-col gap-2">
         <h2 className="font-display font-bold text-[1.125rem] flex items-baseline justify-between gap-3">
           {test ? "Test coins on Elysium" : "Coins on Elysium"}
@@ -518,6 +521,62 @@ function ElysiumHomeInner() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Elysium coins from other launchpads that pass sasa's checks (indexer/elyext.mjs): bought and sold
+ * with plain USDC, no HYPE needed (Relay swaps in the background, lib/extcross.ts).
+ */
+function ElysiumUsdcCoins() {
+  const [list, setList] = useState<ExtCoin[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchExtCoins("trending", "ely", "", 30)
+        .then((v) => alive && setList(v))
+        .catch(() => alive && setList((cur) => cur ?? []));
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  if (list !== null && list.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <h2 className="font-display font-bold text-[1.125rem] flex items-baseline justify-between gap-3 flex-wrap">
+        Trade Elysium coins with USDC
+        <span className="font-sans font-medium text-[0.8125rem] text-ink-3">no HYPE needed · checked coins only</span>
+      </h2>
+      {list === null && <div className="shimmer h-20 rounded-2xl" />}
+      {list?.map((c) => (
+        <Link key={c.address} href={extHref(c)} className="rounded-2xl border border-line bg-surface p-3 flex items-center gap-3 min-w-0 hover:border-emerald/40">
+          {c.image ? <img src={c.image} alt="" className="w-11 h-11 rounded-xl object-cover" /> : <div className="w-11 h-11 rounded-xl bg-paper border border-line" />}
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold truncate">
+              {c.name} <span className="text-ink-3 font-normal">${c.symbol}</span>
+            </div>
+            <div className="text-[0.75rem] text-ink-3 truncate">
+              {c.liqUsd ? `${money(c.liqUsd)} liquidity` : ""}
+              {c.vol24h ? ` · ${money(c.vol24h)} 24h volume` : ""}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="font-display font-bold text-[0.9375rem]">{c.mcapUsd ? money(c.mcapUsd) : "–"}</div>
+            {c.change24h !== null && c.change24h !== undefined ? (
+              <div className={"text-[0.6875rem] font-semibold " + (c.change24h >= 0 ? "text-emerald" : "text-danger")}>
+                {c.change24h >= 0 ? "+" : ""}
+                {c.change24h.toFixed(1)}%
+              </div>
+            ) : (
+              <div className="text-[0.6875rem] text-ink-3">market cap</div>
+            )}
+          </div>
+        </Link>
+      ))}
     </div>
   );
 }

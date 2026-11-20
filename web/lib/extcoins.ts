@@ -49,6 +49,7 @@ export const EXT_NETWORKS: { id: string; label: string; color: string }[] = [
   { id: "bsc", label: "BNB", color: "#f0b90b" },
   { id: "arc", label: "Arc", color: "#7c5cff" },
   { id: "eth", label: "Ethereum", color: "#627eea" },
+  { id: "ely", label: "Elysium", color: "#ffb27a" },
 ];
 /**
  * Solana: its own list (sol_ext_coins, indexer/solmarkets.mjs), shown only to people who see

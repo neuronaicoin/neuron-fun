@@ -4,6 +4,7 @@ import { getQuote, NATIVE, type Quote } from "./relay";
 import { raceChain, raceClient, raceErc20Abi, type RaceChain } from "./race";
 import { homeChain } from "./racecross";
 import { IS_TESTNET } from "./config";
+import { ELYSIUM_MAINNET, elysiumClient } from "./elysium";
 import type { Call } from "./tx";
 
 /**
@@ -15,8 +16,10 @@ import type { Call } from "./tx";
  * top-up). sasa pays no one's gas; its 1% fee is in Relay's quote.
  */
 
-/** Other DEXs' networks → chain ids. */
-const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042, eth: 1 };
+/** Elysium (Kinetiq's chain, HYPE gas): its coins are bought with Base USDC through Relay, like Ethereum's. */
+export const ELY_CHAIN_ID = 99901;
+/** Other DEXs' networks → chain ids ("ely": Elysium coins from other launchpads, vetted by indexer/elyext.mjs). */
+const NETWORK_CHAIN: Record<string, number> = { base: 8453, bsc: 56, robinhood: 4663, arc: 5042, eth: 1, ely: ELY_CHAIN_ID };
 
 /** A chain coins are traded on: a race chain, or Ethereum (no sasa contracts there, only Relay). */
 export type XChain = { chainId: number; short: string; chain: Chain; usd: Address };
@@ -28,9 +31,14 @@ export const ETHEREUM: XChain = {
   chain: mainnet,
   usd: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
 };
+/** Elysium mainnet (null until lib/elysium-mainnet.json is filled). USDC there is Relay's. */
+export const ELYSIUM_X: XChain | null = ELYSIUM_MAINNET
+  ? { chainId: ELY_CHAIN_ID, short: "Elysium", chain: ELYSIUM_MAINNET.chain, usd: "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65" }
+  : null;
 let ethClient: PublicClient | null = null;
 /** A reader for `c` (race chains share the race clients). */
 export function xClient(c: XChain): PublicClient {
+  if (c.chainId === ELY_CHAIN_ID) return elysiumClient();
   if (c.chainId !== 1) return raceClient(c as RaceChain);
   ethClient ??= createPublicClient({
     chain: mainnet,
@@ -38,10 +46,11 @@ export function xClient(c: XChain): PublicClient {
   }) as PublicClient;
   return ethClient;
 }
-export const xChain = (chainId: number): XChain | null => (chainId === 1 ? ETHEREUM : (raceChain(chainId) ?? null));
+export const xChain = (chainId: number): XChain | null =>
+  chainId === 1 ? ETHEREUM : chainId === ELY_CHAIN_ID ? ELYSIUM_X : (raceChain(chainId) ?? null);
 
 /** Below this much gas coin on a chain, a buy brings a little with it. */
-const GAS_FLOOR: Record<number, bigint> = { 4663: 50_000_000_000_000n, 56: 200_000_000_000_000n, 5042: 100_000_000_000_000_000n, 1: 600_000_000_000_000n };
+const GAS_FLOOR: Record<number, bigint> = { 4663: 50_000_000_000_000n, 56: 200_000_000_000_000n, 5042: 100_000_000_000_000_000n, 1: 600_000_000_000_000n, [ELY_CHAIN_ID]: 2_000_000_000_000_000n };
 /** The gas top-up, in USDC (6 decimals on Base): 30 cents; $3 on Ethereum, where a sale costs more. */
 export const GAS_TOPUP_USDC = 300_000n;
 export const gasTopup = (chainId: number) => (chainId === 1 ? 3_000_000n : GAS_TOPUP_USDC);
@@ -147,6 +156,7 @@ export async function crossExtBuy(o: { s: ExtSenders; home: RaceChain; there: XC
         }).catch(() => null)
       : Promise.resolve(null),
   ]);
+  if (there.chainId === ELY_CHAIN_ID) await elysiumSafeBuy({ user: s.user, home, there, token: o.token, amountHome: o.amountHome, q });
   const total = o.amountHome + (gasQ ? gasTopup(there.chainId) : 0n);
   const bal = (await raceClient(home).readContract({ address: home.usd, abi: raceErc20Abi, functionName: "balanceOf", args: [s.user] })) as bigint;
   if (bal < total + BASE_FEE_ROOM) throw new Error(`Not enough USDC. You have $${(Number(bal) / 1e6).toFixed(2)}${gasQ ? ` (a buy here also brings $${(Number(gasTopup(there.chainId)) / 1e6).toFixed(2)} of gas)` : ""}.`);
@@ -190,6 +200,25 @@ export async function crossExtSell(o: { s: ExtSenders; home: RaceChain; there: X
   }
   const tx = await s.sendThere(there.chain, calls, o.onStep);
   return { tx, quote: q };
+}
+
+/** Most a buy of an Elysium coin may lose to price impact and fees (sasa's 1% included). */
+export const ELY_MAX_BUY_LOSS = 0.06;
+/** Least a sale of what's bought must bring back right away (a coin that can't be sold fails this). */
+export const ELY_MIN_ROUND_TRIP = 0.85;
+
+/**
+ * Elysium coins: before every buy, the price must be fair for the amount and selling what it buys
+ * must work right now, at a fair price. Otherwise nothing is sent and the user is told why.
+ */
+export async function elysiumSafeBuy(o: { user: Address; home: RaceChain; there: XChain; token: Address; amountHome: bigint; q: Quote }) {
+  const paid = Number(o.amountHome) / 1e6;
+  const got = o.q.outUsd;
+  if (!(got > 0) || got < paid * (1 - ELY_MAX_BUY_LOSS))
+    throw new Error("This coin's pool is too thin for that amount right now. Try a smaller amount.");
+  const back = await quoteCrossSell({ user: o.user, home: o.home, there: o.there, token: o.token, amount: BigInt(o.q.outRaw) }).catch(() => null);
+  if (!back || !(back.outUsd > 0) || back.outUsd < paid * ELY_MIN_ROUND_TRIP)
+    throw new Error("This coin can't be sold back at a fair price right now, so sasa won't buy it. Nothing was spent.");
 }
 
 const APPROVE = "0x095ea7b3";

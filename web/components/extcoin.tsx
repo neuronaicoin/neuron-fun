@@ -48,6 +48,7 @@ const EXPLORER: Record<string, string> = {
   eth: "https://etherscan.io/token/",
   robinhood: "https://explorer.chain.robinhood.com/token/",
   arc: "https://arcscan.app/token/",
+  ely: "https://elysium.kinetiq.xyz/explorer/token/",
   solana: "https://solscan.io/token/",
 };
 const FEE = 0.01;
@@ -608,7 +609,7 @@ function TradeBox({ coin, initialSide = "buy", bare = false }: { coin: ExtCoin; 
  * 6 seconds (GeckoTerminal's free limit is often used up), DexScreener's chart of the same pool
  * instead, so the page never sits on "Loading the chart…".
  */
-const DS_EMBED_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana" };
+const DS_EMBED_CHAIN: Record<string, string> = { base: "base", bsc: "bsc", eth: "ethereum", solana: "solana", ely: "elysium" };
 function ChartOrDex({
   network,
   pool,

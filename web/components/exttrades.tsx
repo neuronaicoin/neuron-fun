@@ -20,6 +20,7 @@ const TX: Record<string, string> = {
   eth: "https://etherscan.io/tx/",
   robinhood: "https://explorer.chain.robinhood.com/tx/",
   arc: "https://arcscan.app/tx/",
+  ely: "https://elysium.kinetiq.xyz/explorer/tx/",
   solana: "https://solscan.io/tx/",
 };
 

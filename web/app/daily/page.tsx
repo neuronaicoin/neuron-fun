@@ -13,7 +13,7 @@ import { db } from "@/lib/data";
 
 const MIN_VOL = 25_000; // skip thin coins: a daily post should show real movers
 
-const CHAIN_NAME: Record<string, string> = { robinhood: "Robinhood Chain", base: "Base", bsc: "BNB Chain", arc: "Arc", eth: "Ethereum" };
+const CHAIN_NAME: Record<string, string> = { robinhood: "Robinhood Chain", base: "Base", bsc: "BNB Chain", arc: "Arc", eth: "Ethereum", ely: "Elysium" };
 const pct = (v: number) => `${v >= 0 ? "+" : ""}${v >= 100 ? v.toFixed(0) : v.toFixed(1)}%`;
 
 type Grad = { id: string; name: string; symbol: string; chain: string; hours: number | null };

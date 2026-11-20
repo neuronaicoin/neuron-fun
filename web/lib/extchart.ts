@@ -57,11 +57,14 @@ async function gtGet(url: string): Promise<Response | null> {
   return r;
 }
 
+/** Our network id -> GeckoTerminal's ("ely" is GeckoTerminal's "elysium"). */
+const gtNet = (network: string) => (network === "ely" ? "elysium" : network);
+
 async function otherPool(network: string, token: string): Promise<string | null> {
   const k = `${network}:${token}`.toLowerCase();
   const had = knownPool(k);
   if (had !== undefined) return had;
-  const r = await gtGet(`${GT}/networks/${encodeURIComponent(network)}/tokens/${token}/pools?page=1`);
+  const r = await gtGet(`${GT}/networks/${encodeURIComponent(gtNet(network))}/tokens/${token}/pools?page=1`);
   if (!r) throw new Error("chart data unreachable");
   if (!r.ok && r.status !== 404) throw new Error(`chart data ${r.status}`);
   const j = r.ok ? ((await r.json().catch(() => null)) as { data?: { attributes?: { address?: string } }[] } | null) : null;
@@ -78,7 +81,7 @@ export async function fetchExtCandles(network: string, pool: string, token: stri
   const known = knownPool(`${network}:${token}`.toLowerCase());
   const use = known === undefined ? pool : known;
   if (use === null) return [];
-  const url = `${GT}/networks/${encodeURIComponent(network)}/pools/${use}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=300&currency=usd&token=${token}`;
+  const url = `${GT}/networks/${encodeURIComponent(gtNet(network))}/pools/${use}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=300&currency=usd&token=${token}`;
   const hit = RECENT.get(url);
   if (hit && Date.now() - hit.at < 20_000) return hit.rows;
   const r = await gtGet(url);
@@ -104,6 +107,11 @@ export async function fetchExtCandles(network: string, pool: string, token: stri
     .map((c) => ({ t: Number(c[0]), open: Number(c[1]), high: Number(c[2]), low: Number(c[3]), close: Number(c[4]), volume: Number(c[5] ?? 0) }))
     .sort((a, b) => a.t - b.t)
     .filter((c, i, a) => i === 0 || c.t !== a[i - 1].t);
+  if (!rows.length && known === undefined) {
+    // nothing on this pool (often a side pair, e.g. COIN/TTWO): the coin's busiest pool instead
+    const other = await otherPool(network, token).catch(() => null);
+    if (other && other.toLowerCase() !== pool.toLowerCase()) return fetchExtCandles(network, pool, token, frameSec);
+  }
   RECENT.set(url, { at: Date.now(), rows });
   if (RECENT.size > 60) RECENT.delete(RECENT.keys().next().value as string);
   return rows;
@@ -117,7 +125,7 @@ export async function fetchExtTrades(network: string, pool: string, token: strin
   const known = knownPool(`${network}:${token}`.toLowerCase());
   let use = known === undefined ? pool : known;
   if (use === null) return [];
-  const url = (p: string) => `${GT}/networks/${encodeURIComponent(network)}/pools/${p}/trades?token=${token}`;
+  const url = (p: string) => `${GT}/networks/${encodeURIComponent(gtNet(network))}/pools/${p}/trades?token=${token}`;
   let r = await gtGet(url(use));
   if (r && r.status === 404 && known === undefined) {
     const other = await otherPool(network, token);

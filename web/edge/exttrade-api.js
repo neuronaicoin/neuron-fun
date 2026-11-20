@@ -20,6 +20,7 @@ export const DOLLARS = {
   56: { rpc: "https://bsc-dataseed.bnbchain.org", usd: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", dec: 18 },
   4663: { rpc: "https://rpc.mainnet.chain.robinhood.com", usd: "0x5fc5360d0400a0fd4f2af552add042d716f1d168", dec: 6 },
   5042: { rpc: "https://rpc.mainnet.arc.io", usd: "0x3600000000000000000000000000000000000000", dec: 6 },
+  99901: { rpc: "https://rpc.elysium.kinetiq.xyz", usd: "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65", dec: 6 },
   1: { rpc: "https://ethereum-rpc.publicnode.com", usd: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", dec: 6 },
 };
 

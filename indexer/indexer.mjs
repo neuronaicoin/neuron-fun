@@ -26,6 +26,7 @@ import { cardLoop, extCardLoop, raceCardLoop } from "./cards.mjs";
 import { marketCardLoop } from "./marketcards.mjs";
 import { xbotLoop } from "./xbot.mjs";
 import { trendLoop } from "./xtrends.mjs";
+import { elyExtLoop } from "./elyext.mjs";
 import { solKeeperLoop } from "./solkeeper.mjs";
 import { sniperLoop } from "./sniper.mjs";
 import { elysiumTestLoop } from "./elysiumtest.mjs";
@@ -557,6 +558,7 @@ async function main() {
     keep("x bot", () => xbotLoop(pool, log)),
     // trend agent: what crypto is talking about, every 4 hours, for the X bot's evening slots
     keep("x trends", () => trendLoop(pool, log)),
+    keep("ely coins", () => elyExtLoop(pool, log)),
     // big futures whale moves ($500K+) to the Telegram channel, with a card
     keep("tg whales", () => tgWhaleLoop(pool, log)),
     // private alerts: what the wallets around Ascend / Kinetiq launch, buy and sell on Elysium
