@@ -1091,7 +1091,7 @@ const CSS = `
 .pz-wire b{color:#ffa04d}
 .pz-cta{position:absolute;right:14px;bottom:14px;z-index:2;background:#ff6b1a;color:#140600 !important;font-weight:800;font-size:13px;padding:10px 16px;border-radius:999px;box-shadow:0 0 24px -4px #ff6b1a;white-space:nowrap}
 @media (max-width:640px){
- .pz-strip{height:400px;border-radius:16px}
+ .pz-strip{height:320px;border-radius:16px}
  .pz-sls{left:12px;right:12px;width:auto;bottom:66px}
  .pz-strip .pz-chip{display:none}
  .pz-strip .pz-big b,.pz-strip .pz-big2 b{font-size:18px}

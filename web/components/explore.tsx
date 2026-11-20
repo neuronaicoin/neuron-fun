@@ -16,7 +16,7 @@ import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchAiCoins, fetch
 import { useWallet } from "@/components/wallet";
 import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
-import { CreatorBonusBanner } from "@/components/creatorbonus";
+import { PulseStrip } from "@/components/pulse";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { HolderCount } from "@/components/holderlive";
@@ -268,14 +268,15 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       {/* sasapad.fun for people who aren't logged in: the hero (one line, two buttons, live box).
           Logged in (or coming back logged in) and on /explore/: the bands, straight to the coins. */}
       {withLanding && !me && !restoring ? (
-        <div className="max-w-7xl mx-auto"><Hero /><div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div><HeroStrip /></div>
+        <div className="max-w-7xl mx-auto"><Hero /><HeroStrip /></div>
       ) : (
         <div className="max-w-7xl mx-auto">
           {/* phones: balance and Deposit first, like a wallet app; the promo bands live on bigger screens */}
           {me && <BalanceBar />}
-          <div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div>
         </div>
       )}
+      {/* sasa Pulse: the live reactor (whales, futures, BTC, fear/greed); shorter on phones */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3"><PulseStrip /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
         <div className="px-4 sm:px-6 pt-5 sm:pt-8 flex items-center gap-3">
           <h1 className="font-display font-extrabold text-[1.625rem] sm:text-[2.25rem] tracking-tight shrink-0">Explore</h1>
@@ -982,13 +983,12 @@ function BalanceBar() {
           {total === null ? "\u00a0" : `${day >= 0 ? "+" : "-"}$${Math.abs(day).toFixed(2)}`} <span className="text-ink-3 font-medium">24h</span>
         </span>
       </button>
-      <button
-        type="button"
-        onClick={() => openMoney({ kind: "deposit" })}
-        className="shrink-0 h-12 px-7 rounded-2xl bg-emerald text-on-accent font-bold text-[1rem] active:scale-[0.97] transition-transform"
+      <Link
+        href="/race/launch/"
+        className="ex-press shrink-0 h-12 px-6 rounded-2xl bg-emerald text-on-accent font-bold text-[1rem] inline-flex items-center"
       >
-        Deposit
-      </button>
+        Launch coin
+      </Link>
     </div>
   );
 }
