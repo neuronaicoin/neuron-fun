@@ -48,11 +48,25 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-async function getJson(url, init = {}) {
-  const r = await fetch(url, { ...init, headers: { accept: "application/json", ...(init.headers || {}) }, signal: AbortSignal.timeout(25_000) });
-  if (!r.ok) throw new Error(`${r.status} ${url.split("?")[0]}`);
-  return r.json();
+// Some of these sites turn away requests that don't look like a browser, and all of them limit how
+// fast one address asks (HTTP 429): look like a browser and wait it out, longer each time.
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+async function get(url, init = {}, as = "json") {
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, {
+      ...init,
+      headers: { "user-agent": UA, accept: as === "json" ? "application/json" : "text/html", "accept-language": "en-US,en;q=0.9", ...(init.headers || {}) },
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (r.ok) return as === "json" ? r.json() : r.text();
+    if ((r.status === 429 || r.status >= 500) && i < 3) {
+      await sleep([20_000, 45_000, 90_000][i]);
+      continue;
+    }
+    throw new Error(`${r.status} ${url.split("?")[0]}`);
+  }
 }
+const getJson = (url, init = {}) => get(url, init, "json");
 
 /** Wrapped, staked or liquid-staked HYPE and dollars: plumbing, not coins to list. Exported for tests. */
 export function notElyMeme(symbol, name) {
@@ -200,6 +214,19 @@ async function candidates(log) {
     }
     await sleep(7000);
   }
+  // DexScreener's search (its own, higher limits): Elysium pairs against HYPE, the chain's money
+  for (const q of ["WHYPE", "HYPE elysium", "elysium", "elysium meme"]) {
+    try {
+      const j = await getJson(`${DS}/latest/dex/search?q=${encodeURIComponent(q)}`);
+      for (const p of j?.pairs ?? []) {
+        const a = String(p?.baseToken?.address ?? "").toLowerCase();
+        if (p?.chainId === "elysium" && /^0x[0-9a-f]{40}$/.test(a)) addrs.add(a);
+      }
+    } catch (e) {
+      log(`ely coins: DexScreener search ${e.message}`);
+    }
+    await sleep(1000);
+  }
   // coins already listed stay checked even when they drop off those pages
   return [...addrs];
 }
@@ -265,9 +292,7 @@ export async function scanEly(pool, log) {
     if (!fail) {
       let e = explorerCache.get(r.address);
       if (!e || Date.now() - e.at > 3600e3) {
-        const html = await fetch(`${EXPLORER}/token/${r.address}`, { signal: AbortSignal.timeout(25_000) })
-          .then((x) => (x.ok ? x.text() : ""))
-          .catch(() => "");
+        const html = await get(`${EXPLORER}/token/${r.address}`, {}, "html").catch(() => "");
         e = { at: Date.now(), v: html ? parseExplorer(html) : null };
         explorerCache.set(r.address, e);
         await sleep(1500);
