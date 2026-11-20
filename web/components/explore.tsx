@@ -16,14 +16,9 @@ import { EXT_NETWORKS, SOL_EXT_NETWORK, extHref, extNetwork, fetchAiCoins, fetch
 import { useWallet } from "@/components/wallet";
 import { solanaFor } from "@/lib/solana";
 import { MERGED_SORTS, rankMerged, type Ranked } from "@/lib/rank";
-import { RaceBanner } from "@/components/racepromo";
-import { LiveRaces } from "@/components/liveraces";
-import { BotBanner, ElysiumBanner } from "@/components/airdropcta";
 import { CreatorBonusBanner } from "@/components/creatorbonus";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
-import { PulseStrip } from "@/components/pulse";
-import { TopWins } from "@/components/topwins";
 import { HolderCount } from "@/components/holderlive";
 import { openMoney, useMoney } from "@/lib/portfolio";
 import { rememberCoin } from "@/lib/coincache";
@@ -52,7 +47,6 @@ const SORTS: { id: Tab; label: string }[] = V6
       { id: "trending", label: "Trending" },
       { id: "ai", label: "AI agents" },
       { id: "new", label: "New" },
-      { id: "racing", label: "Racing now" },
       { id: "winners", label: "Winners" },
       { id: "gainers", label: "Gainers" },
       { id: "losers", label: "Losers" },
@@ -88,6 +82,20 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
   const [minVol, setMinVol] = useState(0);
   const [minLiq, setMinLiq] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  // list or cards (remembered on this device); "auto" until the person picks one
+  const [view, setView] = useState<View>("auto");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("sasa.exView");
+      if (v === "list" || v === "grid") setView(v);
+    } catch {}
+  }, []);
+  const pickView = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem("sasa.exView", v);
+    } catch {}
+  };
   const [shown, setShown] = useState(STEP);
   const [growing, setGrowing] = useState(false);
   // A new tab, chain, search or filter starts from the top again.
@@ -266,16 +274,14 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
           {/* phones: balance and Deposit first, like a wallet app; the promo bands live on bigger screens */}
           {me && <BalanceBar />}
           <div className="px-4 sm:px-6 pt-3"><CreatorBonusBanner /></div>
-          <div className="hidden sm:block"><ElysiumBanner /><BotBanner /></div>
         </div>
       )}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3"><PulseStrip /></div>
-      <div className="max-w-7xl mx-auto hidden sm:block"><LiveRaces fallback={<RaceBanner />} /></div>
-      <div className="max-w-7xl mx-auto"><TopWins /></div>
       <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
-        <div className="px-4 sm:px-6 pt-4 sm:pt-6 flex items-center gap-3">
-          <h1 className="font-display font-bold text-[1.375rem] sm:text-[1.625rem] tracking-tight shrink-0">Explore</h1>
-          <div className="flex-1" />
+        <div className="px-4 sm:px-6 pt-5 sm:pt-8 flex items-center gap-3">
+          <h1 className="font-display font-extrabold text-[1.625rem] sm:text-[2.25rem] tracking-tight shrink-0">Explore</h1>
+          <div className="hidden sm:block flex-1" />
+          <label className="relative flex-1 sm:flex-none sm:w-[20rem] min-w-0">
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" strokeLinecap="round" /></svg>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -289,19 +295,23 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
               const a = query.trim();
               if (e.key === "Enter" && SOL_ADDR.test(a)) window.location.href = extHref({ network: SOL_EXT_NETWORK.id, address: a });
             }}
-            className="h-10 w-full max-w-[13rem] sm:max-w-[20rem] min-w-0 px-3 rounded-xl border border-line bg-paper text-ink placeholder:text-ink-3 focus:border-ink-3 outline-none"
+            className="ex-search h-12 w-full min-w-0 pl-10 pr-3 rounded-2xl border border-line bg-surface text-ink text-[1rem] placeholder:text-ink-3 focus:border-ink-3 outline-none"
           />
+          </label>
+          <Link href="/race/launch/" className="ex-press hidden sm:inline-flex shrink-0 h-12 px-6 rounded-2xl bg-emerald text-on-accent font-bold text-[0.9375rem] items-center">
+            Launch a coin
+          </Link>
         </div>
         <AddressJump query={query} />
 
-        <SasaLaunches solToo={!!solChip} />
+        <TrendingRail />
         <div className="px-4 sm:px-6">
           <BoostedRow />
           <AlmostThere coins={racing} />
         </div>
 
-        <div className="mt-3 border-b border-line">
-          <div className="ex-tabs flex gap-5 sm:gap-6 overflow-x-auto px-4 sm:px-6" role="tablist" aria-label="Sort coins">
+        <div className="mt-4 border-b border-line flex items-end">
+          <div className="ex-tabs flex-1 min-w-0 flex gap-6 sm:gap-8 overflow-x-auto px-4 sm:px-6" role="tablist" aria-label="Sort coins">
             {SORTS.map((s) => (
               <button
                 key={s.id}
@@ -313,18 +323,19 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                   e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
                 }}
                 className={
-                  "shrink-0 -mb-px py-3 border-b-2 text-[0.9375rem] whitespace-nowrap " +
-                  (tab === s.id ? "border-ink text-ink font-semibold" : "border-transparent text-ink-3 font-medium hover:text-ink")
+                  "ex-tab shrink-0 -mb-px py-3.5 border-b-[2.5px] text-[1.0625rem] sm:text-[1.125rem] whitespace-nowrap " +
+                  (tab === s.id ? "border-ink text-ink font-bold" : "border-transparent text-ink-3 font-semibold hover:text-ink")
                 }
               >
                 {s.label}
               </button>
             ))}
           </div>
+          <ViewSwitch view={view} onChange={pickView} />
         </div>
 
-        <div className="px-4 sm:px-6 pt-2.5 flex items-center gap-2">
-          <div className="ex-tabs flex-1 min-w-0 flex gap-1 overflow-x-auto" role="group" aria-label="Chain">
+        <div className="px-4 sm:px-6 pt-3 flex items-center gap-2">
+          <div className="ex-tabs flex-1 min-w-0 flex gap-1.5 overflow-x-auto" role="group" aria-label="Chain">
             {/* Elysium leads the chain row: sasa is Elysium's launchpad. Its coins live on the
                 dedicated Elysium page (separate contracts), so this chip links there rather than
                 filtering the grid. The other chains below are live grid filters. */}
@@ -334,11 +345,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 aria-pressed={chain === "elysium"}
                 onClick={() => setChain("elysium")}
                 className={
-                  "shrink-0 h-8 px-3 rounded-lg text-[0.875rem] whitespace-nowrap flex items-center gap-1.5 " +
+                  "ex-chip shrink-0 h-10 px-4 rounded-xl text-[0.9375rem] sm:text-[1rem] whitespace-nowrap flex items-center gap-2 " +
                   (chain === "elysium" ? "bg-night-2 text-ink font-bold" : "text-ink font-semibold hover:bg-night-2")
                 }
               >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "#2e8b7a" }} aria-hidden="true" />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#2e8b7a" }} aria-hidden="true" />
                 Elysium
               </button>
             )}
@@ -352,11 +363,11 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
                 aria-pressed={chain === c.key}
                 onClick={() => setChain(c.key)}
                 className={
-                  "shrink-0 h-8 px-3 rounded-lg text-[0.875rem] whitespace-nowrap flex items-center gap-1.5 " +
+                  "ex-chip shrink-0 h-10 px-4 rounded-xl text-[0.9375rem] sm:text-[1rem] whitespace-nowrap flex items-center gap-2 " +
                   (chain === c.key ? "bg-night-2 text-ink font-bold" : "text-ink font-semibold hover:bg-night-2")
                 }
               >
-                {c.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
+                {c.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} aria-hidden="true" />}
                 {c.short}
               </button>
             ))}
@@ -365,7 +376,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
-            className={"shrink-0 h-8 px-3 rounded-lg border text-[0.8125rem] font-medium flex items-center gap-1.5 " + (minVol || minLiq ? "border-ink text-ink" : "border-line text-ink-2")}
+            className={"ex-chip shrink-0 h-10 px-3.5 rounded-xl border text-[0.9375rem] font-semibold flex items-center gap-1.5 " + (minVol || minLiq ? "border-ink text-ink" : "border-line text-ink-2")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" /></svg>
             Filters{minVol || minLiq ? ` (${(minVol ? 1 : 0) + (minLiq ? 1 : 0)})` : ""}
@@ -387,14 +398,15 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
 
         {/* Every screen: a grid of coin cards (2 columns on phones, up to 5 on wide screens). */}
         {/* Phones: one clean row per coin (picture, name, market cap, change). */}
-        <ul className="sm:hidden px-4 pt-2" aria-label="Coins">
+        {/* "Auto": a row per coin on phones, cards on computers. The switch picks one for every screen. */}
+        <ul className={(view === "list" ? "grid lg:grid-cols-2 lg:gap-x-8" : view === "grid" ? "hidden" : "sm:hidden") + " px-4 sm:px-6 pt-2"} aria-label="Coins">
           {loading && Array.from({ length: 10 }, (_, i) => <RowSkeleton key={i} />)}
-          {rows.map((r) => <CoinRow key={r.key} r={r} />)}
+          {rows.map((r, i) => <CoinRow key={r.key} r={r} i={i} />)}
           {moreLoading && Array.from({ length: 3 }, (_, i) => <RowSkeleton key={`m${i}`} />)}
         </ul>
-        <ul className="ex-grid hidden sm:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 min-[380px]:gap-3 md:gap-4 px-4 sm:px-6 pt-3.5 md:pt-4">
+        <ul className={(view === "grid" ? "grid" : view === "list" ? "hidden" : "hidden sm:grid") + " ex-grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 px-4 sm:px-6 pt-4"}>
           {loading && Array.from({ length: 10 }, (_, i) => <CardSkeleton key={i} />)}
-          {rows.map((r) => <CoinCard key={r.key} r={r} live={r.hkey ? holders.get(r.hkey) : undefined} />)}
+          {rows.map((r, i) => <CoinCard key={r.key} r={r} i={i} live={r.hkey ? holders.get(r.hkey) : undefined} />)}
           {moreLoading && Array.from({ length: 4 }, (_, i) => <CardSkeleton key={`m${i}`} />)}
         </ul>
 
@@ -661,7 +673,7 @@ function isNew(iso: string | null) {
   return !!iso && Date.now() - new Date(iso).getTime() < 15 * 60_000;
 }
 
-function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
+function CoinCard({ r, live, i = 0 }: { r: Row; live?: HolderLive; i?: number }) {
   const onCurve = r.progress !== null && !r.graduated && !r.graduating;
   // a short green / red flash on the market cap when it moves
   const lastMc = useRef<number | null>(r.mc);
@@ -676,8 +688,8 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
   }, [r.mc]);
   const pct = r.progress === null ? 0 : Math.min(99, Math.floor(r.progress * 100));
   return (
-    <li className="min-w-0">
-      <Link href={r.href} onClick={() => remember(r)} className="ex-card group flex flex-col h-full min-w-0 rounded-[14px] border border-line bg-surface overflow-hidden">
+    <li className="ex-arrive min-w-0" style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}>
+      <Link href={r.href} onClick={() => remember(r)} className="ex-card group flex flex-col h-full min-w-0 rounded-[18px] border border-line bg-surface overflow-hidden">
         <span className="relative block aspect-square bg-night overflow-hidden">
           <CardArt r={r} />
           {(r.graduated || r.graduating || r.badge) && (
@@ -701,7 +713,7 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
             {r.symbol} · {age(r.since)}
           </span>
           <span className="flex items-baseline justify-between gap-1.5 mt-1.5 font-mono">
-            <span className={"font-bold text-[1rem] tracking-tight truncate rounded px-0.5 -mx-0.5 " + mcFlash}>{compactUsd(r.mc)}</span>
+            <span className={"font-bold text-[1.0625rem] tracking-tight truncate rounded px-0.5 -mx-0.5 " + mcFlash}><Roll text={compactUsd(r.mc)} /></span>
             <span className="text-[0.8125rem] font-semibold shrink-0">
               <Change v={r.change} />
             </span>
@@ -730,56 +742,215 @@ function CoinCard({ r, live }: { r: Row; live?: HolderLive }) {
   );
 }
 
-/** "Launched on sasa": the newest coins launched here (every chain, Solana too), on every tab. */
-function SasaLaunches({ solToo }: { solToo: boolean }) {
+type View = "auto" | "list" | "grid";
+
+/** List or cards, like a photo app's switch. */
+function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  const opt = (v: "list" | "grid", label: string, icon: React.ReactNode) => (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={view === v}
+      onClick={() => onChange(v)}
+      className={"ex-press w-10 h-9 rounded-[10px] flex items-center justify-center " + (view === v ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink")}
+    >
+      {icon}
+    </button>
+  );
+  return (
+    <div className="shrink-0 mr-4 sm:mr-6 mb-2 p-1 rounded-xl bg-night flex gap-0.5" role="group" aria-label="View">
+      {opt(
+        "list",
+        "List",
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg>
+      )}
+      {opt(
+        "grid",
+        "Cards",
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" /></svg>
+      )}
+    </div>
+  );
+}
+
+/** A number that rolls in when it changes (a new key restarts the little animation). */
+function Roll({ text }: { text: string }) {
+  return (
+    <span className="ex-roll-box">
+      <span key={text} className="ex-roll">{text}</span>
+    </span>
+  );
+}
+
+/**
+ * Trending: the hottest coins of every chain as big picture cards that drift slowly from right to
+ * left. Touching or hovering stops them, letting go starts them again; they can be dragged or
+ * swiped by hand, and the arrows step through them on computers.
+ */
+function TrendingRail() {
   const [rows, setRows] = useState<Row[] | null>(null);
   useEffect(() => {
     let alive = true;
-    const load = async () => {
-      const [races, sol] = await Promise.all([
-        fetchRaceCoins(12).catch(() => [] as RaceCoin[]),
-        solToo ? fetchSasaSolCoins(12).catch(() => [] as ExtCoin[]) : Promise.resolve([] as ExtCoin[]),
-      ]);
-      const supplies = await Promise.all(races.map((r) => coinSupply(r).catch(() => RACE_SUPPLY)));
-      const all = [
-        ...races.map((r, i) => raceRow(r, supplies[i])),
-        ...sol.map((c) => ({ ...toRow({ kind: "ext", coin: c } as Ranked, null), where: "Solana" })),
-      ].sort((a, b) => (Date.parse(b.since ?? "") || 0) - (Date.parse(a.since ?? "") || 0));
-      if (alive) setRows(all.slice(0, 16));
-    };
+    const load = () =>
+      fetchExtCoins("trending", null, "", 16)
+        .then((l) => alive && setRows(l.map((c) => toRow({ kind: "ext", coin: c } as Ranked, null)).filter((r) => r.mc !== null)))
+        .catch(() => alive && setRows((cur) => cur ?? []));
     void load();
-    const t = setInterval(() => document.visibilityState === "visible" && void load(), 30_000);
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 60_000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, [solToo]);
-  if (!rows?.length) return null;
+  }, []);
+
+  const box = useRef<HTMLDivElement>(null);
+  const hold = useRef(0); // > 0 while hovered, touched, dragged or stepping
+  const pos = useRef(0);
+  const resumeAt = useRef(0);
+  const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
+  const few = !rows || rows.length < 4;
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el || few) return;
+    let reduce = false;
+    try {
+      reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch {}
+    if (reduce) return;
+    let raf = 0;
+    let last = performance.now();
+    pos.current = el.scrollLeft;
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - last);
+      last = now;
+      const half = el.scrollWidth / 2;
+      if (hold.current > 0 || now < resumeAt.current || document.visibilityState !== "visible") {
+        pos.current = el.scrollLeft; // pick up where the hand left it
+      } else if (half > el.clientWidth) {
+        pos.current += dt * 0.035; // about 35 pixels a second
+        if (pos.current >= half) pos.current -= half;
+        el.scrollLeft = pos.current;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [few, rows]);
+
+  // the second copy makes the loop seamless; a hand that scrolls to either end jumps back to the middle
+  const onScroll = () => {
+    const el = box.current;
+    if (!el || few || hold.current === 0 || drag.current) return;
+    const half = el.scrollWidth / 2;
+    if (el.scrollLeft >= half) el.scrollLeft -= half;
+    else if (el.scrollLeft <= 0) el.scrollLeft += half;
+  };
+  const pause = () => {
+    hold.current += 1;
+  };
+  const release = (ms = 900) => {
+    hold.current = Math.max(0, hold.current - 1);
+    resumeAt.current = performance.now() + ms;
+  };
+  const step = (dir: 1 | -1) => {
+    const el = box.current;
+    if (!el) return;
+    resumeAt.current = performance.now() + 2500;
+    const card = el.querySelector<HTMLElement>("[data-tcard]");
+    el.scrollBy({ left: dir * ((card?.offsetWidth ?? 200) + 16) * 2, behavior: "smooth" });
+  };
+
+  if (rows !== null && rows.length === 0) return null;
+  const list = rows ?? [];
+  const copies = few ? [list] : [list, list];
   return (
-    <section aria-label="Launched on sasa" className="pt-4">
-      <div className="px-4 sm:px-6 flex items-baseline justify-between gap-2">
-        <h2 className="font-display font-bold text-[1.0625rem]">🚀 Launched on sasa</h2>
-        <Link href="/race/launch/" className="text-[0.8125rem] font-semibold text-emerald">Launch yours →</Link>
+    <section aria-label="Trending" className="pt-5 sm:pt-7">
+      <div className="px-4 sm:px-6 flex items-center justify-between gap-2">
+        <h2 className="font-display font-extrabold text-[1.25rem] sm:text-[1.5rem] tracking-tight">Trending</h2>
+        <div className="hidden sm:flex gap-2">
+          <button type="button" aria-label="Back" onClick={() => step(-1)} className="ex-press w-10 h-10 rounded-full border border-line bg-surface flex items-center justify-center text-ink hover:border-ink-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+          </button>
+          <button type="button" aria-label="Next" onClick={() => step(1)} className="ex-press w-10 h-10 rounded-full border border-line bg-surface flex items-center justify-center text-ink hover:border-ink-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+          </button>
+        </div>
       </div>
-      <div className="mt-2.5 flex gap-2.5 overflow-x-auto no-scrollbar px-4 sm:px-6 snap-x">
-        {rows.map((r) => (
-          <Link
-            key={r.key}
-            href={r.href}
-            onClick={() => remember(r)}
-            className="snap-start shrink-0 w-[8.5rem] rounded-2xl border border-line bg-surface p-2.5 active:scale-[0.98] transition-transform"
-          >
-            <span className="relative block w-11 h-11 rounded-full overflow-hidden bg-night">
-              <CardArt r={r} />
-            </span>
-            <b className="block mt-2 font-semibold text-[0.875rem] truncate">{r.name}</b>
-            <span className="block text-[0.6875rem] text-ink-3 truncate">
-              {r.where ? `${r.where} · ` : ""}
-              {age(r.since)}
-            </span>
-            <span className="block mt-1 font-mono font-bold text-[0.875rem] tabular-nums">{compactUsd(r.mc)}</span>
-          </Link>
-        ))}
+      <div
+        ref={box}
+        className="ex-rail mt-3 flex gap-3 sm:gap-4 overflow-x-auto no-scrollbar px-4 sm:px-6"
+        onScroll={onScroll}
+        onPointerEnter={(e) => e.pointerType === "mouse" && pause()}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") {
+            drag.current = null;
+            release(300);
+          }
+        }}
+        onTouchStart={pause}
+        onTouchEnd={() => release(1600)}
+        onTouchCancel={() => release(1600)}
+        onPointerDown={(e) => {
+          if (e.pointerType !== "mouse" || !box.current) return;
+          drag.current = { x: e.clientX, left: box.current.scrollLeft, moved: false };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d || !box.current) return;
+          const dx = e.clientX - d.x;
+          if (Math.abs(dx) > 4) d.moved = true;
+          if (d.moved) box.current.scrollLeft = d.left - dx;
+        }}
+        onPointerUp={() => {
+          // a drag isn't a click: keep the flag until the click that follows has been stopped
+          setTimeout(() => (drag.current = null), 0);
+        }}
+        onClickCapture={(e) => {
+          if (drag.current?.moved) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+      >
+        {rows === null
+          ? Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="shrink-0 w-[10.5rem] sm:w-[12.5rem]" aria-hidden="true">
+                <span className="shimmer block aspect-square rounded-[22px]" />
+                <span className="shimmer block h-4 w-2/3 rounded mt-3" />
+                <span className="shimmer block h-5 w-1/2 rounded mt-2" />
+              </div>
+            ))
+          : copies.map((l, copy) =>
+              l.map((r, i) => (
+                <Link
+                  key={`${copy}:${r.key}`}
+                  href={r.href}
+                  data-tcard
+                  draggable={false}
+                  aria-hidden={copy === 1 || undefined}
+                  tabIndex={copy === 1 ? -1 : undefined}
+                  onClick={() => remember(r)}
+                  className="ex-tcard shrink-0 w-[10.5rem] sm:w-[12.5rem] select-none"
+                >
+                  <span className="ex-tcard-art relative block aspect-square rounded-[22px] overflow-hidden bg-night border border-line">
+                    <CardArt r={r} />
+                  </span>
+                  <span className="flex items-baseline gap-2 mt-3 min-w-0">
+                    <span className="text-ink-3 font-semibold text-[0.9375rem] tabular-nums">{i + 1}</span>
+                    <b className="font-semibold text-[1rem] truncate">{r.name}</b>
+                  </span>
+                  <span className="flex items-baseline gap-2 mt-0.5 min-w-0">
+                    <span className="font-display font-extrabold text-[1.25rem] sm:text-[1.375rem] tracking-tight tabular-nums truncate">
+                      <Roll text={compactUsd(r.mc)} />
+                    </span>
+                    <span className="text-[0.8125rem] font-semibold shrink-0">
+                      <Change v={r.change} />
+                    </span>
+                  </span>
+                </Link>
+              ))
+            )}
       </div>
     </section>
   );
@@ -823,7 +994,7 @@ function BalanceBar() {
 }
 
 /** Phones: a coin as one row, big picture, name and market cap, change on the right. */
-function CoinRow({ r }: { r: Row }) {
+function CoinRow({ r, i = 0 }: { r: Row; i?: number }) {
   const lastMc = useRef<number | null>(r.mc);
   const [mcFlash, setMcFlash] = useState("");
   useEffect(() => {
@@ -835,8 +1006,8 @@ function CoinRow({ r }: { r: Row }) {
     return () => clearTimeout(t);
   }, [r.mc]);
   return (
-    <li>
-      <Link href={r.href} onClick={() => remember(r)} className="flex items-center gap-3 py-2.5 active:opacity-70">
+    <li className="ex-arrive" style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
+      <Link href={r.href} onClick={() => remember(r)} className="ex-row flex items-center gap-3 py-3 px-2 -mx-2 rounded-2xl">
         <span className="relative shrink-0 w-12 h-12 rounded-full overflow-hidden bg-night">
           <CardArt r={r} />
         </span>
@@ -851,7 +1022,7 @@ function CoinRow({ r }: { r: Row }) {
           </span>
         </span>
         <span className="shrink-0 text-right font-mono">
-          <span className={"block font-bold text-[1rem] tabular-nums rounded px-0.5 -mx-0.5 " + mcFlash}>{compactUsd(r.mc)}</span>
+          <span className={"block font-bold text-[1rem] tabular-nums rounded px-0.5 -mx-0.5 " + mcFlash}><Roll text={compactUsd(r.mc)} /></span>
           <span className="block text-[0.8125rem] font-semibold tabular-nums">
             <Change v={r.change} />
           </span>
@@ -879,7 +1050,7 @@ function RowSkeleton() {
 
 function CardSkeleton() {
   return (
-    <li className="rounded-[14px] border border-line overflow-hidden" aria-hidden="true">
+    <li className="rounded-[18px] border border-line overflow-hidden" aria-hidden="true">
       <span className="shimmer block aspect-square" />
       <span className="grid gap-1.5 p-2.5">
         <span className="shimmer h-4 w-3/4 rounded" />

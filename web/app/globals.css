@@ -360,10 +360,32 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .ex-tabs { scrollbar-width: none; }
 .ex-tabs::-webkit-scrollbar { display: none; }
 
-/* update-133: Explore coin cards */
-.ex-card { transition: border-color 0.15s; }
-.ex-card:active { border-color: var(--color-ink-3); }
-@media (hover: hover) { .ex-card:hover { border-color: var(--color-ink-3); } }
+/* Explore (Nov 20, 2026): calm cards and soft motion. One easing for everything: quick to start,
+   slow to settle; .18s for colours, .28s for lifts, .42s for things arriving. */
+:root { --ex-ease: cubic-bezier(.22, 1, .36, 1); }
+.ex-card { transition: transform .28s var(--ex-ease), box-shadow .28s var(--ex-ease), border-color .18s var(--ex-ease); }
+.ex-card:active { transform: scale(.985); }
+@media (hover: hover) {
+  .ex-card:hover { transform: translateY(-3px); border-color: var(--color-ink-3); box-shadow: 0 14px 30px -18px rgba(0,0,0,.35); }
+}
+.ex-row { transition: background .18s var(--ex-ease), transform .18s var(--ex-ease); }
+.ex-row:active { transform: scale(.99); }
+.ex-tab, .ex-chip { transition: color .18s var(--ex-ease), background .18s var(--ex-ease), border-color .18s var(--ex-ease); }
+.ex-press { transition: transform .18s var(--ex-ease), background .18s var(--ex-ease), color .18s var(--ex-ease), border-color .18s var(--ex-ease), box-shadow .18s var(--ex-ease); }
+.ex-press:active { transform: scale(.95); }
+.ex-search { transition: border-color .18s var(--ex-ease), box-shadow .18s var(--ex-ease); }
+.ex-search:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-ink-3) 18%, transparent); }
+@keyframes ex-arrive { from { opacity: 0; transform: translateY(10px); } }
+.ex-arrive { animation: ex-arrive .42s var(--ex-ease) both; }
+.ex-roll-box { display: inline-block; overflow: hidden; vertical-align: bottom; }
+@keyframes ex-roll { from { opacity: 0; transform: translateY(.6em); } }
+.ex-roll { display: inline-block; animation: ex-roll .42s var(--ex-ease); }
+.ex-rail { cursor: grab; overscroll-behavior-x: contain; }
+.ex-rail:active { cursor: grabbing; }
+.ex-tcard-art { transition: transform .28s var(--ex-ease), box-shadow .28s var(--ex-ease); }
+.ex-tcard-art img { -webkit-user-drag: none; pointer-events: none; }
+@media (hover: hover) { .ex-tcard:hover .ex-tcard-art { transform: translateY(-3px); box-shadow: 0 16px 34px -20px rgba(0,0,0,.45); } }
+@media (prefers-reduced-motion: reduce) { .ex-arrive, .ex-roll { animation: none; } .ex-card:hover, .ex-tcard:hover .ex-tcard-art { transform: none; } }
 /* landing hero: text left, the app on phones right */
 .sasa-hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: center; padding-top: 32px; }
 @media (min-width: 900px) { .sasa-hero { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
