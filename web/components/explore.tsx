@@ -20,7 +20,6 @@ import { PulseStrip } from "@/components/pulse";
 import { ELYSIUM_LISTED } from "@/lib/elysium";
 import { Hero, HeroStrip } from "@/components/hero";
 import { HolderCount } from "@/components/holderlive";
-import { openMoney, useMoney } from "@/lib/portfolio";
 import { rememberCoin } from "@/lib/coincache";
 import { extHolderKey, fetchHolderLive, raceHolderKey, type HolderLive } from "@/lib/holderlive";
 
@@ -265,28 +264,18 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
       </div>
     )}
     <div className="app-root">
-      {/* sasapad.fun for people who aren't logged in: the hero (one line, two buttons, live box).
-          Logged in (or coming back logged in) and on /explore/: the bands, straight to the coins. */}
-      {withLanding && !me && !restoring ? (
+      {/* sasapad.fun for people who aren't logged in: the hero (one line, two buttons, live box). */}
+      {withLanding && !me && !restoring && (
         <div className="max-w-7xl mx-auto"><Hero /><HeroStrip /></div>
-      ) : (
-        <div className="max-w-7xl mx-auto">
-          {/* phones: balance and Deposit first, like a wallet app; the promo bands live on bigger screens */}
-          {me && <BalanceBar />}
-        </div>
       )}
-      {/* sasa Pulse: the live reactor (whales, futures, BTC, fear/greed); shorter on phones */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3"><PulseStrip /></div>
-      <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
-        <div className="px-4 sm:px-6 pt-5 sm:pt-8 flex items-center gap-3">
-          <h1 className="font-display font-extrabold text-[1.625rem] sm:text-[2.25rem] tracking-tight shrink-0">Explore</h1>
-          <div className="hidden sm:block flex-1" />
-          <label className="relative flex-1 sm:flex-none sm:w-[20rem] min-w-0">
+      {/* The top: search, and Launch coin. (The balance lives on the You page.) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex items-center gap-3">
+        <label className="relative flex-1 min-w-0 sm:max-w-[32rem]">
           <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" strokeLinecap="round" /></svg>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
+            placeholder="Search coins"
             aria-label="Search coins"
             type="search"
             enterKeyHint="search"
@@ -298,12 +287,16 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             }}
             className="ex-search h-12 w-full min-w-0 pl-10 pr-3 rounded-2xl border border-line bg-surface text-ink text-[1rem] placeholder:text-ink-3 focus:border-ink-3 outline-none"
           />
-          </label>
-          <Link href="/race/launch/" className="ex-press hidden sm:inline-flex shrink-0 h-12 px-6 rounded-2xl bg-emerald text-on-accent font-bold text-[0.9375rem] items-center">
-            Launch a coin
-          </Link>
-        </div>
-        <AddressJump query={query} />
+        </label>
+        <div className="hidden sm:block flex-1" />
+        <Link href="/race/launch/" className="ex-press shrink-0 h-12 px-5 sm:px-6 rounded-2xl bg-emerald text-on-accent font-bold text-[1rem] inline-flex items-center">
+          Launch coin
+        </Link>
+      </div>
+      <div className="max-w-7xl mx-auto"><AddressJump query={query} /></div>
+      {/* sasa Pulse: the live reactor (whales, futures, BTC, fear/greed); shorter on phones */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3"><PulseStrip /></div>
+      <section id="explore" className="max-w-7xl mx-auto pb-8 scroll-mt-20">
 
         <TrendingRail />
         <div className="px-4 sm:px-6">
@@ -785,8 +778,9 @@ function Roll({ text }: { text: string }) {
 
 /**
  * Trending: the hottest coins of every chain as big picture cards that drift slowly from right to
- * left. Touching or hovering stops them, letting go starts them again; they can be dragged or
- * swiped by hand, and the arrows step through them on computers.
+ * left. The track moves with a GPU transform (sub-pixel, so it glides instead of stepping a pixel at
+ * a time). Hovering or touching stops it, letting go starts it again; it can be dragged or swiped by
+ * hand (with a little momentum), and the arrows step through it on computers.
  */
 function TrendingRail() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -804,62 +798,72 @@ function TrendingRail() {
     };
   }, []);
 
-  const box = useRef<HTMLDivElement>(null);
-  const hold = useRef(0); // > 0 while hovered, touched, dragged or stepping
-  const pos = useRef(0);
-  const resumeAt = useRef(0);
-  const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
+  const view = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const m = useRef({
+    x: 0, // how far the track has moved left, in pixels
+    hover: false,
+    down: null as null | { id: number; x: number; y: number; t: number; startX: number; moved: boolean; lastX: number; lastT: number },
+    vel: 0, // momentum after a swipe, pixels per ms
+    resumeAt: 0,
+    anim: null as null | { from: number; to: number; t0: number },
+    blockClick: false,
+  });
   const few = !rows || rows.length < 4;
 
   useEffect(() => {
-    const el = box.current;
-    if (!el || few) return;
+    const v = view.current;
+    const tr = track.current;
+    if (!v || !tr || !rows?.length) return;
     let reduce = false;
     try {
       reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch {}
-    if (reduce) return;
+    // one lap: from the first card to the same card in the second copy
+    const period = () => {
+      if (few) return 0;
+      const cards = tr.querySelectorAll<HTMLElement>("[data-tcard]");
+      const n = cards.length / 2;
+      return n >= 1 ? cards[n].offsetLeft - cards[0].offsetLeft : 0;
+    };
+    const maxX = () => Math.max(0, tr.scrollWidth - v.clientWidth);
     let raf = 0;
     let last = performance.now();
-    pos.current = el.scrollLeft;
     const tick = (now: number) => {
-      const dt = Math.min(64, now - last);
+      const s = m.current;
+      const dt = Math.min(100, now - last);
       last = now;
-      const half = el.scrollWidth / 2;
-      if (hold.current > 0 || now < resumeAt.current || document.visibilityState !== "visible") {
-        pos.current = el.scrollLeft; // pick up where the hand left it
-      } else if (half > el.clientWidth) {
-        pos.current += dt * 0.035; // about 35 pixels a second
-        if (pos.current >= half) pos.current -= half;
-        el.scrollLeft = pos.current;
+      if (s.anim) {
+        const k = Math.min(1, (now - s.anim.t0) / 600);
+        const e = 1 - Math.pow(1 - k, 3);
+        s.x = s.anim.from + (s.anim.to - s.anim.from) * e;
+        if (k >= 1) s.anim = null;
+      } else if (!s.down) {
+        if (Math.abs(s.vel) > 0.01) {
+          s.x += s.vel * dt;
+          s.vel *= Math.pow(0.94, dt / 16);
+          s.resumeAt = now + 900;
+        } else if (!reduce && !s.hover && now >= s.resumeAt && document.visibilityState === "visible" && !few) {
+          s.x += dt * 0.035; // about 35 pixels a second
+        }
       }
+      const p = period();
+      if (p > 0) s.x = ((s.x % p) + p) % p;
+      else s.x = Math.min(maxX(), Math.max(0, s.x));
+      tr.style.transform = `translate3d(${-s.x}px,0,0)`;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [few, rows]);
+  }, [rows, few]);
 
-  // the second copy makes the loop seamless; a hand that scrolls to either end jumps back to the middle
-  const onScroll = () => {
-    const el = box.current;
-    if (!el || few || hold.current === 0 || drag.current) return;
-    const half = el.scrollWidth / 2;
-    if (el.scrollLeft >= half) el.scrollLeft -= half;
-    else if (el.scrollLeft <= 0) el.scrollLeft += half;
-  };
-  const pause = () => {
-    hold.current += 1;
-  };
-  const release = (ms = 900) => {
-    hold.current = Math.max(0, hold.current - 1);
-    resumeAt.current = performance.now() + ms;
-  };
   const step = (dir: 1 | -1) => {
-    const el = box.current;
-    if (!el) return;
-    resumeAt.current = performance.now() + 2500;
-    const card = el.querySelector<HTMLElement>("[data-tcard]");
-    el.scrollBy({ left: dir * ((card?.offsetWidth ?? 200) + 16) * 2, behavior: "smooth" });
+    const s = m.current;
+    const card = track.current?.querySelector<HTMLElement>("[data-tcard]");
+    const w = ((card?.offsetWidth ?? 200) + 16) * 2;
+    s.vel = 0;
+    s.anim = { from: s.x, to: s.x + dir * w, t0: performance.now() };
+    s.resumeAt = performance.now() + 2500;
   };
 
   if (rows !== null && rows.length === 0) return null;
@@ -879,79 +883,111 @@ function TrendingRail() {
         </div>
       </div>
       <div
-        ref={box}
-        className="ex-rail mt-3 flex gap-3 sm:gap-4 overflow-x-auto no-scrollbar px-4 sm:px-6"
-        onScroll={onScroll}
-        onPointerEnter={(e) => e.pointerType === "mouse" && pause()}
+        ref={view}
+        className="ex-rail mt-3 overflow-hidden"
+        onPointerEnter={(e) => {
+          if (e.pointerType === "mouse") m.current.hover = true;
+        }}
         onPointerLeave={(e) => {
           if (e.pointerType === "mouse") {
-            drag.current = null;
-            release(300);
+            m.current.hover = false;
+            m.current.resumeAt = performance.now() + 300;
           }
         }}
-        onTouchStart={pause}
-        onTouchEnd={() => release(1600)}
-        onTouchCancel={() => release(1600)}
         onPointerDown={(e) => {
-          if (e.pointerType !== "mouse" || !box.current) return;
-          drag.current = { x: e.clientX, left: box.current.scrollLeft, moved: false };
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          const s = m.current;
+          const now = performance.now();
+          s.anim = null;
+          s.vel = 0;
+          s.blockClick = false;
+          s.down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: now, startX: s.x, moved: false, lastX: e.clientX, lastT: now };
         }}
         onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d || !box.current) return;
+          const s = m.current;
+          const d = s.down;
+          if (!d || d.id !== e.pointerId) return;
           const dx = e.clientX - d.x;
-          if (Math.abs(dx) > 4) d.moved = true;
-          if (d.moved) box.current.scrollLeft = d.left - dx;
+          if (!d.moved) {
+            // a sideways move takes the rail; an up-down one is left to the page
+            if (Math.abs(dx) < 6 || Math.abs(dx) < Math.abs(e.clientY - d.y)) return;
+            d.moved = true;
+            s.blockClick = true;
+            try {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            } catch {}
+          }
+          const now = performance.now();
+          const v = (d.lastX - e.clientX) / Math.max(1, now - d.lastT);
+          s.vel = s.vel * 0.6 + v * 0.4;
+          d.lastX = e.clientX;
+          d.lastT = now;
+          s.x = d.startX - dx;
         }}
-        onPointerUp={() => {
-          // a drag isn't a click: keep the flag until the click that follows has been stopped
-          setTimeout(() => (drag.current = null), 0);
+        onPointerUp={(e) => {
+          const s = m.current;
+          const d = s.down;
+          if (!d || d.id !== e.pointerId) return;
+          s.down = null;
+          if (!d.moved || performance.now() - d.lastT > 80) s.vel = 0;
+          s.vel = Math.max(-2.5, Math.min(2.5, s.vel));
+          s.resumeAt = performance.now() + 1200;
+        }}
+        onPointerCancel={() => {
+          const s = m.current;
+          s.down = null;
+          s.vel = 0;
+          s.resumeAt = performance.now() + 1200;
         }}
         onClickCapture={(e) => {
-          if (drag.current?.moved) {
+          // a drag isn't a tap: don't open the coin
+          if (m.current.blockClick) {
             e.preventDefault();
             e.stopPropagation();
+            m.current.blockClick = false;
           }
         }}
       >
-        {rows === null
-          ? Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="shrink-0 w-[10.5rem] sm:w-[12.5rem]" aria-hidden="true">
-                <span className="shimmer block aspect-square rounded-[22px]" />
-                <span className="shimmer block h-4 w-2/3 rounded mt-3" />
-                <span className="shimmer block h-5 w-1/2 rounded mt-2" />
-              </div>
-            ))
-          : copies.map((l, copy) =>
-              l.map((r, i) => (
-                <Link
-                  key={`${copy}:${r.key}`}
-                  href={r.href}
-                  data-tcard
-                  draggable={false}
-                  aria-hidden={copy === 1 || undefined}
-                  tabIndex={copy === 1 ? -1 : undefined}
-                  onClick={() => remember(r)}
-                  className="ex-tcard shrink-0 w-[10.5rem] sm:w-[12.5rem] select-none"
-                >
-                  <span className="ex-tcard-art relative block aspect-square rounded-[22px] overflow-hidden bg-night border border-line">
-                    <CardArt r={r} />
-                  </span>
-                  <span className="flex items-baseline gap-2 mt-3 min-w-0">
-                    <span className="text-ink-3 font-semibold text-[0.9375rem] tabular-nums">{i + 1}</span>
-                    <b className="font-semibold text-[1rem] truncate">{r.name}</b>
-                  </span>
-                  <span className="flex items-baseline gap-2 mt-0.5 min-w-0">
-                    <span className="font-display font-extrabold text-[1.25rem] sm:text-[1.375rem] tracking-tight tabular-nums truncate">
-                      <Roll text={compactUsd(r.mc)} />
-                    </span>
-                    <span className="text-[0.8125rem] font-semibold shrink-0">
-                      <Change v={r.change} />
-                    </span>
-                  </span>
-                </Link>
+        <div ref={track} className="ex-track flex gap-3 sm:gap-4 px-4 sm:px-6 w-max">
+          {rows === null
+            ? Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="shrink-0 w-[10.5rem] sm:w-[12.5rem]" aria-hidden="true">
+                  <span className="shimmer block aspect-square rounded-[22px]" />
+                  <span className="shimmer block h-4 w-2/3 rounded mt-3" />
+                  <span className="shimmer block h-5 w-1/2 rounded mt-2" />
+                </div>
               ))
-            )}
+            : copies.map((l, copy) =>
+                l.map((r, i) => (
+                  <Link
+                    key={`${copy}:${r.key}`}
+                    href={r.href}
+                    data-tcard
+                    draggable={false}
+                    aria-hidden={copy === 1 || undefined}
+                    tabIndex={copy === 1 ? -1 : undefined}
+                    onClick={() => remember(r)}
+                    className="ex-tcard shrink-0 w-[10.5rem] sm:w-[12.5rem] select-none"
+                  >
+                    <span className="ex-tcard-art relative block aspect-square rounded-[22px] overflow-hidden bg-night border border-line">
+                      <CardArt r={r} />
+                    </span>
+                    <span className="flex items-baseline gap-2 mt-3 min-w-0">
+                      <span className="text-ink-3 font-semibold text-[0.9375rem] tabular-nums">{i + 1}</span>
+                      <b className="font-semibold text-[1rem] truncate">{r.name}</b>
+                    </span>
+                    <span className="flex items-baseline gap-2 mt-0.5 min-w-0">
+                      <span className="font-display font-extrabold text-[1.25rem] sm:text-[1.375rem] tracking-tight tabular-nums truncate">
+                        <Roll text={compactUsd(r.mc)} />
+                      </span>
+                      <span className="text-[0.8125rem] font-semibold shrink-0">
+                        <Change v={r.change} />
+                      </span>
+                    </span>
+                  </Link>
+                ))
+              )}
+        </div>
       </div>
     </section>
   );
@@ -960,37 +996,6 @@ function TrendingRail() {
 /** What the coin page can show at once, before its own data arrives (lib/coincache.ts). */
 function remember(r: Row) {
   rememberCoin(r.href, { name: r.name, symbol: r.symbol, image: r.image, mc: r.mc, change: r.change, where: r.where });
-}
-
-/** Phones: balance and Deposit at the top of the home screen. */
-function BalanceBar() {
-  const { portfolio: p } = useMoney();
-  const total = p?.totalUsd ?? null;
-  const day = p?.dayUsd ?? 0;
-  const [whole, cents] = total === null ? ["$—", ""] : (() => {
-    const t = total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const i = t.lastIndexOf(".");
-    return ["$" + t.slice(0, i), t.slice(i)];
-  })();
-  return (
-    <div className="sm:hidden px-4 pt-4 flex items-center justify-between gap-3">
-      <button type="button" onClick={() => openMoney({ kind: "portfolio" })} className="min-w-0 text-left">
-        <span className="block font-display font-extrabold text-[2rem] leading-none tracking-tight tabular-nums">
-          {whole}
-          <span className="text-ink-3">{cents}</span>
-        </span>
-        <span className={"block mt-1 text-[0.8125rem] font-semibold tabular-nums " + (day > 0.005 ? "text-up" : day < -0.005 ? "text-danger" : "text-ink-3")}>
-          {total === null ? "\u00a0" : `${day >= 0 ? "+" : "-"}$${Math.abs(day).toFixed(2)}`} <span className="text-ink-3 font-medium">24h</span>
-        </span>
-      </button>
-      <Link
-        href="/race/launch/"
-        className="ex-press shrink-0 h-12 px-6 rounded-2xl bg-emerald text-on-accent font-bold text-[1rem] inline-flex items-center"
-      >
-        Launch coin
-      </Link>
-    </div>
-  );
 }
 
 /** Phones: a coin as one row, big picture, name and market cap, change on the right. */

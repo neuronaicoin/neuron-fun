@@ -380,8 +380,9 @@ a, button, [role="button"], label { -webkit-tap-highlight-color: transparent; to
 .ex-roll-box { display: inline-block; overflow: hidden; vertical-align: bottom; }
 @keyframes ex-roll { from { opacity: 0; transform: translateY(.6em); } }
 .ex-roll { display: inline-block; animation: ex-roll .42s var(--ex-ease); }
-.ex-rail { cursor: grab; overscroll-behavior-x: contain; }
+.ex-rail { cursor: grab; touch-action: pan-y; }
 .ex-rail:active { cursor: grabbing; }
+.ex-track { will-change: transform; backface-visibility: hidden; transform: translate3d(0,0,0); }
 .ex-tcard-art { transition: transform .28s var(--ex-ease), box-shadow .28s var(--ex-ease); }
 .ex-tcard-art img { -webkit-user-drag: none; pointer-events: none; }
 @media (hover: hover) { .ex-tcard:hover .ex-tcard-art { transform: translateY(-3px); box-shadow: 0 16px 34px -20px rgba(0,0,0,.45); } }
