@@ -153,8 +153,8 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
         try {
           const [l, sol] = await Promise.all([
             ai
-              ? fetchAiCoins(chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }, solChip)
-              : fetchExtCoins(extSort, chain === "all" ? null : chain, search, extLimit, { minVol, minLiq }),
+              ? fetchAiCoins(chain === "all" ? null : extNet(chain), search, extLimit, { minVol, minLiq }, solChip)
+              : fetchExtCoins(extSort, chain === "all" ? null : extNet(chain), search, extLimit, { minVol, minLiq }),
             // All chains, New: Solana coins launched on sasa too (for people who see Solana yet;
             // the other lists rank them on their own numbers, under the Solana chip)
             solChip && chain === "all" && extSort === "new" ? fetchSasaSolCoins(20, search).catch(() => []) : Promise.resolve([] as ExtCoin[]),
@@ -344,7 +344,7 @@ export function Discover({ withLanding = false }: { withLanding?: boolean }) {
             )}
             {[
               // Solana right after Robinhood (for people who see it yet)
-              ...EXT_NETWORKS.flatMap((n) => (n.id === "robinhood" && solChip ? [n, SOL_EXT_NETWORK] : [n])).map((n) => ({ key: n.id, short: n.label, color: n.color })),
+              ...EXT_NETWORKS.filter((n) => n.id !== "ely").flatMap((n) => (n.id === "robinhood" && solChip ? [n, SOL_EXT_NETWORK] : [n])).map((n) => ({ key: n.id, short: n.label, color: n.color })),
             ].map((c) => (
               <button
                 key={c.key}
@@ -654,6 +654,9 @@ function CardArt({ r }: { r: Row }) {
 }
 
 /** Launched in the last 15 minutes. */
+/** The Elysium chip lists Elysium coins from other launchpads (network "ely", indexer/elyext.mjs). */
+const extNet = (chain: string) => (chain === "elysium" ? "ely" : chain);
+
 function isNew(iso: string | null) {
   return !!iso && Date.now() - new Date(iso).getTime() < 15 * 60_000;
 }
