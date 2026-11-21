@@ -465,7 +465,7 @@ export function LiveChart({
           ctx.strokeStyle = rc;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(g.x, by, rr, 0, Math.PI * 2);
+          ctx.arc(g.x, by, Math.max(0, rr), 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
           ctx.fillStyle = C.ink;
@@ -503,7 +503,7 @@ export function LiveChart({
         if (p.star) sparkle(ctx, px, py, p.size * 2.2 * p.life + 1);
         else {
           ctx.beginPath();
-          ctx.arc(px, py, p.size * p.life + 0.5, 0, Math.PI * 2);
+          ctx.arc(px, py, Math.max(0, p.size * p.life + 0.5), 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -516,11 +516,11 @@ export function LiveChart({
       const r0 = 4.5 + s.pulse * 8;
       ctx.fillStyle = alpha(tc, 0.18);
       ctx.beginPath();
-      ctx.arc(tipX, tipY, r0 + 5 + breathe * 5 + s.pulse * 14, 0, Math.PI * 2);
+      ctx.arc(tipX, tipY, Math.max(0, r0 + 5 + breathe * 5 + s.pulse * 14), 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = tc;
       ctx.beginPath();
-      ctx.arc(tipX, tipY, r0, 0, Math.PI * 2);
+      ctx.arc(tipX, tipY, Math.max(0, r0), 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
