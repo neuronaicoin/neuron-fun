@@ -331,7 +331,7 @@ export function BaseWithdrawSheet({ onClose }: { onClose: () => void }) {
               />
               <button
                 type="button"
-                onClick={() => setAmount((Number(max) / 1e6).toFixed(2))}
+                onClick={() => setAmount((Math.floor(Number(max) / 1e4) / 100).toFixed(2))} // down to the cent: rounding up would ask for more than there is
                 disabled={max <= 0n}
                 className="h-12 px-4 rounded-xl border border-line text-[0.8125rem] font-semibold shrink-0 disabled:opacity-40"
               >
