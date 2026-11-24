@@ -228,7 +228,8 @@ export function DepositSheet({ onClose }: { onClose: () => void }) {
     setQuoting(true);
     getQuote(
       {
-        user: method === "address" ? address : (address as string),
+        // a non-EVM origin (Solana) wants a sender address of its own kind
+        user: from.evm ? address : refundFor(from, address),
         recipient: address,
         originChainId: from.id,
         originCurrency: token.address,
